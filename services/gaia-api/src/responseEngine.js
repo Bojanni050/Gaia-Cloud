@@ -21,16 +21,19 @@
  * result, produce the response — a direct Gaia answer and a
  * capability-produced answer converge here into the same shape.
  *
- * generateStreamingReply extends this seam to the Decision Engine /
- * Orchestrator flow (decision/decisionEngine.js, orchestration/
- * orchestrator.js): a capability/tool's text already reached the client as
- * deltas during orchestrator.execute() (it was handed this module's own
- * stream emitter as `onDelta`), so this function's job there is just to
- * report back what was said. For `clarify`/`refuse` — turns the Orchestrator
- * deliberately executed *without* calling any capability — nothing has been
- * said yet, so this is the one place that renders Gaia's own calm words for
- * them. That is what keeps the invariant true even for capability-free
- * turns: Response Engine, never a capability, speaks for Gaia.
+ * generateReply/generateStreamingReply extend this seam to the Decision
+ * Engine / Orchestrator flow (decision/decisionEngine.js, orchestration/
+ * orchestrator.js) — the non-streaming and streaming twins of the same
+ * judgment. For `capability`/`tool`, the text either already reached the
+ * client as deltas during orchestrator.execute() (streaming — it was handed
+ * this module's own stream emitter as `onDelta`) or is simply the
+ * capability's returned string (non-streaming); either way this module's
+ * job is just to report back what was said. For `clarify`/`refuse` — turns
+ * the Orchestrator deliberately executed *without* calling any capability —
+ * nothing has been said yet, so this is the one place that renders Gaia's
+ * own calm words for them. That is what keeps the invariant true even for
+ * capability-free turns: Response Engine, never a capability, speaks for
+ * Gaia.
  */
 
 const CALM_FALLBACK = 'gaia could not answer right now';
@@ -125,6 +128,57 @@ function createStreamEmitter(res) {
 }
 
 /**
+ * The one place that judges what an ExecutionResult (orchestration/
+ * orchestrator.js) means as reply text. Shared by both generateReply
+ * (non-streaming) and generateStreamingReply (streaming) so the two paths
+ * can never quietly diverge on what counts as "nothing to say".
+ *
+ * - capability/tool: whatever the capability returned, as long as it's a
+ *   non-empty string; null if it returned nothing usable, or the
+ *   capability/tool was unavailable.
+ * - clarify: Gaia's own calm clarifying words.
+ * - refuse: Gaia's own calm refusal words.
+ * - native: no text-generation capability exists in this codebase yet (see
+ *   decisionEngine.js's module note) — nothing to say.
+ * @param {import('./orchestration/orchestrator').ExecutionResult|null|undefined} executionResult
+ * @returns {string|null}
+ */
+function resolveReplyText(executionResult) {
+  if (!executionResult) return null;
+
+  switch (executionResult.action) {
+    case 'capability':
+    case 'tool':
+      return typeof executionResult.output === 'string' && executionResult.output.length > 0
+        ? executionResult.output
+        : null;
+
+    case 'clarify':
+      return CLARIFY_FALLBACK;
+
+    case 'refuse':
+      return REFUSE_FALLBACK;
+
+    case 'native':
+    default:
+      return null;
+  }
+}
+
+/**
+ * Non-streaming twin of generateStreamingReply: turns one turn's
+ * ExecutionResult into the final reply text, with no emitter — there is no
+ * stream to have already carried it. Used by performTurn (turn.js), which
+ * hands the returned text straight to formatReply for the HTTP-shaped
+ * result, exactly as it always has.
+ * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult }} input
+ * @returns {string|null}
+ */
+function generateReply({ decision, executionResult }) {
+  return resolveReplyText(executionResult);
+}
+
+/**
  * Turns one turn's ExecutionResult (orchestration/orchestrator.js) into the
  * final reply text, emitting it through the given stream emitter when
  * nothing has been said yet. Returns the full reply text on success (for
@@ -147,36 +201,23 @@ function createStreamEmitter(res) {
  * @returns {string|null}
  */
 function generateStreamingReply({ decision, executionResult, emitter }) {
-  if (!executionResult) return null;
+  const text = resolveReplyText(executionResult);
+  if (text === null) return null;
 
-  switch (executionResult.action) {
-    case 'capability':
-    case 'tool':
-      return typeof executionResult.output === 'string' && executionResult.output.length > 0
-        ? executionResult.output
-        : null;
-
-    case 'clarify': {
-      const text = CLARIFY_FALLBACK;
-      emitter.delta(text);
-      return text;
-    }
-
-    case 'refuse': {
-      const text = REFUSE_FALLBACK;
-      emitter.delta(text);
-      return text;
-    }
-
-    case 'native':
-    default:
-      return null;
+  // capability/tool text was already emitted as deltas during
+  // orchestrator.execute() (via `onDelta`) — only clarify/refuse's
+  // Gaia-rendered words still need to reach the client here.
+  const action = executionResult && executionResult.action;
+  if (action === 'clarify' || action === 'refuse') {
+    emitter.delta(text);
   }
+  return text;
 }
 
 module.exports = {
   formatReply,
   createStreamEmitter,
+  generateReply,
   generateStreamingReply,
   toCalmError,
   CALM_FALLBACK,

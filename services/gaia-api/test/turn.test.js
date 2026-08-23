@@ -153,6 +153,103 @@ test('performTurn with only unreadable attachments still mentions them without f
   assert.match(seenMessages[0].content, /could not be read as text/);
 });
 
+// --- performTurn / Decision Engine + Orchestrator integration -------------
+//
+// performTurn no longer calls hermes.chat directly — it goes through the
+// same decide() -> execute() -> generateReply() seam as performStreamingTurn
+// (turn.js's own comment explains why this is byte-identical behavior:
+// Desktop's contract has no IntentIQ/ReasonIQ, so intent is always null,
+// which the Decision Engine's safe default routes to the hermes
+// capability). These tests pin that wiring directly, using the same
+// injectable decisionEngine/orchestrate seam performStreamingTurn already
+// has.
+
+test('performTurn routes through the real Decision Engine by default, choosing the hermes capability', async () => {
+  const hermes = { chat: async () => 'hi there' };
+  const result = await performTurn({ messages: [{ role: 'user', content: 'hello' }], systemPrompt: 'SOUL', hermes });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'hi there');
+});
+
+test('performTurn invokes hermes only through the Orchestrator, never directly', async () => {
+  let hermesCalls = 0;
+  const hermes = { chat: async () => { hermesCalls += 1; return 'hi there'; } };
+  const decisionEngineCalls = [];
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'hello' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    decisionEngine: (input) => {
+      decisionEngineCalls.push(input);
+      return { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' };
+    },
+  });
+
+  assert.equal(hermesCalls, 1);
+  assert.equal(decisionEngineCalls.length, 1);
+  assert.equal(decisionEngineCalls[0].intent, null); // Desktop's contract carries no IntentIQ
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'hi there');
+});
+
+test('performTurn: a clarify decision never calls Hermes and still returns a calm 200 reply', async () => {
+  const hermes = { chat: async () => { throw new Error('must not be called'); } };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'draft it and send it' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    decisionEngine: () => ({ action: 'clarify', reason: 'compound turn detected' }),
+  });
+  assert.equal(result.status, 200);
+  assert.match(result.body.reply, /could you say a bit more/);
+});
+
+test('performTurn: a refuse decision never calls Hermes and still returns a calm 200 reply', async () => {
+  const hermes = { chat: async () => { throw new Error('must not be called'); } };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'do something disallowed' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    decisionEngine: () => ({ action: 'refuse', reason: 'policy' }),
+  });
+  assert.equal(result.status, 200);
+  assert.match(result.body.reply, /isn't able to help with that/);
+});
+
+test('performTurn: a native decision has nothing to generate and degrades to a calm 502, without ever reaching Hermes', async () => {
+  const hermes = { chat: async () => { throw new Error('must not be called'); } };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'hi' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    decisionEngine: () => ({ action: 'native' }),
+  });
+  assert.equal(result.status, 502);
+  assert.equal(result.body.error, 'gaia could not answer right now');
+});
+
+test('performTurn: an Orchestrator failure degrades to a calm 502, never leaking provider details', async () => {
+  const hermes = { chat: async () => { throw new Error('hermes responded 401 at http://internal:8642'); } };
+  const result = await performTurn({ messages: [{ role: 'user', content: 'hello' }], systemPrompt: 'SOUL', hermes });
+  assert.equal(result.status, 502);
+  assert.equal(result.body.error, 'gaia could not answer right now');
+  assert.ok(!JSON.stringify(result.body).includes('hermes'));
+  assert.ok(!JSON.stringify(result.body).includes('8642'));
+});
+
+test('performTurn: a Decision Engine failure degrades to the hermes capability, never breaking the turn', async () => {
+  const hermes = { chat: async () => 'a reply despite the decision engine failing' };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'hello' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    decisionEngine: () => { throw new Error('boom'); },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'a reply despite the decision engine failing');
+});
+
 // --- performStreamingTurn (docs/web-migration-plan.md Phase B) -------------
 
 test('performStreamingTurn validates before ever touching the response stream', async () => {

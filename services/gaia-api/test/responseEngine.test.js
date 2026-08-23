@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatReply, createStreamEmitter, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
+const { formatReply, createStreamEmitter, generateReply, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
 
 function fakeRes() {
   return {
@@ -180,4 +180,32 @@ test('generateStreamingReply returns null when there is no execution result at a
   const res = fakeRes();
   const emitter = createStreamEmitter(res);
   assert.equal(generateStreamingReply({ decision: { action: 'capability' }, executionResult: null, emitter }), null);
+});
+
+// --- generateReply (non-streaming twin, used by performTurn) --------------
+
+test('generateReply reports back a capability/tool\'s returned text as-is', () => {
+  assert.equal(
+    generateReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: 'hi there' } }),
+    'hi there'
+  );
+  assert.equal(
+    generateReply({ decision: { action: 'tool' }, executionResult: { action: 'tool', output: 'search result' } }),
+    'search result'
+  );
+});
+
+test('generateReply returns null when a capability/tool produced no usable output', () => {
+  assert.equal(generateReply({ decision: {}, executionResult: { action: 'capability', output: null } }), null);
+  assert.equal(generateReply({ decision: {}, executionResult: { action: 'capability', output: '' } }), null);
+});
+
+test('generateReply renders Gaia\'s own calm words for clarify/refuse, without a capability', () => {
+  assert.equal(generateReply({ decision: { action: 'clarify' }, executionResult: { action: 'clarify', output: null } }), CLARIFY_FALLBACK);
+  assert.equal(generateReply({ decision: { action: 'refuse' }, executionResult: { action: 'refuse', output: null } }), REFUSE_FALLBACK);
+});
+
+test('generateReply returns null for native (no non-Hermes generator exists yet) and for a missing execution result', () => {
+  assert.equal(generateReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null } }), null);
+  assert.equal(generateReply({ decision: {}, executionResult: null }), null);
 });

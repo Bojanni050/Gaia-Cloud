@@ -18,12 +18,17 @@
  * header comment for why that seam exists and what it deliberately does
  * not do.
  *
- * performTurn (below) is Desktop's exact, unchanged contract — non-
- * streaming, always the full SOUL, no memory. performStreamingTurn is
- * additive, built for docs/web-migration-plan.md's Phase B (a faithful
- * parity port of Web's client-side turn lifecycle: context-aware document
- * selection, policy-gated recall/reflection, streaming) — it does not
- * modify performTurn/assembleMessages or anything Desktop depends on.
+ * performTurn (below) is Desktop's exact, unchanged *contract* — same
+ * input/output shape, non-streaming, always the full SOUL, no memory, no
+ * IntentIQ/ReasonIQ. Internally it now goes through the same Decision
+ * Engine / Orchestrator seam as performStreamingTurn (decision/
+ * decisionEngine.js, orchestration/orchestrator.js) instead of calling
+ * Hermes directly — see performTurn's own comment for why that is still
+ * byte-identical behavior. performStreamingTurn is additive, built for
+ * docs/web-migration-plan.md's Phase B (a faithful parity port of Web's
+ * client-side turn lifecycle: context-aware document selection,
+ * policy-gated recall/reflection, streaming) — neither path modifies
+ * assembleMessages or anything Desktop depends on.
  *
  * performTurn's own contract is extended additively, the same way: an
  * optional `attachments` param (already-resolved library files — see
@@ -48,7 +53,7 @@ const { buildSystemPrompt } = require('./foundation');
 const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
 const { classify: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
-const { formatReply, createStreamEmitter, generateStreamingReply } = require('./responseEngine');
+const { formatReply, createStreamEmitter, generateReply, generateStreamingReply } = require('./responseEngine');
 const { decide: decideAction } = require('./decision/decisionEngine');
 const { execute: executeDecision } = require('./orchestration/orchestrator');
 
@@ -115,15 +120,27 @@ function renderAttachmentContext(attachments) {
 /**
  * Performs one conversational turn.
  *
+ * Desktop's contract carries no IntentIQ/ReasonIQ (no memory, no Logos,
+ * exactly as before this seam existed) — this path always hands the
+ * Decision Engine `intent: null`, which its safe default routes to the
+ * hermes capability (decision/decisionEngine.js), the same capability this
+ * path has always used. The Orchestrator (orchestration/orchestrator.js)
+ * then executes exactly that decision. The net effect is byte-identical to
+ * calling `hermes.chat` directly — Hermes is just never reached by a name
+ * hardcoded in this function anymore; it is reached because the Decision
+ * Engine named it.
+ *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
  *   systemPrompt: string,
  *   hermes: { chat: (messages: Array) => Promise<string> },
  *   attachments?: Array<{ filename: string, content: string|null }>,
+ *   decisionEngine?: (input: object) => import('./decision/decisionSchema').Decision,
+ *   orchestrate?: (decision: object, context: object) => Promise<object>,
  * }} input
  * @returns {Promise<{status: number, body: object}>} an HTTP-shaped result
  */
-async function performTurn({ messages, systemPrompt, hermes, attachments }) {
+async function performTurn({ messages, systemPrompt, hermes, attachments, decisionEngine = decideAction, orchestrate = executeDecision }) {
   const problem = validateMessages(messages);
   if (problem) {
     return { status: 400, body: { error: problem } };
@@ -131,17 +148,38 @@ async function performTurn({ messages, systemPrompt, hermes, attachments }) {
 
   const attachmentBlock = renderAttachmentContext(attachments);
   const fullSystemPrompt = attachmentBlock ? `${systemPrompt}\n\n---\n\n${attachmentBlock}` : systemPrompt;
+  const assembled = assembleMessages(fullSystemPrompt, messages);
+
+  let decision;
+  try {
+    decision = decisionEngine({
+      userInput: latestUserText(messages),
+      intent: null,
+      context: null,
+      reasoning: null,
+      availableCapabilities: [{ id: 'hermes' }],
+    });
+  } catch (_) {
+    // The Decision Engine must never take down a turn — degrade to the
+    // same hermes capability it would otherwise have chosen anyway.
+    decision = { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'decision engine failed; defaulting to the hermes capability' };
+  }
 
   // Hermes is a capability: it returns a result, it does not speak to the
-  // client. Whatever it returns (or throws) is handed to the Response
-  // Engine, which is the only thing that decides what becomes the reply
-  // and how a failure is phrased — see responseEngine.js.
-  let reply = null;
+  // client. Whatever the Orchestrator returns (or however it fails) is
+  // handed to the Response Engine, which is the only thing that decides
+  // what becomes the reply and how a failure is phrased — see
+  // responseEngine.js.
+  const capabilities = { hermes: { invoke: (msgs) => hermes.chat(msgs) } };
+
+  let executionResult;
   try {
-    reply = await hermes.chat(assembleMessages(fullSystemPrompt, messages));
+    executionResult = await orchestrate(decision, { capabilities, messages: assembled });
   } catch (_) {
-    reply = null;
+    executionResult = null;
   }
+
+  const reply = generateReply({ decision, executionResult });
   return formatReply(reply);
 }
 
