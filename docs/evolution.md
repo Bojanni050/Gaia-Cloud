@@ -632,6 +632,18 @@ The actual constitution — the "You are Gaia…" document with her character, c
 
 ---
 
+## Amendment — SOUL: No Tool-Call Syntax, Ever
+
+**Context.** Live in production, shortly after the web tool (`src/tools/braveSearch.js`) shipped, a real turn leaked raw pseudo-function-calling syntax straight into the user-visible reply: `<tool_call> <function=webSearch> <parameter=query>best Dutch text-to-speech providers API 2026</parameter> </function> </tool_call>`. The decision log for that exact turn showed the cause plainly — IntentIQ resolved `sourceOfTruth: "unknown"` for the Dutch phrasing ("Je mag wel even kijken naar een Nederlandse text-to-speech aanbieder"), so the Decision Engine correctly fell through to `action: "native"`, not the web tool. The native generator's underlying model — independently of any prompt engineering on Gaia's side, since neither `gaiaGenerator.js` nor `hermesClient.js` ever sends a `tools`/`functions` schema in the request body — hallucinated tool-calling markup anyway, apparently primed by the user's preceding message mentioning that Gaia "now has a websearch capability."
+
+**What changed.** `identity/soul.md` (now v1.1.1) — one new bullet under "How you communicate": Gaia has no tool-calling or function-calling mechanism of her own; whatever a turn needs is already decided and resolved before she ever generates a word (exactly true of this architecture — see this document's own Decision Engine/Orchestrator amendments), so she must never emit tool-call syntax, function tags, JSON action blocks, or similar machinery-shaped notation, only plain natural language.
+
+**What was deliberately not built.** No server-side sanitization/stripping of leaked tool-call-shaped text was added to the Response Engine. The prompt-level fix addresses the actual cause (a model producing text it was never asked to produce); a regex-based strip would be a band-aid over that, with its own false-positive risk (e.g. a user genuinely asking Gaia to explain what tool-calling syntax looks like). If this recurs after the SOUL update, a defense-in-depth filter at the Response Engine boundary is the next lever — it was not needed on the first attempt at the root cause.
+
+**Why this matters.** This is a second, different instance of the same underlying invariant Gaia's architecture already protects for providers, models, and transport details: nothing about the machinery beneath Gaia should ever reach the person she's talking to. A hallucinated tool-call tag is just as much a leak of "the machinery underneath" as a stack trace or a provider name would be — SOUL already forbade the latter; it needed to say so for the former too.
+
+---
+
 ## How to Read This Document
 
 Each milestone records:
