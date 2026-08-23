@@ -388,6 +388,34 @@ test('combineConsensus: neither tier has an opinion -> unknown', () => {
   assert.equal(combined.status, 'unknown');
 });
 
+// Found live in production: a real semantic model call returned intent:
+// null (no single confident winner) alongside a populated candidates list
+// — genuine model uncertainty expressed as "here are plausible options,
+// I won't commit to one", distinct from "I have no opinion at all". The
+// previous version of this branch discarded those candidates entirely,
+// reporting status:'unknown'/ambiguous:false even though real signal
+// existed and needsClarification was already true — an inconsistent
+// result (candidates populated, yet "no opinion").
+test('combineConsensus: neither tier commits to a top intent, but real candidates exist -> best guess reported, honestly ambiguous', () => {
+  const heuristic = classify(user('Ik weet niet goed wat ik hiermee aan moet, kun jij me helpen dit uit te zoeken?'), silent);
+  const semantic = {
+    intent: null,
+    confidence: 0,
+    candidates: [{ intent: 'inform.explain', confidence: 0.4 }, { intent: 'decide.support', confidence: 0.3 }],
+    sourceOfTruth: 'unknown',
+    speechAct: 'request',
+    referents: [],
+    ambiguous: true,
+    reason: null,
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'inform.explain'); // highest-scoring merged candidate
+  assert.equal(combined.confidence, 0.4);
+  assert.equal(combined.status, 'ambiguous');
+  assert.equal(combined.ambiguous, true);
+  assert.equal(combined.needsClarification, true);
+});
+
 test('combineConsensus: sourceOfTruth prefers the heuristic\'s own rule-based judgment when it resolved to anything specific', () => {
   const heuristic = { intent: 'act.perform', status: 'accepted', confidence: 0.9, candidates: [{ intent: 'act.perform', score: 0.9 }], sourceOfTruth: 'tool', meta: {} };
   const semantic = { intent: 'act.perform', confidence: 0.9, candidates: [], sourceOfTruth: 'external_knowledge', speechAct: 'request', referents: [], ambiguous: false, reason: null };

@@ -641,8 +641,22 @@ function combineConsensus(heuristic, semantic) {
     confidence = heuristicTopConfidence;
     status = heuristic.status;
     ambiguous = heuristic.status === 'ambiguous';
+  } else if (candidates.length > 0) {
+    // Neither tier committed to a single top intent — this is what a
+    // semantic result legitimately looks like when the model itself
+    // reports "several plausible candidates, no clear winner" (intent:
+    // null alongside a populated candidates list — a real case seen in
+    // production, not a hypothetical). Report the best guess honestly,
+    // marked ambiguous, rather than collapsing real signal into a bare
+    // "unknown" that would throw the candidates away. Matches the brief's
+    // own example shape: an ambiguous result still names its best-guess
+    // `intent`, it just also says `ambiguous: true`.
+    intent = candidates[0].intent;
+    confidence = capConfidence(candidates[0].score);
+    status = 'ambiguous';
+    ambiguous = true;
   }
-  // else: neither tier has an opinion — stays unknown/0/false, as initialized.
+  // else: truly nothing from either tier — stays unknown/0/false, as initialized.
 
   const sourceOfTruth = (heuristic.sourceOfTruth && heuristic.sourceOfTruth !== 'unknown')
     ? heuristic.sourceOfTruth
