@@ -38,11 +38,11 @@ test('readTtsConfig defaults to wav format and the built-in Gaia voice descripti
   assert.equal(config.voiceDescription, DEFAULT_VOICE_DESCRIPTION);
 });
 
-test('DEFAULT_VOICE_DESCRIPTION reads calm/warm/unhurried, not a named voice or impersonation', () => {
+test('DEFAULT_VOICE_DESCRIPTION reads calm/warm/lively, not a named voice or impersonation', () => {
   assert.match(DEFAULT_VOICE_DESCRIPTION, /calm/i);
   assert.match(DEFAULT_VOICE_DESCRIPTION, /warm/i);
-  assert.match(DEFAULT_VOICE_DESCRIPTION, /unhurried/i);
-  assert.match(DEFAULT_VOICE_DESCRIPTION, /never theatrical/i);
+  assert.match(DEFAULT_VOICE_DESCRIPTION, /liveliness/i);
+  assert.match(DEFAULT_VOICE_DESCRIPTION, /avoid sounding dramatic, solemn, melancholic/i);
 });
 
 test('isConfigured requires both baseUrl and model', () => {

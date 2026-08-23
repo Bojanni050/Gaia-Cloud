@@ -65,14 +65,15 @@ const DEFAULT_TIMEOUT_MS = 30000;
  * contract (a prompt, not a preset/sample selection).
  */
 const DEFAULT_VOICE_DESCRIPTION = [
-  'Calm, intelligent adult female voice.',
-  'Warm but restrained. Low to medium pitch.',
-  'Unhurried natural pacing. Clear articulation. Quiet confidence.',
-  'Subtle warmth and empathy. Natural breathing and small pauses.',
-  'Never theatrical. Never overly cheerful. Never exaggerated.',
-  'Attentive, perceptive and grounded.',
-  'The voice should feel calm and reassuring without sounding sentimental.',
-  'It should sound like a thoughtful person speaking naturally to one person nearby.',
+  'Calm, intelligent adult female voice with a warm and naturally engaging presence.',
+  'Clear, relaxed and confident, with a gentle sense of liveliness.',
+  'Medium pitch, natural conversational pacing and expressive but restrained intonation.',
+  'She sounds attentive, curious and genuinely present.',
+  'A subtle smile can occasionally be heard in the voice.',
+  'Warmth and empathy should feel natural rather than sentimental.',
+  'Use light, natural breaths and brief pauses between thoughts.',
+  'Avoid sounding dramatic, solemn, melancholic or overly serious.',
+  'The overall impression is calm, intelligent, approachable and quietly alive.',
 ].join(' ');
 
 /**
