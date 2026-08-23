@@ -482,6 +482,22 @@ test('scenario: "Herschrijf dit wat scherper." -> create.transform', () => {
   assert.equal(d.intent, 'create.transform');
 });
 
+// Found during live validation: the infinitive/conjugated forms of these
+// Dutch verbs weren't covered by the imperative-stem-only patterns above,
+// because Dutch's own open/closed-syllable spelling rules change the
+// stem's last letter(s) in the infinitive (not just append a suffix).
+test('scenario: "Kun je dit herschrijven?" -> create.transform (infinitive form, not just the imperative stem)', () => {
+  assert.equal(classify(user('Kun je dit herschrijven?'), silent).intent, 'create.transform');
+});
+
+test('scenario: "Kun je dit vertalen naar het Engels?" -> create.transform (vertaal -> vertalen spelling alternation)', () => {
+  assert.equal(classify(user('Kun je dit vertalen naar het Engels?'), silent).intent, 'create.transform');
+});
+
+test('scenario: "Kun je dit verbeteren?" -> create.transform', () => {
+  assert.equal(classify(user('Kun je dit verbeteren?'), silent).intent, 'create.transform');
+});
+
 test('scenario: "Wat denk je dat ik hiermee moet doen?" -> decide.support', () => {
   const d = classify(user('Wat denk je dat ik hiermee moet doen?'), silent);
   assert.equal(d.intent, 'decide.support');

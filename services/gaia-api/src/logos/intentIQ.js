@@ -143,7 +143,18 @@ const SIGNALS = {
     phrase('fix (this|the|it)'), boundary('translate'),
     /\bmake (it|this|the)\b.{0,25}\b(more|sound|warmer|shorter|clearer|softer|formal|casual|better)\b/i,
     phrase('clean up'), phrase('edit (this|it|the)'),
-    boundary('herschrijf'), boundary('verbeter'), boundary('vertaal'),
+    // Dutch conjugations, not whole-word matches — "herschrijf" alone
+    // missed the infinitive "herschrijven" ("Kun je dit herschrijven?"
+    // scored zero signal anywhere, a real gap found during live
+    // validation). A plain \w* stem wildcard doesn't fix "herschrijf" or
+    // "vertaal": Dutch's open/closed-syllable spelling alternation changes
+    // the stem's own last letter(s) in the infinitive (herschrijf -> herschrijV-en;
+    // vertaAAl -> vertAAl loses a vowel -> vertal-en) — matched as
+    // explicit alternations instead. "verbeter" has no such alternation
+    // (verbeter-en), so \w* alone already covers it.
+    /\b(herschrijf|herschrijft|herschrijven)\b/i,
+    /\bverbeter\w*\b/i,
+    /\b(vertaal|vertaalt|vertaald|vertalen)\b/i,
     /\bmaak (dit|het)\b.{0,25}\b(korter|warmer|duidelijker)\b/i, phrase('pas .* aan'),
   ],
   'decide.support': [
