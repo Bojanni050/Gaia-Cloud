@@ -93,6 +93,28 @@ test('search() formats results into a calm, source-attributed answer', async () 
   assert.match(text, /official API reference/);
 });
 
+test("search() decodes HTML entities Brave's own snippets carry (e.g. &quot;), not just strips tags — found live in production", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      web: {
+        results: [{
+          title: 'API Overview | OpenAI API Reference',
+          url: 'https://platform.openai.com/docs/api-reference/introduction',
+          description: 'Don&#8217;t share it with others. string key = Environment.GetEnvironmentVariable(&quot;OPENAI_API_KEY&quot;)!;',
+        }],
+      },
+    }),
+  });
+  const client = createBraveSearch({ apiKey: 'test-key', fetchImpl });
+  const text = await client.search('openai api docs');
+
+  assert.match(text, /"OPENAI_API_KEY"/);
+  assert.match(text, /Don’t share it/);
+  assert.ok(!text.includes('&quot;'));
+  assert.ok(!text.includes('&#8217;'));
+});
+
 test('search() answers honestly (not an error) when there are no results', async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => ({ web: { results: [] } }) });
   const client = createBraveSearch({ apiKey: 'test-key', fetchImpl });

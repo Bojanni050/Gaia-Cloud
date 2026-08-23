@@ -54,9 +54,25 @@ function isConfigured(config) {
   return Boolean(config.apiKey);
 }
 
-/** Strips Brave's own highlight markup (e.g. `<strong>`) from a snippet. */
+const HTML_ENTITIES = {
+  quot: '"', amp: '&', lt: '<', gt: '>', apos: "'", nbsp: ' ', mdash: '—', ndash: '–',
+};
+
+/** Decodes the small set of HTML entities Brave's own snippets actually use (named, decimal, hex). */
+function decodeHtmlEntities(text) {
+  return String(text || '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity) => {
+    if (entity[0] === '#') {
+      const codePoint = entity[1].toLowerCase() === 'x' ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+      return Number.isNaN(codePoint) ? match : String.fromCodePoint(codePoint);
+    }
+    const key = entity.toLowerCase();
+    return key in HTML_ENTITIES ? HTML_ENTITIES[key] : match;
+  });
+}
+
+/** Strips Brave's own highlight markup (e.g. `<strong>`) and decodes HTML entities in a snippet. */
 function stripHtml(text) {
-  return String(text || '').replace(/<[^>]+>/g, '');
+  return decodeHtmlEntities(String(text || '').replace(/<[^>]+>/g, ''));
 }
 
 /**
