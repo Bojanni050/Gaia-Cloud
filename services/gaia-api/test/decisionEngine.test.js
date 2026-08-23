@@ -2,8 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { decide, isNativeTurn } = require('../src/decision/decisionEngine');
-const { ACTIONS, validateDecision } = require('../src/decision/decisionSchema');
+const { decide, isNativeTurn, mapReasoningLevel, usedContextSources } = require('../src/decision/decisionEngine');
+const { ACTIONS, REASONING_LEVELS, validateDecision } = require('../src/decision/decisionSchema');
 
 test('decisionSchema exposes exactly the five allowed actions', () => {
   assert.deepEqual(ACTIONS, ['native', 'capability', 'tool', 'clarify', 'refuse']);
@@ -154,7 +154,10 @@ test('decide() never produces a "useHermes"-shaped flag — only the schema\'s f
     availableCapabilities: [{ id: 'hermes' }],
   });
   assert.ok(!('useHermes' in decision));
-  assert.deepEqual(Object.keys(decision).sort(), ['action', 'capability', 'input', 'reason', 'task'].sort());
+  assert.deepEqual(
+    Object.keys(decision).sort(),
+    ['action', 'capability', 'input', 'reason', 'task', 'context', 'reasoning', 'capabilities'].sort()
+  );
 });
 
 // --- Architectural invariant: TTS plays no role in the Decision Engine -----
@@ -165,4 +168,125 @@ test('decisionEngine.js has no code-level dependency on TTS/speech — voice is 
   const source = fs.readFileSync(path.resolve(__dirname, '../src/decision/decisionEngine.js'), 'utf-8');
   const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
   assert.ok(!/mimoTts|speech|\btts\b/i.test(codeOnly), 'decisionEngine.js must not reference TTS/speech');
+});
+
+// --- decision-as-plan: context / reasoning / capabilities -----------------
+
+test('decisionSchema exposes the three reasoning levels', () => {
+  assert.deepEqual(REASONING_LEVELS, ['none', 'light', 'deep']);
+});
+
+test('mapReasoningLevel interprets ReasonIQ output without re-classifying it', () => {
+  assert.equal(mapReasoningLevel(null), 'none');
+  assert.equal(mapReasoningLevel(undefined), 'none');
+  assert.equal(mapReasoningLevel({ reasoningDepth: 'shallow' }), 'light');
+  assert.equal(mapReasoningLevel({ reasoningDepth: 'deep' }), 'deep');
+});
+
+test('usedContextSources reports hindsight only when reflections or mental models are actually non-empty', () => {
+  assert.deepEqual(usedContextSources(null), []);
+  assert.deepEqual(usedContextSources(undefined), []);
+  assert.deepEqual(usedContextSources({}), []);
+  assert.deepEqual(usedContextSources({ reflections: [], mentalModels: [] }), []);
+  assert.deepEqual(usedContextSources({ reflections: [{ text: 'x' }] }), ['hindsight']);
+  assert.deepEqual(usedContextSources({ mentalModels: [{ id: 'm' }] }), ['hindsight']);
+});
+
+test('decide() always attaches context/reasoning/capabilities, even on the plainest native turn (test #1: native without context)', () => {
+  const decision = decide({
+    userInput: 'hi',
+    intent: null,
+    context: null,
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.deepEqual(decision.context, []);
+  assert.equal(decision.reasoning, 'none');
+  assert.deepEqual(decision.capabilities, []);
+});
+
+test('decide() reports context: ["hindsight"] on a native decision when Hindsight actually returned something (test #2: native with Hindsight context)', () => {
+  const decision = decide({
+    userInput: 'hoi Gaia',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    context: { reflections: [{ text: 'Bo prefers async updates' }], mentalModels: [] },
+    reasoning: { reasoningDepth: 'shallow' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.deepEqual(decision.context, ['hindsight']);
+  assert.equal(decision.reasoning, 'light');
+  assert.deepEqual(decision.capabilities, []);
+});
+
+test('decide() routes a personal-memory-sourced turn to native, not Hermes — Hindsight supplies context, never the answer (test #8)', () => {
+  const decision = decide({
+    userInput: 'wat weet je nog van mij en Luca?',
+    intent: { intent: 'memory.inspect', status: 'accepted', needsClarification: false, sourceOfTruth: 'memory' },
+    context: { reflections: [{ text: 'Bo and Luca worked on a project together' }], mentalModels: [] },
+    reasoning: { reasoningDepth: 'shallow' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.notEqual(decision.action, 'capability');
+  assert.deepEqual(decision.context, ['hindsight']);
+  assert.deepEqual(decision.capabilities, []);
+});
+
+test('decide() combines Hindsight context with a Hermes decision under deep reasoning (test #3 + #9)', () => {
+  const decision = decide({
+    userInput: 'analyseer mijn Gaia-architectuur op race conditions',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    context: { reflections: [{ text: "Bo's Gaia architecture uses a Decision Engine" }], mentalModels: [] },
+    reasoning: { reasoningDepth: 'deep' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
+  assert.deepEqual(decision.context, ['hindsight']);
+  assert.equal(decision.reasoning, 'deep');
+  assert.deepEqual(decision.capabilities, ['hermes']);
+});
+
+test('decide() routes current-external-information turns to the web tool when available (test #4)', () => {
+  const decision = decide({
+    userInput: 'what is the current OpenAI API documentation?',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'web' }],
+  });
+  assert.equal(decision.action, 'tool');
+  assert.equal(decision.capability, 'web');
+  assert.deepEqual(decision.capabilities, ['web']);
+});
+
+test('decide() falls back to Hermes for external-knowledge turns when no web tool is available (test #7: capability availability)', () => {
+  const decision = decide({
+    userInput: 'what is the current OpenAI API documentation?',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
+});
+
+test('decide() still clarifies ambiguous turns regardless of context/reasoning (test #5)', () => {
+  const decision = decide({
+    userInput: 'draft it and send it',
+    intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true, sourceOfTruth: 'conversation' },
+    context: { reflections: [{ text: 'x' }] },
+    reasoning: { reasoningDepth: 'shallow' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'clarify');
+});
+
+test('validateDecision accepts a full plan and rejects malformed context/reasoning/capabilities', () => {
+  assert.equal(
+    validateDecision({ action: 'native', context: ['hindsight'], reasoning: 'light', capabilities: [] }),
+    null
+  );
+  assert.match(validateDecision({ action: 'native', context: 'hindsight' }), /context must be an array/);
+  assert.match(validateDecision({ action: 'native', reasoning: 'medium' }), /reasoning must be one of/);
+  assert.match(validateDecision({ action: 'native', capabilities: 'hermes' }), /capabilities must be an array/);
 });

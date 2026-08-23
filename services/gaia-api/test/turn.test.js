@@ -604,9 +604,10 @@ test('performStreamingTurn persists both the IntentIQ decision and the ReasonIQ 
   });
   await flush();
 
-  assert.equal(appended.length, 2);
+  assert.equal(appended.length, 3);
   assert.equal(appended[0].kind, 'intentiq.decision');
   assert.equal(appended[1].kind, 'reasoniq.result');
+  assert.equal(appended[2].kind, 'decision.plan');
 });
 
 test('performStreamingTurn never calls decisionStore.append when no decisionStore is given (backward compatible)', async () => {
@@ -899,4 +900,88 @@ test('performStreamingTurn with nativeGenerator: streams native response, Hermes
   assert.equal(res.headers['Content-Type'], 'text/event-stream');
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
   assert.equal(hermesCalls, 0, 'Hermes must not be called on a native streaming turn');
+});
+
+// --- Decision-as-plan architecture tests (real IntentIQ/ReasonIQ/Decision
+// Engine end-to-end — no injected decisionEngine/orchestrate) -------------
+//
+// These pin the concrete flows described in the task brief: a personal-
+// memory question retrieves Hindsight context and is answered natively
+// (Hermes untouched), while a genuinely complex analysis question still
+// routes through Hermes, optionally informed by the same Hindsight
+// context. Both use the real classifier/decision engine, not fakes, so a
+// future change to IntentIQ's signal sets or the Decision Engine's routing
+// is caught here if it regresses either behavior.
+
+test('architecture: a personal-memory question retrieves Hindsight context and is answered natively — Hermes is never called', async () => {
+  const res = fakeRes();
+  let recallQuery = null;
+  const hindsight = {
+    recall: async (query) => {
+      recallQuery = query;
+      return [{ text: 'Bo and Luca started a project together in 2025', scores: { final: 0.9 } }];
+    },
+    reflect: async () => {},
+  };
+  const hermes = { stream: async () => { throw new Error('Hermes must not be called for a personal-memory question'); } };
+  const nativeGenerator = {
+    generate: async () => 'You mentioned Luca before — you two started a project together.',
+    stream: async (messages, { onDelta }) => {
+      onDelta('You mentioned Luca before.', false);
+      return 'You mentioned Luca before.';
+    },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Weet je nog wat we over Luca bespraken?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    nativeGenerator,
+    res,
+  });
+
+  assert.ok(recallQuery, 'Hindsight recall should have been attempted for this memory-referencing turn');
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.match(res.written[0], /You mentioned Luca before/);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('architecture: a complex analysis question routes through Hermes, with Hindsight context folded in when relevant', async () => {
+  const res = fakeRes();
+  let recallQuery = null;
+  const hindsightReflection = "Bo's Gaia architecture uses a Decision Engine and an Orchestrator";
+  const hindsight = {
+    recall: async (query) => {
+      recallQuery = query;
+      return [{ text: hindsightReflection, scores: { final: 0.8 } }];
+    },
+    reflect: async () => {},
+  };
+  const hermesMessages = [];
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      hermesMessages.push(messages);
+      onDelta('Here is the analysis of your architecture.', false);
+      return 'Here is the analysis of your architecture.';
+    },
+  };
+  const nativeGenerator = { generate: async () => { throw new Error('native must not be used for this turn'); } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer mijn Gaia-project op mogelijke race conditions in de architecture.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    nativeGenerator,
+    res,
+  });
+
+  assert.ok(recallQuery, 'Hindsight recall should have been attempted for this architecture question');
+  assert.equal(hermesMessages.length, 1);
+  // The Hindsight reflection that was actually retrieved reached Hermes's
+  // own prompt — "combined with Hermes", not discarded.
+  const seenText = hermesMessages[0].map((m) => m.content).join('\n');
+  assert.ok(seenText.includes(hindsightReflection));
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });

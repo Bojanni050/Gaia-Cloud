@@ -165,6 +165,7 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, native
     // same hermes capability it would otherwise have chosen anyway.
     decision = { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'decision engine failed; defaulting to the hermes capability' };
   }
+  logDecisionPlan(decision);
 
   // Hermes is a capability: it returns a result, it does not speak to the
   // client. Whatever the Orchestrator returns (or however it fails) is
@@ -189,6 +190,39 @@ function latestUserText(messages) {
     if (messages[i].role === 'user') return messages[i].content || '';
   }
   return '';
+}
+
+/**
+ * Logs the Decision Engine's plan for this turn — action, the context
+ * sources it drew on, its reasoning level, and which capability(ies) it
+ * needs (decisionSchema.js's additive plan fields) — never the user's own
+ * input text. When `logger` is given (performStreamingTurn's
+ * decisionLogger), it both console.logs and persists to decisionStore,
+ * exactly like IntentIQ/ReasonIQ's own decision lines; otherwise this
+ * just console.logs, for live `docker logs` visibility on paths (like
+ * performTurn) that have no decisionStore wired in. Never allowed to
+ * affect the turn — a logging failure is swallowed, same posture as
+ * every other observability call in this file.
+ */
+function logDecisionPlan(decision, logger) {
+  try {
+    const line = JSON.stringify({
+      kind: 'decision.plan',
+      action: decision.action,
+      capability: decision.capability || null,
+      context: decision.context || [],
+      reasoning: decision.reasoning || 'none',
+      capabilities: decision.capabilities || [],
+      reason: decision.reason || null,
+    });
+    if (logger) {
+      logger(line);
+    } else {
+      console.log(line);
+    }
+  } catch (_) {
+    // Observability must never take down a real conversational turn.
+  }
 }
 
 /**
@@ -361,6 +395,7 @@ async function performStreamingTurn({
       reason: 'decision engine failed; defaulting to the hermes capability',
     };
   }
+  logDecisionPlan(decision, decisionLogger);
 
   const capabilities = {
     hermes: { invoke: (msgs, { onDelta: emitDelta } = {}) => hermes.stream(msgs, { onDelta: emitDelta }) },
