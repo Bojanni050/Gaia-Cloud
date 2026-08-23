@@ -12,6 +12,8 @@
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
  *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
+ *   POST /speech             → audio/wav            (auth required; { text } → Gaia's voice, src/speech/mimoTts.js —
+ *                              presentation-only, always *after* a text reply exists, never part of the Decision Engine)
  *
  * Everything cognitive lives here or behind a capability (Hermes, or Gaia's
  * own native generator — src/generation/gaiaGenerator.js, wired in below via
@@ -27,6 +29,7 @@ const { parseTokens, createAuthMiddleware } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient } = require('./hindsightClient');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
+const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -59,6 +62,12 @@ function createApp(env = process.env) {
   // Decision Engine never sees a "native" capability and every turn routes
   // through Hermes exactly as before this existed (see .env.example).
   const nativeGenerator = createNativeGeneratorFromEnv(env);
+  // Gaia's voice (src/speech/mimoTts.js) — undefined when GAIA_TTS_BASE_URL/
+  // GAIA_TTS_MODEL are unset, in which case POST /speech answers 503
+  // rather than attempting a call with nothing configured. Entirely
+  // separate from nativeGenerator above: this never influences what Gaia
+  // says, only how an already-decided reply sounds.
+  const tts = createTtsFromEnv(env);
   const auth = createAuthMiddleware(parseTokens(env.GAIA_API_TOKEN));
 
   const app = express();
@@ -138,6 +147,31 @@ function createApp(env = process.env) {
       } catch (_) {
         // Never surface a history-write failure as a turn failure.
       }
+    }
+  });
+
+  // Gaia's voice — strictly a presentation step on an *already-produced*
+  // Gaia text reply. This route never generates, selects, or judges text;
+  // it only ever turns given text into audio. `text` here is expected to
+  // be the client's already-received Gaia response (see the desktop's own
+  // wiring), not a fresh prompt for Gaia to answer — this route does not
+  // run IntentIQ/ReasonIQ/the Decision Engine/Orchestrator/Response Engine
+  // at all, by construction (it never imports any of them).
+  app.post('/speech', auth, async (req, res) => {
+    const text = req.body && req.body.text;
+    if (typeof text !== 'string' || text.trim() === '') {
+      return res.status(400).json({ error: 'text must be a non-empty string' });
+    }
+    if (!tts) {
+      return res.status(503).json({ error: 'speech is not configured' });
+    }
+    try {
+      const { audio, mimeType } = await tts.synthesize(text);
+      res.status(200).type(mimeType).send(audio);
+    } catch (_) {
+      // Calm, generic — same posture as responseEngine.js's toCalmError:
+      // never forward the underlying error, provider name, or endpoint.
+      res.status(502).json({ error: 'gaia could not speak right now' });
     }
   });
 

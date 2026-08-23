@@ -142,3 +142,13 @@ test('execute() never makes its own judgment call — the same decision always e
   await execute(decision, { capabilities });
   assert.equal(invokeCount, 2);
 });
+
+// --- Architectural invariant: TTS plays no role in the Orchestrator --------
+
+test('orchestrator.js has no code-level dependency on TTS/speech — voice is presentation-only, never an execution path', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/orchestration/orchestrator.js'), 'utf-8');
+  const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  assert.ok(!/mimoTts|speech|\btts\b/i.test(codeOnly), 'orchestrator.js must not reference TTS/speech');
+});

@@ -156,3 +156,13 @@ test('decide() never produces a "useHermes"-shaped flag — only the schema\'s f
   assert.ok(!('useHermes' in decision));
   assert.deepEqual(Object.keys(decision).sort(), ['action', 'capability', 'input', 'reason', 'task'].sort());
 });
+
+// --- Architectural invariant: TTS plays no role in the Decision Engine -----
+
+test('decisionEngine.js has no code-level dependency on TTS/speech — voice is presentation-only, never a routing signal', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/decision/decisionEngine.js'), 'utf-8');
+  const codeOnly = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  assert.ok(!/mimoTts|speech|\btts\b/i.test(codeOnly), 'decisionEngine.js must not reference TTS/speech');
+});

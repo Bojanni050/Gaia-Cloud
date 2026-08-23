@@ -24,6 +24,7 @@ const { createApp } = require('../src/server');
 const TOKEN = 'test-token';
 const NATIVE_BASE = 'http://fake-native.internal/v1';
 const HERMES_BASE = 'http://fake-hermes.internal/v1';
+const TTS_BASE = 'http://fake-tts.internal/v1';
 
 // createApp() -> loadFoundationDocuments() hard-fails without a
 // foundation-artifact.json (see foundation.js) — a file that only exists
@@ -86,7 +87,7 @@ function fakeResponse(isStream, content) {
  * loudly on anything else (e.g. an accidental real network call to
  * Hindsight) so a wiring mistake can't hide behind a silently-caught error.
  */
-function mockFetch({ onNative, onHermes } = {}) {
+function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false } = {}) {
   return async (url, options = {}) => {
     const href = String(url);
     const requestBody = options.body ? JSON.parse(options.body) : {};
@@ -97,6 +98,16 @@ function mockFetch({ onNative, onHermes } = {}) {
     if (href.startsWith(HERMES_BASE)) {
       if (onHermes) onHermes(href);
       return fakeResponse(requestBody.stream, 'Hermes reply');
+    }
+    if (href.startsWith(TTS_BASE)) {
+      if (onTts) onTts(href, requestBody);
+      if (ttsShouldFail) {
+        throw new Error('ECONNREFUSED api.xiaomimimo.com:443 (secret-tts-key)');
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { audio: { data: Buffer.from('RIFF-fake-wav-bytes').toString('base64') } } }] }),
+      };
     }
     // Anything else (e.g. Hindsight) — hindsightClient.js/memory.js already
     // catch fetch failures internally and degrade gracefully; a rejection
@@ -241,6 +252,112 @@ test('streaming: without GAIA_NATIVE_* configured, the same turn falls back to H
         assert.match(text, /Hermes reply/);
         assert.equal(nativeCalls, 0);
         assert.equal(hermesCalls, 1);
+      });
+    }
+  );
+});
+
+// --- POST /speech (TTS — presentation-only, after a text reply exists) -----
+
+test('POST /speech returns audio/wav on success, reaching the configured TTS endpoint', async () => {
+  let ttsCalls = 0;
+  let seenBody;
+
+  await withMockedFetch(
+    mockFetch({ onTts: (href, body) => { ttsCalls += 1; seenBody = body; } }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'Ja. Het voelt goed om er te zijn.' }),
+        });
+        const buf = Buffer.from(await res.arrayBuffer());
+
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('content-type'), 'audio/wav');
+        assert.equal(buf.toString(), 'RIFF-fake-wav-bytes');
+        assert.equal(ttsCalls, 1);
+        assert.equal(seenBody.model, 'mimo-v2.5-tts-voicedesign');
+        assert.equal(seenBody.messages[1].role, 'assistant');
+        assert.equal(seenBody.messages[1].content, 'Ja. Het voelt goed om er te zijn.');
+        assert.deepEqual(seenBody.audio, { format: 'wav' });
+      });
+    }
+  );
+});
+
+test('POST /speech requires auth, same boundary as /conversation/turn', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, // no Authorization
+        body: JSON.stringify({ text: 'hi' }),
+      });
+      assert.equal(res.status, 401);
+    });
+  });
+});
+
+test('POST /speech rejects empty/missing text with a 400, never calling the TTS endpoint', async () => {
+  let ttsCalls = 0;
+  await withMockedFetch(mockFetch({ onTts: () => { ttsCalls += 1; } }), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
+    await withServer(app, async (port) => {
+      const res1 = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({}),
+      });
+      const res2 = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: '   ' }),
+      });
+      assert.equal(res1.status, 400);
+      assert.equal(res2.status, 400);
+      assert.equal(ttsCalls, 0);
+    });
+  });
+});
+
+test('POST /speech answers 503 when GAIA_TTS_* is not configured (no attempted call)', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: 'hi' }),
+      });
+      const body = await res.json();
+      assert.equal(res.status, 503);
+      assert.equal(body.error, 'speech is not configured');
+    });
+  });
+});
+
+test('POST /speech maps a Xiaomi failure to a calm 502, never leaking the provider, key, or stack', async () => {
+  await withMockedFetch(
+    mockFetch({ ttsShouldFail: true }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'hi' }),
+        });
+        const body = await res.json();
+        assert.equal(res.status, 502);
+        assert.equal(body.error, 'gaia could not speak right now');
+        const bodyText = JSON.stringify(body);
+        assert.ok(!bodyText.includes('xiaomimimo'));
+        assert.ok(!bodyText.includes('secret-tts-key'));
+        assert.ok(!bodyText.toLowerCase().includes('econnrefused'));
       });
     }
   );
