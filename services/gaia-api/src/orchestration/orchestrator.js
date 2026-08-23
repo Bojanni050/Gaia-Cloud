@@ -6,7 +6,8 @@
  * Hermes" logic lives here. Given the same Decision, it always does the
  * same thing.
  *
- *   native      -> no capability call; nothing to execute
+ *   native      -> invoke the native generator (gaiaGenerator.js) when
+ *                   available; structured error when not configured
  *   capability  -> resolve the named capability and invoke it
  *   tool        -> resolve the named tool capability and invoke it (same
  *                   resolution path as `capability` — a tool is just a
@@ -35,20 +36,34 @@ const { validateDecision } = require('../decision/decisionSchema');
  * @param {import('../decision/decisionSchema').Decision} decision
  * @param {{
  *   capabilities?: Record<string, { invoke: (messages: Array, options?: object) => Promise<*> }>,
+ *   nativeGenerator?: { generate: Function, stream?: Function },
  *   messages?: Array,
  *   onDelta?: Function,
  * }} [context]
  * @returns {Promise<ExecutionResult>}
  */
-async function execute(decision, { capabilities = {}, messages, onDelta } = {}) {
+async function execute(decision, { capabilities = {}, nativeGenerator, messages, onDelta } = {}) {
   const problem = validateDecision(decision);
   if (problem) {
     throw new Error(`Orchestrator received an invalid decision: ${problem}`);
   }
 
   switch (decision.action) {
-    case 'native':
-      return { action: 'native', output: null };
+    case 'native': {
+      if (!nativeGenerator || typeof nativeGenerator.generate !== 'function') {
+        return { action: 'native', output: null, error: 'native generator is not available' };
+      }
+      // Streaming when possible: if the caller wants deltas and the
+      // generator supports them, stream; otherwise fall back to the
+      // non-streaming generate() path.
+      let output;
+      if (onDelta && typeof nativeGenerator.stream === 'function') {
+        output = await nativeGenerator.stream(messages, { onDelta });
+      } else {
+        output = await nativeGenerator.generate(messages);
+      }
+      return { action: 'native', output };
+    }
 
     case 'capability':
     case 'tool': {

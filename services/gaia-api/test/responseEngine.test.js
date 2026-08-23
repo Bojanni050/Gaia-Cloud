@@ -168,7 +168,19 @@ test('generateStreamingReply for refuse renders and emits Gaia\'s own calm words
   assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: REFUSE_FALLBACK } }] })}\n\n`);
 });
 
-test('generateStreamingReply for native returns null — no non-Hermes generator exists yet', () => {
+test('generateStreamingReply for native with output reports back what was already streamed via onDelta', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'native', output: 'already streamed via onDelta' },
+    emitter,
+  });
+  assert.equal(text, 'already streamed via onDelta');
+  assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
+});
+
+test('generateStreamingReply for native with no output returns null', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);
   const text = generateStreamingReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null }, emitter });
@@ -205,7 +217,17 @@ test('generateReply renders Gaia\'s own calm words for clarify/refuse, without a
   assert.equal(generateReply({ decision: { action: 'refuse' }, executionResult: { action: 'refuse', output: null } }), REFUSE_FALLBACK);
 });
 
-test('generateReply returns null for native (no non-Hermes generator exists yet) and for a missing execution result', () => {
+test('generateReply returns native generator output as reply text', () => {
+  assert.equal(
+    generateReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: 'Gaia says hello' } }),
+    'Gaia says hello'
+  );
+});
+
+test('generateReply returns null for native with no output', () => {
   assert.equal(generateReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null } }), null);
+});
+
+test('generateReply returns null for a missing execution result', () => {
   assert.equal(generateReply({ decision: {}, executionResult: null }), null);
 });

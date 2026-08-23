@@ -11,10 +11,69 @@ test('execute() rejects an invalid decision before touching any capability', asy
   );
 });
 
-test('execute() native: calls no capability at all', async () => {
+test('execute() native without generator: returns structured error without calling any capability', async () => {
   const capabilities = { hermes: { invoke: async () => { throw new Error('must not be called'); } } };
   const result = await execute({ action: 'native' }, { capabilities });
-  assert.deepEqual(result, { action: 'native', output: null });
+  assert.equal(result.action, 'native');
+  assert.equal(result.output, null);
+  assert.match(result.error, /native generator is not available/);
+});
+
+test('execute() native with generator: invokes the native generator and returns its output', async () => {
+  const capabilities = { hermes: { invoke: async () => { throw new Error('must not be called'); } } };
+  const nativeGenerator = {
+    generate: async (messages) => {
+      assert.deepEqual(messages, ['hello']);
+      return 'Gaia says hello';
+    }
+  };
+  const result = await execute(
+    { action: 'native' },
+    { capabilities, messages: ['hello'], nativeGenerator }
+  );
+  assert.equal(result.action, 'native');
+  assert.equal(result.output, 'Gaia says hello');
+  assert.equal(result.error, undefined);
+});
+
+test('execute() native with generator and onDelta: uses stream() when available', async () => {
+  let streamCalled = false;
+  let generateCalled = false;
+  const capabilities = { hermes: { invoke: async () => { throw new Error('must not be called'); } } };
+  const nativeGenerator = {
+    generate: async () => {
+      generateCalled = true;
+      return 'fallback';
+    },
+    stream: async (messages, { onDelta }) => {
+      streamCalled = true;
+      assert.deepEqual(messages, ['hello stream']);
+      assert.equal(typeof onDelta, 'function');
+      return 'Gaia says stream';
+    }
+  };
+  const onDelta = (chunk) => {};
+  const result = await execute(
+    { action: 'native' },
+    { capabilities, messages: ['hello stream'], nativeGenerator, onDelta }
+  );
+  assert.equal(streamCalled, true);
+  assert.equal(generateCalled, false);
+  assert.equal(result.action, 'native');
+  assert.equal(result.output, 'Gaia says stream');
+});
+
+test('execute() native: Hermes is never called even when registered as a capability', async () => {
+  const capabilities = { hermes: { invoke: async () => { throw new Error('must not be called'); } } };
+  const nativeGenerator = {
+    generate: async () => 'native win'
+  };
+  const result = await execute(
+    { action: 'native' },
+    { capabilities, nativeGenerator }
+  );
+  assert.equal(result.action, 'native');
+  assert.equal(result.output, 'native win');
 });
 
 test('execute() capability: resolves and invokes exactly the named capability, passing through task/input/onDelta', async () => {

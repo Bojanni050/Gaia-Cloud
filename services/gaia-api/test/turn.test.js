@@ -806,3 +806,97 @@ test('decision engine failure degrades to the hermes capability, never breaking 
 
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
+
+// --- Native Generation (proof-of-architecture) ----------------------------
+
+test('performTurn with nativeGenerator: Decision(native) → GaiaGenerator → ResponseEngine → 200, Hermes calls = 0', async () => {
+  let hermesCalls = 0;
+  const hermes = { chat: async () => { hermesCalls += 1; return 'hermes reply'; } };
+  const nativeGenerator = { generate: async () => 'Gaia says hello' };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo Gaia' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    nativeGenerator,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'Gaia says hello');
+  assert.equal(hermesCalls, 0, 'Hermes must not be called on a native turn');
+});
+
+test('performTurn native: works even when Hermes is completely unavailable', async () => {
+  const hermes = { chat: async () => { throw new Error('Hermes is down'); } };
+  const nativeGenerator = { generate: async () => 'Gaia works independently' };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo Gaia' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    nativeGenerator,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'Gaia works independently');
+});
+
+test('performTurn native: a generator failure does NOT fall back to Hermes', async () => {
+  let hermesCalls = 0;
+  const hermes = { chat: async () => { hermesCalls += 1; return 'hermes fallback'; } };
+  const nativeGenerator = { generate: async () => { throw new Error('native model unreachable'); } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo Gaia' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    nativeGenerator,
+  });
+
+  // A native failure becomes a calm 502 — it must NEVER silently invoke Hermes.
+  assert.equal(result.status, 502);
+  assert.equal(hermesCalls, 0, 'Hermes must not be called as a hidden fallback for native failures');
+});
+
+test('performTurn without nativeGenerator: continues to route through Hermes (backward compatible)', async () => {
+  let hermesCalls = 0;
+  const hermes = { chat: async () => { hermesCalls += 1; return 'hermes reply'; } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo Gaia' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    // no nativeGenerator — existing behavior
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'hermes reply');
+  assert.equal(hermesCalls, 1);
+});
+
+test('performStreamingTurn with nativeGenerator: streams native response, Hermes calls = 0', async () => {
+  let hermesCalls = 0;
+  const hermes = { stream: async () => { hermesCalls += 1; return 'hermes'; } };
+  const nativeGenerator = {
+    generate: async () => 'Gaia says hello',
+    stream: async (messages, { onDelta }) => {
+      onDelta('Gaia ', false);
+      onDelta('says hello', false);
+      return 'Gaia says hello';
+    },
+  };
+  const res = fakeRes();
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Hallo Gaia' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    nativeGenerator,
+  });
+
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+  assert.equal(hermesCalls, 0, 'Hermes must not be called on a native streaming turn');
+});

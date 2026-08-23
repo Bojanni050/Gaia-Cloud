@@ -122,25 +122,23 @@ function renderAttachmentContext(attachments) {
  *
  * Desktop's contract carries no IntentIQ/ReasonIQ (no memory, no Logos,
  * exactly as before this seam existed) — this path always hands the
- * Decision Engine `intent: null`, which its safe default routes to the
- * hermes capability (decision/decisionEngine.js), the same capability this
- * path has always used. The Orchestrator (orchestration/orchestrator.js)
- * then executes exactly that decision. The net effect is byte-identical to
- * calling `hermes.chat` directly — Hermes is just never reached by a name
- * hardcoded in this function anymore; it is reached because the Decision
- * Engine named it.
+ * Decision Engine `intent: null`, which its safe default routes to native
+ * generation when a native generator is available, or to the hermes
+ * capability otherwise. The Orchestrator (orchestration/orchestrator.js)
+ * then executes exactly that decision.
  *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
  *   systemPrompt: string,
  *   hermes: { chat: (messages: Array) => Promise<string> },
  *   attachments?: Array<{ filename: string, content: string|null }>,
+ *   nativeGenerator?: { generate: Function, stream?: Function },
  *   decisionEngine?: (input: object) => import('./decision/decisionSchema').Decision,
  *   orchestrate?: (decision: object, context: object) => Promise<object>,
  * }} input
  * @returns {Promise<{status: number, body: object}>} an HTTP-shaped result
  */
-async function performTurn({ messages, systemPrompt, hermes, attachments, decisionEngine = decideAction, orchestrate = executeDecision }) {
+async function performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, decisionEngine = decideAction, orchestrate = executeDecision }) {
   const problem = validateMessages(messages);
   if (problem) {
     return { status: 400, body: { error: problem } };
@@ -150,6 +148,9 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, decisi
   const fullSystemPrompt = attachmentBlock ? `${systemPrompt}\n\n---\n\n${attachmentBlock}` : systemPrompt;
   const assembled = assembleMessages(fullSystemPrompt, messages);
 
+  const availableCapabilities = [{ id: 'hermes' }];
+  if (nativeGenerator) availableCapabilities.push({ id: 'native' });
+
   let decision;
   try {
     decision = decisionEngine({
@@ -157,7 +158,7 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, decisi
       intent: null,
       context: null,
       reasoning: null,
-      availableCapabilities: [{ id: 'hermes' }],
+      availableCapabilities,
     });
   } catch (_) {
     // The Decision Engine must never take down a turn — degrade to the
@@ -174,7 +175,7 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, decisi
 
   let executionResult;
   try {
-    executionResult = await orchestrate(decision, { capabilities, messages: assembled });
+    executionResult = await orchestrate(decision, { capabilities, nativeGenerator, messages: assembled });
   } catch (_) {
     executionResult = null;
   }
@@ -219,6 +220,7 @@ function latestUserText(messages) {
  *   hindsight: { recall: Function, reflect: Function, getMentalModel: Function },
  *   res: import('express').Response,
  *   conversationId?: string,
+ *   nativeGenerator?: { generate: Function, stream?: Function },
  *   intentIQ?: (messages: Array, options: object) => object,
  *   reasonIQ?: (input: object, options: object) => Promise<object>,
  *   historyStore?: { saveConversation: (id: string, messages: Array) => void },
@@ -235,6 +237,7 @@ async function performStreamingTurn({
   hindsight,
   res,
   conversationId,
+  nativeGenerator,
   intentIQ = classifyIntent,
   reasonIQ = evaluateReasoning,
   historyStore,
@@ -337,6 +340,7 @@ async function performStreamingTurn({
     { id: 'hermes' },
     ...Object.keys(tools || {}).map((id) => ({ id })),
   ];
+  if (nativeGenerator) availableCapabilities.push({ id: 'native' });
   let decision;
   try {
     decision = decisionEngine({
@@ -365,7 +369,7 @@ async function performStreamingTurn({
 
   let executionResult;
   try {
-    executionResult = await orchestrate(decision, { capabilities, messages: assembled, onDelta });
+    executionResult = await orchestrate(decision, { capabilities, nativeGenerator, messages: assembled, onDelta });
   } catch (_) {
     emitter.fail();
     return;

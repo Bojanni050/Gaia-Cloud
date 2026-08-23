@@ -14,35 +14,69 @@
  * a future capability (a tool, a second model, a native generator) slots in
  * without changing this file's shape.
  *
- * Current routing (v0.1 — see the module-level NOTE on `native` below):
+ * Routing:
  *
  *   1. IntentIQ flagged the turn as needing clarification  -> clarify
  *   2. IntentIQ resolved the turn's source of truth to "tool"
  *      and a matching tool capability is available          -> tool
- *   3. otherwise, if a "hermes" capability is available      -> capability: hermes
- *   4. no capability at all can answer                       -> clarify
+ *   3. conversational/simple turn AND native is available   -> native
+ *   4. complex/deep reasoning OR no native available        -> capability: hermes
+ *   5. no capability at all can answer                      -> clarify
  *
- * NOTE on `native`: this codebase has no text-generation capability other
- * than Hermes today — Response Engine only formats/streams what a
- * capability hands it (responseEngine.js), it does not generate text
- * itself. Choosing `native` for a turn that needs generated content would
- * therefore produce nothing to say. So `native` is a real, valid, tested
- * action in the schema and the Orchestrator (ready for a future Gaia-native
- * generator), but this Decision Engine deliberately never selects it yet —
- * doing so today would just be Hermes hidden behind a different label,
- * which is exactly the outcome this architecture exists to prevent.
- *
- * NOTE on `refuse`: also a real, valid action — the Orchestrator and
+ * NOTE on `refuse`: a real, valid action — the Orchestrator and
  * Response Engine both handle it — but nothing upstream (IntentIQ,
  * ReasonIQ) yet produces a safety/policy signal for this Decision Engine to
- * act on, so it is never selected in v0.1 either. A future policy signal is
- * the extension point, not a heuristic invented here to fill the gap.
+ * act on, so it is never selected yet. A future policy signal is the
+ * extension point, not a heuristic invented here to fill the gap.
  */
 
 const { validateDecision } = require('./decisionSchema');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
+}
+
+/**
+ * Intents whose source of truth is conversational and that do not require
+ * deep generation — these are the turns Gaia can answer natively, without
+ * Hermes. Kept deliberately conservative: only intents that are clearly
+ * conversational in nature. Anything not in this set falls through to
+ * Hermes (the safe default).
+ */
+const NATIVE_INTENTS = new Set([
+  'converse',
+  'meta.relational',
+  'greet',
+  'farewell',
+  'acknowledge',
+]);
+
+/**
+ * Returns true when the turn is simple/conversational enough for native
+ * generation. Conservative by design — unknown intents fall through to
+ * Hermes.
+ */
+function isNativeTurn(intent, reasoning) {
+  // Deep reasoning always needs Hermes — native is for simple turns.
+  if (reasoning && reasoning.reasoningDepth === 'deep') return false;
+
+  // No intent at all: null intent means no IntentIQ ran at all (e.g.
+  // the performTurn Desktop path). When native is available, a simple
+  // greeting without intent is a good native candidate.
+  if (!intent) return true;
+
+  // IntentIQ returned an object but couldn't classify a strong intent —
+  // status: 'unknown' with null intent. This is a typical simple
+  // greeting or chat turn — suitable for native.
+  if (!intent.intent && intent.status === 'unknown') return true;
+
+  // Explicit conversational intents.
+  if (NATIVE_INTENTS.has(intent.intent)) return true;
+
+  // Conversational source of truth with a non-complex intent.
+  if (intent.sourceOfTruth === 'conversation' && !intent.needsClarification) return true;
+
+  return false;
 }
 
 /**
@@ -75,6 +109,13 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       input: { userInput, entities: intent.entities || [] },
       reason: `intent "${intent.intent}" requires acting on an external system`,
     };
+  } else if (isNativeTurn(intent, reasoning) && findCapability(capabilities, 'native')) {
+    decision = {
+      action: 'native',
+      reason: intent && intent.intent
+        ? `conversational turn (${intent.intent}) handled by Gaia's native voice`
+        : "simple conversational turn handled by Gaia's native voice",
+    };
   } else if (findCapability(capabilities, 'hermes')) {
     decision = {
       action: 'capability',
@@ -99,4 +140,4 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   return decision;
 }
 
-module.exports = { decide };
+module.exports = { decide, isNativeTurn, NATIVE_INTENTS };

@@ -136,10 +136,11 @@ function createStreamEmitter(res) {
  * - capability/tool: whatever the capability returned, as long as it's a
  *   non-empty string; null if it returned nothing usable, or the
  *   capability/tool was unavailable.
+ * - native: whatever the native generator returned, as long as it's a
+ *   non-empty string; null if it returned nothing usable, or the native
+ *   generator was not available.
  * - clarify: Gaia's own calm clarifying words.
  * - refuse: Gaia's own calm refusal words.
- * - native: no text-generation capability exists in this codebase yet (see
- *   decisionEngine.js's module note) — nothing to say.
  * @param {import('./orchestration/orchestrator').ExecutionResult|null|undefined} executionResult
  * @returns {string|null}
  */
@@ -149,6 +150,7 @@ function resolveReplyText(executionResult) {
   switch (executionResult.action) {
     case 'capability':
     case 'tool':
+    case 'native':
       return typeof executionResult.output === 'string' && executionResult.output.length > 0
         ? executionResult.output
         : null;
@@ -159,7 +161,6 @@ function resolveReplyText(executionResult) {
     case 'refuse':
       return REFUSE_FALLBACK;
 
-    case 'native':
     default:
       return null;
   }
@@ -191,11 +192,11 @@ function generateReply({ decision, executionResult }) {
  *   `onDelta` during orchestrator.execute(); this just reports back what
  *   the capability returned as its final text (or null if it returned
  *   nothing usable, or the capability/tool was unavailable).
+ * - native: the native generator already streamed its content via
+ *   `onDelta` during orchestrator.execute(); same reporting as above.
  * - clarify/refuse: no capability was called — Gaia's own calm wording is
  *   rendered and emitted here, through this module's own emitter, never a
  *   capability's.
- * - native: no text-generation capability exists in this codebase yet (see
- *   decisionEngine.js's module note) — there is nothing to emit.
  *
  * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter> }} input
  * @returns {string|null}
@@ -204,7 +205,7 @@ function generateStreamingReply({ decision, executionResult, emitter }) {
   const text = resolveReplyText(executionResult);
   if (text === null) return null;
 
-  // capability/tool text was already emitted as deltas during
+  // capability/tool/native text was already emitted as deltas during
   // orchestrator.execute() (via `onDelta`) — only clarify/refuse's
   // Gaia-rendered words still need to reach the client here.
   const action = executionResult && executionResult.action;

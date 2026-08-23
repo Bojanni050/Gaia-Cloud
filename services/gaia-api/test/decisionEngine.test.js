@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { decide } = require('../src/decision/decisionEngine');
+const { decide, isNativeTurn } = require('../src/decision/decisionEngine');
 const { ACTIONS, validateDecision } = require('../src/decision/decisionSchema');
 
 test('decisionSchema exposes exactly the five allowed actions', () => {
@@ -71,19 +71,16 @@ test('decide() routes accepted, non-tool turns to the hermes capability', () => 
   assert.equal(decision.task, 'inform.explain');
 });
 
-test('decide() never selects "native" — no non-Hermes generator exists in this codebase yet', () => {
-  // A broad sweep of plausible inputs — none of them should ever produce
-  // `native`, since Response Engine has nothing to generate native text
-  // with today. See decisionEngine.js's module note.
+test('decide() selects "native" for conversational turns when native capability is available', () => {
   const cases = [
     { intent: null },
-    { intent: { status: 'unknown', needsClarification: false, sourceOfTruth: 'unknown' } },
     { intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' } },
     { intent: { intent: 'meta.relational', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' } },
+    { intent: { intent: 'some.unknown.intent', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' } },
   ];
   for (const c of cases) {
-    const decision = decide({ userInput: 'x', ...c, availableCapabilities: [{ id: 'hermes' }] });
-    assert.notEqual(decision.action, 'native');
+    const decision = decide({ userInput: 'x', ...c, availableCapabilities: [{ id: 'hermes' }, { id: 'native' }] });
+    assert.equal(decision.action, 'native');
   }
 });
 
@@ -96,10 +93,49 @@ test('decide() never selects "refuse" in v0.1 — no policy/safety signal feeds 
   assert.notEqual(decision.action, 'refuse');
 });
 
-test('decide() treats a missing IntentIQ decision (null intent) as a safe default to the hermes capability', () => {
+test('decide() routes missing IntentIQ decision (null intent) to native when available', () => {
+  const decision = decide({ userInput: 'hello', intent: null, reasoning: null, availableCapabilities: [{ id: 'hermes' }, { id: 'native' }] });
+  assert.equal(decision.action, 'native');
+});
+
+test('decide() falls back to hermes for missing IntentIQ decision when native is not in availableCapabilities', () => {
   const decision = decide({ userInput: 'hello', intent: null, reasoning: null, availableCapabilities: [{ id: 'hermes' }] });
   assert.equal(decision.action, 'capability');
   assert.equal(decision.capability, 'hermes');
+});
+
+test('decide() routes complex intents to hermes even when native is available', () => {
+  const decision = decide({
+    userInput: 'explain this',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
+});
+
+test('decide() routes deep reasoning to hermes even when native is available', () => {
+  const decision = decide({
+    userInput: 'hello',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    reasoning: { reasoningDepth: 'deep' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
+});
+
+test('isNativeTurn returns true for conversational intents and false for complex ones', () => {
+  assert.equal(isNativeTurn(null, null), true);
+  assert.equal(isNativeTurn({ intent: 'converse' }, null), true);
+  assert.equal(isNativeTurn({ intent: 'meta.relational' }, null), true);
+  assert.equal(isNativeTurn({ intent: 'greet' }, null), true);
+  assert.equal(isNativeTurn({ intent: 'farewell' }, null), true);
+  assert.equal(isNativeTurn({ intent: 'acknowledge' }, null), true);
+  assert.equal(isNativeTurn({ sourceOfTruth: 'conversation' }, null), true);
+  assert.equal(isNativeTurn({ intent: 'inform.explain', sourceOfTruth: 'external_knowledge' }, null), false);
+  assert.equal(isNativeTurn({ intent: 'converse' }, { reasoningDepth: 'deep' }), false);
 });
 
 test('decide() clarifies when no capability at all can answer the turn', () => {
