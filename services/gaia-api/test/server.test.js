@@ -25,6 +25,7 @@ const TOKEN = 'test-token';
 const NATIVE_BASE = 'http://fake-native.internal/v1';
 const HERMES_BASE = 'http://fake-hermes.internal/v1';
 const TTS_BASE = 'http://fake-tts.internal/v1';
+const WEB_BASE = 'http://fake-web-search.internal/search';
 
 // createApp() -> loadFoundationDocuments() hard-fails without a
 // foundation-artifact.json (see foundation.js) — a file that only exists
@@ -87,7 +88,7 @@ function fakeResponse(isStream, content) {
  * loudly on anything else (e.g. an accidental real network call to
  * Hindsight) so a wiring mistake can't hide behind a silently-caught error.
  */
-function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false } = {}) {
+function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false, onWebSearch } = {}) {
   return async (url, options = {}) => {
     const href = String(url);
     const requestBody = options.body ? JSON.parse(options.body) : {};
@@ -107,6 +108,15 @@ function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false } = {}) {
       return {
         ok: true,
         json: async () => ({ choices: [{ message: { audio: { data: Buffer.from('RIFF-fake-wav-bytes').toString('base64') } } }] }),
+      };
+    }
+    if (href.startsWith(WEB_BASE)) {
+      if (onWebSearch) onWebSearch(href);
+      return {
+        ok: true,
+        json: async () => ({
+          web: { results: [{ title: 'OpenAI API Reference', url: 'https://platform.openai.com/docs', description: 'The official docs.' }] },
+        }),
       };
     }
     // Anything else (e.g. Hindsight) — hindsightClient.js/memory.js already
@@ -358,6 +368,69 @@ test('POST /speech maps a Xiaomi failure to a calm 502, never leaking the provid
         assert.ok(!bodyText.includes('xiaomimimo'));
         assert.ok(!bodyText.includes('secret-tts-key'));
         assert.ok(!bodyText.toLowerCase().includes('econnrefused'));
+      });
+    }
+  );
+});
+
+// --- webSearch wiring (src/tools/braveSearch.js) ---------------------------
+//
+// No non-streaming ("performTurn") equivalent of the streaming test below:
+// performTurn always hands the Decision Engine `intent: null` (Desktop's
+// contract carries no IntentIQ — see turn.js's own comment), and the web
+// tool's branch requires an actual `sourceOfTruth: 'external_knowledge'`
+// from IntentIQ to ever fire. So performTurn can never naturally reach the
+// web tool via real classification — only performStreamingTurn (real
+// IntentIQ) or an explicitly injected decision (turn.test.js's unit-level
+// wiring test) can. That's an accurate architectural fact, not a gap: the
+// non-streaming path is documented as never running Logos at all.
+
+test('streaming: an external-knowledge turn reaches the Brave Search real HTTP call, never Hermes', async () => {
+  let webCalls = 0;
+  let hermesCalls = 0;
+
+  await withMockedFetch(
+    mockFetch({ onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_WEB_SEARCH_API_KEY: 'test-key', GAIA_WEB_SEARCH_BASE_URL: WEB_BASE }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }], stream: true }),
+        });
+        const text = await res.text();
+
+        assert.equal(res.status, 200);
+        assert.match(text, /OpenAI API Reference/);
+        assert.match(text, /data: \[DONE\]/);
+        assert.equal(webCalls, 1);
+        assert.equal(hermesCalls, 0);
+      });
+    }
+  );
+});
+
+test('streaming: without GAIA_WEB_SEARCH_API_KEY configured, an external-knowledge turn falls back to Hermes (backward compatible)', async () => {
+  let webCalls = 0;
+  let hermesCalls = 0;
+
+  await withMockedFetch(
+    mockFetch({ onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv()); // no GAIA_WEB_SEARCH_* at all
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }], stream: true }),
+        });
+        const text = await res.text();
+
+        assert.equal(res.status, 200);
+        assert.match(text, /Hermes reply/);
+        assert.equal(webCalls, 0);
+        assert.equal(hermesCalls, 1);
       });
     }
   );

@@ -133,12 +133,13 @@ function renderAttachmentContext(attachments) {
  *   hermes: { chat: (messages: Array) => Promise<string> },
  *   attachments?: Array<{ filename: string, content: string|null }>,
  *   nativeGenerator?: { generate: Function, stream?: Function },
+ *   webSearch?: { search: (query: string) => Promise<string> },
  *   decisionEngine?: (input: object) => import('./decision/decisionSchema').Decision,
  *   orchestrate?: (decision: object, context: object) => Promise<object>,
  * }} input
  * @returns {Promise<{status: number, body: object}>} an HTTP-shaped result
  */
-async function performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, decisionEngine = decideAction, orchestrate = executeDecision }) {
+async function performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch, decisionEngine = decideAction, orchestrate = executeDecision }) {
   const problem = validateMessages(messages);
   if (problem) {
     return { status: 400, body: { error: problem } };
@@ -150,6 +151,7 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, native
 
   const availableCapabilities = [{ id: 'hermes' }];
   if (nativeGenerator) availableCapabilities.push({ id: 'native' });
+  if (webSearch) availableCapabilities.push({ id: 'web' });
 
   let decision;
   try {
@@ -172,7 +174,10 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, native
   // handed to the Response Engine, which is the only thing that decides
   // what becomes the reply and how a failure is phrased — see
   // responseEngine.js.
-  const capabilities = { hermes: { invoke: (msgs) => hermes.chat(msgs) } };
+  const capabilities = {
+    hermes: { invoke: (msgs) => hermes.chat(msgs) },
+    ...(webSearch ? { web: webCapability(webSearch) } : {}),
+  };
 
   let executionResult;
   try {
@@ -190,6 +195,31 @@ function latestUserText(messages) {
     if (messages[i].role === 'user') return messages[i].content || '';
   }
   return '';
+}
+
+/**
+ * Adapts a raw web-search client (src/tools/braveSearch.js's `{ search }`)
+ * into the generic `{ invoke }` capability shape the Orchestrator expects
+ * (orchestration/orchestrator.js) — the same adapter role this file
+ * already plays for `hermes.chat`/`hermes.stream` below. The web tool is a
+ * terminal, single-step capability (see braveSearch.js's own header on
+ * why): it has no token-by-token stream of its own, so when the caller
+ * wants deltas (`onDelta` given, a streaming turn), this emits the whole
+ * formatted answer as one chunk rather than leaving the stream silent —
+ * the same "one capability, one wire shape" contract every capability's
+ * `invoke` already follows (see turn.test.js's own 'tool turn' test).
+ * @param {{ search: (query: string) => Promise<string> }} webSearch
+ * @returns {{ invoke: (messages: Array, options?: object) => Promise<string> }}
+ */
+function webCapability(webSearch) {
+  return {
+    invoke: async (messages, { onDelta, input } = {}) => {
+      const query = (input && input.userInput) || '';
+      const text = await webSearch.search(query);
+      if (onDelta) onDelta(text, false);
+      return text;
+    },
+  };
 }
 
 /**
@@ -255,6 +285,7 @@ function logDecisionPlan(decision, logger) {
  *   res: import('express').Response,
  *   conversationId?: string,
  *   nativeGenerator?: { generate: Function, stream?: Function },
+ *   webSearch?: { search: (query: string) => Promise<string> },
  *   intentIQ?: (messages: Array, options: object) => object,
  *   reasonIQ?: (input: object, options: object) => Promise<object>,
  *   historyStore?: { saveConversation: (id: string, messages: Array) => void },
@@ -272,6 +303,7 @@ async function performStreamingTurn({
   res,
   conversationId,
   nativeGenerator,
+  webSearch,
   intentIQ = classifyIntent,
   reasonIQ = evaluateReasoning,
   historyStore,
@@ -375,6 +407,7 @@ async function performStreamingTurn({
     ...Object.keys(tools || {}).map((id) => ({ id })),
   ];
   if (nativeGenerator) availableCapabilities.push({ id: 'native' });
+  if (webSearch) availableCapabilities.push({ id: 'web' });
   let decision;
   try {
     decision = decisionEngine({
@@ -399,6 +432,7 @@ async function performStreamingTurn({
 
   const capabilities = {
     hermes: { invoke: (msgs, { onDelta: emitDelta } = {}) => hermes.stream(msgs, { onDelta: emitDelta }) },
+    ...(webSearch ? { web: webCapability(webSearch) } : {}),
     ...(tools || {}),
   };
 

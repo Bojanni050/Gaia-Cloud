@@ -30,6 +30,7 @@ const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient } = require('./hindsightClient');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
+const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -68,6 +69,11 @@ function createApp(env = process.env) {
   // separate from nativeGenerator above: this never influences what Gaia
   // says, only how an already-decided reply sounds.
   const tts = createTtsFromEnv(env);
+  // Gaia's web tool (src/tools/braveSearch.js) — undefined when
+  // GAIA_WEB_SEARCH_API_KEY is unset, in which case the Decision Engine
+  // never sees a "web" capability and external-knowledge turns route
+  // through Hermes exactly as before this existed (see .env.example).
+  const webSearch = createWebSearchFromEnv(env);
   const auth = createAuthMiddleware(parseTokens(env.GAIA_API_TOKEN));
 
   const app = express();
@@ -125,6 +131,7 @@ function createApp(env = process.env) {
         res,
         conversationId,
         nativeGenerator,
+        webSearch,
         historyStore,
         decisionStore,
       });
@@ -133,7 +140,7 @@ function createApp(env = process.env) {
 
     const attachmentIds = (req.body && req.body.attachmentIds) || [];
     const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds);
-    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator });
+    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch });
     res.status(result.status).json(result.body);
 
     // Chat history — fire-and-forget, after the response is already sent,

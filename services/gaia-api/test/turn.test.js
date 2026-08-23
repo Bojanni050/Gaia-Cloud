@@ -985,3 +985,68 @@ test('architecture: a complex analysis question routes through Hermes, with Hind
   assert.ok(seenText.includes(hindsightReflection));
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
+
+// --- webSearch wiring (src/tools/braveSearch.js) --------------------------
+//
+// These pin turn.js's own adapter (webCapability) rather than
+// braveSearch.js's HTTP contract (covered in braveSearch.test.js): given a
+// decision that selects the "web" tool, does the Orchestrator actually
+// reach a provided webSearch client, does its answer reach the client on
+// both the streaming and non-streaming paths, and is Hermes left alone.
+
+test('performStreamingTurn: a webSearch client is wired as the "web" capability and its answer streams to the client', async () => {
+  const res = fakeRes();
+  let seenQuery = null;
+  const webSearch = { search: async (query) => { seenQuery = query; return 'Here is what I found: ...'; } };
+  const hermes = { stream: async () => { throw new Error('Hermes must not be called for a web-tool decision'); } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    webSearch,
+    decisionEngine: () => ({ action: 'tool', capability: 'web', task: 'lookup', input: { userInput: 'what is the current OpenAI API documentation?' }, reason: 'test' }),
+  });
+
+  assert.equal(seenQuery, 'what is the current OpenAI API documentation?');
+  assert.match(res.written[0], /Here is what I found/);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('performTurn: a webSearch client is wired as the "web" capability on the non-streaming path too', async () => {
+  let seenQuery = null;
+  const webSearch = { search: async (query) => { seenQuery = query; return 'Here is what I found: ...'; } };
+  const hermes = { chat: async () => { throw new Error('Hermes must not be called for a web-tool decision'); } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    webSearch,
+    decisionEngine: () => ({ action: 'tool', capability: 'web', task: 'lookup', input: { userInput: 'what is the current OpenAI API documentation?' }, reason: 'test' }),
+  });
+
+  assert.equal(seenQuery, 'what is the current OpenAI API documentation?');
+  assert.equal(result.status, 200);
+  assert.match(result.body.reply, /Here is what I found/);
+});
+
+test('performStreamingTurn: without a webSearch client, the Decision Engine never sees a "web" capability and falls back to Hermes', async () => {
+  const res = fakeRes();
+  let hermesCalls = 0;
+  const hermes = { stream: async (messages, { onDelta }) => { hermesCalls += 1; onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    // webSearch omitted entirely
+  });
+
+  assert.equal(hermesCalls, 1);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
