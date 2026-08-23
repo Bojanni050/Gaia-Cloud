@@ -16,17 +16,34 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createApp } = require('../src/server');
 
 const TOKEN = 'test-token';
 const NATIVE_BASE = 'http://fake-native.internal/v1';
 const HERMES_BASE = 'http://fake-hermes.internal/v1';
 
+// createApp() -> loadFoundationDocuments() hard-fails without a
+// foundation-artifact.json (see foundation.js) — a file that only exists
+// locally after running scripts/build-foundation-artifact.js, and that CI's
+// test job never generates (only the later deploy step does, per
+// .github/workflows/deploy.yml). A minimal fixture + FOUNDATION_ARTIFACT_PATH
+// (createApp's own documented env-override seam) keeps this suite
+// independent of that build step, in CI and locally alike.
+const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-api-server-test-'));
+const FOUNDATION_ARTIFACT_PATH = path.join(fixtureDir, 'foundation-artifact.json');
+fs.writeFileSync(FOUNDATION_ARTIFACT_PATH, JSON.stringify({
+  documents: { 'soul.md': 'SOUL', 'principles.md': 'PRINCIPLES', 'lexicon.md': 'LEXICON' },
+}));
+
 function baseEnv(overrides = {}) {
   return {
     GAIA_API_TOKEN: TOKEN,
     HERMES_BASE_URL: HERMES_BASE,
     HERMES_MODEL: 'hermes-agent',
+    FOUNDATION_ARTIFACT_PATH,
     ...overrides,
   };
 }
