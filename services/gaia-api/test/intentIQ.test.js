@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { classify, SCHEMA_VERSION } = require('../src/logos/intentIQ');
+const { classify, interpret, classifySemantic, combineConsensus, SCHEMA_VERSION } = require('../src/logos/intentIQ');
 
 function msg(role, content) {
   return { role, content };
@@ -249,10 +249,32 @@ test('classify does not log when silent is set', () => {
 
 // --- boundary: IntentIQ is interpretation-only, never a capability router -
 
-test('boundary: intentIQ.js never imports Hermes or Hindsight clients', () => {
+test('boundary: intentIQ.js never imports Hermes, Hindsight, the Decision Engine, the Orchestrator, or any capability', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/logos/intentIQ.js'), 'utf-8');
   assert.ok(!/require\(.*hermesClient/.test(source));
   assert.ok(!/require\(.*hindsightClient/.test(source));
+  assert.ok(!/require\(.*decisionEngine/.test(source));
+  assert.ok(!/require\(.*orchestrat/i.test(source));
+  assert.ok(!/require\(.*gaiaGenerator/.test(source));
+  assert.ok(!/require\(.*braveSearch/.test(source));
+  assert.ok(!/require\(.*mimoTts/.test(source));
+  assert.ok(!/require\(.*responseEngine/.test(source));
+});
+
+test('boundary: IntentIQ 2.0 (interpret/classifySemantic) never calls Hermes, Web, or any capability, and never resolves a capability itself', async () => {
+  // A semantic model that returns an intent is still just interpretation —
+  // combineConsensus/interpret must never turn that into a capability call
+  // or a resolved routing decision. This is IntentIQ's own boundary, not
+  // the Decision Engine's (which is tested separately, in
+  // test/decisionEngine.test.js).
+  const model = { chat: async () => JSON.stringify({ intent: 'inform.explain', confidence: 0.9, sourceOfTruth: 'external_knowledge' }) };
+  const d = await interpret(user('kun je dit even nakijken'), { silent: true, model });
+  const keys = Object.keys(d);
+  for (const forbidden of ['capability', 'provider', 'response', 'action', 'toolCall']) {
+    assert.ok(!keys.includes(forbidden), `interpret() leaked a routing field: ${forbidden}`);
+  }
+  // sourceOfTruth is a description, never an instruction to call anything.
+  assert.equal(typeof d.sourceOfTruth, 'string');
 });
 
 test('boundary: an IntentDecision never carries a capability, provider, or model field', () => {
@@ -268,4 +290,227 @@ test('boundary: classify is a pure function — same input, same output, no shar
   const b = classify(user('Why is my website crashing?'), silent);
   assert.deepEqual(a.intent, b.intent);
   assert.deepEqual(a.candidates, b.candidates);
+});
+
+// === IntentIQ 2.0: classifySemantic (the semantic tier) =====================
+
+test('classifySemantic: no model configured or injected -> not attempted, result null', async () => {
+  const result = await classifySemantic('hello', {}, {});
+  assert.equal(result.attempted, false);
+  assert.equal(result.result, null);
+});
+
+test('classifySemantic: an injected model is called with a prompt built from text/context, and its output is validated', async () => {
+  let seenMessages;
+  const model = {
+    chat: async (messages) => {
+      seenMessages = messages;
+      return JSON.stringify({
+        intent: 'decide.support',
+        confidence: 0.87,
+        candidates: [{ intent: 'decide.support', confidence: 0.87 }, { intent: 'converse', confidence: 0.09 }],
+        reason: 'The user is asking for help evaluating a decision.',
+      });
+    },
+  };
+  const result = await classifySemantic('Wat moet ik hiermee?', { recentTurns: [], heuristicResult: null }, { model });
+  assert.equal(result.attempted, true);
+  assert.equal(result.result.intent, 'decide.support');
+  assert.equal(result.result.confidence, 0.87);
+  assert.match(seenMessages[1].content, /Wat moet ik hiermee\?/);
+});
+
+test('classifySemantic: degrades to attempted:true, result:null when the model rejects — never throws', async () => {
+  const model = { chat: async () => { throw new Error('provider exploded, key=xyz'); } };
+  const result = await classifySemantic('hello', {}, { model });
+  assert.equal(result.attempted, true);
+  assert.equal(result.result, null);
+});
+
+test('classifySemantic: degrades to attempted:true, result:null on malformed (non-JSON) model output — never throws', async () => {
+  const model = { chat: async () => 'not json at all' };
+  const result = await classifySemantic('hello', {}, { model });
+  assert.equal(result.attempted, true);
+  assert.equal(result.result, null);
+});
+
+// === IntentIQ 2.0: combineConsensus ==========================================
+
+test('combineConsensus: no semantic result -> heuristic decision returned unchanged (byte-compatible with v0.1)', () => {
+  const heuristic = classify(user('Why is my website crashing?'), silent);
+  const combined = combineConsensus(heuristic, null);
+  assert.deepEqual(combined, heuristic);
+});
+
+test('combineConsensus: agreement between heuristic and semantic raises confidence and is never ambiguous', () => {
+  const heuristic = { intent: 'inform.explain', status: 'accepted', confidence: 0.82, candidates: [{ intent: 'inform.explain', score: 0.82 }], sourceOfTruth: 'external_knowledge', meta: {} };
+  const semantic = { intent: 'inform.explain', confidence: 0.93, candidates: [{ intent: 'inform.explain', confidence: 0.93 }], sourceOfTruth: 'external_knowledge', speechAct: 'question', referents: [], ambiguous: false, reason: 'clear factual question' };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'inform.explain');
+  assert.equal(combined.confidence, 0.93);
+  assert.equal(combined.ambiguous, false);
+  assert.equal(combined.needsClarification, false);
+});
+
+test('combineConsensus: conflict between heuristic and semantic is reported honestly as ambiguous — the brief\'s own example', () => {
+  // heuristic: inform.explain @ 0.78; semantic: decide.support @ 0.84 -> decide.support wins, ambiguous: true.
+  const heuristic = { intent: 'inform.explain', status: 'accepted', confidence: 0.78, candidates: [{ intent: 'inform.explain', score: 0.78 }], sourceOfTruth: 'conversation', meta: {} };
+  const semantic = { intent: 'decide.support', confidence: 0.84, candidates: [{ intent: 'decide.support', confidence: 0.84 }], sourceOfTruth: 'conversation', speechAct: 'advice_request', referents: [], ambiguous: false, reason: 'sounds like weighing a choice' };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'decide.support');
+  assert.equal(combined.confidence, 0.84);
+  assert.equal(combined.ambiguous, true);
+  assert.equal(combined.needsClarification, true);
+});
+
+test('combineConsensus: heuristic found nothing, semantic did -> semantic result is used', () => {
+  const heuristic = classify(user('asdkfj alkj qzx'), silent); // unknown
+  const semantic = { intent: 'converse', confidence: 0.7, candidates: [{ intent: 'converse', confidence: 0.7 }], sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: false, reason: 'reads as presence-seeking' };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'converse');
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.ambiguous, false);
+});
+
+test('combineConsensus: heuristic found something, semantic found nothing -> heuristic is kept', () => {
+  const heuristic = classify(user('Why is my website crashing?'), silent);
+  const semantic = { intent: null, confidence: 0, candidates: [], sourceOfTruth: 'unknown', speechAct: null, referents: [], ambiguous: false, reason: null };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'inform.explain');
+  assert.equal(combined.status, 'accepted');
+});
+
+test('combineConsensus: neither tier has an opinion -> unknown', () => {
+  const heuristic = classify(user('asdkfj alkj qzx'), silent);
+  const semantic = { intent: null, confidence: 0, candidates: [], sourceOfTruth: 'unknown', speechAct: null, referents: [], ambiguous: false, reason: null };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, null);
+  assert.equal(combined.status, 'unknown');
+});
+
+test('combineConsensus: sourceOfTruth prefers the heuristic\'s own rule-based judgment when it resolved to anything specific', () => {
+  const heuristic = { intent: 'act.perform', status: 'accepted', confidence: 0.9, candidates: [{ intent: 'act.perform', score: 0.9 }], sourceOfTruth: 'tool', meta: {} };
+  const semantic = { intent: 'act.perform', confidence: 0.9, candidates: [], sourceOfTruth: 'external_knowledge', speechAct: 'request', referents: [], ambiguous: false, reason: null };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.sourceOfTruth, 'tool'); // heuristic's own resolution wins, not semantic's
+});
+
+test('combineConsensus: sourceOfTruth falls back to the semantic tier\'s judgment when the heuristic genuinely could not tell', () => {
+  const heuristic = classify(user('asdkfj alkj qzx'), silent); // sourceOfTruth: unknown
+  const semantic = { intent: null, confidence: 0, candidates: [], sourceOfTruth: 'memory', speechAct: null, referents: [], ambiguous: false, reason: null };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.sourceOfTruth, 'memory');
+});
+
+// === IntentIQ 2.0: interpret() (the cascade — heuristic first, semantic only when needed) ===
+
+test('interpret(): a strong heuristic match never calls the semantic model — test #1: simple native, no unnecessary semantic call', async () => {
+  const model = { chat: async () => { throw new Error('semantic model must not be called for a strong heuristic match'); } };
+  const d = await interpret(user('Hoi Gaia'), { silent: true, model });
+  assert.equal(d.intent, 'converse');
+  assert.ok(d.confidence > 0.9);
+});
+
+test('interpret(): without any semantic model configured or injected, behaves exactly like classify() (heuristic-only, backward compatible)', async () => {
+  const messages = user('Why is my website crashing?');
+  const viaClassify = classify(messages, silent);
+  const viaInterpret = await interpret(messages, silent);
+  assert.equal(viaInterpret.intent, viaClassify.intent);
+  assert.equal(viaInterpret.status, viaClassify.status);
+  assert.equal(viaInterpret.confidence, viaClassify.confidence);
+});
+
+test('interpret(): a weak/unknown heuristic result escalates to the semantic model when one is configured', async () => {
+  let called = false;
+  const model = {
+    chat: async () => {
+      called = true;
+      return JSON.stringify({ intent: 'decide.support', confidence: 0.8, sourceOfTruth: 'conversation' });
+    },
+  };
+  const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
+  assert.equal(called, true);
+  assert.equal(d.intent, 'decide.support');
+});
+
+test('interpret(): ambiguity without enough context is not force-classified — test #7: ambiguity', async () => {
+  // No semantic model configured: a signal-free, context-free turn must
+  // not confidently resolve to an arbitrary intent.
+  const d = await interpret(user('Kun je deze ook doen?'), silent);
+  assert.notEqual(d.status, 'accepted');
+});
+
+test('interpret(): never throws even if the semantic model rejects', async () => {
+  const model = { chat: async () => { throw new Error('boom'); } };
+  const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
+  assert.equal(d.status, 'unknown'); // degrades to the heuristic's own (unknown) result
+});
+
+test('interpret(): logs whether the semantic classifier was actually called', async () => {
+  const lines = [];
+  await interpret(user('Hoi Gaia'), { logger: (line) => lines.push(line) });
+  const strong = JSON.parse(lines[0]);
+  assert.equal(strong.semanticCalled, false);
+
+  lines.length = 0;
+  const model = { chat: async () => JSON.stringify({ intent: 'converse', confidence: 0.6 }) };
+  await interpret(user('Kun je deze ook doen?'), { logger: (line) => lines.push(line), model });
+  const weak = JSON.parse(lines[0]);
+  assert.equal(weak.semanticCalled, true);
+});
+
+// === IntentIQ 2.0: section 14 test scenarios (concrete turns from the brief) ===
+
+test('scenario: "Wat weet je nog van mijn voorkeuren?" -> memory.inspect, sourceOfTruth memory', () => {
+  const d = classify(user('Wat weet je nog van mijn voorkeuren?'), silent);
+  assert.equal(d.intent, 'memory.inspect');
+  assert.equal(d.sourceOfTruth, 'memory');
+});
+
+test('scenario: "Waarom werkt dit zo?" -> inform.explain', () => {
+  const d = classify(user('Waarom werkt dit zo?'), silent);
+  assert.equal(d.intent, 'inform.explain');
+});
+
+test('scenario: "Schrijf een liedje hierover." -> create.generate', () => {
+  const d = classify(user('Schrijf een liedje hierover.'), silent);
+  assert.equal(d.intent, 'create.generate');
+});
+
+test('scenario: "Herschrijf dit wat scherper." -> create.transform', () => {
+  const d = classify(user('Herschrijf dit wat scherper.'), silent);
+  assert.equal(d.intent, 'create.transform');
+});
+
+test('scenario: "Wat denk je dat ik hiermee moet doen?" -> decide.support', () => {
+  const d = classify(user('Wat denk je dat ik hiermee moet doen?'), silent);
+  assert.equal(d.intent, 'decide.support');
+});
+
+test('scenario: follow-up — "Analyseer deze architectuur." then "En deze dan?" resolves via inheritance/reference', () => {
+  const history = user('Analyseer deze architectuur.');
+  const withReply = [...history, msg('assistant', 'Ik zie een paar dingen die opvallen.')];
+  const first = classify(user('Analyseer deze architectuur.'), silent);
+  const followUp = classify(user('En deze dan?', withReply), silent);
+  assert.equal(first.intent, 'inform.explain');
+  assert.notEqual(followUp.status, 'unknown'); // inherited, not a hard failure
+});
+
+test('scenario: "Kun je deze ook doen?" without context does not get a confident arbitrary intent', () => {
+  const d = classify(user('Kun je deze ook doen?'), silent);
+  assert.notEqual(d.status, 'accepted');
+});
+
+test('scenario: capability separation — IntentIQ never calls Hermes, Web/Brave, or any other capability, at either tier', async () => {
+  const model = { chat: async () => JSON.stringify({ intent: 'inform.explain', confidence: 0.9, sourceOfTruth: 'external_knowledge' }) };
+  // If IntentIQ ever called a capability, these would be the modules
+  // involved — asserting their absence from require.cache after a full
+  // interpret() call is a stronger runtime check than the static source
+  // scan above.
+  const before = new Set(Object.keys(require.cache));
+  await interpret(user('what is the current OpenAI API documentation?'), { silent: true, model });
+  const after = Object.keys(require.cache).filter((k) => !before.has(k));
+  for (const modulePath of after) {
+    assert.ok(!/hermesClient|braveSearch|gaiaGenerator|mimoTts/i.test(modulePath), `interpret() loaded a capability module: ${modulePath}`);
+  }
 });

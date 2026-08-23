@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Logos.IntentIQ v0.1 — "what is the user trying to achieve?"
+ * Logos.IntentIQ 2.0 — "what is the user trying to achieve?"
  *
  * Boundary (architecture.md §4.2 — Logos is Gaia's cognitive layer; Hermes
  * is a standalone capability Gaia may task, never a home for IntentIQ).
@@ -13,56 +13,47 @@
  * routing hint — that boundary is asserted directly in
  * test/intentIQ.test.js, not just described here.
  *
- * Implementation strategy — a small, inspectable, replaceable cascade:
+ * Two interpretation tiers, cascaded:
  *
- *   1. Trivial/empty input           -> unknown, immediately.
- *   2. Deterministic signal scoring  -> bilingual (EN/NL) pattern cues per
- *                                        intent (intentTaxonomy.js's fixed
- *                                        vocabulary), scored on the latest
- *                                        user turn.
- *   2a. Follow-up resolution         -> if the latest turn carries no
- *                                        signal of its own but reads as a
- *                                        continuation ("En deze dan?" /
- *                                        "And this one?"), inherit the
- *                                        most recently resolved intent
- *                                        from the conversation window,
- *                                        at reduced confidence.
- *   2b. Compound-turn detection      -> a naive split on "and"/"en" that
- *                                        catches the clearest two-intent
- *                                        turns ("draft it and send it").
- *                                        Reported as ambiguous, never
- *                                        silently collapsed to one.
- *   3. Semantic/LLM classification   -> NOT IMPLEMENTED in v0.1. See the
- *                                        module-level NOTE below — this is
- *                                        a documented gap, not a silent
- *                                        one.
- *   4. Ambiguity / unknown           -> close-scoring candidates yield
- *                                        status "ambiguous"; no signal at
- *                                        all yields "unknown". Neither is
- *                                        a failure mode; both are the
- *                                        taxonomy working as designed
- *                                        (soul.md: "she never pretends
- *                                        certainty").
+ *   1. Heuristic (classify(), unchanged from v0.1) — deterministic,
+ *      synchronous, free. Trivial/empty input -> unknown immediately;
+ *      bilingual (EN/NL) pattern-cue scoring per intent; follow-up
+ *      inheritance for signal-free continuations ("En deze dan?");
+ *      naive compound-turn detection ("draft it and send it").
+ *   2. Semantic (classifySemantic() + interpret(), new in 2.0) — a real,
+ *      independently-configured model call, tried only when the heuristic
+ *      tier did NOT produce a confident ("accepted") match. See this
+ *      module's own cost posture below.
  *
- * NOTE on the missing semantic tier: the design brief for this module asks
- * for a staged cascade ending in "semantic/LLM classification where
- * necessary". That tier is deliberately not built in v0.1: IntentIQ is
- * forbidden from calling Hermes (the only reasoning provider this codebase
- * has), and there is no other model-agnostic reasoning seam available to
- * it yet. Building a second, IntentIQ-private reasoning path would be
- * exactly the kind of new Hermes-adjacent subsystem this task explicitly
- * rules out. So v0.1 is tier-1-only, with tier 3 left as a named, empty
- * extension point (see `classifySemantic` below) rather than invented
- * around. This is the single largest known limitation of this version —
- * see the implementation report for what a real tier 3 would need.
+ * `classify()` still returns exactly what it always has — the same
+ * synchronous, model-free function, unit-testable and callable with zero
+ * config. `interpret()` is the new, richer, async entry point (what
+ * turn.js now calls): it runs classify() first, and only escalates to
+ * classifySemantic() when the heuristic result is weak, ambiguous, or
+ * unknown. The two results are merged by combineConsensus() — agreement
+ * raises confidence, disagreement is reported honestly as `ambiguous:
+ * true` rather than silently picking one (soul.md: "she never pretends
+ * certainty"). A strong heuristic match never triggers a semantic call,
+ * so semantic classification adds no latency/cost to the common case.
+ *
+ * IntentIQ 2.0 still only interprets. `sourceOfTruth` describes what a
+ * turn's answer likely draws on ("this looks like it needs current
+ * external information") — it is never a routing instruction ("therefore
+ * call the web tool"), and neither classify() nor interpret() ever
+ * imports or references Hermes, the web tool, the Decision Engine, or the
+ * Orchestrator (asserted directly in tests, not just described here).
  */
 
 const crypto = require('crypto');
 const { INTENT_IDS, isKnownIntent, TAXONOMY_VERSION } = require('./intentTaxonomy');
 const { logIntentDecision } = require('./intentLog');
+const { buildSemanticPrompt } = require('./intentSemanticPrompt');
+const { parseAndValidateSemanticOutput, MalformedSemanticOutputError } = require('./intentSemanticValidate');
+const { createFromEnv: createIntentModelFromEnv } = require('./intentModelClient');
 
 const SCHEMA_VERSION = 'intentiq.v1';
 const CLASSIFIER_VERSION = 'heuristic-v0.1';
+const SEMANTIC_CLASSIFIER_VERSION = 'semantic-v2.0';
 
 // --- tiny local text helpers (deliberately not shared with memoryPolicy.js
 // — "is this trivial for the purpose of recall/reflection" and "is this
@@ -113,6 +104,14 @@ const SIGNALS = {
     phrase('just (want|wanted) to (talk|say|vent)'), boundary('vent'),
     phrase("not (really )?looking for advice"), phrase('just checking'),
     phrase('gewoon (even )?praten'), phrase('ik wil het er over hebben'),
+    // A bare greeting (optionally with a short name, "Hoi Gaia") is
+    // presence-seeking, not an information request — without this, "Hoi
+    // Gaia" scored zero signal anywhere and fell through to "unknown",
+    // which (for IntentIQ 2.0's cascade) would trigger a needless semantic
+    // classifier call for the single most common turn shape there is.
+    // Deliberately anchored to the whole message so it does not also fire
+    // on "Hello, why is my site down?" (still correctly inform.explain).
+    /^(hi|hey|hello|hoi|hallo|goedemorgen|goedemiddag|goedenavond)\b(\s+\w{2,15})?[!.]*$/i,
   ],
   'inform.explain': [
     phrase('why (is|does|did|are|isn\'?t)'), phrase("what('|i)?s the"),
@@ -153,11 +152,21 @@ const SIGNALS = {
     phrase('which (one|option)'),
     phrase('zou ik'), phrase('wat zou jij doen'), phrase('ik weet niet of'),
     phrase('help me kiezen'),
+    // "What do you think I should do with this" phrasing — distinct from
+    // "wat zou jij doen" (hypothetical, about Gaia) in that it asks Gaia's
+    // opinion on the user's own next move. Added after a concrete gap: this
+    // exact Dutch phrasing scored zero signal anywhere.
+    phrase('wat (denk je|vind je) dat ik'), phrase('what do you think i should'),
   ],
   'memory.inspect': [
     phrase('what (have you|do you) (noticed|know|remember)'),
     phrase('why do you think that'), phrase('what do you understand about me'),
     phrase('wat weet je (over|van) mij'), phrase('wat heb je gemerkt'),
+    // "What do you still know/remember about my [preferences/etc]" — the
+    // "nog" (still) plus a possessive noun phrase ("mijn voorkeuren") after
+    // "van/over" wasn't covered by the "van mij" pattern above, which
+    // requires the bare pronoun immediately after van/over.
+    phrase('wat weet je nog (van|over)'),
   ],
   'memory.correct': [
     phrase('forget (what|that|this)'), phrase("that'?s not right"),
@@ -295,17 +304,6 @@ function decideStatus(candidates, rawScored) {
   const shareOk = candidates[0].score >= AMBIGUITY_SHARE_THRESHOLD;
   const marginOk = (top.raw - second.raw) > AMBIGUITY_RAW_MARGIN;
   return (shareOk || marginOk) ? 'accepted' : 'ambiguous';
-}
-
-// --- semantic tier extension point (not implemented — see module NOTE) ---
-
-/**
- * @param {string} _text
- * @param {object} _ctx
- * @returns {null} always null in v0.1 — the deterministic tier is final.
- */
-function classifySemantic(_text, _ctx) {
-  return null;
 }
 
 // --- public API ------------------------------------------------------------
@@ -447,10 +445,21 @@ function classify(messages, options = {}) {
     } else if (looksLikeContinuation(text)) {
       decision = resolveByInheritance(text, messages, options);
     } else {
-      const semantic = classifySemantic(text, { messages, options });
-      decision = semantic || unknownWithSourceAttempt(text, options, 'no_signal_matched');
+      decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
     }
   }
+
+  // Additive IntentIQ 2.0 fields, defaulted uniformly here regardless of
+  // which cascade branch produced `decision` above — the heuristic tier
+  // alone never computes speechAct/referents (that needs real semantic
+  // interpretation, not keyword matching), and `ambiguous` is simply a
+  // named alias of the existing `status === 'ambiguous'` judgment so
+  // callers don't have to know that encoding. combineConsensus() (used by
+  // interpret(), below) overwrites these when a semantic result actually
+  // ran.
+  decision.ambiguous = decision.status === 'ambiguous';
+  decision.speechAct = decision.speechAct || null;
+  decision.referents = decision.referents || [];
 
   if (!options.silent) {
     logIntentDecision(
@@ -504,10 +513,216 @@ function resolveByInheritance(text, messages, options) {
   return unknownWithSourceAttempt(text, options, 'continuation_with_no_resolvable_prior_turn');
 }
 
+// --- IntentIQ 2.0: semantic classification tier ----------------------------
+
+/**
+ * Calls the semantic classifier model, if one is configured, and returns a
+ * validated SemanticResult — or degrades to `null` on any failure
+ * (unconfigured, unreachable, malformed output). Never throws: a semantic
+ * classification failure must never take down interpretation the way a
+ * missing/broken heuristic signal never does either. The heuristic
+ * classifier remains authoritative whenever this returns null.
+ *
+ * @param {string} text
+ * @param {{ recentTurns?: Array<{role:string,content:string}>, heuristicResult?: object }} [context]
+ * @param {{ model?: { chat: (messages: Array) => Promise<string> } }} [options] `model` is injectable for tests; defaults to intentModelClient.js's createFromEnv(process.env).
+ * @returns {Promise<{ attempted: boolean, result: object|null }>} `attempted` is true only when a real model call was actually issued (for observability — "semantic call yes/no"), independent of whether it succeeded.
+ */
+async function classifySemantic(text, context = {}, options = {}) {
+  const model = options.model || createIntentModelFromEnv();
+  if (!model) {
+    return { attempted: false, result: null };
+  }
+
+  try {
+    const messages = buildSemanticPrompt({
+      text,
+      recentTurns: context.recentTurns,
+      heuristicResult: context.heuristicResult,
+    });
+    const raw = await model.chat(messages);
+    const result = parseAndValidateSemanticOutput(raw);
+    return { attempted: true, result };
+  } catch (err) {
+    const reason = err instanceof MalformedSemanticOutputError ? 'malformed_semantic_output' : 'semantic_model_unavailable';
+    console.error(`[intentIQ] semantic classification degraded (${reason}): ${err.message}`);
+    return { attempted: true, result: null };
+  }
+}
+
+/**
+ * Merges the heuristic IntentDecision with an (optional) semantic result
+ * into IntentIQ 2.0's final interpretation. `semantic` is `null` whenever
+ * no semantic call happened or ran (unconfigured, skipped because the
+ * heuristic already matched strongly, or degraded) — in that case the
+ * heuristic decision is returned completely unchanged, byte-for-byte
+ * identical to classify()'s own v0.1 output (this is what keeps
+ * interpret() backward compatible when no semantic classifier is
+ * configured — see intentModelClient.js).
+ *
+ * Consensus rules (per the IntentIQ 2.0 brief):
+ *   - Both tiers agree on the top intent -> confidence rises (the max of
+ *     the two), not ambiguous.
+ *   - Both have an opinion but disagree -> the higher-confidence intent
+ *     wins, but the result is explicitly `ambiguous: true` — disagreement
+ *     between two independent interpretation methods is real uncertainty,
+ *     not something to paper over with whichever answer happens to be
+ *     picked.
+ *   - Only the semantic tier has an opinion (heuristic found nothing) ->
+ *     the semantic result is used, carrying its own ambiguity judgment.
+ *   - Only the heuristic tier has an opinion (semantic found nothing) ->
+ *     the heuristic decision is used unchanged.
+ *   - Neither has an opinion -> unknown, as before.
+ *
+ * sourceOfTruth prefers the heuristic's own rule-based judgment whenever
+ * it resolved to anything more specific than "unknown" (principles.md —
+ * Source First already gives that logic real signal words to work from);
+ * the semantic tier's sourceOfTruth judgment is only used to fill the gap
+ * when the heuristic genuinely couldn't tell.
+ *
+ * @param {object} heuristic classify()'s IntentDecision
+ * @param {object|null} semantic a validated SemanticResult, or null
+ * @returns {object} the final IntentDecision
+ */
+function combineConsensus(heuristic, semantic) {
+  if (!semantic) return heuristic;
+
+  const heuristicTop = heuristic.status === 'accepted'
+    ? heuristic.intent
+    : (heuristic.candidates[0] && heuristic.candidates[0].intent) || null;
+  const heuristicTopConfidence = heuristicTop
+    ? (heuristic.status === 'accepted' ? heuristic.confidence : heuristic.candidates[0].score)
+    : 0;
+
+  // Merge candidate lists: union by intent, keeping the higher score seen
+  // for each — never silently dropping a candidate either tier surfaced.
+  const merged = new Map();
+  for (const c of heuristic.candidates || []) merged.set(c.intent, c.score);
+  for (const c of semantic.candidates || []) merged.set(c.intent, Math.max(merged.get(c.intent) || 0, c.confidence));
+  if (semantic.intent) merged.set(semantic.intent, Math.max(merged.get(semantic.intent) || 0, semantic.confidence));
+  const candidates = [...merged.entries()]
+    .map(([intent, score]) => ({ intent, score }))
+    .sort((a, b) => b.score - a.score);
+
+  let intent = null;
+  let confidence = 0;
+  let ambiguous = false;
+  let status = 'unknown';
+
+  if (heuristicTop && semantic.intent && heuristicTop === semantic.intent) {
+    intent = semantic.intent;
+    confidence = capConfidence(Math.max(heuristicTopConfidence, semantic.confidence));
+    status = 'accepted';
+    ambiguous = false;
+  } else if (heuristicTop && semantic.intent && heuristicTop !== semantic.intent) {
+    const semanticWins = semantic.confidence >= heuristicTopConfidence;
+    intent = semanticWins ? semantic.intent : heuristicTop;
+    confidence = capConfidence(semanticWins ? semantic.confidence : heuristicTopConfidence);
+    status = 'ambiguous';
+    ambiguous = true;
+  } else if (!heuristicTop && semantic.intent) {
+    intent = semantic.intent;
+    confidence = capConfidence(semantic.confidence);
+    ambiguous = Boolean(semantic.ambiguous);
+    status = ambiguous ? 'ambiguous' : 'accepted';
+  } else if (heuristicTop && !semantic.intent) {
+    intent = heuristicTop;
+    confidence = heuristicTopConfidence;
+    status = heuristic.status;
+    ambiguous = heuristic.status === 'ambiguous';
+  }
+  // else: neither tier has an opinion — stays unknown/0/false, as initialized.
+
+  const sourceOfTruth = (heuristic.sourceOfTruth && heuristic.sourceOfTruth !== 'unknown')
+    ? heuristic.sourceOfTruth
+    : (semantic.sourceOfTruth || 'unknown');
+
+  return {
+    ...heuristic,
+    intent,
+    status,
+    confidence,
+    candidates,
+    sourceOfTruth,
+    needsClarification: status !== 'accepted',
+    ambiguous,
+    speechAct: semantic.speechAct || null,
+    referents: semantic.referents || [],
+    meta: {
+      ...heuristic.meta,
+      semanticReason: semantic.reason || null,
+      classifierVersion: SEMANTIC_CLASSIFIER_VERSION,
+    },
+  };
+}
+
+/**
+ * IntentIQ 2.0's entry point — turn.js's own `intentIQ` default. Runs the
+ * unchanged heuristic classify() first (cheap, synchronous), and only
+ * escalates to the semantic tier when the heuristic result was not a
+ * confident ("accepted") match, so a strong heuristic match never incurs
+ * an extra model call. classify() itself is untouched and remains
+ * directly callable wherever only the free heuristic tier is wanted (see
+ * test/intentIQ.test.js's many direct classify() tests).
+ *
+ * @param {Array<{role:string,content:string}>} messages
+ * @param {{
+ *   correlationId?: string,
+ *   contextId?: string,
+ *   hasAttachment?: boolean,
+ *   silent?: boolean,
+ *   logger?: (line: string) => void,
+ *   model?: { chat: (messages: Array) => Promise<string> },
+ * }} [options]
+ * @returns {Promise<IntentDecision>}
+ */
+async function interpret(messages, options = {}) {
+  const correlationId = options.correlationId || crypto.randomUUID();
+  const heuristic = classify(messages, { ...options, correlationId, silent: true });
+  const text = latestUserText(Array.isArray(messages) ? messages : []);
+
+  let semantic = { attempted: false, result: null };
+  if (heuristic.status !== 'accepted') {
+    // The full recent history (both roles), not just prior user turns —
+    // resolving "en deze dan?" needs to see what the assistant said too,
+    // not only what the user has typed. messages ends with the current
+    // turn (this codebase's convention — see turn.js), so drop the last
+    // entry; buildSemanticPrompt itself caps this to its own last-6 window.
+    const recentTurns = Array.isArray(messages) ? messages.slice(0, -1) : [];
+    semantic = await classifySemantic(
+      text,
+      { recentTurns, heuristicResult: heuristic },
+      { model: options.model }
+    );
+  }
+
+  const final = combineConsensus(heuristic, semantic.result);
+
+  if (!options.silent) {
+    logIntentDecision(
+      {
+        decision: final,
+        input: text,
+        contextId: options.contextId,
+        correlationId,
+        classifierVersion: CLASSIFIER_VERSION,
+        semanticCalled: semantic.attempted,
+      },
+      options.logger
+    );
+  }
+
+  return final;
+}
+
 module.exports = {
   classify,
+  interpret,
+  classifySemantic,
+  combineConsensus,
   SCHEMA_VERSION,
   CLASSIFIER_VERSION,
+  SEMANTIC_CLASSIFIER_VERSION,
   // exported for the eval harness and tests only — not part of the public
   // cognitive contract other Gaia modules should depend on.
   __internals: { scoreAllIntents, toNormalizedCandidates, resolveSourceOfTruth, extractEntities, isEmptyOrFiller },

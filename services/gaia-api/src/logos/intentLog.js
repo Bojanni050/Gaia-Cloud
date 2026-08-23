@@ -29,6 +29,7 @@ function truncate(text) {
  *   contextId: string|undefined,
  *   correlationId: string,
  *   classifierVersion: string,
+ *   semanticCalled?: boolean,
  *   timestamp?: string,
  * }} entry
  * @param {(line: string) => void} [sink] injectable for tests; defaults to console.log
@@ -48,6 +49,10 @@ function logIntentDecision(entry, sink = (line) => console.log(line)) {
     sourceOfTruth: entry.decision.sourceOfTruth,
     entities: entry.decision.entities,
     needsClarification: entry.decision.needsClarification,
+    // IntentIQ 2.0 additions — additive, backward compatible.
+    ambiguous: Boolean(entry.decision.ambiguous),
+    speechAct: entry.decision.speechAct || null,
+    semanticCalled: Boolean(entry.semanticCalled),
   };
   sink(JSON.stringify(record));
   return record;

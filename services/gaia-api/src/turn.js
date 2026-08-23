@@ -51,7 +51,7 @@
 
 const { buildSystemPrompt } = require('./foundation');
 const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
-const { classify: classifyIntent } = require('./logos/intentIQ');
+const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
 const { formatReply, createStreamEmitter, generateReply, generateStreamingReply } = require('./responseEngine');
 const { decide: decideAction } = require('./decision/decisionEngine');
@@ -339,15 +339,17 @@ async function performStreamingTurn({
       }
     : undefined;
 
-  // Logos: IntentIQ observes the turn and produces an IntentDecision. Its
+  // Logos: IntentIQ (2.0 — heuristic + semantic, logos/intentIQ.js's
+  // interpret()) observes the turn and produces an IntentDecision. Its
   // output now genuinely drives what Gaia does next (via the Decision
-  // Engine below) — not just a dev-logged observation. Never allowed to
+  // Engine below) — not just a dev-logged observation. Awaited: the
+  // semantic tier, when it runs, is a real model call. Never allowed to
   // throw into the turn path; a failure here degrades to `intentDecision:
   // null`, which the Decision Engine treats as "route to Hermes" (its
   // safest default), not as a hard failure.
   let intentDecision = null;
   try {
-    intentDecision = intentIQ(messages, { contextId: conversationId, logger: decisionLogger });
+    intentDecision = await intentIQ(messages, { contextId: conversationId, logger: decisionLogger });
   } catch (_) {
     // Observability must never take down a real conversational turn.
   }
