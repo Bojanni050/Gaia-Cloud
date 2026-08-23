@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGaiaGenerator, readNativeConfig, isConfigured } = require('../src/generation/gaiaGenerator');
+const { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv } = require('../src/generation/gaiaGenerator');
 
 // --- Configuration --------------------------------------------------------
 
@@ -30,6 +30,24 @@ test('isConfigured requires both baseUrl and model', () => {
   assert.equal(isConfigured({ baseUrl: 'http://x', model: '' }), false);
   assert.equal(isConfigured({ baseUrl: '', model: 'x' }), false);
   assert.equal(isConfigured({ baseUrl: 'http://x', model: 'x' }), true);
+});
+
+// --- createFromEnv (the composition server.js uses) -----------------------
+
+test('createFromEnv returns undefined when GAIA_NATIVE_* is unset — the documented "route everything through Hermes" degrade', () => {
+  assert.equal(createFromEnv({}), undefined);
+});
+
+test('createFromEnv returns undefined when only one of baseUrl/model is set', () => {
+  assert.equal(createFromEnv({ GAIA_NATIVE_BASE_URL: 'http://test' }), undefined);
+  assert.equal(createFromEnv({ GAIA_NATIVE_MODEL: 'test-model' }), undefined);
+});
+
+test('createFromEnv returns a working generator when both baseUrl and model are set', () => {
+  const generator = createFromEnv({ GAIA_NATIVE_BASE_URL: 'http://test:1234/v1', GAIA_NATIVE_MODEL: 'test-model' });
+  assert.ok(generator);
+  assert.equal(typeof generator.generate, 'function');
+  assert.equal(typeof generator.stream, 'function');
 });
 
 // --- createGaiaGenerator --------------------------------------------------

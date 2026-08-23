@@ -220,4 +220,20 @@ function parseSseFrame(frame) {
   return null;
 }
 
-module.exports = { createGaiaGenerator, readNativeConfig, isConfigured };
+/**
+ * Composes readNativeConfig + isConfigured + createGaiaGenerator into the
+ * one call server.js needs: a ready-to-use native generator when
+ * GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are set, or `undefined` when they
+ * are not — the same "leave unset to route everything through Hermes"
+ * degrade this module has always documented (see .env.example). Callers
+ * should treat `undefined` as "no native generator available" and simply
+ * omit it, exactly like an omitted `tools` param elsewhere in this codebase.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ generate: Function, stream: Function }|undefined}
+ */
+function createFromEnv(env = process.env) {
+  const config = readNativeConfig(env);
+  return isConfigured(config) ? createGaiaGenerator(config) : undefined;
+}
+
+module.exports = { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv };

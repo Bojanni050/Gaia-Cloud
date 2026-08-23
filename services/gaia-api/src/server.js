@@ -13,14 +13,20 @@
  *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
  *
- * Everything cognitive lives here or behind Hermes; clients send plain
- * turns and render plain replies. Model-agnostic by construction: the
- * reply shape carries no provider information whatsoever.
+ * Everything cognitive lives here or behind a capability (Hermes, or Gaia's
+ * own native generator — src/generation/gaiaGenerator.js, wired in below via
+ * `nativeGenerator` when GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are set);
+ * clients send plain turns and render plain replies. Model-agnostic by
+ * construction: the reply shape carries no provider information whatsoever.
+ * Which capability actually answers a turn is turn.js's Decision Engine's
+ * call, never this file's — server.js only constructs and hands over what
+ * is available.
  */
 const express = require('express');
 const { parseTokens, createAuthMiddleware } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient } = require('./hindsightClient');
+const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -48,6 +54,11 @@ function createApp(env = process.env) {
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });
+  // Gaia's native voice (src/generation/gaiaGenerator.js) — undefined when
+  // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case the
+  // Decision Engine never sees a "native" capability and every turn routes
+  // through Hermes exactly as before this existed (see .env.example).
+  const nativeGenerator = createNativeGeneratorFromEnv(env);
   const auth = createAuthMiddleware(parseTokens(env.GAIA_API_TOKEN));
 
   const app = express();
@@ -104,6 +115,7 @@ function createApp(env = process.env) {
         hindsight,
         res,
         conversationId,
+        nativeGenerator,
         historyStore,
         decisionStore,
       });
@@ -112,7 +124,7 @@ function createApp(env = process.env) {
 
     const attachmentIds = (req.body && req.body.attachmentIds) || [];
     const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds);
-    const result = await performTurn({ messages, systemPrompt, hermes, attachments });
+    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator });
     res.status(result.status).json(result.body);
 
     // Chat history — fire-and-forget, after the response is already sent,
