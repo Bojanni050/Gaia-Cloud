@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatReply, createStreamEmitter, toCalmError, CALM_FALLBACK } = require('../src/responseEngine');
+const { formatReply, createStreamEmitter, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
 
 function fakeRes() {
   return {
@@ -103,4 +103,81 @@ test('an empty delta is a no-op and never opens the stream prematurely', () => {
   emitter.delta(null, {});
   assert.equal(res.headers, null);
   assert.equal(res.written.length, 0);
+});
+
+// --- generateStreamingReply (Decision Engine / Orchestrator seam) ---------
+
+test('generateStreamingReply for a capability/tool result reports back what already streamed, without emitting anything itself', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'capability', capability: 'hermes' },
+    executionResult: { action: 'capability', capability: 'hermes', output: 'already streamed via onDelta' },
+    emitter,
+  });
+  assert.equal(text, 'already streamed via onDelta');
+  assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
+});
+
+test('generateStreamingReply treats a tool result the same way as a capability result', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'tool', capability: 'web' },
+    executionResult: { action: 'tool', capability: 'web', output: 'search result' },
+    emitter,
+  });
+  assert.equal(text, 'search result');
+  assert.equal(res.written.length, 0);
+});
+
+test('generateStreamingReply returns null when a capability/tool produced no usable output', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  assert.equal(
+    generateStreamingReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: null }, emitter }),
+    null
+  );
+  assert.equal(
+    generateStreamingReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: '' }, emitter }),
+    null
+  );
+});
+
+test('generateStreamingReply for clarify renders and emits Gaia\'s own calm words, without any capability', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'clarify', reason: 'ambiguous' },
+    executionResult: { action: 'clarify', output: null, reason: 'ambiguous' },
+    emitter,
+  });
+  assert.equal(text, CLARIFY_FALLBACK);
+  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: CLARIFY_FALLBACK } }] })}\n\n`);
+});
+
+test('generateStreamingReply for refuse renders and emits Gaia\'s own calm words, without any capability', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'refuse', reason: 'policy' },
+    executionResult: { action: 'refuse', output: null, reason: 'policy' },
+    emitter,
+  });
+  assert.equal(text, REFUSE_FALLBACK);
+  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: REFUSE_FALLBACK } }] })}\n\n`);
+});
+
+test('generateStreamingReply for native returns null — no non-Hermes generator exists yet', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null }, emitter });
+  assert.equal(text, null);
+  assert.equal(res.written.length, 0);
+});
+
+test('generateStreamingReply returns null when there is no execution result at all', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  assert.equal(generateStreamingReply({ decision: { action: 'capability' }, executionResult: null, emitter }), null);
 });

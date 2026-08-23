@@ -20,9 +20,22 @@
  * stream framing, retries, provider routing). It only expresses: given a
  * result, produce the response — a direct Gaia answer and a
  * capability-produced answer converge here into the same shape.
+ *
+ * generateStreamingReply extends this seam to the Decision Engine /
+ * Orchestrator flow (decision/decisionEngine.js, orchestration/
+ * orchestrator.js): a capability/tool's text already reached the client as
+ * deltas during orchestrator.execute() (it was handed this module's own
+ * stream emitter as `onDelta`), so this function's job there is just to
+ * report back what was said. For `clarify`/`refuse` — turns the Orchestrator
+ * deliberately executed *without* calling any capability — nothing has been
+ * said yet, so this is the one place that renders Gaia's own calm words for
+ * them. That is what keeps the invariant true even for capability-free
+ * turns: Response Engine, never a capability, speaks for Gaia.
  */
 
 const CALM_FALLBACK = 'gaia could not answer right now';
+const CLARIFY_FALLBACK = "could you say a bit more about what you're looking for? I want to make sure I answer the right thing.";
+const REFUSE_FALLBACK = "gaia isn't able to help with that.";
 
 /**
  * Maps any capability failure to Gaia's own calm, generic language. Never
@@ -111,4 +124,62 @@ function createStreamEmitter(res) {
   return { delta, finish, fail };
 }
 
-module.exports = { formatReply, createStreamEmitter, toCalmError, CALM_FALLBACK };
+/**
+ * Turns one turn's ExecutionResult (orchestration/orchestrator.js) into the
+ * final reply text, emitting it through the given stream emitter when
+ * nothing has been said yet. Returns the full reply text on success (for
+ * the caller's own hindsight-reflection / history-save use), or null when
+ * there is nothing to say — the caller is expected to treat null as a
+ * capability failure and call `emitter.fail()` itself, exactly like a
+ * failed non-streaming capability call already does.
+ *
+ * - capability/tool: the capability already streamed its own content via
+ *   `onDelta` during orchestrator.execute(); this just reports back what
+ *   the capability returned as its final text (or null if it returned
+ *   nothing usable, or the capability/tool was unavailable).
+ * - clarify/refuse: no capability was called — Gaia's own calm wording is
+ *   rendered and emitted here, through this module's own emitter, never a
+ *   capability's.
+ * - native: no text-generation capability exists in this codebase yet (see
+ *   decisionEngine.js's module note) — there is nothing to emit.
+ *
+ * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter> }} input
+ * @returns {string|null}
+ */
+function generateStreamingReply({ decision, executionResult, emitter }) {
+  if (!executionResult) return null;
+
+  switch (executionResult.action) {
+    case 'capability':
+    case 'tool':
+      return typeof executionResult.output === 'string' && executionResult.output.length > 0
+        ? executionResult.output
+        : null;
+
+    case 'clarify': {
+      const text = CLARIFY_FALLBACK;
+      emitter.delta(text);
+      return text;
+    }
+
+    case 'refuse': {
+      const text = REFUSE_FALLBACK;
+      emitter.delta(text);
+      return text;
+    }
+
+    case 'native':
+    default:
+      return null;
+  }
+}
+
+module.exports = {
+  formatReply,
+  createStreamEmitter,
+  generateStreamingReply,
+  toCalmError,
+  CALM_FALLBACK,
+  CLARIFY_FALLBACK,
+  REFUSE_FALLBACK,
+};

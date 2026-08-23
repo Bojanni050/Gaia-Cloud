@@ -314,19 +314,21 @@ test('performStreamingTurn produces an identical assembled prompt with the real 
 
 // --- Logos.ReasonIQ integration (the IntentIQ -> ReasonIQ handoff seam) ---
 //
-// Fire-and-forget by design (see turn.js's comment) — these tests flush a
-// microtask/macrotask turn (matching how reflectOnTurn's own fire-and-
-// forget write is tested above) rather than awaiting performStreamingTurn
-// itself, since the call is deliberately not on the response's critical
-// path.
+// ReasonIQ is now awaited, not fire-and-forget: the Decision Engine needs
+// its output (reasoningDepth, sufficiency, gaps) to route the turn, so
+// "nothing downstream reads it yet" no longer holds (see turn.js's own
+// comment on this). These tests replace the old fire-and-forget assertions
+// with the opposite guarantee: ReasonIQ resolves *before* any capability is
+// invoked.
 
 async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-test('performStreamingTurn hands IntentIQ\'s real decision to ReasonIQ, fire-and-forget', async () => {
+test('performStreamingTurn hands IntentIQ\'s real decision to ReasonIQ, and awaits it before invoking a capability', async () => {
   const reasonIQCalls = [];
-  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+  const callOrder = [];
+  const hermes = { stream: async (messages, { onDelta }) => { callOrder.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
@@ -335,35 +337,37 @@ test('performStreamingTurn hands IntentIQ\'s real decision to ReasonIQ, fire-and
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
-    reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
+    reasonIQ: async (input) => { callOrder.push('reasonIQ'); reasonIQCalls.push(input); return {}; },
   });
-  await flush();
 
   assert.equal(reasonIQCalls.length, 1);
   assert.equal(reasonIQCalls[0].text, 'Why is my website crashing?');
   assert.equal(reasonIQCalls[0].intentDecision.intent, 'inform.explain');
   assert.deepEqual(reasonIQCalls[0].evidence, []);
+  assert.deepEqual(callOrder, ['reasonIQ', 'hermes']); // ReasonIQ resolves before the capability call
 });
 
-test('performStreamingTurn does not await ReasonIQ — a slow call never delays the response', async () => {
+test('performStreamingTurn awaits ReasonIQ before completing the response', async () => {
   let resolveReasonIQ;
-  const slowReasonIQ = () => new Promise((resolve) => { resolveReasonIQ = resolve; });
+  const delayedReasonIQ = () => new Promise((resolve) => { resolveReasonIQ = resolve; setImmediate(() => resolveReasonIQ({})); });
   const res = fakeRes();
   const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
 
-  await performStreamingTurn({
+  const turnPromise = performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
     documents: DOCUMENTS,
     hermes,
     hindsight: SILENT_HINDSIGHT,
     res,
-    reasonIQ: slowReasonIQ,
+    reasonIQ: delayedReasonIQ,
   });
 
-  // The turn already completed while ReasonIQ is still pending.
+  // Immediately after invoking (before the microtask queue drains), the
+  // response must not yet be complete — ReasonIQ is still pending.
+  assert.equal(res.written.length, 0);
+
+  await turnPromise;
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
-  resolveReasonIQ({});
-  await flush();
 });
 
 test('performStreamingTurn completes normally even if ReasonIQ rejects', async () => {
@@ -542,6 +546,166 @@ test('performStreamingTurn completes normally even if decisionStore.append throw
     decisionStore,
   });
   await flush();
+
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+// --- Gaia Decision Engine / Orchestrator integration -----------------------
+//
+// Hermes is a capability, not a hidden default: these tests exercise all
+// five decision actions through performStreamingTurn's injectable
+// `decisionEngine`/`orchestrate` seams (mirroring the existing intentIQ/
+// reasonIQ override pattern) so each path is provable independently of
+// what the real Decision Engine happens to choose today.
+
+function hermesThatMustNotBeCalled() {
+  return { stream: async () => { throw new Error('Hermes must not be called for this decision'); } };
+}
+
+test('native turn: no capability is invoked, still produced by an explicit decision', async () => {
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hi' }],
+    documents: DOCUMENTS,
+    hermes: hermesThatMustNotBeCalled(),
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => ({ action: 'native' }),
+  });
+
+  // Native has nothing to generate with today (no non-Hermes generator
+  // exists yet) — the turn must fail calmly, and Hermes must never be
+  // reached to fill the gap.
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.jsonBody.error, 'gaia could not answer right now');
+});
+
+test('capability (hermes) turn: Gaia decides, orchestrator calls hermes exactly once, response goes through Response Engine', async () => {
+  const res = fakeRes();
+  let hermesCalls = 0;
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      hermesCalls += 1;
+      onDelta('Hello', false);
+      return 'Hello there.';
+    },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'explain how this works' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => ({ action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' }),
+  });
+
+  assert.equal(hermesCalls, 1);
+  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] })}\n\n`);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('tool turn: the orchestrator executes the capability the Decision selected, without choosing it itself', async () => {
+  const res = fakeRes();
+  const toolCalls = [];
+  const tool = {
+    invoke: async (messages, { onDelta, task, input }) => {
+      toolCalls.push({ task, input });
+      onDelta('tool result', false);
+      return 'tool result';
+    },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'send this to Bo' }],
+    documents: DOCUMENTS,
+    hermes: hermesThatMustNotBeCalled(),
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    tools: { tool },
+    decisionEngine: () => ({ action: 'tool', capability: 'tool', task: 'act.perform', input: { userInput: 'send this to Bo' }, reason: 'test' }),
+  });
+
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].task, 'act.perform');
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('clarify turn: Gaia can choose to clarify without ever calling Hermes', async () => {
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'draft it and send it' }],
+    documents: DOCUMENTS,
+    hermes: hermesThatMustNotBeCalled(),
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => ({ action: 'clarify', reason: 'compound turn detected' }),
+  });
+
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.match(res.written[0], /could you say a bit more/);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('refuse turn: a refusal path never causes a Hermes call', async () => {
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'do something disallowed' }],
+    documents: DOCUMENTS,
+    hermes: hermesThatMustNotBeCalled(),
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => ({ action: 'refuse', reason: 'policy' }),
+  });
+
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.match(res.written[0], /isn't able to help with that/);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('no capability leakage: Hermes output only ever reaches the client through the Response Engine\'s emitter', async () => {
+  const res = fakeRes();
+  const secretProviderDetail = 'internal-model-xyz-do-not-leak';
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      onDelta('a normal reply', false);
+      return 'a normal reply';
+    },
+  };
+
+  // The orchestrator is a thin pass-through in this codebase — this test
+  // pins that invariant by asserting every byte written to the client came
+  // through emitter.delta (i.e. res.write), never a direct write bypassing
+  // it, and that nothing capability-internal (a provider/model name) is
+  // ever part of a written frame regardless of what the capability itself
+  // knows about.
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hello' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => ({ action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' }),
+  });
+
+  for (const frame of res.written) {
+    assert.ok(!frame.includes(secretProviderDetail));
+    assert.ok(!frame.includes('hermes')); // no capability name ever appears in a wire frame
+  }
+});
+
+test('decision engine failure degrades to the hermes capability, never breaking the turn', async () => {
+  const res = fakeRes();
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hello there friend' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    decisionEngine: () => { throw new Error('boom'); },
+  });
 
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });

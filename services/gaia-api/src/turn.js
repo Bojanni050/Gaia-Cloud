@@ -48,7 +48,9 @@ const { buildSystemPrompt } = require('./foundation');
 const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
 const { classify: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
-const { formatReply, createStreamEmitter } = require('./responseEngine');
+const { formatReply, createStreamEmitter, generateStreamingReply } = require('./responseEngine');
+const { decide: decideAction } = require('./decision/decisionEngine');
+const { execute: executeDecision } = require('./orchestration/orchestrator');
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
 
@@ -159,6 +161,19 @@ function latestUserText(messages) {
  * if Hermes fails before producing any content, the caller still gets a
  * normal JSON error response instead of a half-open stream.
  *
+ * Gaia decides what to do with the turn (decision/decisionEngine.js) before
+ * any capability is touched: IntentIQ and ReasonIQ are consumed, not just
+ * observed, and their combined output is what the Decision Engine routes
+ * on — never a `useHermes`-shaped flag. The Orchestrator
+ * (orchestration/orchestrator.js) then executes exactly that Decision:
+ * `capability`/`tool` calls the named capability (Hermes is registered as
+ * one capability among any others passed in via `tools`, never a hidden
+ * default engine); `clarify`/`refuse` call no capability at all. Whatever
+ * the Orchestrator returns is handed to responseEngine.js's
+ * generateStreamingReply, which is the only place that renders Gaia's own
+ * words for a capability-free turn (clarify/refuse) or reports back what a
+ * capability already streamed — the same Response Engine seam either way.
+ *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
  *   documents: Record<string, string>,
@@ -170,9 +185,26 @@ function latestUserText(messages) {
  *   reasonIQ?: (input: object, options: object) => Promise<object>,
  *   historyStore?: { saveConversation: (id: string, messages: Array) => void },
  *   decisionStore?: { append: (record: object) => boolean },
+ *   tools?: Record<string, { invoke: (messages: Array, options?: object) => Promise<*> }>,
+ *   decisionEngine?: (input: object) => import('./decision/decisionSchema').Decision,
+ *   orchestrate?: (decision: object, context: object) => Promise<object>,
  * }} input
  */
-async function performStreamingTurn({ messages, documents, hermes, hindsight, res, conversationId, intentIQ = classifyIntent, reasonIQ = evaluateReasoning, historyStore, decisionStore }) {
+async function performStreamingTurn({
+  messages,
+  documents,
+  hermes,
+  hindsight,
+  res,
+  conversationId,
+  intentIQ = classifyIntent,
+  reasonIQ = evaluateReasoning,
+  historyStore,
+  decisionStore,
+  tools,
+  decisionEngine = decideAction,
+  orchestrate = executeDecision,
+}) {
   const problem = validateMessages(messages);
   if (problem) {
     res.status(400).json({ error: problem });
@@ -200,12 +232,12 @@ async function performStreamingTurn({ messages, documents, hermes, hindsight, re
       }
     : undefined;
 
-  // Logos: IntentIQ observes the turn and produces an IntentDecision.
-  // Dev-logged for inspection only (see logos/intentLog.js) — it does not
-  // yet drive document selection, recall, or capability routing, matching
-  // the same "seam only, no behavior change" posture Logos's earlier
-  // client-side intentIQ/reasonIQ were introduced with (evolution.md,
-  // Milestone 7b). Never allowed to throw into the turn path.
+  // Logos: IntentIQ observes the turn and produces an IntentDecision. Its
+  // output now genuinely drives what Gaia does next (via the Decision
+  // Engine below) — not just a dev-logged observation. Never allowed to
+  // throw into the turn path; a failure here degrades to `intentDecision:
+  // null`, which the Decision Engine treats as "route to Hermes" (its
+  // safest default), not as a hard failure.
   let intentDecision = null;
   try {
     intentDecision = intentIQ(messages, { contextId: conversationId, logger: decisionLogger });
@@ -215,18 +247,23 @@ async function performStreamingTurn({ messages, documents, hermes, hindsight, re
 
   // Logos: ReasonIQ consumes that same IntentDecision — the handoff this
   // seam exists to prove (see logos/index.js's runLogos(), which tests
-  // this composition directly). Fire-and-forget, not awaited: unlike
-  // IntentIQ's free heuristic, ReasonIQ may call a real, paid reasoning
-  // model once one is configured (see the admin surface), and awaiting it
-  // here would add real latency to every turn for a result nothing reads
-  // yet — the opposite of "no behavior change." Its own reasoningDepth
-  // gate (reasonIQ.js) already keeps this cheap when no evidence is
-  // supplied, which is always true here — Gaia doesn't hand ReasonIQ any
-  // evidence yet, so today's calls mostly resolve shallow or degrade
-  // instantly when no reasoning model is configured.
-  Promise.resolve()
-    .then(() => reasonIQ({ text: userText, intentDecision, conversationContext: messages, evidence: [], contextId: conversationId }, { logger: decisionLogger }))
-    .catch(() => {});
+  // this composition directly). Awaited now, unlike before: the Decision
+  // Engine needs its output (reasoningDepth, sufficiency, gaps) to route
+  // the turn, so "fire-and-forget with nothing downstream reading it" no
+  // longer applies. This stays cheap in practice: ReasonIQ's own
+  // reasoningDepth gate (reasonIQ.js) only calls a real reasoning model
+  // when evidence is supplied, and Gaia doesn't hand ReasonIQ any evidence
+  // yet — today's calls resolve shallow, in-process, with no network call.
+  let reasoningResult = null;
+  try {
+    reasoningResult = await reasonIQ(
+      { text: userText, intentDecision, conversationContext: messages, evidence: [], contextId: conversationId },
+      { logger: decisionLogger }
+    );
+  } catch (_) {
+    // A reasoning failure degrades to `reasoningResult: null`, same posture
+    // as intentDecision above — never allowed to take down the turn.
+  }
 
   const systemPrompt = buildSystemPrompt(documents, messages);
   const [reflections, mentalModels] = await Promise.all([
@@ -241,22 +278,63 @@ async function performStreamingTurn({ messages, documents, hermes, hindsight, re
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   const assembled = [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))];
 
-  // Hermes streams internal reasoning/content deltas; it never touches
-  // `res`. Every delta is handed to the Response Engine's stream emitter,
-  // which is the only thing that owns the wire frame shape, the lazy
-  // header-send, and the completion/failure lifecycle (responseEngine.js).
-  // This is what makes a future capability's stream converge on the exact
-  // same user-facing shape Hermes's does today, with no capability-specific
-  // branching here.
+  // A capability (Hermes, a tool) streams internal reasoning/content
+  // deltas; it never touches `res`. Every delta is handed to the Response
+  // Engine's stream emitter, which is the only thing that owns the wire
+  // frame shape, the lazy header-send, and the completion/failure
+  // lifecycle (responseEngine.js). This is what makes any capability's
+  // stream converge on the exact same user-facing shape, with no
+  // capability-specific branching here.
   const emitter = createStreamEmitter(res);
   const onDelta = (chunk, isReasoning) => {
     emitter.delta(chunk, { reasoning: isReasoning });
   };
 
-  let fullText;
+  // Gaia decides (decision/decisionEngine.js), then the Orchestrator
+  // executes exactly that decision (orchestration/orchestrator.js) — the
+  // Orchestrator itself makes no judgment call about which capability a
+  // turn "seems to need". Hermes is registered as one capability among
+  // any `tools` the caller supplied, never a hidden default.
+  const availableCapabilities = [
+    { id: 'hermes' },
+    ...Object.keys(tools || {}).map((id) => ({ id })),
+  ];
+  let decision;
   try {
-    fullText = await hermes.stream(assembled, { onDelta });
+    decision = decisionEngine({
+      userInput: userText,
+      intent: intentDecision,
+      context: { reflections, mentalModels },
+      reasoning: reasoningResult,
+      availableCapabilities,
+    });
   } catch (_) {
+    // The Decision Engine must never take down a turn either — degrade to
+    // the same safe default a missing/failed IntentIQ decision gets.
+    decision = {
+      action: 'capability',
+      capability: 'hermes',
+      task: 'respond',
+      input: { userInput: userText },
+      reason: 'decision engine failed; defaulting to the hermes capability',
+    };
+  }
+
+  const capabilities = {
+    hermes: { invoke: (msgs, { onDelta: emitDelta } = {}) => hermes.stream(msgs, { onDelta: emitDelta }) },
+    ...(tools || {}),
+  };
+
+  let executionResult;
+  try {
+    executionResult = await orchestrate(decision, { capabilities, messages: assembled, onDelta });
+  } catch (_) {
+    emitter.fail();
+    return;
+  }
+
+  const fullText = generateStreamingReply({ decision, executionResult, emitter });
+  if (typeof fullText !== 'string' || fullText.length === 0) {
     emitter.fail();
     return;
   }
