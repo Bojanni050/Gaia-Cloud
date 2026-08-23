@@ -121,6 +121,17 @@ const SIGNALS = {
     boundary('analyze'), boundary('analyse'),
     phrase('waarom'), phrase('wat is'), phrase('hoe werkt'), phrase('leg .* uit'),
     boundary('uitleggen'), boundary('analyseer'), boundary('analyseren'),
+    // "Look/search for a [thing]" delegated-lookup phrasing — deliberately
+    // scoped to an indefinite article/determiner near the look/search verb
+    // ("look into a provider", "kijk eens naar een aanbieder"), not a bare
+    // "kijk naar"/"look at", which would also match "look at this code" /
+    // "kijk naar mijn tekst" (reviewing something already at hand, not a
+    // lookup). Added after a real incident: "Je mag wel even kijken naar
+    // een Nederlandse text-to-speech aanbieder" resolved sourceOfTruth
+    // "unknown" and fell through to native generation, which then
+    // hallucinated tool-call syntax trying to "search" on its own (see
+    // docs/evolution.md's SOUL amendment for the other half of that fix).
+    /\b(kijk|zoek|check|look)\w*\b.{0,30}\b(een|an?)\b/i,
   ],
   'create.generate': [
     phrase('write (a|an|me|us)'), boundary('draft'), boundary('compose'),

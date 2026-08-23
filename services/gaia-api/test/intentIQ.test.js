@@ -189,6 +189,28 @@ test('sourceOfTruth: external_knowledge, for a plain factual question', () => {
   assert.equal(d.sourceOfTruth, 'external_knowledge');
 });
 
+// A delegated "go look/search for a [thing]" phrasing, added after a real
+// incident: this exact Dutch sentence resolved sourceOfTruth "unknown",
+// fell through to native generation, and the model hallucinated tool-call
+// syntax trying to search on its own (see docs/evolution.md's SOUL
+// amendment, and decisionEngine.js's "external_knowledge" -> web-tool
+// branch this signal now actually reaches).
+test('sourceOfTruth: external_knowledge, for a delegated lookup request (NL) — the incident case', () => {
+  const d = classify(user('Je mag wel even kijken naar een Nederlandse text-to-speech aanbieder'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.sourceOfTruth, 'external_knowledge');
+});
+
+test('sourceOfTruth: external_knowledge, for a delegated lookup request (EN)', () => {
+  const d = classify(user('Can you look into a good hosting provider for me?'), silent);
+  assert.equal(d.sourceOfTruth, 'external_knowledge');
+});
+
+test('the lookup signal does not false-positive on "look at/kijk naar" a thing already at hand (no indefinite article)', () => {
+  assert.equal(classify(user('Kijk eens naar mijn code.'), silent).sourceOfTruth, 'unknown');
+  assert.equal(classify(user('Can you look at this document?'), silent).sourceOfTruth, 'unknown');
+});
+
 test('sourceOfTruth defaults to unknown when nothing resolves', () => {
   const d = classify(user('asdkfj alkj qzx'), silent);
   assert.equal(d.sourceOfTruth, 'unknown');
