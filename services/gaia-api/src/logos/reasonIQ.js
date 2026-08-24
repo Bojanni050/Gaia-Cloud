@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * Logos.ReasonIQ v0.1 — "what does this mean, what follows from the
@@ -18,11 +18,11 @@
  * separate, independently configurable LLM seam (reasoningModelClient.js)
  * that is not Hermes and not a Gaia capability. Everything it produces is
  * in-memory only; nothing here persists a hypothesis or a reasoning
- * result anywhere (§8 of the brief — Hindsight is out of scope this
+ * result anywhere (Â§8 of the brief — Hindsight is out of scope this
  * phase).
  *
  * Reasoning depth: ReasonIQ decides for itself, per turn, whether the
- * reasoning model needs to be invoked at all (§6) — and it only does when
+ * reasoning model needs to be invoked at all (Â§6) — and it only does when
  * there is genuinely something to weigh. Without supplied evidence there
  * is nothing for a model call to reason *over*: no intent, however
  * substantial, turns an empty evidence list into hypotheses or verdicts,
@@ -40,6 +40,17 @@
  * intelligent than that without a model call is future work, not a gap
  * in this pass — see the module's own limitations note in the
  * implementation report.
+ *
+ * v0.2 — Evidence & Context Reasoning: the input's `evidence` list is now a
+ * real, populated channel (assembled upstream by reasoning/
+ * evidenceAssembler.js from what turn.js already fetched — Hindsight
+ * recall, mental models, uploads). Deep results link hypotheses/
+ * conclusions/contradictions back to stable evidence IDs, validated
+ * strictly against the supplied list: invented ids are stripped, never
+ * passed upstream. Contradictions carry an explicit significance;
+ * sufficiency is reported as both sufficientForConclusion and its named
+ * alias evidenceSufficient — what Gaia's Decision Engine does with that
+ * stays entirely Gaia's call.
  */
 
 const crypto = require('crypto');
@@ -54,25 +65,63 @@ const { logReasoningResult } = require('./reasonLog');
 // --- reasoning depth heuristic --------------------------------------------
 
 /**
- * Deep reasoning is warranted exactly when there is evidence to weigh —
- * that's the one thing a model call can do that the shallow path can't.
- * Intent and text length used to also factor in here; they were removed
- * because, with no evidence supplied, every intent bottoms out at the
- * same "nothing to reason over" result regardless of how the turn reads,
- * so branching on intent only bought extra model calls for no extra
- * signal.
- * @param {{ text: string, evidence?: Array }} input
+ * Intents whose turns never need weighed conclusions from evidence — plain
+ * conversation and questions about Gaia herself. Even with evidence in
+ * hand (a recalled memory riding along), these stay shallow: their answers
+ * are conversational, and the Decision Engine already routes them natively.
+ */
+const CONTEXT_ONLY_INTENTS = new Set([
+  'converse',
+  'meta.relational',
+  'meta.question',
+  'meta.correction',
+  'meta.capability_question',
+]);
+
+/**
+ * Deep reasoning is warranted when there is evidence to weigh AND the turn
+ * is actually trying to do something with it (brief §14's gating: "simple
+ * conversational turn → shallow; analysis / decision / contradiction /
+ * hypothesis task → evidence-aware reasoning"). Mere evidence PRESENCE is
+ * not a task signal: since 0.2 the evidence channel is populated whenever
+ * Hindsight happened to recall something, so a personal-memory chat turn
+ * carrying one recalled item must not suddenly pay for a model call or get
+ * re-routed away from Gaia's native voice. An IntentIQ decision marking the
+ * turn unclassified/ambiguous/conversational keeps it shallow; any other
+ * intent (or no decision at all — the explicit-evidence eval/CLI shape)
+ * lets evidence drive depth as before.
+ * @param {{ text: string, evidence?: Array, intentDecision?: object|null }} input
  * @returns {'shallow'|'deep'}
  */
 function decideReasoningDepth(input) {
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
-  return hasEvidence ? 'deep' : 'shallow';
+  if (!hasEvidence) return 'shallow';
+
+  const decision = input.intentDecision;
+  if (decision) {
+    if (!decision.intent && decision.status === 'unknown') return 'shallow';
+    if (decision.status === 'ambiguous') return 'shallow';
+    if (decision.intent && CONTEXT_ONLY_INTENTS.has(decision.intent)) return 'shallow';
+  }
+  return 'deep';
 }
 
 // --- fallback / shallow result construction -------------------------------
 
-function baseResult(overrides) {
-  return {
+/**
+ * Evidence metadata for observability (brief Â§18 logs): how many items were
+ * supplied and from which source kinds — computed from the INPUT, never
+ * invented by a model.
+ */
+function evidenceMeta(evidence) {
+  const items = Array.isArray(evidence) ? evidence : [];
+  const sources = [...new Set(items.map((e) => e && e.source).filter(Boolean))];
+  return { evidenceCount: items.length, evidenceSources: sources };
+}
+
+function baseResult(overrides = {}, evidence = []) {
+  const { meta: overrideMeta, ...rest } = overrides;
+  const result = {
     schemaVersion: SCHEMA_VERSION,
     interpretation: '',
     reasoningDepth: 'shallow',
@@ -84,9 +133,20 @@ function baseResult(overrides) {
     conclusions: [],
     sufficientForConclusion: false,
     confidence: 0,
-    meta: { reasonerVersion: REASONER_VERSION, reasoningModelConfigured: false, fallbackReason: null },
-    ...overrides,
+    ...rest,
+    // Named alias of sufficientForConclusion (ReasonIQ 0.2 brief Â§7) —
+    // "is there enough evidence to support a conclusion?" is exactly the
+    // same judgment; both fields always carry the same value.
+    evidenceSufficient: Boolean(rest.sufficientForConclusion),
+    meta: {
+      reasonerVersion: REASONER_VERSION,
+      reasoningModelConfigured: false,
+      fallbackReason: null,
+      ...evidenceMeta(evidence),
+      ...(overrideMeta || {}),
+    },
   };
+  return result;
 }
 
 // Intents that plausibly need supporting material to actually conclude
@@ -103,10 +163,11 @@ const EVIDENCE_DEPENDENT_INTENTS = new Set(['inform.explain', 'create.transform'
  * dependent intent got any) to report honest uncertainty and information
  * gaps, rather than flattening every such turn to the same unearned 0.5
  * confidence regardless of what's actually known about it. This is
- * exactly the kind of cheap, pre-LLM judgment §6 asks ReasonIQ to make —
+ * exactly the kind of cheap, pre-LLM judgment Â§6 asks ReasonIQ to make —
  * it just didn't use to make much of one.
  */
 function shallowResult(input) {
+  const suppliedEvidence = Array.isArray(input.evidence) ? input.evidence : [];
   const text = String(input.text || '').trim();
   if (!text) {
     return baseResult({
@@ -115,7 +176,7 @@ function shallowResult(input) {
       uncertainties: ['no input text was supplied'],
       sufficientForConclusion: false,
       confidence: 0,
-    });
+    }, suppliedEvidence);
   }
 
   const intent = input.intentDecision && input.intentDecision.intent;
@@ -149,11 +210,11 @@ function shallowResult(input) {
     informationGaps,
     sufficientForConclusion,
     confidence,
-  });
+  }, suppliedEvidence);
 }
 
 /** The reasoning model was warranted but unavailable or produced unusable output — never silently substitute a guess. */
-function degradedResult(reason, modelConfigured) {
+function degradedResult(reason, modelConfigured, evidence = []) {
   return baseResult({
     interpretation: 'Reasoning could not be completed for this turn.',
     reasoningDepth: 'deep',
@@ -161,7 +222,7 @@ function degradedResult(reason, modelConfigured) {
     sufficientForConclusion: false,
     confidence: 0,
     meta: { reasonerVersion: REASONER_VERSION, reasoningModelConfigured: modelConfigured, fallbackReason: reason },
-  });
+  }, evidence);
 }
 
 // --- public API ------------------------------------------------------------
@@ -170,8 +231,8 @@ function degradedResult(reason, modelConfigured) {
  * @typedef {Object} ReasonIQInput
  * @property {string} text - the current user input
  * @property {object|null} [intentDecision] - IntentIQ's IntentDecision for this turn (logos/intentIQ.js) — consumed, never re-derived
- * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns, for continuity only
- * @property {Array<{content: string, source?: string}>} [evidence] - explicitly supplied evidence; never auto-loaded from memory or elsewhere
+ * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT (§10), never mixed into evidence
+ * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; ReasonIQ never fetches anything itself
  * @property {string} [correlationId]
  * @property {string} [contextId]
  */
@@ -200,16 +261,27 @@ async function evaluate(input, options = {}) {
     const messages = buildReasoningPrompt(input);
     try {
       const raw = await model.chat(messages);
-      const validated = parseAndValidateReasoningOutput(raw);
+      // The supplied evidence list is also the provenance whitelist (0.2
+      // §16): any evidence id the model cites that is not in it was
+      // invented, and is stripped before the result goes anywhere.
+      const validated = parseAndValidateReasoningOutput(raw, Array.isArray(input.evidence) ? input.evidence : []);
+      const { evidenceCount, evidenceSources } = evidenceMeta(input.evidence);
       result = {
         schemaVersion: SCHEMA_VERSION,
         reasoningDepth: 'deep',
         ...validated,
-        meta: { reasonerVersion: REASONER_VERSION, reasoningModelConfigured: modelConfigured, fallbackReason: null },
+        evidenceSufficient: Boolean(validated.sufficientForConclusion),
+        meta: {
+          reasonerVersion: REASONER_VERSION,
+          reasoningModelConfigured: modelConfigured,
+          fallbackReason: null,
+          evidenceCount,
+          evidenceSources,
+        },
       };
     } catch (err) {
       const reason = err instanceof MalformedReasoningOutputError ? 'malformed_model_output' : 'reasoning_model_unavailable';
-      result = degradedResult(reason, modelConfigured);
+      result = degradedResult(reason, modelConfigured, input.evidence);
     }
   }
 

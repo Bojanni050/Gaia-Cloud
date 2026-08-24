@@ -24,7 +24,10 @@
  */
 
 const SCHEMA_VERSION = 'reasoniq.v1';
-const REASONER_VERSION = 'reasoniq-v0.1';
+// 0.2: evidence-aware reasoning — hypotheses/conclusions/contradictions now
+// carry provenance links into the assembled evidence list (by stable
+// evidence ID). Additive on v0.1's schema; nothing was removed.
+const REASONER_VERSION = 'reasoniq-v0.2';
 
 /** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions ReasonIQ must never collapse (§11). */
 const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unknown']);
@@ -41,6 +44,9 @@ const EVIDENCE_VERDICTS = Object.freeze(['supports', 'weakens', 'contradicts', '
 const HYPOTHESIS_STATUSES = Object.freeze(['proposed', 'testing', 'confirmed', 'rejected']);
 
 const REASONING_DEPTHS = Object.freeze(['shallow', 'deep']);
+
+/** How much a contradiction matters — ReasonIQ reports it, Gaia weighs it. */
+const CONTRADICTION_SIGNIFICANCE = Object.freeze(['low', 'medium', 'high']);
 
 function isValidEpistemicStatus(v) {
   return EPISTEMIC_STATUS.includes(v);
@@ -76,13 +82,19 @@ function isValidHypothesisStatus(v) {
  * @property {'proposed'|'testing'|'confirmed'|'rejected'} status - Logos's judgment for this turn, not a stored transition
  * @property {string|null} verificationPlan
  * @property {EvidenceAssessment[]} evidenceAssessments
+ * @property {string[]} evidenceFor - ids of assembled evidence items that SUPPORT this hypothesis (0.2 provenance)
+ * @property {string[]} evidenceAgainst - ids of assembled evidence items that WEAKEN/CONTRADICT it
  */
 
 /**
  * @typedef {Object} Contradiction
- * @property {string} a
- * @property {string} b
+ * @property {string} a - first side, as content text (v0.1 shape, kept)
+ * @property {string} b - second side, as content text (v0.1 shape, kept)
  * @property {string} explanation
+ * @property {string|null} evidenceA - id of the assembled evidence item on side A, when it has one (0.2)
+ * @property {string|null} evidenceB - id of the assembled evidence item on side B, when it has one (0.2)
+ * @property {string|null} description - what exactly conflicts (0.2)
+ * @property {'low'|'medium'|'high'} significance - reported honestly; Gaia weighs it (0.2)
  */
 
 /**
@@ -90,6 +102,7 @@ function isValidHypothesisStatus(v) {
  * @property {string} statement
  * @property {'fact'|'inference'|'hypothesis'} basis
  * @property {number} confidence
+ * @property {Array<{id: string, source: string}>} evidence - provenance: which assembled evidence this stands on (0.2) — only ids that were actually supplied
  */
 
 /**
@@ -104,8 +117,9 @@ function isValidHypothesisStatus(v) {
  * @property {string[]} informationGaps
  * @property {Conclusion[]} conclusions
  * @property {boolean} sufficientForConclusion
+ * @property {boolean} evidenceSufficient - named alias of sufficientForConclusion (0.2; brief §7's field name)
  * @property {number} confidence - overall confidence in interpretation + conclusions
- * @property {{ reasonerVersion: string, reasoningModelConfigured: boolean, fallbackReason: string|null }} meta
+ * @property {{ reasonerVersion: string, reasoningModelConfigured: boolean, fallbackReason: string|null, evidenceCount: number, evidenceSources: string[] }} meta
  */
 
 function makeHypothesis({ statement, confidence = 0.5, status = 'proposed', verificationPlan = null, evidenceAssessments = [] }) {
@@ -126,6 +140,7 @@ module.exports = {
   EVIDENCE_VERDICTS,
   HYPOTHESIS_STATUSES,
   REASONING_DEPTHS,
+  CONTRADICTION_SIGNIFICANCE,
   isValidEpistemicStatus,
   isValidVerdict,
   isValidHypothesisStatus,

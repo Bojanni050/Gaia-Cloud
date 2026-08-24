@@ -10,6 +10,7 @@ const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = requi
 const { buildReasoningPrompt } = require('../src/logos/reasonPrompt');
 const { createReasoningModelClient } = require('../src/logos/reasoningModelClient');
 const reasonIQ = require('../src/logos/reasonIQ');
+const { evaluate, decideReasoningDepth } = reasonIQ;
 const { runLogos } = require('../src/logos/index');
 
 const silent = { silent: true };
@@ -480,4 +481,173 @@ test('boundary: reasonIQ.evaluate is a pure async function of its inputs — no 
   const b = await reasonIQ.evaluate({ text: 'Why is my website crashing?', evidence: [{ content: 'x' }] }, { reasoningModel: model, ...silent });
   assert.equal(a.interpretation, b.interpretation);
   assert.equal(a.hypotheses.length, b.hypotheses.length);
+});
+
+// === ReasonIQ 0.2 — Evidence & Context Reasoning ============================
+
+const { assembleEvidence } = require('../src/reasoning/evidenceAssembler');
+
+const KNOWN_EVIDENCE = [
+  { id: 'hindsight-1', source: 'hindsight', type: 'memory', content: 'The team decided streaming in March', relevance: 0.9 },
+  { id: 'upload-1', source: 'upload', type: 'document', content: 'Design doc: cancellation races are possible', relevance: 0.95 },
+];
+
+const DEEP_OUTPUT = JSON.stringify({
+  interpretation: 'The user asks what follows from the design decisions.',
+  evidence: [{ content: 'streaming was chosen in March', type: 'fact', origin: 'supplied' }],
+  hypotheses: [{
+    statement: 'Cancellation may race with the stream teardown.',
+    confidence: 0.68,
+    status: 'testing',
+    verificationPlan: 'Reproduce with an aborted request mid-stream.',
+    evidenceFor: ['upload-1', 'invented-id'],
+    evidenceAgainst: ['hindsight-1', 'also-invented'],
+    evidenceAssessments: [],
+  }],
+  contradictions: [{
+    evidenceA: 'hindsight-1',
+    evidenceB: 'made-up',
+    description: 'March decision vs doc claim',
+    significance: 'high',
+    a: 'decided streaming in March',
+    b: 'doc doubts streaming safety',
+    explanation: 'The decision predates the documented concern.',
+  }],
+  uncertainties: [],
+  informationGaps: ['No evidence about the non-streaming path.'],
+  conclusions: [{
+    statement: 'Streaming interruption may be caused by concurrent cancellation.',
+    basis: 'inference',
+    confidence: 0.84,
+    evidence: ['upload-1', 'turn-81', 'hindsight-1'],
+  }],
+  sufficientForConclusion: false,
+  confidence: 0.6,
+});
+
+test('0.2 gating: evidence alone is not a task — conversational/unknown turns stay shallow', () => {
+  const evidence = [{ id: 'hindsight-1', source: 'hindsight', content: 'a recalled memory' }];
+  assert.equal(decideReasoningDepth({ text: 'Weet je nog wat we over Luca bespraken?', evidence, intentDecision: { intent: null, status: 'unknown' } }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'Hoi Gaia', evidence, intentDecision: { intent: 'converse', status: 'accepted' } }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'Wat bedoel je?', evidence, intentDecision: { intent: null, status: 'ambiguous' } }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'Waarom deed je dat?', evidence, intentDecision: { intent: 'meta.question', status: 'accepted' } }), 'shallow');
+});
+
+test('0.2 gating: analysis-shaped turns WITH evidence go deep, as do explicit-evidence calls without a decision', () => {
+  const evidence = [{ id: 'upload-1', source: 'upload', content: 'design doc' }];
+  assert.equal(decideReasoningDepth({ text: 'Analyseer de race conditions.', evidence, intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'deep');
+  assert.equal(decideReasoningDepth({ text: 'What can you derive from these earlier conversations?', evidence, intentDecision: { intent: 'memory.inspect', status: 'accepted' } }), 'deep');
+  // Legacy shape (no IntentDecision supplied): presence of evidence still forces depth.
+  assert.equal(decideReasoningDepth({ text: 'Why did the deploy fail?', evidence }), 'deep');
+  assert.equal(decideReasoningDepth({ text: 'Hoi Gaia', evidence: [] }), 'shallow');
+});
+
+test('0.2 evaluate: shallow turn with evidence carries evidence metadata without a model call', async () => {
+  const result = await evaluate(
+    { text: 'Hoi Gaia', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 }, evidence: [{ id: 'hindsight-1', source: 'hindsight', content: 'memory' }] },
+    { reasoningModel: { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true }, silent: true }
+  );
+  assert.equal(result.reasoningDepth, 'shallow');
+  assert.equal(result.meta.evidenceCount, 1);
+  assert.deepEqual(result.meta.evidenceSources, ['hindsight']);
+});
+
+test('0.2 provenance: invented evidence ids are stripped, known ids resolve to their source', async () => {
+  let seenPrompt;
+  const model = {
+    chat: async (messages) => { seenPrompt = messages[1].content; return DEEP_OUTPUT; },
+    isConfigured: () => true,
+  };
+  const result = await evaluate(
+    { text: 'What follows from the design doc and our history?', intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 }, evidence: KNOWN_EVIDENCE },
+    { reasoningModel: model, silent: true }
+  );
+
+  assert.equal(result.reasoningDepth, 'deep');
+  const h = result.hypotheses[0];
+  assert.deepEqual(h.evidenceFor, ['upload-1']); // invented-id dropped
+  assert.deepEqual(h.evidenceAgainst, ['hindsight-1']); // also-invented dropped
+  const c = result.conclusions[0];
+  assert.deepEqual(c.evidence, [
+    { id: 'upload-1', source: 'upload' },
+    { id: 'hindsight-1', source: 'hindsight' }, // turn-81 was never supplied -> gone
+  ]);
+  const contra = result.contradictions[0];
+  assert.equal(contra.evidenceA, 'hindsight-1');
+  assert.equal(contra.evidenceB, null); // made-up id nulled, conflict text kept
+  assert.equal(contra.significance, 'high');
+  assert.ok(contra.a && contra.b); // v0.1 content sides preserved
+
+  assert.equal(result.sufficientForConclusion, false);
+  assert.equal(result.evidenceSufficient, false); // named alias mirrors it
+  assert.equal(result.informationGaps.length, 1);
+
+  // The model saw the ids and sources it was allowed to cite.
+  assert.match(seenPrompt, /upload-1/);
+  assert.match(seenPrompt, /hindsight-1/);
+});
+
+test('0.2 provenance: sufficient results mirror into evidenceSufficient = true', async () => {
+  const output = JSON.parse(DEEP_OUTPUT);
+  output.sufficientForConclusion = true;
+  const model = { chat: async () => JSON.stringify(output), isConfigured: () => true };
+  const result = await evaluate(
+    { text: 'Analyseer dit.', intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 }, evidence: KNOWN_EVIDENCE },
+    { reasoningModel: model, silent: true }
+  );
+  assert.equal(result.evidenceSufficient, true);
+  assert.equal(result.sufficientForConclusion, true);
+});
+
+test("0.2 brief case B/C/D/E/F: one memory+document turn exercises use, reference, conflict, gap, hypothesis", async () => {
+  const evidence = assembleEvidence({
+    reflections: [{ text: 'Earlier chats concluded the emitter owns the wire format', scores: { final: 0.88 } }],
+    attachments: [{ filename: 'design.md', content: 'The design doc claims the orchestrator owns the wire format.' }],
+  });
+  assert.equal(evidence.length, 2);
+  assert.ok(evidence.every((e) => e.id && e.source));
+
+  const output = JSON.stringify({
+    interpretation: 'Comparing prior conclusions against the uploaded design.',
+    hypotheses: [{
+      statement: 'Wire-format ownership moved from emitter to orchestrator.',
+      confidence: 0.55,
+      status: 'testing',
+      verificationPlan: null,
+      evidenceFor: [evidence[0].id],
+      evidenceAgainst: [evidence[1].id],
+      evidenceAssessments: [],
+    }],
+    contradictions: [{
+      evidenceA: evidence[0].id,
+      evidenceB: evidence[1].id,
+      description: 'Memory says emitter owns it; the upload says orchestrator.',
+      significance: 'medium',
+      a: 'emitter owns the wire format',
+      b: 'orchestrator owns the wire format',
+      explanation: 'Two sources disagree on ownership.',
+    }],
+    uncertainties: ['which source is more current'],
+    informationGaps: ['No commit history evidence was supplied.'],
+    conclusions: [],
+    sufficientForConclusion: false,
+    confidence: 0.5,
+  });
+
+  const lines = [];
+  const result = await evaluate(
+    { text: 'Wat kun je uit deze eerdere gesprekken afleiden?', intentDecision: { intent: 'memory.inspect', status: 'accepted', confidence: 0.8 }, evidence },
+    { reasoningModel: { chat: async () => output, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+
+  assert.deepEqual(result.hypotheses[0].evidenceFor, [evidence[0].id]);
+  assert.equal(result.contradictions[0].significance, 'medium');
+  assert.equal(result.evidenceSufficient, false);
+  const logRecord = JSON.parse(lines[0]);
+  assert.equal(logRecord.kind, 'reasoniq.result');
+  assert.equal(logRecord.reasoningDepth, 'deep');
+  assert.equal(logRecord.evidenceCount, 2);
+  assert.deepEqual(logRecord.evidenceSources.sort(), ['hindsight', 'upload']);
+  assert.equal(logRecord.evidenceSufficient, false);
+  assert.equal(logRecord.contradictionCount, 1);
 });

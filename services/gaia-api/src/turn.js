@@ -51,6 +51,7 @@
 
 const { buildSystemPrompt } = require('./foundation');
 const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
+const { assembleEvidence } = require('./reasoning/evidenceAssembler');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
 const { formatReply, createStreamEmitter, generateReply, generateStreamingReply } = require('./responseEngine');
@@ -473,19 +474,45 @@ async function performStreamingTurn({
     // Observability must never take down a real conversational turn.
   }
 
-  // Logos: ReasonIQ consumes that same IntentDecision — the handoff this
-  // seam exists to prove (see logos/index.js's runLogos(), which tests
-  // this composition directly). Awaited now, unlike before: the Decision
-  // Engine needs its output (reasoningDepth, sufficiency, gaps) to route
-  // the turn, so "fire-and-forget with nothing downstream reading it" no
-  // longer applies. This stays cheap in practice: ReasonIQ's own
-  // reasoningDepth gate (reasonIQ.js) only calls a real reasoning model
-  // when evidence is supplied, and Gaia doesn't hand ReasonIQ any evidence
-  // yet — today's calls resolve shallow, in-process, with no network call.
+  // Gaia context layer (ReasonIQ 0.2 flow): recall happens BEFORE ReasonIQ
+  // so its output can be assembled into evidence — Hindsight stays the only
+  // retriever (memory.js's policy-gated, never-throws seam); ReasonIQ never
+  // calls it. Unchanged for generation: the same reflections/mentalModels
+  // render into the system prompt further down.
+  const [reflections, mentalModels] = await Promise.all([
+    recallRelevantContext(hindsight, userText),
+    fetchMentalModelContext(hindsight).catch(() => []),
+  ]);
+
+  // PATCH: Categorize attachments for streaming path
+  const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
+  const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
+
+  // Evidence Assembly (reasoning/evidenceAssembler.js): organize what this
+  // turn already has in hand — Hindsight recall, standing models, uploaded
+  // documents — into normalized evidence with stable ids. Pure and local;
+  // no retrieval happens here. Conversation state deliberately stays
+  // CONTEXT (it already flows to ReasonIQ via conversationContext), not
+  // evidence — ReasonIQ weighs what conclusions can stand on.
+  let evidence = [];
+  try {
+    evidence = assembleEvidence({ reflections, mentalModels, attachments: textAttachments });
+  } catch (_) {
+    // Assembly must never take down a turn; an empty list just means
+    // ReasonIQ runs shallow, exactly as it always has without evidence.
+  }
+
+  // Logos: ReasonIQ consumes that same IntentDecision plus the assembled
+  // evidence — the handoff this seam exists to prove (see logos/index.js's
+  // runLogos(), which tests this composition directly). Awaited now, unlike
+  // before: the Decision Engine needs its output (reasoningDepth,
+  // sufficiency, gaps) to route the turn. With real evidence present, its
+  // reasoningDepth gate now genuinely goes deep on analysis-worthy turns;
+  // plain conversational turns still resolve shallow, in-process.
   let reasoningResult = null;
   try {
     reasoningResult = await reasonIQ(
-      { text: userText, intentDecision, conversationContext: messages, evidence: [], contextId: conversationId },
+      { text: userText, intentDecision, conversationContext: messages, evidence, contextId: conversationId },
       { logger: decisionLogger }
     );
   } catch (_) {
@@ -494,16 +521,8 @@ async function performStreamingTurn({
   }
 
   const systemPrompt = buildSystemPrompt(documents, messages);
-  const [reflections, mentalModels] = await Promise.all([
-    recallRelevantContext(hindsight, userText),
-    fetchMentalModelContext(hindsight).catch(() => []),
-  ]);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
-
-  // PATCH: Categorize attachments for streaming path
-  const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
-  const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
 
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   

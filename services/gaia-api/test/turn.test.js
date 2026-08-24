@@ -1182,3 +1182,88 @@ test('performTurn: text attachments still work as text context', async () => {
   const userMsg = receivedMessages.find((m) => m.role === 'user');
   assert.equal(typeof userMsg.content, 'string', 'user message should be plain string');
 });
+
+// --- ReasonIQ 0.2: the evidence channel --------------------------------------
+//
+// Evidence Assembly (reasoning/evidenceAssembler.js) organizes what the
+// context layer already gathered — Hindsight recall, mental models, uploaded
+// documents — into stable-id evidence BEFORE ReasonIQ runs. These tests pin
+// the whole flow: recall happens first, evidence reaches ReasonIQ with ids
+// and sources intact, and a reasoning failure still never takes down the
+// turn.
+
+test('0.2: performStreamingTurn assembles Hindsight + upload evidence and hands it to ReasonIQ', async () => {
+  const reasonIQCalls = [];
+  const hindsight = {
+    recall: async () => [
+      { text: 'The team decided on a single stream emitter in March', scores: { final: 0.9 } },
+    ],
+    reflect: async () => {},
+  };
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    res: fakeRes(),
+    attachments: [{ filename: 'design.md', content: 'Design doc: cancellation may interrupt the stream.' }],
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
+  });
+
+  assert.equal(reasonIQCalls.length, 1);
+  const evidence = reasonIQCalls[0].evidence;
+  assert.ok(Array.isArray(evidence) && evidence.length === 2);
+  // Upload outranks memory; every item carries its provenance.
+  assert.equal(evidence[0].id, 'upload-1');
+  assert.equal(evidence[0].source, 'upload');
+  assert.equal(evidence[0].type, 'document');
+  assert.match(evidence[0].content, /cancellation may interrupt/);
+  assert.equal(evidence[1].id, 'hindsight-1');
+  assert.equal(evidence[1].source, 'hindsight');
+  assert.equal(evidence[1].type, 'memory');
+  assert.equal(evidence[1].relevance, 0.9);
+});
+
+test('0.2: with no recall results and no attachments, ReasonIQ still receives an empty evidence list', async () => {
+  const reasonIQCalls = [];
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Why is my website crashing?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
+  });
+
+  assert.deepEqual(reasonIQCalls[0].evidence, []);
+});
+
+test('0.2: image attachments are model-native input, never text evidence', async () => {
+  const reasonIQCalls = [];
+  const hindsight = { recall: async () => [], reflect: async () => {} };
+  const nativeGenerator = {
+    generate: async () => 'seen',
+    stream: async (messages, { onDelta }) => { onDelta('seen', false); return 'seen'; },
+  };
+  const hermes = { stream: async () => { throw new Error('hermes must not be needed'); } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Wat zie je in deze foto?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    nativeGenerator,
+    res: fakeRes(),
+    attachments: [{ filename: 'photo.png', content: null, imageBytes: Buffer.from('fake'), imageMimeType: 'image/png' }],
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: null, status: 'unknown' }),
+    reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
+  });
+
+  assert.deepEqual(reasonIQCalls[0].evidence, []);
+});
