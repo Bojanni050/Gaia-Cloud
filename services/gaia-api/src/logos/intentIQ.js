@@ -81,6 +81,17 @@
  * intentFeedbackAnalyzer.js (pure functions) and eval/evaluationRunner.js
  * (offline only) — nothing here reads feedback back or tunes itself at
  * runtime.
+ *
+ * IntentIQ 2.4 is targeted refinement driven by the measured 2.3 findings,
+ * not a redesign: (a) bare interrogative turns ("why?", "waarom dan?")
+ * resolve against conversation context instead of keyword-riding to a
+ * context-free intent; (b) an accepted match whose only support is a weak
+ * cue can no longer report high confidence (the two measured overconfident
+ * traps: draft, schedule) while keeping status + needsSemanticCheck;
+ * (c) three measured signal gaps got narrow, structurally-framed signals:
+ * inverted explanation order ("Leg uit hoe..."), personhood questions
+ * ("Ben je een echt persoon?"), and clause-final cause-seeking (", why?").
+ * No taxonomy change, no new tier, no threshold tuning beyond that cap.
  */
 
 const crypto = require('crypto');
@@ -91,7 +102,10 @@ const { parseAndValidateSemanticOutput, MalformedSemanticOutputError } = require
 const { createFromEnv: createIntentModelFromEnv } = require('./intentModelClient');
 
 const SCHEMA_VERSION = 'intentiq.v1';
-const CLASSIFIER_VERSION = 'heuristic-v0.1';
+// 2.4: targeted heuristic refinement from the measured 2.3 findings —
+// new personhood/explanation frames, bare-interrogative contextual
+// resolution, weak-only confidence cap. No taxonomy or cascade changes.
+const CLASSIFIER_VERSION = 'heuristic-v0.2';
 const SEMANTIC_CLASSIFIER_VERSION = 'semantic-v2.0';
 
 // --- tiny local text helpers (deliberately not shared with memoryPolicy.js
@@ -165,7 +179,10 @@ const SIGNALS = {
     phrase('tell me about'), phrase('what happened'), phrase("what'?s wrong with"),
     boundary('analyze'), boundary('analyse'),
     phrase('waarom'), phrase('wat is'), phrase('hoe werkt'), phrase('leg .* uit'),
-    boundary('uitleggen'), boundary('analyseer'), boundary('analyseren'),
+    // ('uitleggen' moved from a weak boundary cue to the strong
+    // /\buitleggen\b/ match below in 2.4 — kept as one signal, not two,
+    // so its weight per turn is unchanged from the classifier's view.)
+    boundary('analyseer'), boundary('analyseren'),
     // "Look/search for a [thing]" delegated-lookup phrasing — deliberately
     // scoped to an indefinite article/determiner near the look/search verb
     // ("look into a provider", "kijk eens naar een aanbieder"), not a bare
@@ -177,6 +194,25 @@ const SIGNALS = {
     // hallucinated tool-call syntax trying to "search" on its own (see
     // docs/evolution.md's SOUL amendment for the other half of that fix).
     /\b(kijk|zoek|check|look)\w*\b.{0,30}\b(een|an?)\b/i,
+    // IntentIQ 2.4 (from the 2.3 evaluation): the imperative-explanation
+    // frame in its inverted word order. The existing 'leg .* uit' only
+    // covers "leg X uit"; "Leg uit hoe DNS werkt" scored zero signal.
+    // Word-bounded so "beleg uitslagen"-style substrings can't fire it,
+    // and a strong (specific-frame) match by construction.
+    /\bleg\s+uit\b/i,
+    // Same finding, second half: the bare-word 'uitleggen' boundary cue is
+    // weak by construction, which left "Kun je uitleggen hoe X werkt?"
+    // stuck at capped weak-cue confidence. A specific Dutch explanation
+    // infinitive is real evidence — promoted to an explicit strong match
+    // (same posture as create.transform's own conjugation literals).
+    /\buitleggen\b/i,
+    // A declarative clause closed by a bare ", why?" / ", waarom?" is a
+    // cause-seeking request about that clause ("Write protection is
+    // enabled on the drive, why?") — explanation, anchored to the
+    // comma+end so it cannot fire on a why-question mid-sentence. A turn
+    // consisting ONLY of such a token never reaches this signal — see
+    // isBareInterrogativeFollowUp below; context decides there, not here.
+    /,\s*(?:why|waarom)\s*\??\s*$/i,
   ],
   'create.generate': [
     phrase('write (a|an|me|us)'), boundary('draft'), boundary('compose'),
@@ -249,6 +285,17 @@ const SIGNALS = {
     phrase('do you (remember|actually) me'), phrase('you seem'),
     phrase("i'?m sorry"), phrase('do you get tired'),
     phrase('wie ben je'), phrase('ben je (een mens|echt)'), phrase('het spijt me'),
+    // IntentIQ 2.4 (2.3 evaluation: "Ben je een echt persoon?" scored
+    // zero): the personhood question frame, structural rather than a
+    // keyword list — an anchored "ben je/jij" plus optional
+    // articles/intensifiers and a personhood head noun; "ben jij echt"
+    // only at clause end ("Ben jij echt van plan?" stays clear); and the
+    // "praat ik met een (echte) persoon" variant. Deliberately NOT keyed
+    // on bare 'persoon'/'mens'/'echt' — "Is dit echt een probleem?" and
+    // "een tekst over een persoon" must never land here.
+    /\bben\s+(?:je|jij)\s+(?:(?:een\s+|'n\s+)?(?:(?:echt|werkelijk)e?\s+)?)+(?:mens|persoon|robot|machine)\b/i,
+    /\bben\s+(?:je|jij)\s+(?:echt|werkelijk)[\s?!.]*$/i,
+    /\bpraat\s+ik\s+met\s+(?:een\s+)?(?:(?:echt|werkelijk)e?\s+)?(?:mens|persoon)\b/i,
   ],
   'meta.question': [
     // Questions about Gaia's own behavior, previous response, or reasoning.
@@ -414,6 +461,32 @@ function looksLikeContinuation(text) {
   return CONTINUATION_SIGNALS.some((p) => p.test(text));
 }
 
+// --- IntentIQ 2.4: bare interrogative follow-ups ("why?", "waarom dan?") ---
+//
+// A turn consisting ONLY of an interrogative token has no standalone
+// intent: "why?" after a decision question asks for reasoning about the
+// decision; after an explanation it probes the explanation. The 2.3 live
+// check exposed the asymmetry — bare "Waarom?" was keyword-scored to a
+// confident inform.explain with NO context (phrase('waarom') matches any
+// occurrence), while bare "why?" fell straight through to unknown. Both
+// now route through context first: inherit the nearest resolvable prior
+// turn's intent, or report honest insufficient_context. Deliberately a
+// tight token list and a whole-turn shape — "Waarom werkt dit zo?" is a
+// real question with its own signals and never enters this branch.
+
+const INTERROGATIVE_HEADS = new Set(['why', 'waarom', 'hoezo', 'wrm']);
+const INTERROGATIVE_MODIFIERS = new Set([
+  'why', 'waarom', 'hoezo', 'wrm',
+  'exactly', 'precies', 'dan', 'eigenlijk', 'not', 'niet', 'so', 'then',
+]);
+
+function isBareInterrogativeFollowUp(text) {
+  const words = normalize(text).replace(/[?!.]+$/g, '').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 3) return false;
+  if (!INTERROGATIVE_HEADS.has(words[0])) return false;
+  return words.every((w) => INTERROGATIVE_MODIFIERS.has(w));
+}
+
 /**
  * Naive compound-turn split on a top-level "and"/"en" — only trusted when
  * both halves independently carry a non-empty signal for a *different*
@@ -473,6 +546,12 @@ function resolveSourceOfTruth(text, ctx, resolvedIntent) {
 const AMBIGUITY_SHARE_THRESHOLD = 0.6; // top candidate must hold >=60% of signal weight
 const AMBIGUITY_RAW_MARGIN = 1; // or lead the runner-up by more than this many raw matches
 const MAX_CONFIDENCE = 0.95; // soul.md: "she never pretends certainty" — never report 1.0
+// IntentIQ 2.4, from the 2.3 calibration findings: when an accepted match's
+// ONLY support is a bare weak cue ("draft" the NBA kind of hit), the raw
+// 1/1 normalization would report ~0.95 — measured overconfident (both live
+// traps were wrong at that confidence). Such decisions keep status/nsc but
+// may not claim high confidence; semantic verification is their designed path.
+const WEAK_SIGNAL_CONFIDENCE_CAP = 0.7;
 
 function capConfidence(value) {
   return Math.min(value, MAX_CONFIDENCE);
@@ -820,62 +899,82 @@ function classify(messages, options = {}) {
         },
       };
     } else {
-      const compound = detectCompoundIntents(text);
-      const directScored = scoreAllIntents(text);
-
-      if (compound) {
-        const candidates = toNormalizedCandidates(compound);
-        decision = {
-          schemaVersion: SCHEMA_VERSION,
-          intent: compound[0].intent,
-          status: 'ambiguous',
-          confidence: candidates[0] ? capConfidence(candidates[0].score) : 0,
-          candidates,
-          entities: extractEntities(text),
-          sourceOfTruth: resolveSourceOfTruth(text, { hasAttachment: options.hasAttachment }, compound[0].intent),
-          needsClarification: true,
-          rawScore: compound[0].raw,
-          needsSemanticCheck: true,
-          meta: {
-            taxonomyVersion: TAXONOMY_VERSION,
-            classifierVersion: CLASSIFIER_VERSION,
-            reason: 'compound_turn_detected',
-          },
-        };
-      } else if (directScored.length > 0) {
-        const candidates = toNormalizedCandidates(directScored);
-        const status = decideStatus(candidates, directScored);
-        const top = candidates[0];
-        decision = {
-          schemaVersion: SCHEMA_VERSION,
-          intent: status === 'accepted' ? top.intent : null,
-          status,
-          confidence: status === 'accepted' ? capConfidence(top.score) : 0,
-          candidates,
-          entities: extractEntities(text),
-          sourceOfTruth: resolveSourceOfTruth(
-            text,
-            { hasAttachment: options.hasAttachment },
-            status === 'accepted' ? top.intent : null
-          ),
-          needsClarification: status !== 'accepted',
-          rawScore: directScored[0].raw,
-          needsSemanticCheck: status === 'accepted'
-            ? computeNeedsSemanticCheck({ candidates, rawScored: directScored })
-            : false,
-          meta: {
-            taxonomyVersion: TAXONOMY_VERSION,
-            classifierVersion: CLASSIFIER_VERSION,
-            reason: 'direct_signal',
-            // IntentIQ 2.3 telemetry only — which named heuristics fired for
-            // this decision. Nothing downstream reads this.
-            matchedSignals: collectMatchedSignals(directScored),
-          },
-        };
-      } else if (looksLikeContinuation(text)) {
-        decision = resolveByInheritance(text, messages, options);
+      // IntentIQ 2.4: a bare interrogative turn ("why?", "waarom dan?")
+      // has no standalone intent — resolve it against conversation
+      // context BEFORE any keyword scoring, so a bare "Waarom?" can no
+      // longer ride phrase('waarom') to a context-free confident
+      // inform.explain. With a resolvable prior turn it inherits (still
+      // needsSemanticCheck); without one it is honest insufficient_context.
+      if (isBareInterrogativeFollowUp(text)) {
+        decision = resolveByInheritance(text, messages, options, {
+          inheritedReason: 'bare_interrogative_inherited',
+          unresolvedReason: 'bare_interrogative_without_resolvable_context',
+        });
       } else {
-        decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+        const compound = detectCompoundIntents(text);
+        const directScored = scoreAllIntents(text);
+
+        if (compound) {
+          const candidates = toNormalizedCandidates(compound);
+          decision = {
+            schemaVersion: SCHEMA_VERSION,
+            intent: compound[0].intent,
+            status: 'ambiguous',
+            confidence: candidates[0] ? capConfidence(candidates[0].score) : 0,
+            candidates,
+            entities: extractEntities(text),
+            sourceOfTruth: resolveSourceOfTruth(text, { hasAttachment: options.hasAttachment }, compound[0].intent),
+            needsClarification: true,
+            rawScore: compound[0].raw,
+            needsSemanticCheck: true,
+            meta: {
+              taxonomyVersion: TAXONOMY_VERSION,
+              classifierVersion: CLASSIFIER_VERSION,
+              reason: 'compound_turn_detected',
+            },
+          };
+        } else if (directScored.length > 0) {
+          const candidates = toNormalizedCandidates(directScored);
+          const status = decideStatus(candidates, directScored);
+          const top = candidates[0];
+          // IntentIQ 2.4 calibration fix: an accepted decision whose only
+          // support is weak cue(s) may not report high confidence — see
+          // WEAK_SIGNAL_CONFIDENCE_CAP and the 2.3 findings behind it.
+          const weakOnlyAccepted = status === 'accepted' && !directScored[0].hasStrongMatch;
+          const acceptedConfidence = status === 'accepted'
+            ? (weakOnlyAccepted ? Math.min(capConfidence(top.score), WEAK_SIGNAL_CONFIDENCE_CAP) : capConfidence(top.score))
+            : 0;
+          decision = {
+            schemaVersion: SCHEMA_VERSION,
+            intent: status === 'accepted' ? top.intent : null,
+            status,
+            confidence: acceptedConfidence,
+            candidates,
+            entities: extractEntities(text),
+            sourceOfTruth: resolveSourceOfTruth(
+              text,
+              { hasAttachment: options.hasAttachment },
+              status === 'accepted' ? top.intent : null
+            ),
+            needsClarification: status !== 'accepted',
+            rawScore: directScored[0].raw,
+            needsSemanticCheck: status === 'accepted'
+              ? computeNeedsSemanticCheck({ candidates, rawScored: directScored })
+              : false,
+            meta: {
+              taxonomyVersion: TAXONOMY_VERSION,
+              classifierVersion: CLASSIFIER_VERSION,
+              reason: 'direct_signal',
+              // IntentIQ 2.3 telemetry only — which named heuristics fired for
+              // this decision. Nothing downstream reads this.
+              matchedSignals: collectMatchedSignals(directScored),
+            },
+          };
+        } else if (looksLikeContinuation(text)) {
+          decision = resolveByInheritance(text, messages, options);
+        } else {
+          decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+        }
       }
     }
   }
@@ -914,11 +1013,20 @@ function classify(messages, options = {}) {
 
 /**
  * Follow-up resolution: a signal-free, anaphora-carrying turn ("En deze
- * dan?") inherits the nearest prior user turn's resolved intent, at
- * reduced confidence, with sourceOfTruth pinned to "conversation" — the
- * turn only makes sense in light of what was just discussed.
+ * dan?") — or, since 2.4, a bare interrogative follow-up ("why?") —
+ * inherits the nearest prior user turn's resolved intent, at reduced
+ * confidence, with sourceOfTruth pinned to "conversation" — the turn only
+ * makes sense in light of what was just discussed.
+ *
+ * @param {string} text
+ * @param {Array<{role:string,content:string}>} messages
+ * @param {object} options
+ * @param {{ inheritedReason?: string, unresolvedReason?: string }} [reasons] distinct
+ *   telemetry reasons for the 2.4 bare-interrogative path vs the original anaphora path
  */
-function resolveByInheritance(text, messages, options) {
+function resolveByInheritance(text, messages, options, reasons = {}) {
+  const inheritedReason = reasons.inheritedReason || 'inherited_from_prior_turn';
+  const unresolvedReason = reasons.unresolvedReason || 'continuation_with_no_resolvable_prior_turn';
   const priors = priorUserTexts(messages, true);
   for (const priorText of priors) {
     const priorScored = scoreAllIntents(priorText);
@@ -945,11 +1053,11 @@ function resolveByInheritance(text, messages, options) {
       meta: {
         taxonomyVersion: TAXONOMY_VERSION,
         classifierVersion: CLASSIFIER_VERSION,
-        reason: 'inherited_from_prior_turn',
+        reason: inheritedReason,
       },
     };
   }
-  return unknownWithSourceAttempt(text, options, 'continuation_with_no_resolvable_prior_turn');
+  return unknownWithSourceAttempt(text, options, unresolvedReason);
 }
 
 // --- IntentIQ 2.0: semantic classification tier ----------------------------
@@ -1229,5 +1337,6 @@ module.exports = {
     confidenceLevelFor,
     interpretationStatusFor,
     collectMatchedSignals,
+    isBareInterrogativeFollowUp,
   },
 };

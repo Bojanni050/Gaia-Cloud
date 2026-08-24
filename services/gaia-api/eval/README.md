@@ -58,10 +58,13 @@ npm run eval:intent-eval            # heuristic-only (semantic metrics N/A)
 npm run eval:intent-eval -- --mock  # with the deterministic fixture semantic model
 ```
 
-- `eval/intent-eval.json` — ~70 synthetic cases across every intent family,
-  plus follow-up, ambiguous, source-of-truth, reference-resolution, and
-  documented heuristic-conflict ("trap") cases whose expectations state the
-  TRUE intent, so a heuristic-only mismatch is itself the finding.
+- `eval/intent-eval.json` — 96 synthetic cases across every intent family,
+  plus follow-up, ambiguous, source-of-truth, reference-resolution, bare
+  interrogative ("why?" with/without context), personhood, explanation-frame
+  and documented heuristic-conflict ("trap") cases whose expectations state
+  the TRUE intent, so a heuristic-only mismatch is itself the finding.
+  Grown from the measured 2.3 findings: every new rule carries positive,
+  negative, contextual and follow-up coverage.
 - `eval/evaluationRunner.js` — loads the dataset, runs the full cascade
   (`interpret()` over `classify()`), and reports: accuracy, an
   expected-x-predicted confusion matrix, confidence calibration bands,

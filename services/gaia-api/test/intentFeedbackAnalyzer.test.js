@@ -399,7 +399,7 @@ test('2.3 telemetry: decision log lines carry reason/matchedSignals/referents ad
     decision,
     input: 'Waarom crasht mijn website?',
     correlationId: 'corr-x',
-    classifierVersion: 'heuristic-v0.1',
+    classifierVersion: 'heuristic-v0.2',
     semanticCalled: true,
     tiers: { heuristic: { intent: 'inform.explain' }, semantic: null },
   }, (line) => lines.push(line));
@@ -486,6 +486,23 @@ test('2.3 evaluation: formatter renders the brief-style report text', async () =
   assert.match(text, /Reference resolution:/);
   assert.match(text, /Confidence calibration:/);
   assert.match(text, /Confusion matrix/);
+});
+
+// === IntentIQ 2.4: calibration guardrails over the extended dataset =========
+
+test('2.4 evaluation accuracy stays at or above the 2.3 baseline', async () => {
+  const report = await runner.runEvaluation(runner.loadDataset());
+  assert.ok(report.accuracy >= 0.85, `accuracy regressed below baseline: ${report.accuracy}`);
+});
+
+test('2.4 the measured draft/schedule overconfidence is gone from the high band', async () => {
+  const report = await runner.runEvaluation(runner.loadDataset());
+  // Every remaining mismatch sits at capped weak-cue confidence now —
+  // no confidently-wrong samples may remain (2.3 found two).
+  assert.deepEqual(report.overconfidence, []);
+  const topBand = report.calibrationReport.bands.find((b) => b.range === '0.90-1.00');
+  assert.ok(topBand.samples > 0);
+  assert.ok(topBand.accuracy >= 0.9, `high-confidence band degraded: ${JSON.stringify(topBand)}`);
 });
 
 // === Boundaries ==============================================================

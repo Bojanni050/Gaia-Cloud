@@ -45,7 +45,7 @@
     { "id": "inf-002", "category": "inform.explain", "input": "Waarom werkt mijn deploy niet zoals verwacht?", "expectedIntent": "inform.explain" },
     { "id": "inf-003", "category": "inform.explain", "input": "What is a race condition?", "expectedIntent": "inform.explain" },
     { "id": "inf-004", "category": "inform.explain", "input": "How do black holes form?", "expectedIntent": "inform.explain" },
-    { "id": "inf-005", "category": "inform.explain", "input": "Leg uit hoe DNS-resolutie werkt.", "expectedIntent": "inform.explain", "notes": "Documented gap: 'leg .* uit' covers 'leg X uit' word order, not the inverted 'leg uit hoe...' - surfaced intentionally by this set." },
+    { "id": "inf-005", "category": "inform.explain", "input": "Leg uit hoe DNS-resolutie werkt.", "expectedIntent": "inform.explain", "notes": "2.3 gap, fixed in 2.4 via the word-bounded /leg uit/ frame - regression guard for inverted explanation order." },
     { "id": "inf-006", "category": "inform.explain", "input": "Zoek eens naar een Nederlandse text-to-speech aanbieder.", "expectedIntent": "inform.explain", "expectedSourceOfTruth": "external_knowledge", "notes": "The delegated-lookup phrasing from the real production incident." },
     { "id": "inf-007", "category": "inform.explain", "input": "What happened with the release last night?", "expectedIntent": "inform.explain" },
     { "id": "inf-008", "category": "inform.explain", "input": "Kun je uitleggen wat een event-loop doet?", "expectedIntent": "inform.explain" },
@@ -87,7 +87,7 @@
     { "id": "act-005", "category": "act.perform", "input": "Schedule the call for Monday.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool", "notes": "Imperative 'schedule' - genuinely an action despite the weak bare-word cue." },
 
     { "id": "mre-001", "category": "meta.relational", "input": "Who are you, really?", "expectedIntent": "meta.relational" },
-    { "id": "mre-002", "category": "meta.relational", "input": "Ben je een echt persoon?", "expectedIntent": "meta.relational", "notes": "Documented gap: 'ben je (een mens|echt)' misses the adjective form 'een echt(e) persoon' - surfaced intentionally by this set." },
+    { "id": "mre-002", "category": "meta.relational", "input": "Ben je een echt persoon?", "expectedIntent": "meta.relational", "notes": "2.3 gap, fixed in 2.4 via the structural personhood frame (ben je/jij + head noun) - regression guard." },
     { "id": "mre-003", "category": "meta.relational", "input": "You seem different today.", "expectedIntent": "meta.relational" },
 
     {
@@ -218,8 +218,78 @@
     { "id": "ref-005", "category": "reference-resolution", "input": "Hem bedoel ik niet, haar wel.", "expectUnknown": true, "notes": "Documented gap: object pronouns outside the continuation set are not yet resolvable - measuring this gap is the point." },
     { "id": "ref-006", "category": "reference-resolution", "input": "En nog een?", "expectUnknown": true, "notes": "Documented gap: 'nog een' is a listed troublemaker but carries no continuation cue yet." },
 
-    { "id": "hcf-001", "category": "heuristic-conflict", "input": "I'm not a fan of this new NBA draft process.", "expectedIntent": "converse", "acceptableAlternatives": ["inform.explain"], "notes": "TRAP: weak 'draft' cue makes the heuristic tier confidently say create.generate. The expectation states the TRUE intent; a mismatch in heuristic-only mode is exactly the finding." },
-    { "id": "hcf-002", "category": "heuristic-conflict", "input": "What's your schedule looking like this week?", "expectedIntent": "inform.explain", "notes": "TRAP: noun-'schedule' fires act.perform's weak cue; the user asks about availability, not requesting an action." },
-    { "id": "hcf-003", "category": "heuristic-conflict", "input": "Write protection is enabled on the drive, why?", "expectedIntent": "inform.explain", "notes": "TRAP/gap: technical 'write' near-miss correctly does NOT fire create.generate, but bare trailing 'why?' is also uncovered - currently unknown. Documented heuristic gap." }
+    { "id": "hcf-001", "category": "heuristic-conflict", "input": "I'm not a fan of this new NBA draft process.", "expectedIntent": "converse", "acceptableAlternatives": ["inform.explain"], "notes": "TRAP (2.3): weak 'draft' cue alone. 2.4 caps weak-only confidence at 0.70 + needsSemanticCheck, so this is no longer a high-confidence false positive; resolving it fully needs the semantic tier, so heuristic-only mode still reports the mismatch." },
+    { "id": "hcf-002", "category": "heuristic-conflict", "input": "What's your schedule looking like this week?", "expectedIntent": "inform.explain", "notes": "TRAP (2.3): noun-'schedule'. 2.4: capped to 0.70 + needsSemanticCheck instead of confident act.perform; full resolution is the semantic tier's job." },
+    { "id": "hcf-003", "category": "heuristic-conflict", "input": "Write protection is enabled on the drive, why?", "expectedIntent": "inform.explain", "notes": "2.3 gap, fixed in 2.4 via the clause-final ', why?'/'', waarom?' cause-seeking frame - regression guard." },
+
+    { "id": "lg-001", "category": "inform.explain", "input": "Leg uit hoe Hindsight werkt.", "expectedIntent": "inform.explain", "notes": "2.4: inverted explanation frame, positive." },
+    { "id": "lg-002", "category": "inform.explain", "input": "Kun je uitleggen hoe de orchestrator werkt?", "expectedIntent": "inform.explain", "notes": "2.4: 'uitleggen' promoted to a strong explanation verb - positive variant." },
+    { "id": "lg-003", "category": "inform.explain", "input": "Hoe werkt Hindsight precies?", "expectedIntent": "inform.explain", "notes": "'hoe werkt' frame with adverb - already-covered positive kept as guard." },
+    { "id": "lg-004", "category": "inform.explain", "input": "Leg het document op tafel.", "expectUnknown": true, "notes": "NEGATIVE for the leg-frame: physical 'leg X op Y' must not become an explanation request." },
+
+    { "id": "per-001", "category": "meta.relational", "input": "Ben jij een echt persoon?", "expectedIntent": "meta.relational" },
+    { "id": "per-002", "category": "meta.relational", "input": "Ben je werkelijk een persoon?", "expectedIntent": "meta.relational" },
+    { "id": "per-003", "category": "meta.relational", "input": "Ben je een mens?", "expectedIntent": "meta.relational", "notes": "Already covered pre-2.4 - regression guard." },
+    { "id": "per-004", "category": "meta.relational", "input": "Ben jij echt?", "expectedIntent": "meta.relational", "notes": "Clause-end intensifier form." },
+    { "id": "per-005", "category": "meta.relational", "input": "Praat ik met een echte persoon?", "expectedIntent": "meta.relational" },
+    { "id": "per-006", "category": "create.generate", "input": "Schrijf een tekst over een persoon.", "expectedIntent": "create.generate", "notes": "NEGATIVE for personhood: 'persoon' inside a writing request must stay create.generate." },
+    { "id": "per-007", "category": "meta.relational", "input": "Is dit echt een probleem?", "expectUnknown": true, "notes": "NEGATIVE for personhood/intensifiers: 'echt' as ordinary adverb must not trigger identity intent." },
+
+    {
+      "id": "why-001", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Waarom werkt mijn deploy niet?" },
+        { "role": "assistant", "content": "De environment variable ontbreekt in deze pipeline." }
+      ],
+      "input": "why?",
+      "expectedIntent": "inform.explain",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "2.4: bare interrogative inherits the resolvable prior turn's intent."
+    },
+    { "id": "why-002", "category": "follow-up", "input": "why?", "expectUnknown": true, "notes": "2.4: no context -> honest insufficient_context, never an assumed inform.explain." },
+    { "id": "why-003", "category": "follow-up", "input": "waarom dan?", "expectUnknown": true, "notes": "2.4: NL bare interrogative without context behaves like its EN twin." },
+    { "id": "why-004", "category": "follow-up", "input": "waarom eigenlijk?", "expectUnknown": true, "notes": "Modifier variant, still context-dependent." },
+    { "id": "why-005", "category": "follow-up", "input": "Waarom werkt dit zo?", "expectedIntent": "inform.explain", "notes": "A real question with its own signals - NOT intercepted by the bare-interrogative branch." },
+    {
+      "id": "why-006", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Should I take the job offer?" },
+        { "role": "assistant", "content": "Let me lay out both sides for you." }
+      ],
+      "input": "waarom dan?",
+      "expectedIntent": "decide.support",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "Bare interrogative after a decision turn inherits decide.support - context decides, not keywords."
+    },
+
+    { "id": "drf-001", "category": "create.generate", "input": "Maak een draft van dit bericht.", "expectedIntent": "create.generate", "notes": "'draft' backed by strong 'maak een' evidence - stays high-confidence create.generate." },
+    { "id": "drf-002", "category": "heuristic-conflict", "input": "Wat betekent draft hier?", "expectedIntent": "inform.explain", "notes": "TRAP (2.4 addition): weak-cue acceptance pending semantic verification; heuristic-only mode reports it at capped confidence + needsSemanticCheck instead of hiding it." },
+    {
+      "id": "drf-003", "category": "create.transform",
+      "context": [
+        { "role": "user", "content": "Maak een draft van dit bericht." },
+        { "role": "assistant", "content": "Hier is een eerste versie." }
+      ],
+      "input": "Rewrite this draft more formally.",
+      "expectAmbiguous": true,
+      "acceptableAlternatives": ["create.transform", "create.generate"],
+      "notes": "Contextual variant: strong transform verb + weak generate cue genuinely overlap on one turn - honest ambiguity, not a forced guess."
+    },
+
+    { "id": "sch-001", "category": "act.perform", "input": "Kun je een schedule voor mijn project maken?", "expectedIntent": "act.perform", "expectedNeedsSemanticCheck": true, "notes": "Imperative schedule request - accepted but honestly capped at weak-cue confidence since 2.4." },
+    { "id": "sch-002", "category": "act.perform", "input": "Wat is een goed schema voor mijn project?", "expectedIntent": "inform.explain", "acceptableAlternatives": [], "notes": "NEGATIVE for scheduling: Dutch 'schema' is not 'schedule' - must never fire act.perform." },
+    { "id": "sch-003", "category": "heuristic-conflict", "input": "Wat betekent schedule in deze context?", "expectedIntent": "inform.explain", "notes": "TRAP (2.4 addition): definition question about the word; weak-cue acceptance stays flagged (capped + needsSemanticCheck) until the semantic tier resolves it." },
+
+    {
+      "id": "fu-006", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Kun je deze zin naar het Engels vertalen?" },
+        { "role": "assistant", "content": "Sure, here you go." }
+      ],
+      "input": "en deze?",
+      "expectedIntent": "create.transform",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "Shortest follow-up form ('en deze') - continuation phrase coverage guard."
+    }
   ]
 }

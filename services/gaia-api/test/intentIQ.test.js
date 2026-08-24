@@ -940,3 +940,154 @@ test('classify detects meta.correction when user corrects image interpretation',
   assert.equal(d.intent, 'meta.correction');
   assert.equal(d.status, 'accepted');
 });
+
+// === IntentIQ 2.4: targeted refinement from the measured 2.3 findings ======
+
+const v24 = { silent: true };
+
+// --- trap 1+2: weak-cue overconfidence (draft / schedule) -------------------
+
+test('2.4 trap: NBA-draft "draft" is no longer a high-confidence false positive', () => {
+  const d = classify(user("I'm not a fan of this new NBA draft process."), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'create.generate'); // heuristic tier's honest opinion...
+  assert.ok(d.confidence <= 0.7); // ...no longer wearing high confidence
+  assert.equal(d.needsSemanticCheck, true); // semantic verification is its designed path
+});
+
+test('2.4 trap: noun-"schedule" is capped and flagged instead of confident', () => {
+  const d = classify(user("What's your schedule looking like this week?"), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'act.perform');
+  assert.ok(d.confidence <= 0.7);
+  assert.equal(d.needsSemanticCheck, true);
+});
+
+test('2.4 weak-only cap: genuine imperative schedule requests stay accepted, at honest confidence', () => {
+  const d = classify(user('Schedule the call for Monday.'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'act.perform');
+  assert.ok(d.confidence > 0 && d.confidence <= 0.7);
+  assert.equal(d.needsSemanticCheck, true);
+});
+
+test('2.4 strong evidence overrides the weak cue: draft WITH real generation framing keeps full confidence', () => {
+  const d = classify(user('Maak een draft van dit bericht.'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'create.generate');
+  assert.ok(d.confidence > 0.85); // strong 'maak een' signal backs it
+});
+
+// --- trap 3: clause-final cause-seeking --------------------------------------
+
+test('2.4 trap: declarative clause closed by ", why?" resolves as explanation', () => {
+  const d = classify(user('Write protection is enabled on the drive, why?'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+});
+
+test('2.4 clause-final cause-seeking works in Dutch too', () => {
+  const d = classify(user('De pipeline faalt steeds op dezelfde stap, waarom?'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+});
+
+// --- "Leg uit hoe..." family --------------------------------------------------
+
+test('2.4 "Leg uit hoe X werkt." resolves as inform.explain (inverted order fixed)', () => {
+  const d = classify(user('Leg uit hoe Hindsight werkt.'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+});
+
+test('2.4 "Kun je uitleggen hoe X werkt?" is a STRONG match, not capped weak-cue confidence', () => {
+  const d = classify(user('Kun je uitleggen hoe de orchestrator werkt?'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+  assert.ok(d.confidence >= 0.85);
+});
+
+test('2.4 negative: physical "leg X op Y" does not become an explanation request', () => {
+  const d = classify(user('Leg het document op tafel.'), v24);
+  assert.notEqual(d.intent, 'inform.explain');
+});
+
+// --- personhood ---------------------------------------------------------------
+
+const PERSONHOOD_POSITIVES = [
+  ['Ben je een echt persoon?', 'adjective form'],
+  ['Ben jij een echt persoon?', 'jij variant'],
+  ['Ben je werkelijk een persoon?', 'werkelijk variant'],
+  ['Ben je een mens?', 'pre-2.4 guard'],
+  ['Ben jij echt?', 'clause-end intensifier'],
+  ['Praat ik met een echte persoon?', 'praat-ik-met frame'],
+];
+for (const [input, label] of PERSONHOOD_POSITIVES) {
+  test(`2.4 personhood: "${input}" (${label}) is meta.relational`, () => {
+    const d = classify(user(input), v24);
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.intent, 'meta.relational');
+    assert.ok(d.needsSemanticCheck === false || d.confidence < 0.95);
+  });
+}
+
+test('2.4 personhood negatives: ordinary uses of persoon/echt stay out of identity intent', () => {
+  const writing = classify(user('Schrijf een tekst over een persoon.'), v24);
+  assert.notEqual(writing.intent, 'meta.relational');
+
+  const adverb = classify(user('Is dit echt een probleem?'), v24);
+  assert.notEqual(adverb.intent, 'meta.relational');
+});
+
+test('2.4 personhood negative: "Ben jij echt van plan?" is not identity intent', () => {
+  const d = classify(user('Ben jij echt van plan om te verhuizen?'), v24);
+  assert.notEqual(d.intent, 'meta.relational');
+});
+
+// --- bare interrogative follow-ups ("why?", "waarom dan?") ---------------------
+
+test('2.4 bare why WITHOUT context: honest insufficient_context, never an assumed intent', () => {
+  for (const input of ['why?', 'Waarom?', 'waarom dan?', 'waarom eigenlijk?']) {
+    const d = classify(user(input), v24);
+    assert.equal(d.status, 'unknown', input);
+    assert.equal(d.intent, null, input);
+    assert.equal(d.interpretationStatus, 'insufficient_context', input);
+    assert.equal(d.meta.reason, 'bare_interrogative_without_resolvable_context', input);
+  }
+});
+
+test('2.4 bare why WITH resolvable context inherits the prior turn intent, flagged for verification', () => {
+  const history = [...user('Why is my website crashing?'), msg('assistant', 'Your cache is stale.')];
+  const d = classify(user('why?', history), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.sourceOfTruth, 'conversation');
+  assert.equal(d.needsSemanticCheck, true);
+  assert.equal(d.meta.reason, 'bare_interrogative_inherited');
+});
+
+test('2.4 bare "waarom dan?" after a decision turn inherits decide.support', () => {
+  const history = [...user('Should I take the job offer?'), msg('assistant', 'Let me lay out both sides.')];
+  const d = classify(user('waarom dan?', history), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'decide.support');
+  assert.equal(d.needsSemanticCheck, true);
+});
+
+test('2.4 bare-interrogative branch must NOT intercept real questions', () => {
+  const d = classify(user('Waarom werkt dit zo?'), v24);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.meta.reason, 'direct_signal');
+});
+
+test('2.4 isBareInterrogativeFollowUp token discipline', () => {
+  const { isBareInterrogativeFollowUp } = require('../src/logos/intentIQ').__internals;
+  assert.equal(isBareInterrogativeFollowUp('why?'), true);
+  assert.equal(isBareInterrogativeFollowUp('waarom dan?'), true);
+  assert.equal(isBareInterrogativeFollowUp('HOEZO'), true);
+  assert.equal(isBareInterrogativeFollowUp('why not?!'), true);
+  assert.equal(isBareInterrogativeFollowUp('Waarom werkt dit zo?'), false);
+  assert.equal(isBareInterrogativeFollowUp('why is the sky blue'), false);
+  assert.equal(isBareInterrogativeFollowUp('dit is een vraag waarom'), false);
+});
