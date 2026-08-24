@@ -219,11 +219,26 @@ function renderAttachmentContext(attachments) {
  * }} input
  * @returns {Promise<{status: number, body: object}>} an HTTP-shaped result
  */
-async function performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch, decisionEngine = decideAction, orchestrate = executeDecision }) {
+async function performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch, traceId, decisionEngine = decideAction, orchestrate = executeDecision }) {
   const problem = validateMessages(messages);
   if (problem) {
     return { status: 400, body: { error: problem } };
   }
+
+  // STAGE 3: Log performTurn input
+  console.log(JSON.stringify({
+    kind: 'vision.trace',
+    traceId,
+    stage: 'perform_turn_input',
+    attachmentsProvided: !!attachments,
+    attachmentCount: attachments ? attachments.length : 0,
+    attachments: attachments ? attachments.map((a) => ({
+      filename: a.filename,
+      hasImageBytes: !!a.imageBytes,
+      imageBytesLength: a.imageBytes ? a.imageBytes.length : 0,
+      imageMimeType: a.imageMimeType || null,
+    })) : [],
+  }));
 
   // PATCH: Categorize attachments into text and multimodal
   const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
@@ -232,6 +247,24 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, native
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const fullSystemPrompt = attachmentBlock ? `${systemPrompt}\n\n---\n\n${attachmentBlock}` : systemPrompt;
   const assembled = assembleMessages(fullSystemPrompt, messages, multimodalAttachments);
+
+  // STAGE 4: Log assembled messages
+  const lastUserMsg = assembled.find((m) => m.role === 'user');
+  console.log(JSON.stringify({
+    kind: 'vision.trace',
+    traceId,
+    stage: 'assembly',
+    totalMessages: assembled.length,
+    messageRoles: assembled.map((m) => m.role),
+    lastUserContentIsArray: lastUserMsg ? Array.isArray(lastUserMsg.content) : false,
+    lastUserContentTypes: lastUserMsg && Array.isArray(lastUserMsg.content)
+      ? lastUserMsg.content.map((c) => c.type)
+      : ['text'],
+    imageBlockPresent: lastUserMsg && Array.isArray(lastUserMsg.content)
+      ? lastUserMsg.content.some((c) => c.type === 'image_url')
+      : false,
+    multimodalAttachmentCount: multimodalAttachments.length,
+  }));
 
   const availableCapabilities = [{ id: 'hermes' }];
   if (nativeGenerator) availableCapabilities.push({ id: 'native' });

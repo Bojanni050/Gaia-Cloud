@@ -121,7 +121,20 @@ function createApp(env = process.env) {
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;
     const conversationId = req.body && req.body.conversationId;
+    const attachmentIds = (req.body && req.body.attachmentIds) || [];
     const traceId = `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // STAGE 1: Log incoming turn request
+    console.log(JSON.stringify({
+      kind: 'vision.trace',
+      traceId,
+      stage: 'turn_input',
+      hasMessages: !!messages,
+      messageCount: messages ? messages.length : 0,
+      attachmentIds: attachmentIds,
+      attachmentCount: attachmentIds.length,
+      hasConversationId: !!conversationId,
+    }));
 
     if (req.body && req.body.stream) {
       await performStreamingTurn({
@@ -135,30 +148,33 @@ function createApp(env = process.env) {
         webSearch,
         historyStore,
         decisionStore,
+        attachmentIds,
         traceId,
       });
       return;
     }
 
-    const attachmentIds = (req.body && req.body.attachmentIds) || [];
-    
-    // PATCH: Pass modelSupportsVision when nativeGenerator is available
-    const modelSupportsVision = !!nativeGenerator;
+    // PATCH: Determine if model supports vision
+    // Option 1: Explicit env var GAIA_NATIVE_SUPPORTS_VISION
+    // Option 2: Auto-detect from native generator presence (fallback to false)
+    const modelSupportsVision = env.GAIA_NATIVE_SUPPORTS_VISION === 'true' || false;
     
     const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
     
-    // Diagnostic logging (temporary)
+    // STAGE 2: Log resolved attachments
     console.log(JSON.stringify({
       kind: 'vision.trace',
       traceId,
-      stage: 'upload',
-      attachmentCount: attachmentIds.length,
+      stage: 'resolution',
+      modelSupportsVision,
+      attachmentIds,
+      resolvedCount: attachments.length,
       resolvedAttachments: attachments.map((a) => ({
         filename: a.filename,
-        mimeType: a.imageMimeType || 'text',
-        imageBytesAvailable: !!a.imageBytes,
+        hasImageBytes: !!a.imageBytes,
         imageBytesLength: a.imageBytes ? a.imageBytes.length : 0,
-        visionPathSelected: modelSupportsVision,
+        imageMimeType: a.imageMimeType || null,
+        hasContent: !!a.content,
       })),
     }));
 
