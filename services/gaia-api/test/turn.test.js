@@ -1267,3 +1267,59 @@ test('0.2: image attachments are model-native input, never text evidence', async
 
   assert.deepEqual(reasonIQCalls[0].evidence, []);
 });
+
+// --- Hypothesis Persistence 0.1: optional hypothesisRuntime wiring -----------
+
+test("0.1 turn: a hypothesisRuntime seeds existing hypotheses into ReasonIQ and applies its updates", async () => {
+  const reasonIQCalls = [];
+  const manager = (require('../src/reasoning/hypothesisManager')).createHypothesisManager({
+    hypotheses: [{ id: "hyp-seed", statement: "Cancellation races teardown.", status: "testing", confidence: 0.6, evidenceFor: ["e1"] }],
+  });
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta("ok", false); return "A reply."; } };
+
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Analyseer de streaming architecture op race conditions." }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
+    reasonIQ: async (input) => {
+      reasonIQCalls.push(input);
+      return {
+        interpretation: "weighing",
+        hypotheses: [{ statement: "Cancellation races teardown.", existingId: "hyp-seed", confidence: 0.7, evidenceFor: [], evidenceAgainst: [] }],
+        hypothesisUpdates: [{ hypothesisId: "hyp-seed", relation: "supports", confidenceDelta: 0.05, rationale: "new analysis", evidenceId: null }],
+        contradictions: [], uncertainties: [], informationGaps: [],
+        conclusions: [], sufficientForConclusion: false, confidence: 0.65,
+      };
+    },
+    hypothesisRuntime: { manager },
+  });
+
+  assert.equal(reasonIQCalls.length, 1);
+  const seeded = reasonIQCalls[0].existingHypotheses;
+  assert.equal(seeded.length, 1);
+  assert.equal(seeded[0].id, "hyp-seed");
+  assert.equal(manager.get("hyp-seed").confidence, 0.65); // update applied post-reasoning
+});
+
+test("0.1 turn: recall/seed failures in the runtime are non-fatal — the reply still streams", async () => {
+  const res = fakeRes();
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta("still fine", false); return "still fine"; } };
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Why is my website crashing?" }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
+    reasonIQ: async () => ({}),
+    hypothesisRuntime: {
+      manager: { list: () => { throw new Error("boom"); }, applyReasoningResult: () => { throw new Error("boom2"); } },
+      ensureLoaded: async () => { throw new Error("boom3"); },
+      recallHypotheses: async () => { throw new Error("boom4"); },
+    },
+  });
+  assert.match(res.written[0], /still fine/);
+});

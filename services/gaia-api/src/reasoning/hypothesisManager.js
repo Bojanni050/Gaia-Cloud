@@ -186,44 +186,62 @@ function createHypothesisManager(options = {}) {
     return hyp;
   }
 
+  // Sinks may be synchronous or asynchronous (the Hindsight adapter is
+  // inherently async). Sync throws are swallowed here; async rejections are
+  // caught via .catch — persistence must never break state upkeep either way.
+  function settleSinkCall(result) {
+    if (result && typeof result.then === 'function') {
+      Promise.resolve(result).catch(() => {});
+    }
+  }
+
   function persistSave(hyp) {
     try {
-      if (typeof sink.save === 'function') sink.save({ ...hyp });
+      if (typeof sink.save === 'function') settleSinkCall(sink.save({ ...hyp }));
     } catch (_) { /* persistence must never break reasoning-state upkeep */ }
   }
 
   function persistUpdate(prev, hyp) {
     try {
-      if (typeof sink.update === 'function') sink.update(hyp.id, { ...hyp }, prev ? { ...prev } : null);
+      if (typeof sink.update === 'function') settleSinkCall(sink.update(hyp.id, { ...hyp }, prev ? { ...prev } : null));
     } catch (_) { /* same posture */ }
   }
 
-  // Seed from caller-supplied existing hypotheses (ids preserved verbatim).
-  for (const h of Array.isArray(options.hypotheses) ? options.hypotheses : []) {
-    if (!h || typeof h.statement !== 'string' || !h.statement.trim() || !h.id) continue;
-    remember({
-      id: String(h.id),
-      statement: h.statement,
-      status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
-      method: isValidMethod(h.method) ? h.method : 'asserted',
-      confidence: clampConfidence(h.confidence) != null ? clampConfidence(h.confidence) : 0.5,
-      evidenceFor: Array.isArray(h.evidenceFor) ? [...h.evidenceFor] : [],
-      evidenceAgainst: Array.isArray(h.evidenceAgainst) ? [...h.evidenceAgainst] : [],
-      rejectionReason: typeof h.rejectionReason === 'string' ? h.rejectionReason : null,
-      testedAt: h.testedAt || null,
-      confirmedAt: h.confirmedAt || null,
-      rejectedAt: h.rejectedAt || null,
-      promoted: Boolean(h.promoted),
-      promotedFactId: typeof h.promotedFactId === 'string' && h.promotedFactId ? h.promotedFactId : null,
-      promotionPending: Boolean(h.promotionPending),
-      history: Array.isArray(h.history) ? [...h.history] : [],
-      createdAt: h.createdAt || now().toISOString(),
-      updatedAt: h.updatedAt || now().toISOString(),
-    });
+  /**
+   * Seeds hypotheses into live state — used by the constructor below and,
+   * post-construction, by the server wiring to inject boot-loaded Hindsight
+   * state (Hypothesis Persistence 0.1). Same validation everywhere; seeds
+   * never overwrite an id the manager already knows.
+   */
+  function seedAll(list) {
+    for (const h of Array.isArray(list) ? list : []) {
+      if (!h || typeof h.statement !== 'string' || !h.statement.trim() || !h.id) continue;
+      if (byId.has(String(h.id))) continue;
+      remember({
+        id: String(h.id),
+        statement: h.statement,
+        status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
+        method: isValidMethod(h.method) ? h.method : 'asserted',
+        confidence: clampConfidence(h.confidence) != null ? clampConfidence(h.confidence) : 0.5,
+        evidenceFor: Array.isArray(h.evidenceFor) ? [...h.evidenceFor] : [],
+        evidenceAgainst: Array.isArray(h.evidenceAgainst) ? [...h.evidenceAgainst] : [],
+        rejectionReason: typeof h.rejectionReason === 'string' ? h.rejectionReason : null,
+        testedAt: h.testedAt || null,
+        confirmedAt: h.confirmedAt || null,
+        rejectedAt: h.rejectedAt || null,
+        promoted: Boolean(h.promoted),
+        promotedFactId: typeof h.promotedFactId === 'string' && h.promotedFactId ? h.promotedFactId : null,
+        promotionPending: Boolean(h.promotionPending),
+        history: Array.isArray(h.history) ? [...h.history] : [],
+        createdAt: h.createdAt || now().toISOString(),
+        updatedAt: h.updatedAt || now().toISOString(),
+      });
+    }
   }
 
-  function findDuplicate(statement) {
-    const exact = byNormalized.get(normalizeStatement(statement));
+  seedAll(options.hypotheses);
+
+  function findDuplicate(statement) {    const exact = byNormalized.get(normalizeStatement(statement));
     if (exact) return exact;
     for (const hyp of byId.values()) {
       if (similarity(hyp.statement, statement) >= DEDUP_SIMILARITY_THRESHOLD) return hyp;
@@ -235,7 +253,7 @@ function createHypothesisManager(options = {}) {
    * Proposes a hypothesis — or recognizes an equivalent existing one (§4/§12).
    * @returns {{ hypothesis: object, duplicateOf: string|null }}
    */
-  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted' } = {}) {
+  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted', persist = true } = {}) {
     if (!statement || !String(statement).trim()) throw new Error('hypothesis statement is required');
     const existing = findDuplicate(statement);
     if (existing) return { hypothesis: existing, duplicateOf: existing.id };
@@ -261,7 +279,10 @@ function createHypothesisManager(options = {}) {
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),
     });
-    persistSave(hyp);
+    // Callers that still need to merge evidence into the fresh proposal pass
+    // persist:false and save AFTER the merge — the first persisted version
+    // must already carry its evidence provenance, never empty arrays.
+    if (persist) persistSave(hyp);
     audits.push(makeAudit({ hypothesisId: id, relation: 'proposed', rationale: 'new hypothesis proposed' }));
     return { hypothesis: hyp, duplicateOf: null };
   }
@@ -338,7 +359,50 @@ function createHypothesisManager(options = {}) {
         statement: h.statement,
         confidence: h.confidence,
         rationale: rationale || null,
-      }) || {};
+      });
+
+      // Async sinks (the Hindsight adapter) return a promise: the confirm
+      // transition already succeeded and is never rolled back; the promotion
+      // settles in the background — promoted+factId on resolve, honest
+      // promotionPending on rejection (brief §4/§16). Sync results finalize
+      // immediately, exactly as before.
+      if (res && typeof res.then === 'function') {
+        h.promotionPending = true;
+        h.updatedAt = now().toISOString();
+        audits.push(makeAudit({
+          hypothesisId: h.id, relation: 'promote', accepted: true,
+          confidenceAfter: h.confidence,
+          reason: 'promotion in flight (async sink)', rationale: rationale || null,
+        }));
+        Promise.resolve(res)
+          .then((settled) => {
+            const after = { ...h };
+            h.promoted = true;
+            h.promotionPending = false;
+            if (settled && typeof settled.factId === 'string' && settled.factId.trim()) h.promotedFactId = settled.factId.trim();
+            h.updatedAt = now().toISOString();
+            persistUpdate(after, h);
+            audits.push(makeAudit({
+              hypothesisId: h.id, relation: 'promote', accepted: true,
+              evidenceId: h.promotedFactId,
+              confidenceAfter: h.confidence,
+              rationale: 'async promotion settled',
+            }));
+          })
+          .catch(() => {
+            h.promoted = false;
+            h.promotionPending = true;
+            h.updatedAt = now().toISOString();
+            persistUpdate({ ...h }, h);
+            audits.push(makeAudit({
+              hypothesisId: h.id, relation: 'promote', accepted: true,
+              confidenceAfter: h.confidence,
+              reason: 'async promotion failed; marked promotionPending', rationale: rationale || null,
+            }));
+          });
+        return;
+      }
+
       const after = { ...h };
       h.promoted = true;
       h.promotionPending = false;
@@ -498,11 +562,14 @@ function createHypothesisManager(options = {}) {
       if (!rh || !rh.statement) continue;
       // An explicit match to an existing hypothesis wins over text dedup.
       let target = rh.existingId ? byId.get(rh.existingId) : null;
+      const prevSnapshot = target ? { ...target } : null;
       let duplicateOf = null;
       if (target) {
         duplicateOf = target.id;
       } else {
-        const res = propose({ statement: rh.statement, confidence: rh.confidence, evidenceFor: [], evidenceAgainst: [] });
+        // persist:false — the fresh proposal still needs its evidence merged
+        // below; the first persisted version must already carry provenance.
+        const res = propose({ statement: rh.statement, confidence: rh.confidence, evidenceFor: [], evidenceAgainst: [], persist: false });
         target = res.hypothesis;
         duplicateOf = res.duplicateOf;
       }
@@ -533,6 +600,14 @@ function createHypothesisManager(options = {}) {
           target.updatedAt = iso;
           target.history.push({ from: 'proposed', to: 'testing', at: iso, rationale: 'first evidence linked' });
         }
+        // Persist AFTER the merge — v1 carries its provenance and state.
+        persistSave(target);
+      } else if (prevSnapshot && (prevSnapshot.confidence !== target.confidence
+        || JSON.stringify(prevSnapshot.evidenceFor) !== JSON.stringify(target.evidenceFor)
+        || JSON.stringify(prevSnapshot.evidenceAgainst) !== JSON.stringify(target.evidenceAgainst))) {
+        // An EXISTING hypothesis gained links/confidence without an explicit
+        // update row — still a persisted-state change.
+        persistUpdate(prevSnapshot, target);
       }
       void duplicateOf;
     }
@@ -552,6 +627,7 @@ function createHypothesisManager(options = {}) {
     applyUpdate,
     applyReasoningResult,
     evaluateTransition,
+    seed: (list) => seedAll(list),
     get: (id) => byId.get(id) || null,
     list: () => [...byId.values()],
     audits,

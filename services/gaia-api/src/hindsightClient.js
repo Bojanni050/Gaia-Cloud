@@ -37,22 +37,38 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * result from a plain semantic one; flattening them here would throw
    * that signal away before any caller got a chance to use it.
    *
+   * Hypothesis Persistence 0.1 additions (all optional, additive): `types`,
+   * `tags`/`tagsMatch` narrow retrieval natively (`types=["world"]` +
+   * `tags=["gaia:hypothesis"]` + `tags_match="all_strict"` is the hypothesis
+   * recall), and every result now carries its retained `metadata` — the
+   * gaia_hypothesis_* state lives there, never in the relevance scores.
+   *
    * @param {string} query
-   * @param {{ budget?: 'low'|'mid'|'high' }} [options]
+   * @param {{
+   *   budget?: 'low'|'mid'|'high',
+   *   types?: string[],
+   *   tags?: string[],
+   *   tagsMatch?: 'any'|'all'|'any_strict'|'all_strict'|'exact',
+   * }} [options]
    * @returns {Promise<Array<{
    *   id: string, text: string, type: string|null, context: string|null,
+   *   metadata: Record<string,string>|null,
    *   entities: string[]|null, tags: string[], occurredStart: string|null,
    *   occurredEnd: string|null,
    *   scores: { final: number|null, reranker: number|null, semantic: number|null, keyword: number|null },
    * }>>}
    */
   async function recall(query, options = {}) {
+    const body = { query, budget: options.budget || budget };
+    if (Array.isArray(options.types)) body.types = options.types;
+    if (Array.isArray(options.tags)) body.tags = options.tags;
+    if (options.tagsMatch) body.tags_match = options.tagsMatch;
     let response;
     try {
       response = await fetchImpl(bankUrl('/memories/recall'), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ query, budget: options.budget || budget }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -67,6 +83,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
       text: r.text,
       type: r.type || null,
       context: r.context || null,
+      metadata: r.metadata || null,
       entities: r.entities || null,
       tags: r.tags || [],
       occurredStart: r.occurred_start || null,
@@ -149,7 +166,143 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     };
   }
 
-  return { recall, reflect, getMentalModel };
+  /**
+   * Synchronous retain — waits for Hindsight's server-side fact extraction
+   * and returns when the memories are queryable. Used by the hypothesis
+   * adapter, which must adopt the native fact IDs right after writing (via
+   * listMemories by document_id). The existing `reflect` stays async: a
+   * conversational turn never blocks on extraction, persistence setup does.
+   * @param {{ content: string, context?: string|null, metadata?: Record<string,string>, tags?: string[], documentId?: string }} item
+   */
+  async function retainSync(item) {
+    let response;
+    try {
+      response = await fetchImpl(bankUrl('/memories'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          async: false,
+          items: [{
+            content: item.content,
+            context: item.context || null,
+            timestamp: 'unset',
+            document_id: item.documentId || undefined,
+            metadata: item.metadata || undefined,
+            tags: item.tags || undefined,
+          }],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (error) {
+      throw new Error(`hindsight retain unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight retain responded ${response.status}`);
+    }
+    return response.json().catch(() => ({}));
+  }
+
+  /**
+   * Lists raw memory units with Hindsight's native curation fields.
+   * GET /v1/default/banks/{bank}/memories/list — filters are the API's own
+   * query parameters (type/q/document_id/state); there is deliberately no
+   * tag filter on this endpoint (an actual API constraint — tag-scoped
+   * retrieval goes through recall()).
+   * @returns {Promise<Array<{ id:string, text:string, type:string|null, state:string|null,
+   *   context:string|null, metadata:Record<string,string>|null, tags:string[],
+   *   documentId:string|null }>>}
+   */
+  async function listMemories({ type, q, documentId, state, limit = 100 } = {}) {
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (q) params.set('q', q);
+    if (documentId) params.set('document_id', documentId);
+    if (state) params.set('state', state);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    let response;
+    try {
+      response = await fetchImpl(bankUrl(`/memories/list${qs ? `?${qs}` : ''}`), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight memories/list unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight memories/list responded ${response.status}`);
+    }
+    const data = await response.json();
+    return (data.items || []).map((u) => ({
+      id: u.id,
+      text: u.text ?? u.content ?? null,
+      type: u.type || u.fact_type || null,
+      state: u.state || null,
+      context: u.context || null,
+      metadata: u.metadata || null,
+      tags: u.tags || [],
+      documentId: u.document_id || null,
+    }));
+  }
+
+  /** GET /memories/{id} — one unit incl. metadata/tags/curation state; null on any failure. */
+  async function getMemory(id) {
+    let response;
+    try {
+      response = await fetchImpl(bankUrl(`/memories/${encodeURIComponent(id)}`), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (_) {
+      return null;
+    }
+    if (!response.ok) return null;
+    const u = await response.json().catch(() => null);
+    if (!u) return null;
+    return {
+      id: u.id,
+      text: u.text ?? u.content ?? null,
+      type: u.type || u.fact_type || null,
+      state: u.state || null,
+      context: u.context || null,
+      metadata: u.metadata || null,
+      tags: u.tags || [],
+      documentId: u.document_id || null,
+    };
+  }
+
+  /**
+   * PATCH /memories/{id} — Hindsight's reversible curation state.
+   * state='invalidated' removes the unit from recall/consolidation/graph
+   * while keeping it auditable; state='valid' restores it. This is the
+   * native carrier for Gaia's rejected↔testing re-open semantics.
+   * @param {string} id
+   * @param {'valid'|'invalidated'} state
+   * @param {string} [reason]
+   */
+  async function patchMemoryState(id, state, reason) {
+    const body = { state };
+    if (reason) body.reason = reason;
+    let response;
+    try {
+      response = await fetchImpl(bankUrl(`/memories/${encodeURIComponent(id)}`), {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight memory patch unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight memory patch responded ${response.status}`);
+    }
+    return true;
+  }
+
+  return { recall, reflect, getMentalModel, retainSync, listMemories, getMemory, patchMemoryState };
 }
 
 module.exports = { createHindsightClient };

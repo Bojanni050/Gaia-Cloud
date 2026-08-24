@@ -28,6 +28,8 @@ const express = require('express');
 const { parseTokens, createAuthMiddleware } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient } = require('./hindsightClient');
+const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
+const { createHypothesisManager } = require('./reasoning/hypothesisManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
 const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
@@ -58,6 +60,33 @@ function createApp(env = process.env) {
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });
+  // Hypothesis Persistence 0.1 — ReasonIQ's structured hypotheses persist
+  // as retained world-facts (tag gaia:hypothesis) through
+  // HypothesisManager's policy into Hindsight via the thin adapter. Boot
+  // loads the currently-active hypotheses once, lazily, best-effort; every
+  // failure is logged and never blocks a turn. Disable with
+  // GAIA_HYPOTHESIS_PERSISTENCE=false.
+  let hypothesisRuntime = null;
+  if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
+    const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsight });
+    const hypothesisManager = createHypothesisManager({ sink: hypothesisAdapter.sink });
+    let loadedPromise = null;
+    hypothesisRuntime = {
+      manager: hypothesisManager,
+      recallHypotheses: (query) => hypothesisAdapter.recallHypotheses(query),
+      ensureLoaded: () => {
+        if (!loadedPromise) {
+          loadedPromise = hypothesisAdapter
+            .loadActiveHypotheses()
+            .then((list) => { hypothesisManager.seed(list); })
+            .catch((err) => {
+              console.warn(`[gaia:hypotheses] boot load failed (non-fatal): ${err.message}`);
+            });
+        }
+        return loadedPromise;
+      },
+    };
+  }
   // Gaia's native voice (src/generation/gaiaGenerator.js) — undefined when
   // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case the
   // Decision Engine never sees a "native" capability and every turn routes
@@ -163,6 +192,7 @@ function createApp(env = process.env) {
         documents,
         hermes,
         hindsight,
+        hypothesisRuntime,
         res,
         conversationId,
         nativeGenerator,

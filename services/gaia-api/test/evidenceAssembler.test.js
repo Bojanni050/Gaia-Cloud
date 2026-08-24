@@ -103,3 +103,26 @@ test('boundary: evidenceAssembler never imports Hindsight, Hermes, web, or the D
     assert.ok(!source.includes(forbidden), `evidenceAssembler references ${forbidden}`);
   }
 });
+
+// === Hypothesis Persistence 0.1: native provenance via sourceRef ===========
+
+test("0.1 provenance: Hindsight reflections carry their NATIVE fact id in sourceRef", () => {
+  const evidence = assembleEvidence({
+    reflections: [
+      { id: "hs_fact_abc", text: "Bo prefers async updates", scores: { final: 0.9 } },
+      { text: "no id supplied", scores: { final: 0.5 } },
+    ],
+  });
+  assert.equal(evidence[0].sourceRef, "hs_fact_abc");
+  assert.equal(evidence[0].id, "hindsight-1"); // local id unchanged for consumers
+  assert.equal(evidence[1].sourceRef, null); // honest null when absent
+});
+
+test("0.1 provenance: non-Hindsight sources have an explicit null sourceRef", () => {
+  const evidence = assembleEvidence({
+    attachments: [{ filename: "a.txt", content: "uploaded" }],
+    mentalModels: [{ id: "mm-9", summary: "standing" }],
+    toolResults: [{ content: "tool out" }],
+  });
+  for (const e of evidence) assert.equal(e.sourceRef, null);
+});

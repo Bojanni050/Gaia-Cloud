@@ -421,3 +421,34 @@ test('seeds round-trip method/timeline/promotion fields verbatim where valid', (
   const m2 = createHypothesisManager({ hypotheses: [{ id: 'ext-2', statement: 'Odd method.', method: 'vibes' }] });
   assert.equal(m2.get('ext-2').method, 'asserted');
 });
+
+test("0.1 async sink: promotion settles in the background without blocking or breaking confirm", async () => {
+  let resolvePromote;
+  const m = createHypothesisManager({
+    sink: { promote: () => new Promise((res) => { resolvePromote = res; }) },
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: "hyp-async", statement: "Async storage.", status: "testing", confidence: 0.72, evidenceFor: ["a"] }],
+  });
+  assert.equal(m.evaluateTransition("hyp-async", "confirmed", { rationale: "policy met" }).ok, true);
+  const h = m.get("hyp-async");
+  assert.equal(h.status, "confirmed"); // transition already final
+  assert.equal(h.promoted, false);
+  assert.equal(h.promotionPending, true); // honest in-flight state
+
+  resolvePromote({ factId: "hsf_async_1" });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  const settled = m.get("hyp-async");
+  assert.equal(settled.promoted, true);
+  assert.equal(settled.promotionPending, false);
+  assert.equal(settled.promotedFactId, "hsf_async_1");
+});
+
+test("0.1 seed(): post-construction seeding never overwrites live state", () => {
+  const m = createHypothesisManager();
+  m.applyReasoningResult({ hypotheses: [{ statement: "Live one.", confidence: 0.7 }], hypothesisUpdates: [] });
+  m.seed([{ id: "hyp-1", statement: "Live one.", status: "rejected", confidence: 0.1 }]);
+  assert.equal(m.get("hyp-1").confidence, 0.7); // live state untouched
+  m.seed([{ id: "ext-seed", statement: "From storage.", status: "testing", confidence: 0.55 }]);
+  assert.equal(m.get("ext-seed").status, "testing");
+});

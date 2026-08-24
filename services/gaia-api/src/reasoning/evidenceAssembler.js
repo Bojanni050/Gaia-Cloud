@@ -48,22 +48,27 @@ function truncateContent(text) {
 /**
  * @param {{ reflections?: Array, mentalModels?: Array, attachments?: Array, conversationTurns?: Array, toolResults?: Array }} gathered
  *   everything the caller ALREADY has in hand — nothing is fetched here
- * @returns {Array<{id: string, source: string, type: string, content: string, relevance: number}>}
+ * @returns {Array<{id: string, source: string, sourceRef: string|null, type: string, content: string, relevance: number}>}
  */
 function assembleEvidence(gathered) {
   const g = gathered || {};
   const items = [];
 
   // Per-turn Hindsight recall — the primary memory evidence. Relevance is
-  // Hindsight's own final score, passed through untouched.
+  // Hindsight's own final score, passed through untouched. `sourceRef`
+  // carries the NATIVE Hindsight fact/observation id (Hypothesis
+  // Persistence 0.1): persisted hypotheses reference evidence by these real
+  // ids, so provenance resolves inside Hindsight itself instead of a second
+  // store. The local sequential `id` stays for existing consumers.
   let n = 0;
-  for (const r of Array.isArray(g.reflections) ? gathered.reflections : []) {
+  for (const r of Array.isArray(g.reflections) ? g.reflections : []) {
     const content = normalizeContent(r && (r.text ?? r.content));
     if (!content) continue;
     n += 1;
     items.push({
       id: `hindsight-${n}`,
       source: 'hindsight',
+      sourceRef: r && r.id != null ? String(r.id) : null,
       type: 'memory',
       content: truncateContent(content),
       relevance: clampRelevance(r && r.scores && r.scores.final),
@@ -78,6 +83,10 @@ function assembleEvidence(gathered) {
     if (!content) continue;
     n += 1;
     items.push({
+      // Mental models are standing summaries, not fact/observation units —
+      // their id does not resolve through memories/{id}, so sourceRef stays
+      // null (strictly reserved for Hindsight fact/observation ids).
+      sourceRef: null,
       id: `model-${n}`,
       source: 'hindsight',
       type: 'mental_model',
@@ -95,6 +104,7 @@ function assembleEvidence(gathered) {
     if (!content) continue;
     n += 1;
     items.push({
+      sourceRef: null,
       id: `upload-${n}`,
       source: 'upload',
       type: 'document',
@@ -111,6 +121,7 @@ function assembleEvidence(gathered) {
     if (!content) continue;
     n += 1;
     items.push({
+      sourceRef: null,
       id: `turn-${n}`,
       source: 'conversation',
       type: 'conversation',
@@ -126,6 +137,7 @@ function assembleEvidence(gathered) {
     if (!content) continue;
     n += 1;
     items.push({
+      sourceRef: null,
       id: `tool-${n}`,
       source: 'tool',
       type: 'tool_result',

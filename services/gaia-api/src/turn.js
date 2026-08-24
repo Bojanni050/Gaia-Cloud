@@ -406,6 +406,7 @@ function logDecisionPlan(decision, logger) {
  *   webSearch?: { search: (query: string) => Promise<string> },
  *   intentIQ?: (messages: Array, options: object) => object,
  *   reasonIQ?: (input: object, options: object) => Promise<object>,
+ *   hypothesisRuntime?: { manager: object, recallHypotheses?: Function, ensureLoaded?: Function }|null,
  *   historyStore?: { saveConversation: (id: string, messages: Array) => void },
  *   decisionStore?: { append: (record: object) => boolean },
  *   tools?: Record<string, { invoke: (messages: Array, options?: object) => Promise<*> }>,
@@ -426,6 +427,10 @@ async function performStreamingTurn({
   traceId,
   intentIQ = classifyIntent,
   reasonIQ = evaluateReasoning,
+  // Hypothesis Persistence 0.1 — optional runtime { manager, recallHypotheses?,
+  // ensureLoaded? } wired by server.js; omitted (Desktop path, tests) means
+  // hypotheses play no part in the turn, exactly as before.
+  hypothesisRuntime,
   historyStore,
   decisionStore,
   tools,
@@ -502,6 +507,43 @@ async function performStreamingTurn({
     // ReasonIQ runs shallow, exactly as it always has without evidence.
   }
 
+  // Hypothesis Persistence 0.1 (optional runtime, wired by server.js): seed
+  // ReasonIQ with Gaia's tracked hypotheses — manager state first, then a
+  // best-effort native recall scoped to gaia:hypothesis for anything not
+  // loaded yet. Every failure here is non-fatal; without a runtime this is
+  // exactly the pre-0.1 behavior.
+  let existingHypotheses = [];
+  if (hypothesisRuntime) {
+    try {
+      if (typeof hypothesisRuntime.ensureLoaded === 'function') await hypothesisRuntime.ensureLoaded();
+      existingHypotheses = hypothesisRuntime.manager.list().map((h) => ({
+        id: h.id,
+        statement: h.statement,
+        status: h.status,
+        confidence: h.confidence,
+        evidenceFor: h.evidenceFor,
+        evidenceAgainst: h.evidenceAgainst,
+      }));
+    } catch (_) { /* seeding must never break the turn */ }
+    if (typeof hypothesisRuntime.recallHypotheses === 'function') {
+      try {
+        const recalled = await hypothesisRuntime.recallHypotheses(userText);
+        const known = new Set(existingHypotheses.map((h) => h.id));
+        for (const rh of Array.isArray(recalled) ? recalled : []) {
+          if (!rh || !rh.id || known.has(rh.id)) continue;
+          existingHypotheses.push({
+            id: rh.id,
+            statement: rh.statement,
+            status: rh.status || undefined,
+            confidence: rh.confidence != null ? rh.confidence : undefined,
+            evidenceFor: rh.evidenceFor || [],
+            evidenceAgainst: rh.evidenceAgainst || [],
+          });
+        }
+      } catch (_) { /* same posture */ }
+    }
+  }
+
   // Logos: ReasonIQ consumes that same IntentDecision plus the assembled
   // evidence — the handoff this seam exists to prove (see logos/index.js's
   // runLogos(), which tests this composition directly). Awaited now, unlike
@@ -512,12 +554,30 @@ async function performStreamingTurn({
   let reasoningResult = null;
   try {
     reasoningResult = await reasonIQ(
-      { text: userText, intentDecision, conversationContext: messages, evidence, contextId: conversationId },
+      {
+        text: userText,
+        intentDecision,
+        conversationContext: messages,
+        evidence,
+        ...(hypothesisRuntime ? { existingHypotheses } : {}),
+        contextId: conversationId,
+      },
       { logger: decisionLogger }
     );
   } catch (_) {
     // A reasoning failure degrades to `reasoningResult: null`, same posture
     // as intentDecision above — never allowed to take down the turn.
+  }
+
+  // The structured result flows into the manager (lifecycle/policy/promotion
+  // via its injected sink → Hindsight adapter). Best-effort: persistence or
+  // policy failures are logged and never affect the already-produced reply.
+  if (hypothesisRuntime && reasoningResult) {
+    try {
+      hypothesisRuntime.manager.applyReasoningResult(reasoningResult);
+    } catch (err) {
+      console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
+    }
   }
 
   const systemPrompt = buildSystemPrompt(documents, messages);
