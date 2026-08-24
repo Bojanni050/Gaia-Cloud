@@ -868,3 +868,75 @@ test('classify detects meta.question with English signals (no capability)', () =
   assert.equal(d.intent, 'meta.question');
   assert.equal(d.status, 'accepted');
 });
+
+// === PATCH 1-3: Model-native vision handling ==============================
+
+test('classify detects meta.question when user asks about image visibility (image unavailable)', () => {
+  const history = [
+    msg('user', 'Hier is een foto'),
+    msg('assistant', 'Ik begrijp dat je een foto wilt delen.'),
+  ];
+  // "Kun je de foto zien?" with image unavailable
+  const d = classify([...history, msg('user', 'Kun je de foto zien?')], {
+    ...silent,
+    hasImage: true,
+    imageAvailable: false,
+  });
+  assert.equal(d.intent, 'meta.question');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.meta.target, 'image_availability');
+});
+
+test('classify detects meta.question when user asks about image visibility (image unknown)', () => {
+  const history = [
+    msg('user', 'Kijk naar deze afbeelding'),
+    msg('assistant', 'Ik begrijp dat je een afbeelding wilt delen.'),
+  ];
+  // "Zie je de afbeelding?" with image availability unknown
+  const d = classify([...history, msg('user', 'Zie je de afbeelding?')], {
+    ...silent,
+    hasImage: undefined,
+    imageAvailable: undefined,
+  });
+  assert.equal(d.intent, 'meta.question');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.meta.target, 'image_availability');
+});
+
+test('classify does NOT detect meta.question when image is available (native vision)', () => {
+  const history = [
+    msg('user', 'Hier is een foto'),
+    msg('assistant', 'Ik begrijp dat je een foto wilt delen.'),
+  ];
+  // "Kun je de foto zien?" with image available -> native vision handles it
+  const d = classify([...history, msg('user', 'Kun je de foto zien?')], {
+    ...silent,
+    hasImage: true,
+    imageAvailable: true,
+  });
+  // When image is available, native vision handles it directly
+  // The meta-intent detection should return null, allowing native handling
+  assert.notEqual(d.intent, 'meta.question');
+});
+
+test('classify detects meta.capability_question when user asks why image was not analyzed', () => {
+  const history = [
+    msg('user', 'Hier is een foto'),
+    msg('assistant', 'Ik kan de afbeelding niet zien.'),
+  ];
+  // "Waarom heb je de afbeelding niet bekeken?" — asks about capability choice
+  const d = classify([...history, msg('user', 'Waarom heb je de afbeelding niet bekeken?')], silent);
+  assert.equal(d.intent, 'meta.capability_question');
+  assert.equal(d.status, 'accepted');
+});
+
+test('classify detects meta.correction when user corrects image interpretation', () => {
+  const history = [
+    msg('user', 'Kun je de foto zien?'),
+    msg('assistant', 'Nee, ik kan de afbeelding niet zien.'),
+  ];
+  // "Nee, ik bedoel dat je naar de kleuren moet kijken" — correction
+  const d = classify([...history, msg('user', 'Nee, ik bedoel dat je naar de kleuren moet kijken')], silent);
+  assert.equal(d.intent, 'meta.correction');
+  assert.equal(d.status, 'accepted');
+});

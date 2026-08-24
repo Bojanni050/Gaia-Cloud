@@ -570,10 +570,16 @@ function latestUserText(messages) {
  *
  * v2.2 spec §1-2: conversational context has priority over capability intents.
  *
+ * PATCH 1-3: Model-native vision handling
+ * - Image availability is determined from actual model input, not user statements
+ * - Vision is a model-native capability, not an external tool
+ * - Don't route image understanding through websearch/Hindsight/Hermes
+ *
  * @param {Array<{role: string, content: string}>} messages
+ * @param {{ hasImage?: boolean, imageAvailable?: boolean }} [inputContext] - actual model input context
  * @returns {{ type: string, target: string, contextReference: string }|null}
  */
-function detectMetaIntent(messages) {
+function detectMetaIntent(messages, inputContext = {}) {
   if (!Array.isArray(messages) || messages.length < 2) return null;
 
   const lastUserIdx = messages.length - 1;
@@ -596,6 +602,51 @@ function detectMetaIntent(messages) {
 
   const prevAssistant = messages[prevAssistantIdx].content || '';
 
+  // PATCH 3: Check if user is asking about image availability
+  // "Kun je de foto zien?" / "Can you see the photo?" / "Zie je de afbeelding?"
+  const asksAboutImageVisibility = /(?:kun\s+je|can\s+you)\s+(?:de\s+)?(?:foto|afbeelding|image|photo|plaatje)\s+(?:zien|see|bekijken|look\s+at)/i.test(currentUser)
+    || /(?:zie\s+je|do\s+you\s+see)\s+(?:de\s+)?(?:foto|afbeelding|image|photo)/i.test(currentUser)
+    || /(?:kun\s+je|can\s+you)\s+(?:deze|this)\s+(?:foto|afbeelding|image|photo)\s+(?:zien|see)/i.test(currentUser);
+
+  if (asksAboutImageVisibility) {
+    // PATCH 2: Determine availability from ACTUAL MODEL INPUT, not user statements
+    if (inputContext.hasImage === true && inputContext.imageAvailable === true) {
+      // Image is available - model can inspect it natively
+      return null; // Let native vision handle it
+    } else if (inputContext.hasImage === true && inputContext.imageAvailable === false) {
+      // Image was provided but is unavailable to the model
+      return {
+        type: 'meta.question',
+        target: 'image_availability',
+        contextReference: 'model_input',
+      };
+    } else {
+      // Image availability unknown - don't claim visibility either way
+      return {
+        type: 'meta.question',
+        target: 'image_availability',
+        contextReference: 'model_input',
+      };
+    }
+  }
+
+  // PATCH 4: Check if user is asking why Gaia used/didn't use a capability
+  // This includes questions about why image was/wasn't analyzed
+  const asksAboutCapabilityUse = (/(?:waarom|why)\s+(?:koos|gebruikte|riep|heb\s+je|did\s+you)\s+(?:je|did\s+you)/i.test(currentUser)
+      || /(?:waarom|why)\s+did\s+you\s+(?:choose|chose|use|pick|call)/i.test(currentUser)
+      || /(?:waarom|why)\s+(?:heb\s+je|did\s+you)\s+.{0,30}(?:niet|not)\s+(?:gekeken|bekeken|looked\s+at|viewed|analyzed|bekijken)/i.test(currentUser)
+      || /(?:waarom|why)\s+(?:heb\s+je|did\s+you)\s+(?:deze|this|de|the)\s+(?:foto|afbeelding|image|photo)\s+(?:niet|not)/i.test(currentUser)
+      || /(?:waarom|why)\s+(?:heb\s+je|did\s+you)\s+(?:deze|this|de|the)\s+(?:foto|afbeelding|image|photo)\s+(?:niet|not)\s+(?:gezien|seen|bekeken|analyzed)/i.test(currentUser))
+    && /(?:tool|websearch|hindsight|hermes|capability|web|foto|afbeelding|image|photo)/i.test(currentUser);
+
+  if (asksAboutCapabilityUse) {
+    return {
+      type: 'meta.capability_question',
+      target: 'capability_choice',
+      contextReference: 'previous_action',
+    };
+  }
+
   // Check if user is asking about Gaia's previous response/reasoning
   // "Waarom deed je dat?" / "Why did you do that?" — refers to prev assistant action
   const refersToGaiaAction = /(?:waarom|why)\s+(?:koos|deed|zei|vraag|antwoord|gebruik|riep)\s+(?:je|did\s+you|chose|use)/i.test(currentUser)
@@ -610,8 +661,8 @@ function detectMetaIntent(messages) {
     || /(?:nee|no)[,!]?\s+(?:kijk|look)/i.test(currentUser)
     || /(?:dat\s+klopt|that'?s\s+not\s+right)/i.test(currentUser);
 
-  // Check if user is asking about a capability choice
-  // Handles both NL "Waarom koos je voor websearch?" and EN "Why did you choose websearch?"
+  // PATCH 5: Check if user is asking about a capability choice
+  // The mere presence of a capability name must never trigger that capability
   const asksAboutCapability = (/(?:waarom|why)\s+(?:koos|gebruikte|riep)\s+(?:je|did\s+you)/i.test(currentUser)
       || /(?:waarom|why)\s+did\s+you\s+(?:choose|chose|use|pick|call)/i.test(currentUser))
     && /(?:tool|websearch|hindsight|hermes|capability|web)/i.test(currentUser);
@@ -660,11 +711,17 @@ function priorUserTexts(messages, excludeLastUser, windowSize = 3) {
  * or provider hint. Pure function of its inputs plus a side-effecting log
  * line (see options.logger / options.silent).
  *
+ * PATCH 1-3: Model-native vision handling
+ * - Image availability is determined from actual model input context
+ * - Vision is a model-native capability, not an external tool
+ *
  * @param {Array<{role: string, content: string}>} messages full turn history, ending in the latest user message
  * @param {{
  *   correlationId?: string,
  *   contextId?: string,
  *   hasAttachment?: boolean,
+ *   hasImage?: boolean,
+ *   imageAvailable?: boolean,
  *   silent?: boolean,
  *   logger?: (line: string) => void,
  * }} [options]
@@ -682,7 +739,12 @@ function classify(messages, options = {}) {
     // v2.2 spec §1-2: conversational context has priority.
     // Detect meta-intents (user referring to Gaia's own behavior) BEFORE
     // keyword scoring — these are not new standalone requests.
-    const metaContext = detectMetaIntent(Array.isArray(messages) ? messages : []);
+    // PATCH 2: Pass actual model input context for image availability detection
+    const inputContext = {
+      hasImage: options.hasImage,
+      imageAvailable: options.imageAvailable,
+    };
+    const metaContext = detectMetaIntent(Array.isArray(messages) ? messages : [], inputContext);
 
     if (metaContext) {
       // Meta-intent detected from conversation context — this takes priority

@@ -18,7 +18,15 @@
  * capability-agnostic so a future capability (a tool, a second model)
  * slots in without changing this file's shape.
  *
- * Routing (v2.2 — capability gate):
+ * Routing (v2.2 — capability gate + PATCH 7 priority):
+ *
+ *   PATCH 7: Before executing an external capability, evaluate in this order:
+ *   1. Is the user referring to Gaia's previous behavior?
+ *   2. Is the user asking why Gaia chose or used something?
+ *   3. Is the user correcting Gaia's interpretation?
+ *   4. Is the required information already present in the conversation?
+ *   5. Can Gaia answer using native model capabilities?
+ *   6. Does an external capability genuinely need to run?
  *
  *   0. Meta-intent (meta.question/correction/capability_question)  -> native
  *      (Gaia answers about her own behavior; no capability needed)
@@ -28,6 +36,10 @@
  *   4. simple/conversational/personal-memory turn + native        -> native
  *   5. everything else needing a generated response               -> capability: hermes
  *   6. no capability at all can answer                            -> clarify
+ *
+ * PATCH 8: Model-native vs external capabilities
+ * - Vision/multimodal understanding is model-native, not external
+ * - Don't convert model-native capabilities into external tool invocations
  *
  * v2.2 spec §8-9: capability_candidate is what MIGHT be useful;
  * capability_execute is what is ACTUALLY authorized. The Response Engine
@@ -166,10 +178,17 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
 
   let decision;
 
-  // v2.2 spec §2: meta-conversational intents have priority over general
-  // capability intents. When the user is asking about Gaia's own behavior,
-  // previous response, or capability choice, Gaia answers directly — no
-  // capability should be invoked.
+  // PATCH 7: Correct priority order
+  // 1. Is the user referring to Gaia's previous behavior? -> native (meta-intent)
+  // 2. Is the user asking why Gaia chose or used something? -> native (meta-intent)
+  // 3. Is the user correcting Gaia's interpretation? -> native (meta-intent)
+  // 4. Is the required information already present in the conversation? -> native
+  // 5. Can Gaia answer using native model capabilities? -> native
+  // 6. Does an external capability genuinely need to run? -> capability/tool
+
+  // Priority 1-3: Meta-intents have highest priority
+  // When the user is asking about Gaia's own behavior, previous response,
+  // or capability choice, Gaia answers directly — no capability should be invoked.
   if (intent && META_INTENT_TYPES.has(intent.intent)) {
     decision = {
       action: 'native',
@@ -187,6 +206,7 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
         : 'this turn needs clarification before Gaia can act on it',
     };
   } else if (intent && intent.sourceOfTruth === 'tool' && findCapability(capabilities, 'tool')) {
+    // Priority 6: External capability genuinely needed for tool actions
     decision = {
       action: 'tool',
       capability: 'tool',
@@ -197,6 +217,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       reason: `intent "${intent.intent}" requires acting on an external system`,
     };
   } else if (intent && intent.sourceOfTruth === 'external_knowledge' && findCapability(capabilities, 'web')) {
+    // PATCH 8: Only invoke web if genuinely needed for external knowledge
+    // Don't use websearch as substitute for missing vision or native capabilities
     decision = {
       action: 'tool',
       capability: 'web',
@@ -207,6 +229,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       reason: 'this turn needs current external information Gaia does not already have',
     };
   } else if (isNativeTurn(intent, reasoning) && findCapability(capabilities, 'native')) {
+    // Priority 4-5: Native model capabilities (including vision)
+    // PATCH 8: Vision is model-native, not external
     decision = {
       action: 'native',
       capability_candidate: null,

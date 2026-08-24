@@ -231,3 +231,65 @@ test('generateReply returns null for native with no output', () => {
 test('generateReply returns null for a missing execution result', () => {
   assert.equal(generateReply({ decision: {}, executionResult: null }), null);
 });
+
+// === PATCH 1-3: Image availability responses ==============================
+
+test('generateReply returns image unavailable response for image_unavailable action', () => {
+  const { IMAGE_UNAVAILABLE_RESPONSE } = require('../src/responseEngine');
+  const result = generateReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'image_unavailable', output: null },
+  });
+  assert.equal(result, IMAGE_UNAVAILABLE_RESPONSE);
+});
+
+test('generateReply returns image unknown response for image_unknown action', () => {
+  const { IMAGE_UNKNOWN_RESPONSE } = require('../src/responseEngine');
+  const result = generateReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'image_unknown', output: null },
+  });
+  assert.equal(result, IMAGE_UNKNOWN_RESPONSE);
+});
+
+// === PATCH 6: Response Engine override for meta-intents ===================
+
+test('generateReply returns null for meta-intents (override capability candidate)', () => {
+  // When user asks about Gaia's previous behavior, Response Engine should override
+  // the capability candidate and answer directly from conversation context
+  const result = generateReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'capability', output: 'web search result' },
+    intent: { intent: 'meta.question', status: 'accepted' },
+  });
+  // The Response Engine should override and return null to let native handle it
+  assert.equal(result, null);
+});
+
+test('generateReply returns null for meta.correction intents', () => {
+  const result = generateReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'capability', output: 'some result' },
+    intent: { intent: 'meta.correction', status: 'accepted' },
+  });
+  assert.equal(result, null);
+});
+
+test('generateReply returns null for meta.capability_question intents', () => {
+  const result = generateReply({
+    decision: { action: 'native' },
+    executionResult: { action: 'tool', output: 'search result' },
+    intent: { intent: 'meta.capability_question', status: 'accepted' },
+  });
+  assert.equal(result, null);
+});
+
+test('generateReply does NOT override non-meta intents', () => {
+  // For regular intents, the capability output should be returned
+  const result = generateReply({
+    decision: { action: 'capability' },
+    executionResult: { action: 'capability', output: 'web search result' },
+    intent: { intent: 'inform.explain', status: 'accepted' },
+  });
+  assert.equal(result, 'web search result');
+});

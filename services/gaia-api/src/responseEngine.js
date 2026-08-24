@@ -34,11 +34,27 @@
  * own calm words for them. That is what keeps the invariant true even for
  * capability-free turns: Response Engine, never a capability, speaks for
  * Gaia.
+ *
+ * PATCH 6: Response Engine override
+ * - When the user's intent is meta-question, explanation, correction, or
+ *   discussion of previous capability use, the Response Engine MUST override
+ *   the capability candidate and answer directly from conversation context.
+ * - The capability candidate is advisory, not an execution command.
+ *
+ * PATCH 8: Model-native vs external capabilities
+ * - Vision/multimodal understanding is model-native, not external
+ * - Don't convert model-native capabilities into external tool invocations
  */
 
 const CALM_FALLBACK = 'gaia could not answer right now';
 const CLARIFY_FALLBACK = "could you say a bit more about what you're looking for? I want to make sure I answer the right thing.";
 const REFUSE_FALLBACK = "gaia isn't able to help with that.";
+
+// PATCH 1-3: Image availability responses (model-native vision)
+const IMAGE_UNAVAILABLE_RESPONSE = "Nee, ik krijg de afbeelding niet mee in mijn huidige input.";
+const IMAGE_UNAVAILABLE_RESPONSE_EN = "No, I can't see the image in my current input.";
+const IMAGE_UNKNOWN_RESPONSE = "Ik weet niet zeker of er een afbeelding is meegestuurd.";
+const IMAGE_UNKNOWN_RESPONSE_EN = "I'm not sure if an image was included.";
 
 /**
  * Maps any capability failure to Gaia's own calm, generic language. Never
@@ -141,11 +157,32 @@ function createStreamEmitter(res) {
  *   generator was not available.
  * - clarify: Gaia's own calm clarifying words.
  * - refuse: Gaia's own calm refusal words.
+ * - image_unavailable: PATCH 1-3 - image is not available in model input
+ * - image_unknown: PATCH 1-3 - image availability is unknown
+ *
+ * PATCH 6: Response Engine override
+ * When the user's intent is meta-question, explanation, correction, or
+ * discussion of previous capability use, the Response Engine MUST override
+ * the capability candidate and answer directly from conversation context.
+ *
  * @param {import('./orchestration/orchestrator').ExecutionResult|null|undefined} executionResult
+ * @param {{ intent?: object, decision?: object }} [context] - additional context for override logic
  * @returns {string|null}
  */
-function resolveReplyText(executionResult) {
+function resolveReplyText(executionResult, context = {}) {
   if (!executionResult) return null;
+
+  // PATCH 6: Response Engine override for meta-intents
+  // When the user is asking about Gaia's own behavior, previous response,
+  // or capability choice, answer directly from conversation context.
+  if (context.intent && context.intent.intent) {
+    const metaIntents = new Set(['meta.question', 'meta.correction', 'meta.capability_question']);
+    if (metaIntents.has(context.intent.intent)) {
+      // For meta-intents, the capability candidate should be overridden
+      // The Response Engine answers directly, not through a capability
+      return null; // Let the native handler or conversation context answer
+    }
+  }
 
   switch (executionResult.action) {
     case 'capability':
@@ -161,6 +198,13 @@ function resolveReplyText(executionResult) {
     case 'refuse':
       return REFUSE_FALLBACK;
 
+    // PATCH 1-3: Image availability responses
+    case 'image_unavailable':
+      return IMAGE_UNAVAILABLE_RESPONSE;
+
+    case 'image_unknown':
+      return IMAGE_UNKNOWN_RESPONSE;
+
     default:
       return null;
   }
@@ -172,11 +216,14 @@ function resolveReplyText(executionResult) {
  * stream to have already carried it. Used by performTurn (turn.js), which
  * hands the returned text straight to formatReply for the HTTP-shaped
  * result, exactly as it always has.
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult }} input
+ *
+ * PATCH 6: Passes intent context for Response Engine override on meta-intents
+ *
+ * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, intent?: object }} input
  * @returns {string|null}
  */
-function generateReply({ decision, executionResult }) {
-  return resolveReplyText(executionResult);
+function generateReply({ decision, executionResult, intent }) {
+  return resolveReplyText(executionResult, { intent });
 }
 
 /**
@@ -198,11 +245,13 @@ function generateReply({ decision, executionResult }) {
  *   rendered and emitted here, through this module's own emitter, never a
  *   capability's.
  *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter> }} input
+ * PATCH 6: Passes intent context for Response Engine override on meta-intents
+ *
+ * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter>, intent?: object }} input
  * @returns {string|null}
  */
-function generateStreamingReply({ decision, executionResult, emitter }) {
-  const text = resolveReplyText(executionResult);
+function generateStreamingReply({ decision, executionResult, emitter, intent }) {
+  const text = resolveReplyText(executionResult, { intent });
   if (text === null) return null;
 
   // capability/tool/native text was already emitted as deltas during
@@ -224,4 +273,8 @@ module.exports = {
   CALM_FALLBACK,
   CLARIFY_FALLBACK,
   REFUSE_FALLBACK,
+  IMAGE_UNAVAILABLE_RESPONSE,
+  IMAGE_UNAVAILABLE_RESPONSE_EN,
+  IMAGE_UNKNOWN_RESPONSE,
+  IMAGE_UNKNOWN_RESPONSE_EN,
 };
