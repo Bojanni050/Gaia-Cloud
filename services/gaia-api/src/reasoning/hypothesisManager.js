@@ -28,9 +28,27 @@
  * is never enough. Transitions to confirmed/rejected go through
  * evaluateTransition(), which checks the evidence policy below — every
  * threshold is named and documented here, none are magic.
+ *
+ * Provenance note (0.3.x): several concepts here are adopted from
+ * github.com/alash3al/stash — the four-way evidence verdicts were already
+ * borrowed in logos/reasonModels.js; this pass adds its hypothesis-shape
+ * ideas: a `method` field (asserted|derived|tested), an explicit
+ * `rejectionReason`, tested/confirmed/rejected timestamps, and knowledge
+ * promotion on confirm. Two DELIBERATE divergences, both required by our
+ * own briefs: (1) Stash treats confirmed/rejected as terminal states — we
+ * allow re-opening (confirmed→testing, rejected→testing) because new
+ * evidence must be able to put pressure on a settled belief (brief §7);
+ * (2) Stash promotes a confirmed hypothesis into its internal facts table
+ * itself — we have no store access here, so promotion is emitted through
+ * the INJECTED sink (`promote`), keeping this module store-agnostic. The
+ * passive auto-confirm scan stage Stash also has was deliberately NOT
+ * adopted: transitions happen only through explicit, policy-gated calls.
  */
 
 const { EVIDENCE_VERDICTS } = require('../logos/reasonModels');
+
+/** How a hypothesis came to be / was settled (Stash's `method`, adopted). */
+const HYPOTHESIS_METHODS = Object.freeze(['asserted', 'derived', 'tested']);
 
 /**
  * The allowed status transitions. Anything not listed here is refused,
@@ -64,6 +82,26 @@ const DEFAULT_POLICY = Object.freeze({
 
 /** Statuses always start here when a new hypothesis is proposed. */
 const INITIAL_STATUS = 'proposed';
+
+function isValidMethod(m) {
+  return HYPOTHESIS_METHODS.includes(m);
+}
+
+/**
+ * Maintains the timeline/method side-effects of a status change — the
+ * Stash-style tested/confirmed/rejected stamps plus method promotion to
+ * 'tested' once a hypothesis has actually been settled. Centralized so
+ * every transition path (evaluateTransition, applyUpdate's demotion,
+ * first-evidence promotion) stays consistent.
+ */
+function stampStatus(h, from, to, iso) {
+  if (to === 'testing') h.testedAt = iso;
+  if (to === 'confirmed') { h.confirmedAt = iso; h.method = 'tested'; }
+  if (to === 'rejected') h.rejectedAt = iso;
+  // Re-opening a rejected hypothesis clears its standing rejection reason —
+  // the reason itself survives in the history entry that recorded the reject.
+  if (to === 'testing' && from === 'rejected') h.rejectionReason = null;
+}
 
 function clampConfidence(value) {
   const n = Number(value);
@@ -122,7 +160,13 @@ function makeAudit(record) {
 /**
  * @param {{
  *   hypotheses?: Array<object>, seed state (e.g. retrieved from Hindsight by the caller)
- *   sink?: { save?: Function, update?: Function }, injected persistence; default honest no-op
+ *   sink?: {
+ *     save?: Function,
+ *     update?: Function,
+ *     promote?: ({ hypothesisId, statement, confidence, rationale }) => { factId?: string }|void,
+ *   }, injected persistence; default honest no-op. `promote` (Stash's
+ *     ConfirmHypothesis→fact pattern) is called ONCE per hypothesis when it
+ *     first settles into confirmed; a returned factId is kept as promotedFactId.
  *   policy?: Partial<typeof DEFAULT_POLICY>,
  *   now?: () => Date,
  * }} options
@@ -161,9 +205,17 @@ function createHypothesisManager(options = {}) {
       id: String(h.id),
       statement: h.statement,
       status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
+      method: isValidMethod(h.method) ? h.method : 'asserted',
       confidence: clampConfidence(h.confidence) != null ? clampConfidence(h.confidence) : 0.5,
       evidenceFor: Array.isArray(h.evidenceFor) ? [...h.evidenceFor] : [],
       evidenceAgainst: Array.isArray(h.evidenceAgainst) ? [...h.evidenceAgainst] : [],
+      rejectionReason: typeof h.rejectionReason === 'string' ? h.rejectionReason : null,
+      testedAt: h.testedAt || null,
+      confirmedAt: h.confirmedAt || null,
+      rejectedAt: h.rejectedAt || null,
+      promoted: Boolean(h.promoted),
+      promotedFactId: typeof h.promotedFactId === 'string' && h.promotedFactId ? h.promotedFactId : null,
+      promotionPending: Boolean(h.promotionPending),
       history: Array.isArray(h.history) ? [...h.history] : [],
       createdAt: h.createdAt || now().toISOString(),
       updatedAt: h.updatedAt || now().toISOString(),
@@ -183,7 +235,7 @@ function createHypothesisManager(options = {}) {
    * Proposes a hypothesis — or recognizes an equivalent existing one (§4/§12).
    * @returns {{ hypothesis: object, duplicateOf: string|null }}
    */
-  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [] } = {}) {
+  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted' } = {}) {
     if (!statement || !String(statement).trim()) throw new Error('hypothesis statement is required');
     const existing = findDuplicate(statement);
     if (existing) return { hypothesis: existing, duplicateOf: existing.id };
@@ -194,9 +246,17 @@ function createHypothesisManager(options = {}) {
       id,
       statement: String(statement).trim(),
       status: INITIAL_STATUS,
+      method: isValidMethod(method) ? method : 'asserted',
       confidence: clampConfidence(confidence) != null ? clampConfidence(confidence) : 0.5,
       evidenceFor: [...new Set(evidenceFor)],
       evidenceAgainst: [...new Set(evidenceAgainst)],
+      rejectionReason: null,
+      testedAt: null,
+      confirmedAt: null,
+      rejectedAt: null,
+      promoted: false,
+      promotedFactId: null,
+      promotionPending: false,
       history: [],
       createdAt: now().toISOString(),
       updatedAt: now().toISOString(),
@@ -229,8 +289,12 @@ function createHypothesisManager(options = {}) {
       }));
       return { ok: false, reason: `invalid transition ${h.status} -> ${to}` };
     }
+    const iso = now().toISOString();
+    const fromStatus = h.status;
+    stampStatus(h, fromStatus, to, iso);
+    if (to === 'rejected') h.rejectionReason = rationale || null;
     h.status = to;
-    h.updatedAt = now().toISOString();
+    h.updatedAt = iso;
     h.history.push({ from: prev.status, to, at: h.updatedAt, rationale: rationale || null });
     persistUpdate(prev, h);
     audits.push(makeAudit({
@@ -239,6 +303,64 @@ function createHypothesisManager(options = {}) {
       rationale: rationale || null,
     }));
     return { ok: true };
+  }
+
+  /**
+   * Knowledge promotion at confirm (Stash's ConfirmHypothesis→fact pattern,
+   * store-agnostic edition): the settled statement is offered to the
+   * injected sink exactly once. No sink.promote → honest promotionPending
+   * instead of a silent drop; a throwing sink never breaks the transition;
+   * an already-promoted hypothesis is never promoted twice.
+   */
+  function promoteConfirmed(h, prev, rationale) {
+    if (h.promoted || h.promotedFactId != null) {
+      audits.push(makeAudit({
+        hypothesisId: h.id, relation: 'promote', accepted: true,
+        confidenceAfter: h.confidence,
+        reason: 'already promoted', rationale: rationale || null,
+      }));
+      return;
+    }
+    if (typeof sink.promote !== 'function') {
+      h.promotionPending = true;
+      h.updatedAt = now().toISOString();
+      persistUpdate(prev, h);
+      audits.push(makeAudit({
+        hypothesisId: h.id, relation: 'promote', accepted: true,
+        confidenceAfter: h.confidence,
+        reason: 'sink has no promote; marked promotionPending', rationale: rationale || null,
+      }));
+      return;
+    }
+    try {
+      const res = sink.promote({
+        hypothesisId: h.id,
+        statement: h.statement,
+        confidence: h.confidence,
+        rationale: rationale || null,
+      }) || {};
+      const after = { ...h };
+      h.promoted = true;
+      h.promotionPending = false;
+      if (res && typeof res.factId === 'string' && res.factId.trim()) h.promotedFactId = res.factId.trim();
+      h.updatedAt = now().toISOString();
+      persistUpdate(after, h);
+      audits.push(makeAudit({
+        hypothesisId: h.id, relation: 'promote', accepted: true,
+        evidenceId: h.promotedFactId,
+        confidenceAfter: h.confidence,
+        rationale: rationale || 'promoted confirmed statement',
+      }));
+    } catch (_) {
+      h.promotionPending = true;
+      h.updatedAt = now().toISOString();
+      persistUpdate(prev, h);
+      audits.push(makeAudit({
+        hypothesisId: h.id, relation: 'promote', accepted: true,
+        confidenceAfter: h.confidence,
+        reason: 'promotion failed; marked promotionPending', rationale: rationale || null,
+      }));
+    }
   }
 
   /**
@@ -280,7 +402,11 @@ function createHypothesisManager(options = {}) {
       // Re-open paths (confirmed→testing, rejected→testing) demand a reason too.
       if (!rationale) return { ok: false, reason: 're-opening requires a rationale' };
     }
-    return transition(h, target, rationale);
+    const res = transition(h, target, rationale);
+    if (res.ok && target === 'confirmed') {
+      promoteConfirmed(h, { ...h }, rationale);
+    }
+    return res;
   }
 
   /**
@@ -325,6 +451,7 @@ function createHypothesisManager(options = {}) {
     // §9: contradicting pressure on a CONFIRMED hypothesis forces it back
     // to testing immediately and explicitly — recorded, never silent.
     if (relation === 'contradicts' && h.status === 'confirmed') {
+      stampStatus(h, 'confirmed', 'testing', h.updatedAt);
       h.status = 'testing';
       h.history.push({ from: 'confirmed', to: 'testing', at: h.updatedAt, rationale: 'contradicting evidence arrived' });
       persistUpdate(prev, h);
@@ -339,6 +466,7 @@ function createHypothesisManager(options = {}) {
 
     // First real evidence moves a fresh proposal into testing.
     if (h.status === 'proposed' && (relation === 'supports' || relation === 'weakens')) {
+      stampStatus(h, 'proposed', 'testing', h.updatedAt);
       h.status = 'testing';
       h.history.push({ from: 'proposed', to: 'testing', at: h.updatedAt, rationale: 'first evidence applied' });
     }
@@ -392,12 +520,18 @@ function createHypothesisManager(options = {}) {
         // Fresh proposal drifts toward the model's own assessment of confidence.
         const c = clampConfidence(rh.confidence);
         if (c != null) target.confidence = c;
+        // Stash's `method`: a proposal that arrived already carrying
+        // evidence links was DERIVED from that evidence; a bare statement
+        // was ASSERTED by the model.
+        target.method = (target.evidenceFor.length > 0 || target.evidenceAgainst.length > 0) ? 'derived' : 'asserted';
         // First real evidence moves a fresh proposal into testing (§5:
         // a hypothesis backed by linked evidence IS under test).
         if (target.status === 'proposed' && (target.evidenceFor.length > 0 || target.evidenceAgainst.length > 0)) {
+          const iso = now().toISOString();
+          stampStatus(target, 'proposed', 'testing', iso);
           target.status = 'testing';
-          target.updatedAt = now().toISOString();
-          target.history.push({ from: 'proposed', to: 'testing', at: target.updatedAt, rationale: 'first evidence linked' });
+          target.updatedAt = iso;
+          target.history.push({ from: 'proposed', to: 'testing', at: iso, rationale: 'first evidence linked' });
         }
       }
       void duplicateOf;
@@ -429,6 +563,7 @@ function createHypothesisManager(options = {}) {
 module.exports = {
   createHypothesisManager,
   HYPOTHESIS_TRANSITIONS,
+  HYPOTHESIS_METHODS,
   DEFAULT_POLICY,
   INITIAL_STATUS,
   DEDUP_SIMILARITY_THRESHOLD,

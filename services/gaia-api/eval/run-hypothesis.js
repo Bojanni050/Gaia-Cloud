@@ -18,8 +18,13 @@ const { createHypothesisManager } = require('../src/reasoning/hypothesisManager'
 const CASES = require(path.join(__dirname, 'hypothesis-cases.json')).cases;
 
 function runCase(kase) {
+  const promotions = [];
+  const sink = kase.setup.capturePromotions
+    ? { promote: (p) => { promotions.push(p); return { factId: `fact-${promotions.length}` }; } }
+    : {};
   const m = createHypothesisManager({
     ...(kase.setup.policy ? { policy: kase.setup.policy } : {}),
+    ...(Object.keys(sink).length ? { sink } : {}),
     hypotheses: kase.setup.hypotheses || [],
   });
   const a = kase.action;
@@ -49,6 +54,15 @@ function runCase(kase) {
   if ('evidenceForContains' in exp) checks.push([h && h.evidenceFor.includes(exp.evidenceForContains), `evidenceFor=${JSON.stringify(h && h.evidenceFor)}`]);
   if ('evidenceAgainstContains' in exp) checks.push([h && h.evidenceAgainst.includes(exp.evidenceAgainstContains), `evidenceAgainst=${JSON.stringify(h && h.evidenceAgainst)}`]);
   if ('reasonMatches' in exp) checks.push([new RegExp(exp.reasonMatches).test(outcome.reason || ''), `reason=${outcome.reason}`]);
+  // Generic exact-field assertions against the hypothesis state (0.3.x:
+  // method / rejectionReason / promoted / promotedFactId / promotionPending…).
+  if (exp.fields) {
+    for (const [field, want] of Object.entries(exp.fields)) {
+      const got = h ? h[field] : undefined;
+      checks.push([got === want, `${field}=${JSON.stringify(got)} (want ${JSON.stringify(want)})`]);
+    }
+  }
+  if ('promotionCalls' in exp) checks.push([promotions.length === exp.promotionCalls, `promotionCalls=${promotions.length}`]);
 
   const failed = checks.filter(([pass]) => !pass);
   return { id: kase.id, behavior: kase.behavior, pass: failed.length === 0, why: failed.map(([, msg]) => msg).join('; ') };

@@ -283,3 +283,141 @@ test('fresh proposals with linked evidence enter testing on creation of applyRea
   const [h] = m.list();
   assert.equal(h.status, 'testing');
 });
+
+// === Stash-concept adoption: method / rejectionReason / timeline / promotion ===
+
+const { HYPOTHESIS_METHODS } = require('../src/reasoning/hypothesisManager');
+
+test('methods: vocabulary is frozen and matches the adopted Stash concept', () => {
+  assert.deepEqual([...HYPOTHESIS_METHODS], ['asserted', 'derived', 'tested']);
+});
+
+test('method: bare proposals are asserted, evidence-linked derivations are derived', () => {
+  const m = createHypothesisManager();
+  m.applyReasoningResult({
+    hypotheses: [
+      { statement: 'Bare assertion without any evidence.', confidence: 0.5 },
+      { statement: 'Derived from the logs.', confidence: 0.6, evidenceFor: ['log-1'] },
+    ],
+    hypothesisUpdates: [],
+  });
+  const [bare, derived] = m.list();
+  assert.equal(bare.method, 'asserted');
+  assert.equal(bare.status, 'proposed');
+  assert.equal(derived.method, 'derived');
+  assert.equal(derived.status, 'testing');
+});
+
+test('method: settling a hypothesis marks it tested', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: 'hyp-t', statement: 'X causes Y.', status: 'testing', confidence: 0.8, evidenceFor: ['a'] }],
+    policy: { minSupportEvidence: 2 },
+  });
+  m.applyUpdate({ hypothesisId: 'hyp-t', evidenceId: 'b', relation: 'supports', confidenceDelta: 0.01, rationale: 'second source' });
+  assert.equal(m.evaluateTransition('hyp-t', 'confirmed', { rationale: 'two sources agree' }).ok, true);
+  assert.equal(m.get('hyp-t').method, 'tested');
+});
+
+test('rejectionReason: recorded on reject, cleared on re-open, preserved in history', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: 'hyp-r', statement: 'Wrong idea.', status: 'testing', confidence: 0.3, evidenceAgainst: ['x', 'y'] }],
+  });
+  assert.equal(m.evaluateTransition('hyp-r', 'rejected', { rationale: 'disproven by two independent traces' }).ok, true);
+  assert.equal(m.get('hyp-r').rejectionReason, 'disproven by two independent traces');
+
+  assert.equal(m.evaluateTransition('hyp-r', 'testing', { rationale: 'strong new evidence surfaced' }).ok, true);
+  const h = m.get('hyp-r');
+  assert.equal(h.rejectionReason, null); // cleared for the live state...
+  const rejectEntry = h.history.find((e) => e.to === 'rejected');
+  assert.equal(rejectEntry.rationale, 'disproven by two independent traces'); // ...kept in history
+});
+
+test('timeline: testedAt/confirmedAt/rejectedAt are stamped by their transitions', () => {
+  const m = createHypothesisManager({
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: 'hyp-c', statement: 'Fast path.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+  });
+  // Honest-null: a seeded status without an explicit stamp does NOT invent one.
+  assert.equal(m.get('hyp-c').testedAt, null);
+  assert.equal(m.evaluateTransition('hyp-c', 'confirmed', { rationale: 'policy met' }).ok, true);
+  assert.ok(m.get('hyp-c').confirmedAt);
+  assert.equal(m.get('hyp-c').rejectedAt, null);
+  // Terminal stamps survive a demote; rejectedAt stays untouched.
+  m.applyUpdate({ hypothesisId: 'hyp-c', evidenceId: 'z', relation: 'contradicts', confidenceDelta: 0.3, rationale: 'counterexample' });
+  assert.equal(m.get('hyp-c').status, 'testing');
+  assert.ok(m.get('hyp-c').confirmedAt); // history of having been confirmed remains visible
+});
+
+test('promotion: confirm calls sink.promote exactly once with the settled payload and keeps the factId', () => {
+  const promotions = [];
+  const m = createHypothesisManager({
+    sink: { promote: (p) => { promotions.push(p); return { factId: 'hs-fact-77' }; } },
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: 'hyp-p', statement: 'The emitter owns the wire format.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+  });
+  assert.equal(m.evaluateTransition('hyp-p', 'confirmed', { rationale: 'settled' }).ok, true);
+  const h = m.get('hyp-p');
+  assert.equal(promotions.length, 1);
+  assert.deepEqual(promotions[0], { hypothesisId: 'hyp-p', statement: 'The emitter owns the wire format.', confidence: 0.72, rationale: 'settled' });
+  assert.equal(h.promoted, true);
+  assert.equal(h.promotedFactId, 'hs-fact-77');
+  assert.equal(h.promotionPending, false);
+
+  // Re-open + settle again: no second promotion.
+  m.evaluateTransition('hyp-p', 'testing', { rationale: 'new pressure' });
+  m.applyUpdate({ hypothesisId: 'hyp-p', evidenceId: 'q', relation: 'supports', confidenceDelta: 0.02, rationale: 'more' });
+  assert.equal(m.evaluateTransition('hyp-p', 'confirmed', { rationale: 're-confirmed' }).ok, true);
+  assert.equal(promotions.length, 1);
+  const skipAudit = m.audits.filter((a) => a.relation === 'promote').at(-1);
+  assert.equal(skipAudit.reason, 'already promoted');
+});
+
+test('promotion: sink without promote leaves an honest promotionPending instead of dropping it', () => {
+  const m = createHypothesisManager({
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: 'hyp-w', statement: 'Waiting for storage.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+  });
+  assert.equal(m.evaluateTransition('hyp-w', 'confirmed', { rationale: 'settled' }).ok, true);
+  const h = m.get('hyp-w');
+  assert.equal(h.status, 'confirmed'); // transition succeeded regardless
+  assert.equal(h.promoted, false);
+  assert.equal(h.promotionPending, true);
+  const audit = m.audits.filter((a) => a.relation === 'promote').at(-1);
+  assert.match(audit.reason, /promotionPending/);
+});
+
+test('promotion: a throwing sink never breaks the confirm transition', () => {
+  const m = createHypothesisManager({
+    sink: { promote: () => { throw new Error('hindsight down'); } },
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: 'hyp-x', statement: 'Resilient.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+  });
+  assert.equal(m.evaluateTransition('hyp-x', 'confirmed', { rationale: 'settled' }).ok, true);
+  const h = m.get('hyp-x');
+  assert.equal(h.status, 'confirmed');
+  assert.equal(h.promotionPending, true);
+});
+
+test('seeds round-trip method/timeline/promotion fields verbatim where valid', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'ext-1',
+      statement: 'Retrieved from storage.',
+      status: 'rejected',
+      method: 'tested',
+      confidence: 0.2,
+      rejectionReason: 'old disproof',
+      rejectedAt: '2026-01-01T00:00:00Z',
+      promoted: false,
+      promotedFactId: null,
+      promotionPending: false,
+    }],
+  });
+  const h = m.get('ext-1');
+  assert.equal(h.method, 'tested');
+  assert.equal(h.rejectionReason, 'old disproof');
+  assert.equal(h.rejectedAt, '2026-01-01T00:00:00Z');
+  // An invalid method degrades honestly instead of being trusted.
+  const m2 = createHypothesisManager({ hypotheses: [{ id: 'ext-2', statement: 'Odd method.', method: 'vibes' }] });
+  assert.equal(m2.get('ext-2').method, 'asserted');
+});

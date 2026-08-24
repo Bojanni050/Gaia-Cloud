@@ -61,6 +61,29 @@
       "setup": { "hypotheses": [{ "id": "hyp-j1", "statement": "No free re-opens.", "status": "rejected", "confidence": 0.3 }] },
       "action": { "type": "evaluateTransition", "target": "testing" },
       "expect": { "ok": false, "reasonMatches": "rationale", "statusAfter": "rejected" }
+    },
+    {
+      "id": "rej-01", "behavior": "reject-records-reason",
+      "setup": { "hypotheses": [{ "id": "hyp-k1", "statement": "Disproven idea.", "status": "testing", "confidence": 0.25, "evidenceAgainst": ["a", "b"] }] },
+      "action": { "type": "evaluateTransition", "target": "rejected", "rationale": "two independent disproofs" },
+      "expect": {
+        "ok": true,
+        "fields": { "status": "rejected", "rejectionReason": "two independent disproofs" }
+      }
+    },
+    {
+      "id": "pro-01", "behavior": "confirm-promotes-via-sink",
+      "setup": {
+        "capturePromotions": true,
+        "policy": { "minSupportEvidence": 2, "confirmConfidence": 0.7 },
+        "hypotheses": [{ "id": "hyp-l1", "statement": "Settled knowledge.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"] }]
+      },
+      "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "policy met, promoting" },
+      "expect": {
+        "ok": true,
+        "fields": { "status": "confirmed", "method": "tested", "promoted": true, "promotedFactId": "fact-1", "promotionPending": false },
+        "promotionCalls": 1
+      }
     }
   ]
 }
