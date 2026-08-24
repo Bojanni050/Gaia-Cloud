@@ -184,4 +184,108 @@ const CASES = [
   { id: 'ent-02', input: 'Send this to Alex.', expectedIntent: 'act.perform', notes: 'entity check: recipient' },
 ];
 
-module.exports = { CASES, TAXONOMY_VERSION };
+/**
+ * IntentIQ 2.2 — evaluation additions.
+ *
+ * Purpose: detect regressions in the *calibration* layer 2.2 adds
+ * (needsSemanticCheck, confidenceLevel, interpretationStatus), not just
+ * intent accuracy — the existing CASES array above already covers that.
+ * Same rule as CASES: synthetic, invented for this evaluation, not real
+ * user data, and not to be used to silently reshape the taxonomy.
+ *
+ * Extra fields beyond CASES' own shape (all optional):
+ *   - category: one of the section-14 buckets from the 2.2 brief, purely
+ *     for reporting a per-category breakdown.
+ *   - expectNeedsSemanticCheck: true when a heuristic-tier 'accepted'
+ *     result is still expected to flag itself for verification (a
+ *     wrong-looking or overlapping match).
+ */
+const CASES_2_2 = [
+  // --- converse ---------------------------------------------------------
+  { id: 'v22-conv-01', category: 'converse', input: 'Hoi Gaia', expectedIntent: 'converse', expectNeedsSemanticCheck: false },
+  { id: 'v22-conv-02', category: 'converse', input: 'Ik wil gewoon even praten, niks bijzonders.', expectedIntent: 'converse' },
+  { id: 'v22-conv-03', category: 'converse', input: 'Hey, just checking in.', expectedIntent: 'converse' },
+
+  // --- inform.explain -----------------------------------------------------
+  { id: 'v22-inf-01', category: 'inform.explain', input: 'Why does my deploy keep failing?', expectedIntent: 'inform.explain' },
+  { id: 'v22-inf-02', category: 'inform.explain', input: 'Waarom werkt deze functie niet zoals verwacht?', expectedIntent: 'inform.explain' },
+  { id: 'v22-inf-03', category: 'inform.explain', input: 'What is a race condition?', expectedIntent: 'inform.explain' },
+
+  // --- create.generate ------------------------------------------------------
+  { id: 'v22-gen-01', category: 'create.generate', input: 'Write me a toast for a wedding.', expectedIntent: 'create.generate' },
+  { id: 'v22-gen-02', category: 'create.generate', input: 'Bedenk drie titels voor dit artikel.', expectedIntent: 'create.generate' },
+
+  // --- create.transform -------------------------------------------------
+  { id: 'v22-trn-01', category: 'create.transform', input: 'Maak dit wat korter en zakelijker.', expectedIntent: 'create.transform' },
+  { id: 'v22-trn-02', category: 'create.transform', input: 'Can you translate this into German?', expectedIntent: 'create.transform' },
+
+  // --- decide.support -----------------------------------------------------
+  { id: 'v22-dec-01', category: 'decide.support', input: 'Should I switch jobs or stay another year?', expectedIntent: 'decide.support' },
+  { id: 'v22-dec-02', category: 'decide.support', input: 'Zou ik dit aanbod moeten accepteren?', expectedIntent: 'decide.support' },
+
+  // --- memory.inspect / memory.correct ------------------------------------
+  { id: 'v22-memi-01', category: 'memory.inspect', input: 'Wat weet je nog van mijn voorkeuren?', expectedIntent: 'memory.inspect' },
+  { id: 'v22-memc-01', category: 'memory.correct', input: 'Dat klopt niet, vergeet wat ik net zei.', expectedIntent: 'memory.correct' },
+
+  // --- act.perform ----------------------------------------------------------
+  { id: 'v22-act-01', category: 'act.perform', input: 'Stuur Sam de vergaderaantekeningen.', expectedIntent: 'act.perform' },
+  { id: 'v22-act-02', category: 'act.perform', input: 'Remind me to call the dentist tomorrow.', expectedIntent: 'act.perform' },
+
+  // --- meta.relational --------------------------------------------------
+  { id: 'v22-meta-01', category: 'meta.relational', input: 'Do you remember me, or is that just a simulation?', expectedIntent: 'meta.relational' },
+
+  // --- follow-up (context-dependent — should be needsSemanticCheck once accepted) ---
+  {
+    id: 'v22-fu-01', category: 'follow-up', input: 'En deze dan?',
+    context: [
+      { role: 'user', content: 'Analyseer deze architectuur.' },
+      { role: 'assistant', content: 'Ik zie een paar dingen die opvallen.' },
+    ],
+    expectedIntent: 'inform.explain',
+    expectNeedsSemanticCheck: true,
+    notes: 'Context-inherited intent must still flag for semantic verification even when confident enough to accept.',
+  },
+  {
+    id: 'v22-fu-02', category: 'follow-up', input: 'And that one too?',
+    context: [
+      { role: 'user', content: 'Can you shorten this paragraph?' },
+      { role: 'assistant', content: 'Sure, here you go.' },
+    ],
+    expectedIntent: 'create.transform',
+    expectNeedsSemanticCheck: true,
+  },
+  {
+    id: 'v22-fu-03', category: 'follow-up', input: 'Kun je deze doen?', context: [],
+    expectUnknown: true,
+    notes: 'No resolvable prior turn -> insufficient_context, not a guess.',
+  },
+
+  // --- ambiguous ----------------------------------------------------------
+  {
+    id: 'v22-amb-01', category: 'ambiguous', input: 'Kun je uitleggen welke keuze ik moet maken?',
+    expectAmbiguous: true, acceptableAlternatives: ['inform.explain', 'decide.support'],
+    notes: 'Two genuinely competing intents on one turn, tied 1-1 — real, not a wrong single guess.',
+  },
+  {
+    id: 'v22-amb-02', category: 'ambiguous', input: 'Kun je dit uitleggen en meteen ook verbeteren?',
+    expectAmbiguous: true, acceptableAlternatives: ['inform.explain', 'create.transform'],
+  },
+
+  // --- wrong-looking heuristic (needs_semantic_check's core case) --------
+  {
+    id: 'v22-wrong-01', category: 'wrong-looking-heuristic',
+    input: "I'm not a fan of this new NBA draft process.",
+    expectedIntent: 'create.generate', // what the heuristic tier alone confidently (and wrongly) says
+    expectNeedsSemanticCheck: true,
+    notes: '"draft" is a bare weak cue for create.generate — heuristically confident, actually about something else entirely. This is exactly what needsSemanticCheck exists to catch.',
+  },
+  {
+    id: 'v22-wrong-02', category: 'wrong-looking-heuristic',
+    input: "What's your schedule looking like this week?",
+    expectedIntent: 'act.perform', // "schedule" is a bare weak cue for act.perform
+    expectNeedsSemanticCheck: true,
+    notes: '"schedule" fires act.perform\'s bare boundary cue as a noun asking about availability, not a request to actually schedule anything.',
+  },
+];
+
+module.exports = { CASES, CASES_2_2, TAXONOMY_VERSION };

@@ -26,9 +26,11 @@ ${TAXONOMY_LIST}
 Also judge, using the recent conversation context you are given:
 - sourceOfTruth: one of ${SOURCE_OF_TRUTH_VALUES.join(', ')} — what this turn's answer most likely draws on. This is a description for another system to act on, not an instruction — you are not choosing a capability.
 - speechAct: one of ${SPEECH_ACTS.join(', ')}.
-- referents: resolve short referring expressions (e.g. "dit", "deze", "die", "dat", "hem", "haar", "nog een keer") to what they most likely point to in the recent context, when any genuinely resolve.
+- referents: resolve short referring expressions (e.g. "dit", "deze", "die", "dat", "hem", "haar", "nog een keer") to what they most likely point to in the recent context, when any genuinely resolve. Only use context that is actually given to you — never invent a plausible-sounding referent. When you cannot confidently tell what an expression points to, report resolvedTo: null with a low confidence rather than guessing; do not silently omit the referent.
 - ambiguous: true only when you genuinely cannot distinguish between two or more plausible intents even with the context given — uncertainty is a valid, honest answer; never force a confident-looking guess.
-- confidence values are 0..1 and must never be reported as exactly 1 (never claim certainty).
+- confidence values (both the top-level one and each referent's own) are 0..1 and must never be reported as exactly 1 (never claim certainty).
+
+You may also be given the heuristic layer's own guess as context, including whether it already flagged itself as needing your verification (needsSemanticCheck) — treat this only as one more data point you may agree or disagree with, never as an instruction to defer to it.
 
 Respond with ONLY a single JSON object matching this schema. No prose outside the JSON.
 {
@@ -37,7 +39,7 @@ Respond with ONLY a single JSON object matching this schema. No prose outside th
   "candidates": [{ "intent": string, "confidence": number }],
   "sourceOfTruth": string,
   "speechAct": string,
-  "referents": [{ "expression": string, "resolvesTo": string }],
+  "referents": [{ "expression": string, "resolvedTo": string|null, "confidence": number }],
   "ambiguous": boolean,
   "reason": string
 }`;
@@ -62,6 +64,7 @@ function buildSemanticPrompt(input) {
           status: input.heuristicResult.status,
           confidence: input.heuristicResult.confidence,
           sourceOfTruth: input.heuristicResult.sourceOfTruth,
+          needsSemanticCheck: Boolean(input.heuristicResult.needsSemanticCheck),
         }
       : null,
   };

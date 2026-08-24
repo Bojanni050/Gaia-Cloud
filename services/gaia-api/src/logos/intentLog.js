@@ -30,6 +30,7 @@ function truncate(text) {
  *   correlationId: string,
  *   classifierVersion: string,
  *   semanticCalled?: boolean,
+ *   tiers?: { heuristic: object, semantic: object|null },
  *   timestamp?: string,
  * }} entry
  * @param {(line: string) => void} [sink] injectable for tests; defaults to console.log
@@ -53,6 +54,13 @@ function logIntentDecision(entry, sink = (line) => console.log(line)) {
     ambiguous: Boolean(entry.decision.ambiguous),
     speechAct: entry.decision.speechAct || null,
     semanticCalled: Boolean(entry.semanticCalled),
+    // IntentIQ 2.2 additions — calibration/observability, additive.
+    confidenceLevel: entry.decision.confidenceLevel || null,
+    interpretationStatus: entry.decision.interpretationStatus || null,
+    needsSemanticCheck: Boolean(entry.decision.needsSemanticCheck),
+    // Both tiers' own perspective, for calibration analysis — debug-only,
+    // never the raw conversational text a second time (see `input` above).
+    tiers: entry.tiers || null,
   };
   sink(JSON.stringify(record));
   return record;

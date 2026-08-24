@@ -11,7 +11,7 @@ test('parseAndValidateSemanticOutput: happy path parses fully', () => {
     candidates: [{ intent: 'decide.support', confidence: 0.87 }, { intent: 'converse', confidence: 0.09 }],
     sourceOfTruth: 'conversation',
     speechAct: 'advice_request',
-    referents: [{ expression: 'dit', resolvesTo: 'the previous topic' }],
+    referents: [{ expression: 'dit', resolvedTo: 'the previous topic', confidence: 0.91 }],
     ambiguous: false,
     reason: 'The user is asking for help evaluating a decision.',
   });
@@ -21,7 +21,9 @@ test('parseAndValidateSemanticOutput: happy path parses fully', () => {
   assert.equal(result.candidates.length, 2);
   assert.equal(result.sourceOfTruth, 'conversation');
   assert.equal(result.speechAct, 'advice_request');
-  assert.deepEqual(result.referents, [{ expression: 'dit', resolvesTo: 'the previous topic' }]);
+  assert.deepEqual(result.referents, [
+    { expression: 'dit', resolvedTo: 'the previous topic', confidence: 0.91, source: 'conversation' },
+  ]);
   assert.equal(result.ambiguous, false);
   assert.equal(result.reason, 'The user is asking for help evaluating a decision.');
 });
@@ -78,8 +80,40 @@ test('parseAndValidateSemanticOutput: an invalid sourceOfTruth/speechAct falls b
 test('parseAndValidateSemanticOutput: malformed referent entries are dropped, not thrown', () => {
   const result = parseAndValidateSemanticOutput(JSON.stringify({
     intent: 'converse',
-    referents: [{ expression: 'dit', resolvesTo: 'x' }, { resolvesTo: 'missing expression' }, 'not an object'],
+    referents: [{ expression: 'dit', resolvedTo: 'x' }, { resolvedTo: 'missing expression' }, 'not an object'],
   }));
   assert.equal(result.referents.length, 1);
   assert.equal(result.referents[0].expression, 'dit');
+});
+
+// === IntentIQ 2.2: referent resolvedTo/confidence/source =====================
+
+test('parseAndValidateSemanticOutput: resolvedTo: null is a legitimate, honest answer — not dropped, not thrown', () => {
+  const result = parseAndValidateSemanticOutput(JSON.stringify({
+    intent: 'inform.explain',
+    referents: [{ expression: 'deze', resolvedTo: null, confidence: 0.31 }],
+  }));
+  assert.equal(result.referents.length, 1);
+  assert.equal(result.referents[0].expression, 'deze');
+  assert.equal(result.referents[0].resolvedTo, null);
+  assert.equal(result.referents[0].confidence, 0.31);
+  assert.equal(result.referents[0].source, null);
+});
+
+test('parseAndValidateSemanticOutput: a resolved referent carries source: conversation and its own confidence', () => {
+  const result = parseAndValidateSemanticOutput(JSON.stringify({
+    intent: 'inform.explain',
+    referents: [{ expression: 'deze', resolvedTo: 'de architectuur die net besproken werd', confidence: 0.91 }],
+  }));
+  assert.equal(result.referents[0].resolvedTo, 'de architectuur die net besproken werd');
+  assert.equal(result.referents[0].confidence, 0.91);
+  assert.equal(result.referents[0].source, 'conversation');
+});
+
+test('parseAndValidateSemanticOutput: a referent with no stated confidence defaults to 0, not 0.5', () => {
+  const result = parseAndValidateSemanticOutput(JSON.stringify({
+    intent: 'inform.explain',
+    referents: [{ expression: 'deze' }],
+  }));
+  assert.equal(result.referents[0].confidence, 0);
 });

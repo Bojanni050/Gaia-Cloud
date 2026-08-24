@@ -80,6 +80,21 @@ function runEvaluation(cases) {
     why: r.why,
   }));
 
+  // IntentIQ 2.2 — calibration metrics, additive to the accuracy report
+  // above. `wouldEscalateCount` is what interpret()'s own cascade condition
+  // (`status !== 'accepted' || needsSemanticCheck`) would trigger on this
+  // set — i.e. the semantic-tier call rate a live deployment would see,
+  // computed from the heuristic tier alone (this harness has no semantic
+  // model configured; see eval/run.js's own note about that).
+  const wouldEscalateCount = results.filter((r) => r.decision.status !== 'accepted' || r.decision.needsSemanticCheck).length;
+  const needsSemanticCheckCount = results.filter((r) => r.decision.needsSemanticCheck).length;
+  const confidenceLevelCounts = { high: 0, medium: 0, low: 0 };
+  for (const r of results) {
+    const level = r.decision.confidenceLevel;
+    if (level && confidenceLevelCounts[level] !== undefined) confidenceLevelCounts[level] += 1;
+  }
+  const insufficientContextCount = results.filter((r) => r.decision.interpretationStatus === 'insufficient_context').length;
+
   const report = {
     classifierVersion: CLASSIFIER_VERSION,
     total,
@@ -90,6 +105,13 @@ function runEvaluation(cases) {
     confidenceStats,
     confusion,
     mismatches,
+    // 2.2 additions — heuristic-tier-only (no semantic model configured in
+    // this harness); see eval/run.js for the honest caveat on what
+    // "semantic call rate" means without one.
+    needsSemanticCheckRate: Math.round((needsSemanticCheckCount / total) * 1000) / 1000,
+    wouldEscalateToSemanticRate: Math.round((wouldEscalateCount / total) * 1000) / 1000,
+    confidenceLevelCounts,
+    insufficientContextRate: Math.round((insufficientContextCount / total) * 1000) / 1000,
   };
 
   return { results, report };

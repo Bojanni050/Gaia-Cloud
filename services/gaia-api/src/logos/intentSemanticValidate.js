@@ -34,11 +34,25 @@ function coerceCandidate(item) {
   return { intent: item.intent, confidence: clampConfidence(item.confidence) };
 }
 
+/**
+ * `resolvedTo: null` is a legitimate, honest answer (see
+ * intentSemanticPrompt.js — "never guess"), not a parsing failure; only a
+ * missing/empty `expression` invalidates the whole referent. Confidence
+ * defaults to 0 (not clampConfidence's usual 0.5 fallback) when the model
+ * omits it — an unstated confidence for a referent should never be read as
+ * a coin flip's worth of trust.
+ */
 function coerceReferent(item) {
   if (!item || typeof item !== 'object' || typeof item.expression !== 'string' || item.expression.length === 0) {
     return null;
   }
-  return { expression: item.expression, resolvesTo: asString(item.resolvesTo) };
+  const resolvedTo = asString(item.resolvedTo);
+  return {
+    expression: item.expression,
+    resolvedTo,
+    confidence: clampConfidence(item.confidence, 0),
+    source: resolvedTo ? 'conversation' : null,
+  };
 }
 
 /**
@@ -49,7 +63,7 @@ function coerceReferent(item) {
  *   candidates: Array<{intent: string, confidence: number}>,
  *   sourceOfTruth: string,
  *   speechAct: string|null,
- *   referents: Array<{expression: string, resolvesTo: string|null}>,
+ *   referents: Array<{expression: string, resolvedTo: string|null, confidence: number, source: string|null}>,
  *   ambiguous: boolean,
  *   reason: string|null,
  * }}
