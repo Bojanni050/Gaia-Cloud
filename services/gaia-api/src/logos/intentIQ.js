@@ -71,6 +71,16 @@
  *     collection) — never online training, never a mutation of a past
  *     IntentDecision, never a persistent per-user profile (that boundary
  *     stays Hindsight's).
+ *
+ * IntentIQ 2.3 adds NO new classification behavior — the two tiers, the
+ * consensus rules, and every threshold are exactly as 2.2 left them. What
+ * it adds is observability: each heuristic pattern now carries a stable
+ * name, and a direct-signal decision reports which named signals fired
+ * (`meta.matchedSignals`), so the offline feedback analyzer can attribute
+ * misclassifications to specific heuristics. Analysis lives in
+ * intentFeedbackAnalyzer.js (pure functions) and eval/evaluationRunner.js
+ * (offline only) — nothing here reads feedback back or tunes itself at
+ * runtime.
  */
 
 const crypto = require('crypto');
@@ -303,6 +313,24 @@ for (const id of Object.keys(SIGNALS)) {
   }
 }
 
+/**
+ * IntentIQ 2.3 telemetry: every signal pattern carries a stable, readable
+ * name (derived from its own regex source — `\bdraft\b`, `why\s+(is|does…)`)
+ * so offline analysis can attribute misclassifications to *specific*
+ * heuristics ("which rule fails most?") instead of only counting raw hits.
+ * Purely metadata on the RegExp objects, exactly like the existing `.weak`
+ * tag — no scoring or classification logic reads it.
+ */
+function normalizeSignalName(re) {
+  return re.source.replace(/\\b/g, '').replace(/\\s\+/g, ' ').replace(/\\\./g, '.');
+}
+
+for (const id of Object.keys(SIGNALS)) {
+  for (const p of SIGNALS[id]) {
+    if (!p.signalName) p.signalName = `${id}:${normalizeSignalName(p)}`;
+  }
+}
+
 /** Source-of-truth cue sets — a separate judgment from intent (principles.md — Source First). */
 const SOURCE_SIGNALS = {
   memory: [
@@ -323,32 +351,55 @@ function scoreText(text, patterns) {
  * Like scoreText, but also tracks whether at least one *strong* (non-weak)
  * pattern matched — a single bare-keyword hit and a specific-phrase hit
  * both score `raw: 1`, but only the second is safe to trust without
- * verification (see computeNeedsSemanticCheck, below).
- * @returns {{ raw: number, hasStrongMatch: boolean }}
+ * verification (see computeNeedsSemanticCheck, below) — and, for 2.3
+ * telemetry, the names of the patterns that actually fired.
+ * @returns {{ raw: number, hasStrongMatch: boolean, matched: string[] }}
  */
 function scoreIntentSignals(text, patterns) {
   let raw = 0;
   let hasStrongMatch = false;
+  const matched = [];
   for (const p of patterns) {
     if (p.test(text)) {
       raw += 1;
       if (!p.weak) hasStrongMatch = true;
+      if (p.signalName) matched.push(p.signalName);
     }
   }
-  return { raw, hasStrongMatch };
+  return { raw, hasStrongMatch, matched };
 }
 
-/** @returns {Array<{intent: string, raw: number, hasStrongMatch: boolean}>} sorted desc, zero scores excluded */
+/** @returns {Array<{intent: string, raw: number, hasStrongMatch: boolean, matched: string[]}>} sorted desc, zero scores excluded */
 function scoreAllIntents(text) {
   const scored = INTENT_IDS
     .filter((id) => SIGNALS[id])
     .map((id) => {
-      const { raw, hasStrongMatch } = scoreIntentSignals(text, SIGNALS[id]);
-      return { intent: id, raw, hasStrongMatch };
+      const { raw, hasStrongMatch, matched } = scoreIntentSignals(text, SIGNALS[id]);
+      return { intent: id, raw, hasStrongMatch, matched };
     })
     .filter((s) => s.raw > 0);
   scored.sort((a, b) => b.raw - a.raw);
   return scored;
+}
+
+/**
+ * IntentIQ 2.3 telemetry: which named signals fired, per intent, bounded —
+ * enough to attribute a later-corrected decision back to the heuristic(s)
+ * that produced it, never an unbounded dump. Attached to
+ * `decision.meta.matchedSignals` on the direct-signal path only; purely
+ * additive metadata nothing downstream branches on.
+ */
+const MAX_MATCHED_SIGNALS = 5;
+
+function collectMatchedSignals(scored) {
+  const out = [];
+  for (const s of scored) {
+    for (const signal of s.matched || []) {
+      if (out.length >= MAX_MATCHED_SIGNALS) return out;
+      out.push({ intent: s.intent, signal });
+    }
+  }
+  return out;
 }
 
 function toNormalizedCandidates(scored) {
@@ -812,7 +863,14 @@ function classify(messages, options = {}) {
           needsSemanticCheck: status === 'accepted'
             ? computeNeedsSemanticCheck({ candidates, rawScored: directScored })
             : false,
-          meta: { taxonomyVersion: TAXONOMY_VERSION, classifierVersion: CLASSIFIER_VERSION, reason: 'direct_signal' },
+          meta: {
+            taxonomyVersion: TAXONOMY_VERSION,
+            classifierVersion: CLASSIFIER_VERSION,
+            reason: 'direct_signal',
+            // IntentIQ 2.3 telemetry only — which named heuristics fired for
+            // this decision. Nothing downstream reads this.
+            matchedSignals: collectMatchedSignals(directScored),
+          },
         };
       } else if (looksLikeContinuation(text)) {
         decision = resolveByInheritance(text, messages, options);
@@ -1170,5 +1228,6 @@ module.exports = {
     computeNeedsSemanticCheck,
     confidenceLevelFor,
     interpretationStatusFor,
+    collectMatchedSignals,
   },
 };

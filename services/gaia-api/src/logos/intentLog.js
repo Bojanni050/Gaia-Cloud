@@ -58,6 +58,20 @@ function logIntentDecision(entry, sink = (line) => console.log(line)) {
     confidenceLevel: entry.decision.confidenceLevel || null,
     interpretationStatus: entry.decision.interpretationStatus || null,
     needsSemanticCheck: Boolean(entry.decision.needsSemanticCheck),
+    // IntentIQ 2.3 additions — analysis/observability, additive. `reason`
+    // says which cascade branch produced the decision, `matchedSignals`
+    // which named heuristics fired, and referents are truncated the same
+    // way as `input` (they can quote conversational content) — all so the
+    // offline feedback analyzer can do its job from durable records alone.
+    reason: (entry.decision.meta && entry.decision.meta.reason) || null,
+    matchedSignals: (entry.decision.meta && entry.decision.meta.matchedSignals) || null,
+    referents: Array.isArray(entry.decision.referents)
+      ? entry.decision.referents.map((r) => ({
+        expression: truncate(r && r.expression),
+        resolvedTo: r && r.resolvedTo != null ? truncate(r.resolvedTo) : null,
+        confidence: typeof (r && r.confidence) === 'number' ? r.confidence : null,
+      }))
+      : null,
     // Both tiers' own perspective, for calibration analysis — debug-only,
     // never the raw conversational text a second time (see `input` above).
     tiers: entry.tiers || null,

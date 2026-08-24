@@ -1,0 +1,225 @@
+{
+  "name": "intentiq-eval-2.3",
+  "version": "1.0",
+  "description": "IntentIQ 2.3 evaluation set - synthetic design/evaluation cases (EN/NL), not real user data, no personal or sensitive information. Same rules as eval/cases.js: never silently reshape expectedIntent just to make reports look better; a mismatch here is data, not an error to paper over.",
+  "categories": [
+    "converse",
+    "inform.explain",
+    "create.generate",
+    "create.transform",
+    "decide.support",
+    "memory.inspect",
+    "memory.correct",
+    "act.perform",
+    "meta.relational",
+    "meta.question",
+    "meta.correction",
+    "meta.capability_question",
+    "follow-up",
+    "ambiguous",
+    "source-of-truth",
+    "reference-resolution",
+    "heuristic-conflict"
+  ],
+  "caseShape": {
+    "id": "stable identifier",
+    "category": "reporting bucket from categories above",
+    "input": "the final user turn",
+    "context": "optional prior turns [{role, content}] before input",
+    "expectedIntent": "intent expected when status resolves to accepted",
+    "acceptableAlternatives": "other intents counted as correct",
+    "expectAmbiguous": "true when genuine multi-intent ambiguity is the correct outcome",
+    "expectUnknown": "true when declining to classify is the correct outcome",
+    "expectedNeedsSemanticCheck": "optional assertion on the 2.2 calibration flag (heuristic tier)",
+    "expectedSourceOfTruth": "optional assertion on the source-of-truth judgment",
+    "notes": "why this case exists"
+  },
+  "cases": [
+    { "id": "conv-001", "category": "converse", "input": "Hoi Gaia", "expectedIntent": "converse", "notes": "Anchored greeting - presence-seeking, must not trigger a semantic call." },
+    { "id": "conv-002", "category": "converse", "input": "Ik wil gewoon even praten, niks bijzonders.", "expectedIntent": "converse" },
+    { "id": "conv-003", "category": "converse", "input": "Just checking you're still there.", "expectedIntent": "converse" },
+    { "id": "conv-004", "category": "converse", "input": "I just need to vent for a second.", "expectedIntent": "converse" },
+    { "id": "conv-005", "category": "converse", "input": "Not really looking for advice, I just want to say this out loud.", "expectedIntent": "converse", "notes": "Explicitly declines advice - guards against over-triggering decide.support." },
+
+    { "id": "inf-001", "category": "inform.explain", "input": "Why is my website crashing?", "expectedIntent": "inform.explain" },
+    { "id": "inf-002", "category": "inform.explain", "input": "Waarom werkt mijn deploy niet zoals verwacht?", "expectedIntent": "inform.explain" },
+    { "id": "inf-003", "category": "inform.explain", "input": "What is a race condition?", "expectedIntent": "inform.explain" },
+    { "id": "inf-004", "category": "inform.explain", "input": "How do black holes form?", "expectedIntent": "inform.explain" },
+    { "id": "inf-005", "category": "inform.explain", "input": "Leg uit hoe DNS-resolutie werkt.", "expectedIntent": "inform.explain", "notes": "Documented gap: 'leg .* uit' covers 'leg X uit' word order, not the inverted 'leg uit hoe...' - surfaced intentionally by this set." },
+    { "id": "inf-006", "category": "inform.explain", "input": "Zoek eens naar een Nederlandse text-to-speech aanbieder.", "expectedIntent": "inform.explain", "expectedSourceOfTruth": "external_knowledge", "notes": "The delegated-lookup phrasing from the real production incident." },
+    { "id": "inf-007", "category": "inform.explain", "input": "What happened with the release last night?", "expectedIntent": "inform.explain" },
+    { "id": "inf-008", "category": "inform.explain", "input": "Kun je uitleggen wat een event-loop doet?", "expectedIntent": "inform.explain" },
+
+    { "id": "gen-001", "category": "create.generate", "input": "Write me a lullaby about the sea.", "expectedIntent": "create.generate" },
+    { "id": "gen-002", "category": "create.generate", "input": "Bedenk drie namen voor een nieuwe koffiezaak.", "expectedIntent": "create.generate" },
+    { "id": "gen-003", "category": "create.generate", "input": "Come up with three titles for the article.", "expectedIntent": "create.generate" },
+    { "id": "gen-004", "category": "create.generate", "input": "Draft a short apology email to the client.", "expectedIntent": "create.generate", "notes": "'draft' as a genuine generation request - the legitimate twin of hcf-001." },
+    { "id": "gen-005", "category": "create.generate", "input": "Stel een weekplanning op voor mijn project.", "expectedIntent": "create.generate" },
+
+    { "id": "trn-001", "category": "create.transform", "input": "Make this paragraph sound warmer.", "expectedIntent": "create.transform" },
+    { "id": "trn-002", "category": "create.transform", "input": "Herschrijf deze alinea korter en zakelijker.", "expectedIntent": "create.transform" },
+    { "id": "trn-003", "category": "create.transform", "input": "Translate this into German.", "expectedIntent": "create.transform" },
+    { "id": "trn-004", "category": "create.transform", "input": "Fix the grammar in this email.", "expectedIntent": "create.transform" },
+    { "id": "trn-005", "category": "create.transform", "input": "Verbeter de tekst van mijn sollicitatiebrief.", "expectedIntent": "create.transform" },
+    { "id": "trn-006", "category": "create.transform", "input": "Can you shorten this summary to two sentences?", "expectedIntent": "create.transform" },
+
+    { "id": "dec-001", "category": "decide.support", "input": "Should I take the new job offer?", "expectedIntent": "decide.support" },
+    { "id": "dec-002", "category": "decide.support", "input": "Zou ik dit aanbod moeten accepteren?", "expectedIntent": "decide.support" },
+    { "id": "dec-003", "category": "decide.support", "input": "Help me decide between the two providers.", "expectedIntent": "decide.support" },
+    { "id": "dec-004", "category": "decide.support", "input": "Wat zou jij doen: blijven of vertrekken?", "expectedIntent": "decide.support", "notes": "Gaia's opinion on the user's own next move, not a question about Gaia's behavior." },
+    { "id": "dec-005", "category": "decide.support", "input": "What am I missing in my reasoning here?", "expectedIntent": "decide.support", "acceptableAlternatives": ["inform.explain"] },
+    { "id": "dec-006", "category": "decide.support", "input": "Ik weet niet of ik die stap moet zetten.", "expectedIntent": "decide.support", "notes": "'die' inside an otherwise clear decision ask - direct signal outranks continuation." },
+
+    { "id": "memi-001", "category": "memory.inspect", "input": "Wat weet je nog van mijn voorkeuren?", "expectedIntent": "memory.inspect" },
+    { "id": "memi-002", "category": "memory.inspect", "input": "What have you noticed about how I work?", "expectedIntent": "memory.inspect" },
+    { "id": "memi-003", "category": "memory.inspect", "input": "Why do you think that about me?", "expectedIntent": "memory.inspect" },
+    { "id": "memi-004", "category": "memory.inspect", "input": "Wat heb je gemerkt aan mijn manier van werken?", "expectedIntent": "memory.inspect" },
+
+    { "id": "memc-001", "category": "memory.correct", "input": "Forget what I told you about my old job.", "expectedIntent": "memory.correct" },
+    { "id": "memc-002", "category": "memory.correct", "input": "Dat klopt niet, vergeet wat ik net zei.", "expectedIntent": "memory.correct" },
+    { "id": "memc-003", "category": "memory.correct", "input": "That's not right, I actually prefer mornings.", "expectedIntent": "memory.correct" },
+    { "id": "memc-004", "category": "memory.correct", "input": "Verwijder wat je weet over mijn oude functie.", "expectedIntent": "memory.correct" },
+
+    { "id": "act-001", "category": "act.perform", "input": "Send Alex the meeting notes.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool" },
+    { "id": "act-002", "category": "act.perform", "input": "Stuur Sam de vergaderaantekeningen.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool" },
+    { "id": "act-003", "category": "act.perform", "input": "Remind me to call the dentist tomorrow.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool" },
+    { "id": "act-004", "category": "act.perform", "input": "Zet dit in mijn agenda voor vrijdag.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool" },
+    { "id": "act-005", "category": "act.perform", "input": "Schedule the call for Monday.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool", "notes": "Imperative 'schedule' - genuinely an action despite the weak bare-word cue." },
+
+    { "id": "mre-001", "category": "meta.relational", "input": "Who are you, really?", "expectedIntent": "meta.relational" },
+    { "id": "mre-002", "category": "meta.relational", "input": "Ben je een echt persoon?", "expectedIntent": "meta.relational", "notes": "Documented gap: 'ben je (een mens|echt)' misses the adjective form 'een echt(e) persoon' - surfaced intentionally by this set." },
+    { "id": "mre-003", "category": "meta.relational", "input": "You seem different today.", "expectedIntent": "meta.relational" },
+
+    {
+      "id": "meta-001", "category": "meta.capability_question",
+      "context": [
+        { "role": "user", "content": "Wat is het weer in Groningen?" },
+        { "role": "assistant", "content": "Ik heb websearch gebruikt: 15 graden en bewolkt." }
+      ],
+      "input": "Waarom koos je voor websearch?",
+      "expectedIntent": "meta.capability_question",
+      "expectedSourceOfTruth": "conversation"
+    },
+    {
+      "id": "meta-002", "category": "meta.question",
+      "context": [
+        { "role": "user", "content": "Wat is het weer in Groningen?" },
+        { "role": "assistant", "content": "15 graden en bewolkt." }
+      ],
+      "input": "Waarom deed je dat?",
+      "expectedIntent": "meta.question",
+      "expectedSourceOfTruth": "conversation"
+    },
+    {
+      "id": "meta-003", "category": "meta.correction",
+      "context": [
+        { "role": "user", "content": "Tell me about AI" },
+        { "role": "assistant", "content": "AI is artificial intelligence..." }
+      ],
+      "input": "No, I mean something else",
+      "expectedIntent": "meta.correction"
+    },
+    {
+      "id": "meta-004", "category": "meta.capability_question",
+      "context": [
+        { "role": "user", "content": "Kun je het weer zoeken?" },
+        { "role": "assistant", "content": "Ik heb websearch gebruikt." }
+      ],
+      "input": "Waarom gebruikte je websearch daarvoor?",
+      "expectedIntent": "meta.capability_question"
+    },
+
+    {
+      "id": "fu-001", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Analyseer deze architectuur." },
+        { "role": "assistant", "content": "Ik zie een paar dingen die opvallen." }
+      ],
+      "input": "En deze dan?",
+      "expectedIntent": "inform.explain",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "Context-inherited intent stays flagged for verification even when confident enough to accept."
+    },
+    {
+      "id": "fu-002", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Can you shorten this paragraph?" },
+        { "role": "assistant", "content": "Sure, here you go." }
+      ],
+      "input": "And this one?",
+      "expectedIntent": "create.transform",
+      "expectedNeedsSemanticCheck": true
+    },
+    { "id": "fu-003", "category": "follow-up", "input": "En deze dan?", "expectUnknown": true, "notes": "No resolvable prior turn - insufficient_context, never a guess." },
+    {
+      "id": "fu-004", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Add this to my calendar for Friday." },
+        { "role": "assistant", "content": "Done." }
+      ],
+      "input": "En die dan voor dinsdag?",
+      "expectedIntent": "act.perform",
+      "expectedNeedsSemanticCheck": true
+    },
+    {
+      "id": "fu-005", "category": "follow-up",
+      "context": [
+        { "role": "user", "content": "Kun je deze zin naar het Engels vertalen?" },
+        { "role": "assistant", "content": "Sure, here is the translation." }
+      ],
+      "input": "En deze zin dan?",
+      "expectedIntent": "create.transform",
+      "expectedNeedsSemanticCheck": true
+    },
+
+    { "id": "amb-001", "category": "ambiguous", "input": "Kun je uitleggen welke keuze ik moet maken?", "expectAmbiguous": true, "acceptableAlternatives": ["inform.explain", "decide.support"], "notes": "Two genuinely competing intents at 1-1 - honest ambiguity beats a forced guess." },
+    { "id": "amb-002", "category": "ambiguous", "input": "Kun je dit uitleggen en meteen ook verbeteren?", "expectAmbiguous": true, "acceptableAlternatives": ["inform.explain", "create.transform"] },
+    { "id": "amb-003", "category": "ambiguous", "input": "Draft the email and send it to Sam.", "expectAmbiguous": true, "acceptableAlternatives": ["create.generate", "act.perform"], "notes": "Compound turn - v0.1 schema cannot hold both intents, both must surface as candidates." },
+    { "id": "amb-004", "category": "ambiguous", "input": "Explain what's wrong with this and fix it.", "expectAmbiguous": true, "acceptableAlternatives": ["inform.explain", "create.transform"] },
+
+    { "id": "sot-001", "category": "source-of-truth", "input": "Wat is het vorige probleem dat je noemde?", "expectedIntent": "inform.explain", "expectedSourceOfTruth": "memory", "notes": "'vorige' pins the source to memory while the intent stays an explanation." },
+    { "id": "sot-002", "category": "source-of-truth", "input": "Analyseer dit document.", "hasAttachment": true, "expectedIntent": "inform.explain", "expectedSourceOfTruth": "upload" },
+    { "id": "sot-003", "category": "source-of-truth", "input": "Stuur het verslag naar Sam.", "expectedIntent": "act.perform", "expectedSourceOfTruth": "tool" },
+    { "id": "sot-004", "category": "source-of-truth", "input": "Remember what I told you about the database?", "expectUnknown": true, "expectedSourceOfTruth": "memory", "notes": "Heuristically unresolvable intent, yet the source is clearly memory - uncertainty about WHAT must not erase certainty about WHERE from." },
+
+    { "id": "ref-001", "category": "reference-resolution", "input": "Kun je deze doen?", "expectUnknown": true, "notes": "Unresolvable anaphora without prior context - insufficient_context." },
+    {
+      "id": "ref-002", "category": "reference-resolution",
+      "context": [
+        { "role": "user", "content": "Analyseer deze architectuur." },
+        { "role": "assistant", "content": "Ik zie een paar dingen die opvallen." }
+      ],
+      "input": "Wat vind je van deze?",
+      "expectedIntent": "inform.explain",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "'deze' inherits the prior turn's intent."
+    },
+    {
+      "id": "ref-003", "category": "reference-resolution",
+      "context": [
+        { "role": "user", "content": "Kun je deze zin naar het Duits vertalen?" },
+        { "role": "assistant", "content": "Gerne, hier ist die Uebersetzung." }
+      ],
+      "input": "En die dan?",
+      "expectedIntent": "create.transform",
+      "expectedNeedsSemanticCheck": true
+    },
+    {
+      "id": "ref-004", "category": "reference-resolution",
+      "context": [
+        { "role": "user", "content": "Deze authentication-flow faalt af en toe." },
+        { "role": "assistant", "content": "Ik heb de flow doorgenomen; er zitten twee verdachte stappen in." }
+      ],
+      "input": "Analyseer deze flow nog eens.",
+      "expectedIntent": "inform.explain",
+      "expectedNeedsSemanticCheck": true,
+      "notes": "Weak-only heuristic acceptance escalates; with a semantic tier configured this is where referent resolution happens."
+    },
+    { "id": "ref-005", "category": "reference-resolution", "input": "Hem bedoel ik niet, haar wel.", "expectUnknown": true, "notes": "Documented gap: object pronouns outside the continuation set are not yet resolvable - measuring this gap is the point." },
+    { "id": "ref-006", "category": "reference-resolution", "input": "En nog een?", "expectUnknown": true, "notes": "Documented gap: 'nog een' is a listed troublemaker but carries no continuation cue yet." },
+
+    { "id": "hcf-001", "category": "heuristic-conflict", "input": "I'm not a fan of this new NBA draft process.", "expectedIntent": "converse", "acceptableAlternatives": ["inform.explain"], "notes": "TRAP: weak 'draft' cue makes the heuristic tier confidently say create.generate. The expectation states the TRUE intent; a mismatch in heuristic-only mode is exactly the finding." },
+    { "id": "hcf-002", "category": "heuristic-conflict", "input": "What's your schedule looking like this week?", "expectedIntent": "inform.explain", "notes": "TRAP: noun-'schedule' fires act.perform's weak cue; the user asks about availability, not requesting an action." },
+    { "id": "hcf-003", "category": "heuristic-conflict", "input": "Write protection is enabled on the drive, why?", "expectedIntent": "inform.explain", "notes": "TRAP/gap: technical 'write' near-miss correctly does NOT fire create.generate, but bare trailing 'why?' is also uncovered - currently unknown. Documented heuristic gap." }
+  ]
+}

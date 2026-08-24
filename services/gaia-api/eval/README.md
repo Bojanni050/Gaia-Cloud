@@ -1,8 +1,8 @@
 # Logos evaluation harnesses
 
-Two independent harnesses live here — one per Logos faculty. They don't
-share cases or scoring: IntentIQ and ReasonIQ answer different questions
-(architecture.md §4.2) and are evaluated separately.
+Three IntentIQ harnesses and one ReasonIQ harness live here. They don't
+share cases or scoring: each answers a different question
+(architecture.md §4.2) and is evaluated separately.
 
 # IntentIQ evaluation harness
 
@@ -45,6 +45,43 @@ the taxonomy and the classifier honest against each other as both evolve.
   that is a taxonomy change, and belongs back in the design report's
   review process — not a quiet edit to `expectedIntent` here to make the
   harness pass.
+
+---
+
+# IntentIQ 2.3 evaluation runner + feedback analyzer
+
+The 2.3 layer makes the runtime feedback seam (`src/logos/intentFeedback.js`)
+and the decision logs systematically analyzable:
+
+```bash
+npm run eval:intent-eval            # heuristic-only (semantic metrics N/A)
+npm run eval:intent-eval -- --mock  # with the deterministic fixture semantic model
+```
+
+- `eval/intent-eval.json` — ~70 synthetic cases across every intent family,
+  plus follow-up, ambiguous, source-of-truth, reference-resolution, and
+  documented heuristic-conflict ("trap") cases whose expectations state the
+  TRUE intent, so a heuristic-only mismatch is itself the finding.
+- `eval/evaluationRunner.js` — loads the dataset, runs the full cascade
+  (`interpret()` over `classify()`), and reports: accuracy, an
+  expected-x-predicted confusion matrix, confidence calibration bands,
+  over/underconfidence findings, semantic-call efficiency
+  (`semanticValueRate`, with confirmations-that-reduced-uncertainty counted
+  separately), heuristic/semantic conflict statistics, and
+  reference-resolution statistics. Always prints the calibration config it
+  ran under and ends with recommendations that are strings for humans —
+  nothing is ever applied automatically.
+- `src/logos/intentFeedbackAnalyzer.js` — the pure analysis core. Consumes
+  'intentiq.feedback' + 'intentiq.decision' records (joined on
+  correlationId), produces statistics only. No I/O except loadRecords(),
+  no decisions, no self-tuning: the calibration loop is
+  feedback → offline analysis → human-reviewed change → evaluation →
+  release, deliberately with no online shortcut.
+
+The `--mock` model is a fixture (like reasoningModelStub.js for ReasonIQ):
+its numbers say "the pipeline behaves sanely", never "the semantic model is
+good". Point `runEvaluation(dataset, { model })` at a real configured
+model to measure the actual tier.
 
 ---
 
