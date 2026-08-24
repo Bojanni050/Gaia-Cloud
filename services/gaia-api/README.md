@@ -10,11 +10,13 @@ they didn't cause themselves.
 
 Kept in lockstep with the desktop's seam (`desktop/src/state/contract.js`):
 
-| Method | Path                | Auth | Body / Result |
-|--------|---------------------|------|---------------|
-| GET    | `/health` (and `/`) | none | `{ ok: true, soulVersion: string }` |
-| GET    | `/soul`             | none | `{ version: string }` — identity version only, no prompt content |
-| POST   | `/conversation/turn`| Bearer | in: `{ messages: [{ role, content }], attachmentIds?: string[], conversationId?: string }` → out: `{ reply: string }` |
+| Method | Path                              | Auth | Body / Result |
+|--------|-----------------------------------|------|---------------|
+| GET    | `/health` (and `/`)               | none | `{ ok: true, soulVersion: string }` |
+| GET    | `/soul`                           | none | `{ version: string }` — identity version only, no prompt content |
+| POST   | `/conversation/turn`              | Bearer | in: `{ messages: [{ role, content }], attachmentIds?: string[], conversationId?: string }` → out: `{ reply: string }` |
+| GET    | `/conversations/:id/export/json`  | Bearer | JSON file download |
+| GET    | `/conversations/:id/export/markdown` | Bearer | Markdown file download |
 
 `attachmentIds` names files already uploaded to the library (`/library/files`) — never file bytes. `library.js`'s `resolveAttachmentsForPrompt` reads each one server-side and inlines it into the system prompt as attached context (`turn.js`'s `renderAttachmentContext`): text files verbatim, images via `ocrResolver.js`'s vision-model step (disclaimer-prefixed — a description is an inference, not a transcript), everything else (PDFs, other binaries — no extraction pipeline for those yet) noted as attached but not read. This resolution happens entirely *before* `performTurn`/ReasonIQ ever see the turn — ReasonIQ reasons over what it's given, it never fetches or transforms a raw attachment itself. Omitting `attachmentIds` produces byte-identical behavior to before this existed — Desktop's contract stays additive, never modified underneath existing callers.
 
@@ -26,13 +28,17 @@ Image OCR reuses ReasonIQ's own configured reasoning model (`/admin`'s OpenRoute
 
 A separate surface (`conversationStore.js`, `historyRoutes.js`) from the library — same one-directory-per-item layout (`meta.json` + `messages.json`, no shared index), but read/delete only; writing only ever happens as the side effect described above, never by direct client upload:
 
-| Method | Path                    | Auth   | Body / Result |
-|--------|-------------------------|--------|----------------|
-| GET    | `/conversations`        | Bearer | `{ conversations: [{ id, title, createdAt, updatedAt, messageCount }] }`, newest first |
-| GET    | `/conversations/:id`    | Bearer | `{ meta, messages: [{ role, content }] }` |
-| DELETE | `/conversations/:id`    | Bearer | 204 |
+| Method | Path                              | Auth   | Body / Result |
+|--------|-----------------------------------|--------|----------------|
+| GET    | `/conversations`                  | Bearer | `{ conversations: [{ id, title, createdAt, updatedAt, messageCount }] }`, newest first |
+| GET    | `/conversations/:id`              | Bearer | `{ meta, messages: [{ role, content }] }` |
+| GET    | `/conversations/:id/export/json`  | Bearer | JSON file download with `exportedAt` timestamp and conversation data |
+| GET    | `/conversations/:id/export/markdown` | Bearer | Markdown file download, human-readable format with role labels |
+| DELETE | `/conversations/:id`              | Bearer | 204 |
 
 `id` is the client-supplied `conversationId`, validated against a strict allowlist (`[A-Za-z0-9_-]{1,128}`) before ever touching the filesystem — it's used directly as a directory name, so a malformed or path-traversal id is rejected (404), never silently sanitized. Title is derived once, from the first user message, and stays stable across later turns.
+
+Export routes (`/export/json` and `/export/markdown`) return the conversation as a downloadable file. JSON export includes the raw data with an `exportedAt` timestamp for backup/import purposes. Markdown export formats the conversation with role labels (`**You**` / `**Gaia**`) for human readability. Both routes require auth and return 404 for unknown conversation ids.
 
 Non-streaming in this phase. The streaming variant grows behind the same
 path (SSE/WebSocket) — clients were built with that seam ready.

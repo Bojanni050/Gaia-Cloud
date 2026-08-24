@@ -1,16 +1,17 @@
 'use strict';
 
 /**
- * Chat history API — list, read, and delete saved conversation
+ * Chat history API — list, read, delete, and export saved conversation
  * transcripts (conversationStore.js). Reached by Desktop through the
  * existing generic `server_request` Rust command (plain JSON, unlike the
  * library's file bytes) — no new Rust command needed for this one.
  *
  * Routes (mounted under /conversations, all Bearer-auth required):
- *   GET    /conversations        -> { conversations: [...meta] }
- *   GET    /conversations/events -> text/event-stream, pushed on every change
- *   GET    /conversations/:id    -> { meta, messages }
- *   DELETE /conversations/:id    -> 204
+ *   GET    /conversations                  -> { conversations: [...meta] }
+ *   GET    /conversations/events           -> text/event-stream, pushed on every change
+ *   GET    /conversations/:id              -> { meta, messages }
+ *   GET    /conversations/:id/export/:format -> file download (json or markdown)
+ *   DELETE /conversations/:id              -> 204
  *
  * Writing happens elsewhere (server.js's /conversation/turn handler and
  * turn.js's performStreamingTurn) as a fire-and-forget side effect of a
@@ -25,6 +26,10 @@
  * itself embedded in the event — the client re-fetches GET /conversations
  * on each ping, so this can never drift out of sync with what a plain GET
  * would return.
+ *
+ * /conversations/:id/export/:format provides chat export in two formats:
+ *   - json:      Raw JSON with meta and messages (for import/backup)
+ *   - markdown:  Human-readable Markdown (for sharing/reading)
  */
 const express = require('express');
 const { ConversationNotFoundError, InvalidConversationIdError } = require('./conversationStore');
@@ -76,6 +81,55 @@ function createHistoryRouter({ store, auth }) {
         return res.status(404).json({ error: 'conversation not found' });
       }
       res.status(500).json({ error: 'could not read conversation' });
+    }
+  });
+
+  router.get('/:id/export/:format', auth, (req, res) => {
+    try {
+      const { meta, messages } = store.getConversation(req.params.id);
+      const format = req.params.format;
+
+      if (format === 'json') {
+        const exportData = {
+          exportedAt: new Date().toISOString(),
+          conversation: { meta, messages },
+        };
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="gaia-chat-${meta.id}.json"`);
+        return res.json(exportData);
+      }
+
+      if (format === 'markdown') {
+        const lines = [];
+        lines.push(`# ${meta.title || 'Gaia Chat'}`);
+        lines.push('');
+        lines.push(`*Exported on ${new Date().toLocaleDateString('nl-NL')} at ${new Date().toLocaleTimeString('nl-NL')}*`);
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+
+        for (const msg of messages) {
+          const role = msg.role === 'user' ? '**You**' : '**Gaia**';
+          lines.push(`${role}:`);
+          lines.push('');
+          lines.push(msg.content);
+          lines.push('');
+          lines.push('---');
+          lines.push('');
+        }
+
+        const markdown = lines.join('\n');
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="gaia-chat-${meta.id}.md"`);
+        return res.send(markdown);
+      }
+
+      return res.status(400).json({ error: 'format must be "json" or "markdown"' });
+    } catch (err) {
+      if (err instanceof ConversationNotFoundError || err instanceof InvalidConversationIdError) {
+        return res.status(404).json({ error: 'conversation not found' });
+      }
+      res.status(500).json({ error: 'could not export conversation' });
     }
   });
 
