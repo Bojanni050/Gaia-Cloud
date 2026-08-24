@@ -62,7 +62,14 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
    * {"choices":[{"delta":{"content"|"reasoning_content":...}}]}, ended by
    * "data: [DONE]") — deliberately, so a future client cutover to this
    * endpoint changes only the URL, not the parsing.
-   * @param {Array<{role: string, content: string}>} messages
+   *
+   * PATCH: Native Vision Support
+   * messages[].content can be either:
+   *   - string: plain text message
+   *   - Array: multimodal content blocks [{ type: "text", text: "..." }, { type: "image_url", ... }]
+   * JSON.stringify correctly serializes both formats.
+   *
+   * @param {Array<{role: string, content: string|Array}>} messages
    * @param {{ signal?: AbortSignal, onDelta?: (chunk: string, isReasoning?: boolean) => void }} [options]
    * @returns {Promise<string>}
    */

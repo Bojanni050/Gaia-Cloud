@@ -86,25 +86,90 @@ function validateMessages(messages) {
  * then the client's history verbatim (role + content only — any client-side
  * fields are already stripped by the desktop contract and dropped again
  * here, so nothing local ever reaches the reasoning path).
+ *
+ * PATCH: Native Vision Support
+ * When multimodalAttachments are present, the last user message is
+ * converted to multimodal content format:
+ *   content: [
+ *     { type: "text", text: "user message" },
+ *     { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+ *   ]
  */
-function assembleMessages(systemPrompt, messages) {
-  return [
+function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
+  const baseMessages = [
     { role: 'system', content: systemPrompt },
     ...messages.map(({ role, content }) => ({ role, content })),
   ];
+
+  // PATCH: If no multimodal attachments, return plain text messages
+  if (!Array.isArray(multimodalAttachments) || multimodalAttachments.length === 0) {
+    return baseMessages;
+  }
+
+  // Find the last user message to attach images to
+  let lastUserIdx = -1;
+  for (let i = baseMessages.length - 1; i >= 0; i--) {
+    if (baseMessages[i].role === 'user') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+
+  if (lastUserIdx === -1) {
+    return baseMessages;
+  }
+
+  // Convert to multimodal content format
+  const userText = baseMessages[lastUserIdx].content;
+  const contentBlocks = [
+    { type: 'text', text: userText },
+  ];
+
+  // Add each image as a content block
+  for (const attachment of multimodalAttachments) {
+    if (attachment.imageBytes && attachment.imageMimeType) {
+      const dataUrl = `data:${attachment.imageMimeType};base64,${attachment.imageBytes.toString('base64')}`;
+      contentBlocks.push({
+        type: 'image_url',
+        image_url: { url: dataUrl },
+      });
+
+      // Diagnostic logging (temporary)
+      console.log(JSON.stringify({
+        kind: 'turn.multimodal',
+        multimodalMessageCreated: true,
+        imageIncludedInLLMRequest: true,
+        imageMimeType: attachment.imageMimeType,
+        imageBytesLength: attachment.imageBytes.length,
+        filename: attachment.filename,
+      }));
+    }
+  }
+
+  // Replace the last user message with multimodal content
+  const result = [...baseMessages];
+  result[lastUserIdx] = { role: 'user', content: contentBlocks };
+  return result;
 }
 
 /**
- * Renders resolved attachments into a system-message block, in the same
+ * Renders text-only attachments into a system-message block, in the same
  * calm, "use only what applies" register as memory.js's
  * renderMemoryContext — a file being attached is not an instruction to
  * force it into the reply.
+ *
+ * PATCH: Renamed from renderAttachmentContext for clarity.
+ * Only handles text attachments; images go through renderMultimodalContent().
  * @param {Array<{ filename: string, content: string|null }>} attachments
  * @returns {string|null}
  */
-function renderAttachmentContext(attachments) {
+function renderTextAttachmentContext(attachments) {
   if (!attachments || attachments.length === 0) return null;
-  const blocks = attachments.map(({ filename, content }) =>
+  // Filter out multimodal attachments (those with imageBytes)
+  const textAttachments = attachments.filter((a) => !a.imageBytes);
+  if (textAttachments.length === 0) return null;
+
+  const blocks = textAttachments.map(({ filename, content }) =>
     content
       ? `--- ${filename} ---\n${content}`
       : `--- ${filename} ---\n(this file's content could not be read as text and is not included here)`
@@ -118,6 +183,15 @@ function renderAttachmentContext(attachments) {
 }
 
 /**
+ * Legacy alias for backward compatibility.
+ * @param {Array<{ filename: string, content: string|null }>} attachments
+ * @returns {string|null}
+ */
+function renderAttachmentContext(attachments) {
+  return renderTextAttachmentContext(attachments);
+}
+
+/**
  * Performs one conversational turn.
  *
  * Desktop's contract carries no IntentIQ/ReasonIQ (no memory, no Logos,
@@ -127,11 +201,15 @@ function renderAttachmentContext(attachments) {
  * capability otherwise. The Orchestrator (orchestration/orchestrator.js)
  * then executes exactly that decision.
  *
+ * PATCH: Native Vision Support
+ * When attachments contain multimodal images (imageBytes present), they
+ * are passed to assembleMessages which creates multimodal content blocks.
+ *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
  *   systemPrompt: string,
  *   hermes: { chat: (messages: Array) => Promise<string> },
- *   attachments?: Array<{ filename: string, content: string|null }>,
+ *   attachments?: Array<{ filename: string, content: string|null, imageBytes?: Buffer, imageMimeType?: string }>,
  *   nativeGenerator?: { generate: Function, stream?: Function },
  *   webSearch?: { search: (query: string) => Promise<string> },
  *   decisionEngine?: (input: object) => import('./decision/decisionSchema').Decision,
@@ -145,9 +223,13 @@ async function performTurn({ messages, systemPrompt, hermes, attachments, native
     return { status: 400, body: { error: problem } };
   }
 
-  const attachmentBlock = renderAttachmentContext(attachments);
+  // PATCH: Categorize attachments into text and multimodal
+  const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
+  const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
+
+  const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const fullSystemPrompt = attachmentBlock ? `${systemPrompt}\n\n---\n\n${attachmentBlock}` : systemPrompt;
-  const assembled = assembleMessages(fullSystemPrompt, messages);
+  const assembled = assembleMessages(fullSystemPrompt, messages, multimodalAttachments);
 
   const availableCapabilities = [{ id: 'hermes' }];
   if (nativeGenerator) availableCapabilities.push({ id: 'native' });
@@ -469,4 +551,11 @@ async function performStreamingTurn({
   }
 }
 
-module.exports = { validateMessages, assembleMessages, performTurn, performStreamingTurn, renderAttachmentContext };
+module.exports = { 
+  validateMessages, 
+  assembleMessages, 
+  performTurn, 
+  performStreamingTurn, 
+  renderAttachmentContext,
+  renderTextAttachmentContext,
+};

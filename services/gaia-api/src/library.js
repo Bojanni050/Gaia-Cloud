@@ -14,6 +14,11 @@
  * (principles.md's "Source First": a file becomes a source of truth when
  * reached for, never automatically).
  *
+ * PATCH: Native Vision Support
+ * When modelSupportsVision is true, images are returned as multimodal
+ * attachment objects with raw bytes, NOT converted to OCR text.
+ * This allows the main LLM to receive the image directly.
+ *
  * One directory per file: `<libraryDir>/<id>/meta.json` + `.../blob`.
  * Deliberately not a single shared index — every operation touches only
  * its own file's directory, so there's no shared-index file to corrupt
@@ -149,10 +154,19 @@ function truncate(content) {
  * throws: a missing/unreadable file, or a failed OCR call, is skipped or
  * degrades to null — never breaks the turn (same discipline as
  * memory.js's recall/reflect).
+ *
+ * PATCH: Native Vision Support
+ * When options.modelSupportsVision is true, images are returned as
+ * multimodal attachment objects with raw bytes for direct LLM consumption:
+ *   { filename, content: null, imageBytes: Buffer, imageMimeType: string }
+ *
+ * When options.modelSupportsVision is false or undefined, existing OCR
+ * behavior is retained as fallback.
+ *
  * @param {ReturnType<createLibraryStore>} store
  * @param {string[]} ids
- * @param {{ ocrModel?: object }} [options] test seam for ocrResolver.js's model client
- * @returns {Promise<Array<{ filename: string, content: string|null }>>}
+ * @param {{ ocrModel?: object, modelSupportsVision?: boolean }} [options] test seam for ocrResolver.js's model client
+ * @returns {Promise<Array<{ filename: string, content: string|null, imageBytes?: Buffer, imageMimeType?: string }>>}
  */
 async function resolveAttachmentsForPrompt(store, ids, options = {}) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
@@ -170,9 +184,46 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
     if (isTextMime(meta.mimeType)) {
       results.push({ filename: meta.filename, content: truncate(buffer.toString('utf-8')) });
     } else if (isImageMime(meta.mimeType)) {
-      // eslint-disable-next-line no-await-in-loop
-      const described = await resolveImageText(buffer, meta.mimeType, { model: options.ocrModel });
-      results.push({ filename: meta.filename, content: described ? truncate(described) : null });
+      // PATCH: Native vision path — return raw bytes for multimodal input
+      if (options.modelSupportsVision === true) {
+        // Diagnostic logging (temporary)
+        console.log(JSON.stringify({
+          kind: 'attachment.resolution',
+          attachmentDetected: true,
+          imageMimeType: meta.mimeType,
+          imageBytesAvailable: buffer.length > 0,
+          modelSupportsVision: true,
+          visionPathSelected: true,
+          ocrFallbackSelected: false,
+          filename: meta.filename,
+        }));
+
+        results.push({
+          filename: meta.filename,
+          content: null,
+          imageBytes: buffer,
+          imageMimeType: meta.mimeType,
+        });
+      } else {
+        // Existing OCR fallback path for non-vision models
+        // eslint-disable-next-line no-await-in-loop
+        const described = await resolveImageText(buffer, meta.mimeType, { model: options.ocrModel });
+
+        // Diagnostic logging (temporary)
+        console.log(JSON.stringify({
+          kind: 'attachment.resolution',
+          attachmentDetected: true,
+          imageMimeType: meta.mimeType,
+          imageBytesAvailable: buffer.length > 0,
+          modelSupportsVision: options.modelSupportsVision === false ? false : 'unknown',
+          visionPathSelected: false,
+          ocrFallbackSelected: true,
+          ocrResultAvailable: described !== null,
+          filename: meta.filename,
+        }));
+
+        results.push({ filename: meta.filename, content: described ? truncate(described) : null });
+      }
     } else {
       results.push({ filename: meta.filename, content: null });
     }
@@ -180,10 +231,38 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
   return results;
 }
 
+/**
+ * Separates resolved attachments into text-only and multimodal categories.
+ * Text attachments go through the existing text context mechanism.
+ * Multimodal attachments (images) remain structured data for LLM assembly.
+ *
+ * @param {Array<{ filename: string, content: string|null, imageBytes?: Buffer, imageMimeType?: string }>} attachments
+ * @returns {{ textAttachments: Array, multimodalAttachments: Array }}
+ */
+function categorizeAttachments(attachments) {
+  if (!Array.isArray(attachments) || attachments.length === 0) {
+    return { textAttachments: [], multimodalAttachments: [] };
+  }
+
+  const textAttachments = [];
+  const multimodalAttachments = [];
+
+  for (const att of attachments) {
+    if (att.imageBytes && att.imageMimeType) {
+      multimodalAttachments.push(att);
+    } else {
+      textAttachments.push(att);
+    }
+  }
+
+  return { textAttachments, multimodalAttachments };
+}
+
 module.exports = {
   createLibraryStore,
   resolveLibraryDir,
   resolveAttachmentsForPrompt,
+  categorizeAttachments,
   isTextMime,
   isImageMime,
   LibraryFileNotFoundError,

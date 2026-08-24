@@ -1050,3 +1050,135 @@ test('performStreamingTurn: without a webSearch client, the Decision Engine neve
   assert.equal(hermesCalls, 1);
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
+
+// === PATCH: Native Vision — Multimodal Attachments ========================
+
+test('assembleMessages: creates multimodal content when multimodalAttachments provided', () => {
+  const { assembleMessages: assemble } = require('../src/turn');
+  
+  // Create a tiny 1x1 red PNG (base64)
+  const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
+  
+  const messages = assemble('SOUL', [
+    { role: 'user', content: 'Wat zie je op deze afbeelding?' },
+  ], [
+    { filename: 'test.png', imageBytes: tinyPng, imageMimeType: 'image/png' },
+  ]);
+
+  // Find the user message
+  const userMsg = messages.find((m) => m.role === 'user');
+  assert.ok(userMsg);
+  
+  // Content should be an array (multimodal format)
+  assert.ok(Array.isArray(userMsg.content), 'user message content should be an array for multimodal');
+  
+  // Should contain text block
+  const textBlock = userMsg.content.find((c) => c.type === 'text');
+  assert.ok(textBlock, 'should have text block');
+  assert.equal(textBlock.text, 'Wat zie je op deze afbeelding?');
+  
+  // Should contain image_url block
+  const imageBlock = userMsg.content.find((c) => c.type === 'image_url');
+  assert.ok(imageBlock, 'should have image_url block');
+  assert.ok(imageBlock.image_url.url.startsWith('data:image/png;base64,'), 'image URL should be data URL with base64');
+});
+
+test('assembleMessages: preserves plain text when no multimodal attachments', () => {
+  const { assembleMessages: assemble } = require('../src/turn');
+  
+  const messages = assemble('SOUL', [
+    { role: 'user', content: 'Hello' },
+  ], []);
+
+  const userMsg = messages.find((m) => m.role === 'user');
+  assert.ok(userMsg);
+  
+  // Content should be a plain string
+  assert.equal(typeof userMsg.content, 'string', 'user message content should be string when no images');
+  assert.equal(userMsg.content, 'Hello');
+});
+
+test('assembleMessages: handles multiple image attachments', () => {
+  const { assembleMessages: assemble } = require('../src/turn');
+  
+  const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
+  
+  const messages = assemble('SOUL', [
+    { role: 'user', content: 'Vergelijk deze twee afbeeldingen' },
+  ], [
+    { filename: 'img1.png', imageBytes: tinyPng, imageMimeType: 'image/png' },
+    { filename: 'img2.png', imageBytes: tinyPng, imageMimeType: 'image/png' },
+  ]);
+
+  const userMsg = messages.find((m) => m.role === 'user');
+  assert.ok(Array.isArray(userMsg.content));
+  
+  // Should have 1 text block + 2 image blocks
+  const imageBlocks = userMsg.content.filter((c) => c.type === 'image_url');
+  assert.equal(imageBlocks.length, 2, 'should have 2 image blocks');
+});
+
+test('performTurn: multimodal attachments reach Hermes as multimodal content', async () => {
+  const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
+  let receivedMessages = null;
+  
+  const hermes = {
+    async chat(messages) {
+      receivedMessages = messages;
+      return 'Ik zie een rode pixel.';
+    },
+  };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    attachments: [
+      { filename: 'photo.png', imageBytes: tinyPng, imageMimeType: 'image/png' },
+    ],
+  });
+
+  assert.equal(result.status, 200);
+  assert.ok(receivedMessages);
+  
+  // The user message should be multimodal
+  const userMsg = receivedMessages.find((m) => m.role === 'user');
+  assert.ok(Array.isArray(userMsg.content), 'user message should have multimodal content');
+  
+  // Should contain image_url block
+  const imageBlock = userMsg.content.find((c) => c.type === 'image_url');
+  assert.ok(imageBlock, 'should have image_url block in LLM request');
+  assert.ok(imageBlock.image_url.url.startsWith('data:image/png;base64,'), 'image should be base64 data URL');
+});
+
+test('performTurn: text attachments still work as text context', async () => {
+  let receivedMessages = null;
+  
+  const hermes = {
+    async chat(messages) {
+      receivedMessages = messages;
+      return 'I read the file.';
+    },
+  };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Read this file' }],
+    systemPrompt: 'SOUL',
+    hermes,
+    attachments: [
+      { filename: 'notes.txt', content: 'Important notes here' },
+    ],
+  });
+
+  assert.equal(result.status, 200);
+  assert.ok(receivedMessages);
+  
+  // Text attachments should be in system prompt, not as multimodal
+  const systemMsg = receivedMessages.find((m) => m.role === 'system');
+  assert.ok(systemMsg.content.includes('notes.txt'), 'text attachment should be in system prompt');
+  assert.ok(systemMsg.content.includes('Important notes here'), 'text content should be included');
+  
+  // User message should still be plain text
+  const userMsg = receivedMessages.find((m) => m.role === 'user');
+  assert.equal(typeof userMsg.content, 'string', 'user message should be plain string');
+});

@@ -151,3 +151,80 @@ test('resolveAttachmentsForPrompt silently skips a missing id rather than throwi
   const store = tempStore();
   assert.deepEqual(await resolveAttachmentsForPrompt(store, ['does-not-exist']), []);
 });
+
+// === PATCH: Native Vision — Multimodal Attachment Resolution ==============
+
+test('resolveAttachmentsForPrompt returns raw image bytes when modelSupportsVision is true', async () => {
+  const store = tempStore();
+  const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG header
+  const saved = store.saveFile(tinyPng, { filename: 'photo.png', mimeType: 'image/png' });
+
+  const [attachment] = await resolveAttachmentsForPrompt(store, [saved.id], { modelSupportsVision: true });
+  
+  // Should have imageBytes and imageMimeType, not OCR text content
+  assert.ok(attachment.imageBytes, 'should have imageBytes');
+  assert.ok(Buffer.isBuffer(attachment.imageBytes), 'imageBytes should be a Buffer');
+  assert.equal(attachment.imageMimeType, 'image/png');
+  assert.equal(attachment.content, null, 'content should be null for native vision path');
+  assert.equal(attachment.filename, 'photo.png');
+});
+
+test('resolveAttachmentsForPrompt uses OCR fallback when modelSupportsVision is false', async () => {
+  const store = tempStore();
+  const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const saved = store.saveFile(tinyPng, { filename: 'photo.png', mimeType: 'image/png' });
+  
+  // OCR model that returns a description
+  const ocrModel = { 
+    chat: async () => 'A red pixel', 
+    isConfigured: () => true 
+  };
+
+  const [attachment] = await resolveAttachmentsForPrompt(store, [saved.id], { 
+    modelSupportsVision: false, 
+    ocrModel 
+  });
+  
+  // Should use OCR path - content is text description
+  assert.ok(attachment.content, 'should have text content from OCR');
+  assert.ok(attachment.content.includes('A red pixel'), 'content should contain OCR description');
+  assert.equal(attachment.imageBytes, undefined, 'should not have imageBytes when using OCR');
+});
+
+test('resolveAttachmentsForPrompt uses OCR fallback when modelSupportsVision is unknown', async () => {
+  const store = tempStore();
+  const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const saved = store.saveFile(tinyPng, { filename: 'photo.png', mimeType: 'image/png' });
+  
+  const ocrModel = { 
+    chat: async () => 'Description', 
+    isConfigured: () => true 
+  };
+
+  // modelSupportsVision not provided (undefined = unknown)
+  const [attachment] = await resolveAttachmentsForPrompt(store, [saved.id], { ocrModel });
+  
+  // Should fall back to OCR (safe default)
+  assert.ok(attachment.content, 'should have content from OCR fallback');
+});
+
+test('categorizeAttachments separates text and multimodal attachments', async () => {
+  const { categorizeAttachments } = require('../src/library');
+  
+  const attachments = [
+    { filename: 'notes.txt', content: 'Text content' },
+    { filename: 'photo.png', content: null, imageBytes: Buffer.from('fake'), imageMimeType: 'image/png' },
+    { filename: 'readme.md', content: '# Hello' },
+    { filename: 'image.jpg', content: null, imageBytes: Buffer.from('fake'), imageMimeType: 'image/jpeg' },
+  ];
+
+  const { textAttachments, multimodalAttachments } = categorizeAttachments(attachments);
+  
+  assert.equal(textAttachments.length, 2);
+  assert.equal(textAttachments[0].filename, 'notes.txt');
+  assert.equal(textAttachments[1].filename, 'readme.md');
+  
+  assert.equal(multimodalAttachments.length, 2);
+  assert.equal(multimodalAttachments[0].filename, 'photo.png');
+  assert.equal(multimodalAttachments[1].filename, 'image.jpg');
+});
