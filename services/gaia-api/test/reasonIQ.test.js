@@ -651,3 +651,109 @@ test("0.2 brief case B/C/D/E/F: one memory+document turn exercises use, referenc
   assert.equal(logRecord.evidenceSufficient, false);
   assert.equal(logRecord.contradictionCount, 1);
 });
+
+// === ReasonIQ 0.3 — Hypothesis Lifecycle & Evidence Updates =================
+
+const EXISTING = [{ id: 'hyp-123', statement: 'Concurrent cancellation causes the streaming race.', status: 'testing', confidence: 0.64 }];
+
+test('0.3 prompt: existing hypotheses ride along as context with their ids and status', () => {
+  const messages = buildReasoningPrompt({
+    text: 'Nog meer bewijs voor de streaming-race?',
+    intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+    evidence: [{ id: 'upload-2', source: 'upload', content: 'new log material' }],
+    existingHypotheses: EXISTING,
+  });
+  assert.match(messages[1].content, /hyp-123/);
+  assert.match(messages[1].content, /existingHypotheses/);
+  assert.match(messages[1].content, /testing/);
+});
+
+test('0.3 validation: recognized existingId survives; invented ones are nulled', async () => {
+  const output = JSON.stringify({
+    interpretation: 'Weighing new log material against the tracked hypothesis.',
+    hypotheses: [
+      { statement: 'Concurrent cancellation causes the streaming race.', existingId: 'hyp-123', confidence: 0.7 },
+      { statement: 'A brand new retry-storm hypothesis.', confidence: 0.4 },
+      { statement: 'Claims to continue hyp-invented.', existingId: 'hyp-invented', confidence: 0.5 },
+    ],
+    hypothesisUpdates: [
+      { hypothesisId: 'hyp-123', evidenceId: 'upload-2', relation: 'supports', confidenceDelta: 0.06, rationale: 'log timing matches the abort window' },
+      { hypothesisId: 'hyp-fabricated', evidenceId: 'upload-2', relation: 'weakens', confidenceDelta: 0.1, rationale: 'no such hypothesis exists' },
+    ],
+    contradictions: [],
+    uncertainties: [],
+    informationGaps: [],
+    conclusions: [],
+    sufficientForConclusion: false,
+    confidence: 0.6,
+  });
+  const result = parseAndValidateReasoningOutput(output, [{ id: 'upload-2', source: 'upload' }], EXISTING);
+  assert.equal(result.hypotheses[0].existingId, 'hyp-123');
+  assert.equal(result.hypotheses[1].existingId, null); // fresh proposal
+  assert.equal(result.hypotheses[2].existingId, null); // invented reference stripped
+  assert.equal(result.hypothesisUpdates.length, 1); // fabricated update dropped entirely
+  assert.equal(result.hypothesisUpdates[0].hypothesisId, 'hyp-123');
+  assert.equal(result.hypothesisUpdates[0].evidenceId, 'upload-2');
+});
+
+test('0.3 evaluate: updates flow through the real pipeline with provenance intact', async () => {
+  const model = {
+    chat: async () => JSON.stringify({
+      interpretation: 'New evidence supports the tracked hypothesis.',
+      hypotheses: [{ statement: 'Concurrent cancellation causes the streaming race.', existingId: 'hyp-123', confidence: 0.7 }],
+      hypothesisUpdates: [
+        { hypothesisId: 'hyp-123', evidenceId: 'upload-2', relation: 'supports', confidenceDelta: 0.05, rationale: 'second independent confirmation' },
+        { hypothesisId: 'hyp-123', evidenceId: 'made-up-evidence', relation: 'supports', confidenceDelta: 0.4, rationale: 'fabricated citation attempt' },
+      ],
+      contradictions: [],
+      uncertainties: [],
+      informationGaps: [],
+      conclusions: [],
+      sufficientForConclusion: false,
+      confidence: 0.65,
+    }),
+    isConfigured: () => true,
+  };
+  const result = await evaluate(
+    {
+      text: 'Hier is extra logmateriaal.',
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.85 },
+      evidence: [{ id: 'upload-2', source: 'upload', content: 'logs' }],
+      existingHypotheses: EXISTING,
+    },
+    { reasoningModel: model, silent: true }
+  );
+  assert.equal(result.reasoningDepth, 'deep');
+  // Both updates route to the REAL hypothesis; the fabricated citation lost
+  // its evidence id (nulled), exactly like every other invented id.
+  assert.equal(result.hypothesisUpdates.length, 2);
+  assert.equal(result.hypothesisUpdates[0].evidenceId, 'upload-2');
+  assert.equal(result.hypothesisUpdates[1].evidenceId, null);
+  for (const u of result.hypothesisUpdates) {
+    assert.equal(u.hypothesisId, 'hyp-123');
+    assert.notEqual(u.evidenceId, 'made-up-evidence');
+  }
+});
+
+test('0.3 malformed: an invalid relation in a hypothesisUpdate is rejected, not coerced', () => {
+  const bad = JSON.stringify({
+    interpretation: 'x',
+    hypothesisUpdates: [{ hypothesisId: 'hyp-123', relation: 'probably-true', confidenceDelta: 0.1 }],
+  });
+  assert.throws(() => parseAndValidateReasoningOutput(bad, [], EXISTING), MalformedReasoningOutputError);
+});
+
+test("0.3 shallow path carries an empty hypothesisUpdates list", async () => {
+  const result = await evaluate(
+    { text: 'Hoi Gaia', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 }, evidence: [] },
+    { reasoningModel: { chat: async () => { throw new Error('no calls'); }, isConfigured: () => true }, silent: true }
+  );
+  assert.deepEqual(result.hypothesisUpdates, []);
+});
+
+test('boundary: reasonIQ never requires Hindsight or any capability module', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/logos/reasonIQ.js'), 'utf-8');
+  for (const forbidden of ['hindsightClient', 'hermesClient', 'braveSearch']) {
+    assert.ok(!new RegExp(`require\\([^)]*${forbidden}`).test(source), `reasonIQ requires ${forbidden}`);
+  }
+});

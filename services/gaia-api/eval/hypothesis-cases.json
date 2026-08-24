@@ -1,0 +1,66 @@
+{
+  "name": "reasoniq-hypothesis-eval-0.3",
+  "description": "Small deterministic evaluation of the HypothesisManager lifecycle seam - no model involved: each case drives the manager directly and asserts one lifecycle behavior. Deliberately not a benchmark; a sanity harness for the state machine.",
+  "cases": [
+    {
+      "id": "sup-01", "behavior": "support",
+      "setup": { "hypotheses": [{ "id": "hyp-a1", "statement": "Cache stampede causes the nightly 500s.", "status": "testing", "confidence": 0.55 }] },
+      "action": { "type": "applyUpdate", "update": { "hypothesisId": "hyp-a1", "evidenceId": "log-9", "relation": "supports", "confidenceDelta": 0.15, "rationale": "spike timing matches" } },
+      "expect": { "accepted": true, "confidenceAfter": 0.7, "evidenceForContains": "log-9", "statusAfter": "testing" }
+    },
+    {
+      "id": "wkn-01", "behavior": "weakens",
+      "setup": { "hypotheses": [{ "id": "hyp-b1", "statement": "Memory pressure crashes the worker.", "status": "testing", "confidence": 0.6, "evidenceFor": ["m1"] }] },
+      "action": { "type": "applyUpdate", "update": { "hypothesisId": "hyp-b1", "evidenceId": "metric-2", "relation": "weakens", "confidenceDelta": 0.25, "rationale": "flat memory during crashes" } },
+      "expect": { "accepted": true, "confidenceAfter": 0.35, "evidenceAgainstContains": "metric-2" }
+    },
+    {
+      "id": "con-01", "behavior": "contradicts-demotes-confirmed",
+      "setup": { "hypotheses": [{ "id": "hyp-c1", "statement": "The emitter owns the wire format.", "status": "confirmed", "confidence": 0.8 }] },
+      "action": { "type": "applyUpdate", "update": { "hypothesisId": "hyp-c1", "evidenceId": "doc-5", "relation": "contradicts", "confidenceDelta": 0.15, "rationale": "new design doc says otherwise" } },
+      "expect": { "accepted": true, "from": "confirmed", "to": "testing", "statusAfter": "testing" }
+    },
+    {
+      "id": "irr-01", "behavior": "irrelevant-noop",
+      "setup": { "hypotheses": [{ "id": "hyp-d1", "statement": "Retries mask the real failure.", "status": "testing", "confidence": 0.5 }] },
+      "action": { "type": "applyUpdate", "update": { "hypothesisId": "hyp-d1", "evidenceId": "weather-1", "relation": "irrelevant", "rationale": "unrelated telemetry" } },
+      "expect": { "accepted": true, "confidenceAfter": 0.5 }
+    },
+    {
+      "id": "ins-01", "behavior": "insufficient-evidence-refuses-confirm",
+      "setup": { "hypotheses": [{ "id": "hyp-e1", "statement": "One weak signal should not settle it.", "status": "proposed", "confidence": 0.9 }] },
+      "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "the model sounded sure" },
+      "expect": { "ok": false, "reasonMatches": "policy|invalid", "statusAfter": "proposed" }
+    },
+    {
+      "id": "dup-01", "behavior": "duplicate-hypothesis",
+      "setup": { "hypotheses": [{ "id": "hyp-f1", "statement": "Concurrent cancellation causes the streaming race.", "status": "testing", "confidence": 0.64 }] },
+      "action": { "type": "propose", "input": { "statement": "The streaming race comes from concurrent cancellation.", "confidence": 0.4 } },
+      "expect": { "duplicateOf": "hyp-f1" }
+    },
+    {
+      "id": "val-01", "behavior": "valid-transition-confirm",
+      "setup": { "policy": { "minSupportEvidence": 2, "confirmConfidence": 0.7 }, "hypotheses": [{ "id": "hyp-g1", "statement": "Two independent sources agree.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"] }] },
+      "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "two independent confirmations, no counter-evidence" },
+      "expect": { "ok": true, "statusAfter": "confirmed" }
+    },
+    {
+      "id": "inv-01", "behavior": "invalid-transition",
+      "setup": { "hypotheses": [{ "id": "hyp-h1", "statement": "A proposal cannot skip testing.", "status": "proposed", "confidence": 0.95 }] },
+      "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "skip ahead" },
+      "expect": { "ok": false, "reasonMatches": "invalid transition proposed -> confirmed", "statusAfter": "proposed" }
+    },
+    {
+      "id": "reo-01", "behavior": "re-open-rejected",
+      "setup": { "hypotheses": [{ "id": "hyp-i1", "statement": "Rejected too eagerly?", "status": "rejected", "confidence": 0.3 }] },
+      "action": { "type": "evaluateTransition", "target": "testing", "rationale": "strong new evidence surfaced" },
+      "expect": { "ok": true, "statusAfter": "testing" }
+    },
+    {
+      "id": "reo-02", "behavior": "re-open-requires-rationale",
+      "setup": { "hypotheses": [{ "id": "hyp-j1", "statement": "No free re-opens.", "status": "rejected", "confidence": 0.3 }] },
+      "action": { "type": "evaluateTransition", "target": "testing" },
+      "expect": { "ok": false, "reasonMatches": "rationale", "statusAfter": "rejected" }
+    }
+  ]
+}

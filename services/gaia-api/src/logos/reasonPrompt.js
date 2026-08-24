@@ -20,6 +20,15 @@ Rules:
 - The input evidence list items carry stable ids. When you link a hypothesis or
   conclusion to evidence, reference ONLY ids that appear in that input list.
   Never invent an id, never cite evidence you were not given.
+- The input may also carry existingHypotheses: hypotheses Gaia is already
+  tracking, each with its own id and status. If your reasoning concerns one of
+  those, set that hypothesis's "existingId" to ITS id instead of proposing a
+  duplicate, and express the change as an entry in "hypothesisUpdates" with an
+  explicit relation (supports/weakens/contradicts/irrelevant) and confidenceDelta
+  for each piece of evidence that drives it. Never invent a hypothesisId.
+- You NEVER confirm or reject a hypothesis yourself. Status transitions are
+  decided elsewhere against an explicit evidence policy; you only report
+  evidence relations and honest confidence.
 - If two pieces of input evidence conflict, report the conflict in contradictions
   with both sides' ids; do not silently pick which source is true.
 - confidence values are 0..1 and must never be reported as exactly 1 (never claim certainty).
@@ -31,6 +40,7 @@ Schema:
   "evidence": [{ "content": string, "type": "fact"|"inference"|"hypothesis"|"unknown", "origin": "conversation"|"supplied"|"unknown" }],
   "hypotheses": [{
     "statement": string,
+    "existingId": string|null,   // id of the EXISTING hypothesis this matches, when one does
     "confidence": number,
     "status": "proposed"|"testing"|"confirmed"|"rejected",
     "verificationPlan": string|null,
@@ -43,6 +53,13 @@ Schema:
       "reasoning": string,
       "newConfidence": number
     }]
+  }],
+  "hypothesisUpdates": [{   // explicit updates for EXISTING hypotheses (matched via existingId)
+    "hypothesisId": string,
+    "evidenceId": string|null,
+    "relation": "supports"|"weakens"|"contradicts"|"irrelevant",
+    "confidenceDelta": number,
+    "rationale": string
   }],
   "contradictions": [{
     "evidenceA": string|null,  // input evidence id of side A, when it has one
@@ -66,6 +83,7 @@ Schema:
  *   intentDecision: object|null,
  *   conversationContext: Array<{role: string, content: string}>,
  *   evidence: Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>,
+ *   existingHypotheses?: Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>,
  * }} input
  * @returns {Array<{role: string, content: string}>}
  */
@@ -77,6 +95,16 @@ function buildReasoningPrompt(input) {
       : null,
     recentContext: (input.conversationContext || []).slice(-6).map(({ role, content }) => ({ role, content })),
     evidence: input.evidence || [],
+    // Existing hypotheses are CONTEXT (brief §16), slimmed to what reasoning
+    // needs — never a second memory system.
+    existingHypotheses: (input.existingHypotheses || []).slice(0, 6).map((h) => ({
+      id: h.id,
+      statement: h.statement,
+      status: h.status || null,
+      confidence: typeof h.confidence === 'number' ? h.confidence : null,
+      evidenceFor: Array.isArray(h.evidenceFor) ? h.evidenceFor : [],
+      evidenceAgainst: Array.isArray(h.evidenceAgainst) ? h.evidenceAgainst : [],
+    })),
   };
 
   const userContent = [

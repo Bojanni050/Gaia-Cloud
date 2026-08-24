@@ -51,6 +51,16 @@
  * sufficiency is reported as both sufficientForConclusion and its named
  * alias evidenceSufficient — what Gaia's Decision Engine does with that
  * stays entirely Gaia's call.
+ *
+ * v0.3 — Hypothesis Lifecycle & Evidence Updates: the input may carry
+ * `existingHypotheses` (retrieved by the caller; ReasonIQ still never
+ * touches Hindsight), the model can recognize them via existingId instead
+ * of duplicating them, and it reports explicit per-evidence
+ * `hypothesisUpdates` (relation + bounded confidenceDelta + rationale).
+ * ReasonIQ itself performs NO state transitions — structured updates flow
+ * to reasoning/hypothesisManager.js, which validates every transition
+ * against an explicit lifecycle and evidence policy, with persistence via
+ * an injected sink only.
  */
 
 const crypto = require('crypto');
@@ -127,6 +137,7 @@ function baseResult(overrides = {}, evidence = []) {
     reasoningDepth: 'shallow',
     evidence: [],
     hypotheses: [],
+    hypothesisUpdates: [],
     contradictions: [],
     uncertainties: [],
     informationGaps: [],
@@ -233,6 +244,7 @@ function degradedResult(reason, modelConfigured, evidence = []) {
  * @property {object|null} [intentDecision] - IntentIQ's IntentDecision for this turn (logos/intentIQ.js) — consumed, never re-derived
  * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT (§10), never mixed into evidence
  * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; ReasonIQ never fetches anything itself
+ * @property {Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>} [existingHypotheses] - 0.3: hypotheses Gaia is already tracking (retrieved by the CALLER — never by ReasonIQ); context only (brief §16)
  * @property {string} [correlationId]
  * @property {string} [contextId]
  */
@@ -263,8 +275,15 @@ async function evaluate(input, options = {}) {
       const raw = await model.chat(messages);
       // The supplied evidence list is also the provenance whitelist (0.2
       // §16): any evidence id the model cites that is not in it was
-      // invented, and is stripped before the result goes anywhere.
-      const validated = parseAndValidateReasoningOutput(raw, Array.isArray(input.evidence) ? input.evidence : []);
+      // invented, and is stripped before the result goes anywhere. 0.3
+      // applies the same discipline to hypothesis references: existingId /
+      // hypothesisUpdates must point at hypotheses that were in the input
+      // context, never at ones the model conjured up.
+      const validated = parseAndValidateReasoningOutput(
+        raw,
+        Array.isArray(input.evidence) ? input.evidence : [],
+        Array.isArray(input.existingHypotheses) ? input.existingHypotheses : []
+      );
       const { evidenceCount, evidenceSources } = evidenceMeta(input.evidence);
       result = {
         schemaVersion: SCHEMA_VERSION,

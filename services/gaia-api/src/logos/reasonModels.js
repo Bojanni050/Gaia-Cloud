@@ -27,7 +27,11 @@ const SCHEMA_VERSION = 'reasoniq.v1';
 // 0.2: evidence-aware reasoning — hypotheses/conclusions/contradictions now
 // carry provenance links into the assembled evidence list (by stable
 // evidence ID). Additive on v0.1's schema; nothing was removed.
-const REASONER_VERSION = 'reasoniq-v0.2';
+// 0.3: hypothesis lifecycle support — the model may reference EXISTING
+// hypotheses (existingId) and emit explicit per-evidence hypothesisUpdates;
+// actual state transitions belong to reasoning/hypothesisManager.js, never
+// to a raw model output.
+const REASONER_VERSION = 'reasoniq-v0.3';
 
 /** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions ReasonIQ must never collapse (§11). */
 const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unknown']);
@@ -84,6 +88,20 @@ function isValidHypothesisStatus(v) {
  * @property {EvidenceAssessment[]} evidenceAssessments
  * @property {string[]} evidenceFor - ids of assembled evidence items that SUPPORT this hypothesis (0.2 provenance)
  * @property {string[]} evidenceAgainst - ids of assembled evidence items that WEAKEN/CONTRADICT it
+ * @property {string|null} [existingId] - 0.3: when this turn recognized an EXISTING hypothesis (supplied via input.existingHypotheses), its stable id — validated against that input list, never invented
+ */
+
+/**
+ * @typedef {Object} HypothesisUpdate
+ * 0.3 (brief §6): one explicit, reasoning-backed evidence update for a
+ * hypothesis. Applied only through reasoning/hypothesisManager.js — never
+ * by the model itself, never by ReasonIQ writing anywhere.
+ * @property {string} hypothesisId - which existing hypothesis this updates (validated against the supplied list)
+ * @property {string|null} statement - the matched statement, for auditability when present
+ * @property {string|null} evidenceId - the assembled evidence id driving it (provenance-filtered like every id)
+ * @property {'supports'|'weakens'|'contradicts'|'irrelevant'} relation
+ * @property {number} confidenceDelta - explicit, bounded delta — no arbitrary score changes
+ * @property {string|null} rationale - why this update follows from the reasoning
  */
 
 /**
@@ -112,6 +130,7 @@ function isValidHypothesisStatus(v) {
  * @property {'shallow'|'deep'} reasoningDepth
  * @property {EvidenceItem[]} evidence
  * @property {Hypothesis[]} hypotheses
+ * @property {HypothesisUpdate[]} hypothesisUpdates - 0.3: explicit evidence updates for existing hypotheses (empty on shallow paths)
  * @property {Contradiction[]} contradictions
  * @property {string[]} uncertainties
  * @property {string[]} informationGaps

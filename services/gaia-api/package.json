@@ -10,7 +10,8 @@
     "test": "node --test test/*.test.js",
     "eval:intent": "node eval/run.js",
     "eval:intent-eval": "node eval/evaluationRunner.js",
-    "eval:reason": "node eval/run-reason.js"
+    "eval:reason": "node eval/run-reason.js",
+    "eval:hypothesis": "node eval/run-hypothesis.js"
   },
   "dependencies": {
     "express": "^4.19.2",
