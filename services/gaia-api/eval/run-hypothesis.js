@@ -33,6 +33,8 @@ function runCase(kase) {
     outcome = m.applyUpdate({ ...a.update, hypothesisId: a.update.hypothesisId });
   } else if (a.type === 'evaluateTransition') {
     outcome = m.evaluateTransition(kase.setup.hypotheses[0].id, a.target, { rationale: a.rationale });
+  } else if (a.type === 'setPersistence') {
+    outcome = m.setPersistence(kase.setup.hypotheses[0].id, a.target, { reason: a.reason });
   } else if (a.type === 'propose') {
     outcome = m.propose(a.input);
   } else {
@@ -40,7 +42,11 @@ function runCase(kase) {
   }
 
   const exp = kase.expect || {};
-  const hypId = kase.setup.hypotheses && kase.setup.hypotheses[0] ? kase.setup.hypotheses[0].id : null;
+  // propose actions return the hypothesis itself; state-based expectations
+  // resolve against it (or the seeded one for transition/update actions).
+  const hypId = a.type === 'propose'
+    ? (outcome.hypothesis && outcome.hypothesis.id)
+    : (kase.setup.hypotheses && kase.setup.hypotheses[0] ? kase.setup.hypotheses[0].id : null);
   const h = hypId ? m.get(hypId) : null;
 
   const checks = [];

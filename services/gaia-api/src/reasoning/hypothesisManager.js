@@ -51,6 +51,22 @@ const { EVIDENCE_VERDICTS } = require('../logos/reasonModels');
 const HYPOTHESIS_METHODS = Object.freeze(['asserted', 'derived', 'tested']);
 
 /**
+ * Expected LIFETIME of a hypothesis (Gaia Persistence 0.1) — deliberately a
+ * separate axis from status (lifecycle) and confidence (epistemic strength):
+ *
+ *   ephemeral → relevant to the current task/analysis only; must not leak
+ *               into every future turn's context.
+ *   durable   → meant to survive many turns and accumulate evidence over
+ *               time; candidate for long-term recall. DURABLE MEANS
+ *               LONGER-LIVED, NEVER "MORE TRUE".
+ *
+ * Default is ephemeral whenever nothing explicit says otherwise; switching
+ * goes exclusively through setPersistence() (explicit, audited, idempotent).
+ */
+const HYPOTHESIS_PERSISTENCE = Object.freeze(['ephemeral', 'durable']);
+const DEFAULT_PERSISTENCE = 'ephemeral';
+
+/**
  * The allowed status transitions. Anything not listed here is refused,
  * e.g. proposed → confirmed (a proposal must at least pass through
  * testing) and unknown → anything.
@@ -85,6 +101,14 @@ const INITIAL_STATUS = 'proposed';
 
 function isValidMethod(m) {
   return HYPOTHESIS_METHODS.includes(m);
+}
+
+function isValidPersistence(p) {
+  return HYPOTHESIS_PERSISTENCE.includes(p);
+}
+
+function persistenceOf(value) {
+  return isValidPersistence(value) ? value : DEFAULT_PERSISTENCE;
 }
 
 /**
@@ -222,6 +246,7 @@ function createHypothesisManager(options = {}) {
         statement: h.statement,
         status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
         method: isValidMethod(h.method) ? h.method : 'asserted',
+        persistence: persistenceOf(h.persistence),
         confidence: clampConfidence(h.confidence) != null ? clampConfidence(h.confidence) : 0.5,
         evidenceFor: Array.isArray(h.evidenceFor) ? [...h.evidenceFor] : [],
         evidenceAgainst: Array.isArray(h.evidenceAgainst) ? [...h.evidenceAgainst] : [],
@@ -253,7 +278,7 @@ function createHypothesisManager(options = {}) {
    * Proposes a hypothesis — or recognizes an equivalent existing one (§4/§12).
    * @returns {{ hypothesis: object, duplicateOf: string|null }}
    */
-  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted', persist = true } = {}) {
+  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted', persistence, persist = true } = {}) {
     if (!statement || !String(statement).trim()) throw new Error('hypothesis statement is required');
     const existing = findDuplicate(statement);
     if (existing) return { hypothesis: existing, duplicateOf: existing.id };
@@ -265,6 +290,7 @@ function createHypothesisManager(options = {}) {
       statement: String(statement).trim(),
       status: INITIAL_STATUS,
       method: isValidMethod(method) ? method : 'asserted',
+      persistence: persistenceOf(persistence),
       confidence: clampConfidence(confidence) != null ? clampConfidence(confidence) : 0.5,
       evidenceFor: [...new Set(evidenceFor)],
       evidenceAgainst: [...new Set(evidenceAgainst)],
@@ -358,6 +384,7 @@ function createHypothesisManager(options = {}) {
         hypothesisId: h.id,
         statement: h.statement,
         confidence: h.confidence,
+        persistence: h.persistence,
         rationale: rationale || null,
       });
 
@@ -569,7 +596,14 @@ function createHypothesisManager(options = {}) {
       } else {
         // persist:false — the fresh proposal still needs its evidence merged
         // below; the first persisted version must already carry provenance.
-        const res = propose({ statement: rh.statement, confidence: rh.confidence, evidenceFor: [], evidenceAgainst: [], persist: false });
+        const res = propose({
+          statement: rh.statement,
+          confidence: rh.confidence,
+          evidenceFor: [],
+          evidenceAgainst: [],
+          persistence: rh.persistence,
+          persist: false,
+        });
         target = res.hypothesis;
         duplicateOf = res.duplicateOf;
       }
@@ -622,11 +656,52 @@ function createHypothesisManager(options = {}) {
     return { applied };
   }
 
+  /**
+   * Explicit persistence-dimension change (Gaia Persistence 0.1): the ONLY
+   * way ephemeral↔durable ever flips. Independent of status; updates never
+   * touch this field implicitly. Idempotent (same value → recorded no-op),
+   * audited via the existing history/audit trail, and a reason is required
+   * for an actual change so the flip stays reviewable.
+   */
+  function setPersistence(hypothesisId, persistence, { reason } = {}) {
+    const h = byId.get(hypothesisId);
+    if (!h) return { ok: false, reason: `unknown hypothesis: ${hypothesisId}` };
+    if (!isValidPersistence(persistence)) {
+      audits.push(makeAudit({ hypothesisId: h.id, relation: 'persistence', accepted: false, reason: `invalid persistence: ${persistence}` }));
+      return { ok: false, reason: `invalid persistence: ${persistence} (use ephemeral|durable)` };
+    }
+    if (h.persistence === persistence) {
+      audits.push(makeAudit({
+        hypothesisId: h.id, relation: 'persistence', accepted: true,
+        from: h.persistence, to: persistence, reason: 'unchanged', rationale: reason || null,
+      }));
+      return { ok: true, changed: false };
+    }
+    if (!reason || !String(reason).trim()) {
+      return { ok: false, reason: 'a persistence change requires a stated reason' };
+    }
+    const prev = { ...h };
+    const iso = now().toISOString();
+    const from = h.persistence;
+    h.persistence = persistence;
+    h.updatedAt = iso;
+    h.history.push({ from: prev.status, to: prev.status, at: iso, rationale: reason || null, persistenceFrom: from, persistenceTo: persistence });
+    persistUpdate(prev, h);
+    audits.push(makeAudit({
+      hypothesisId: h.id, relation: 'persistence',
+      from, to: persistence,
+      confidenceBefore: prev.confidence, confidenceAfter: h.confidence,
+      rationale: reason || null,
+    }));
+    return { ok: true, changed: true };
+  }
+
   return {
     propose,
     applyUpdate,
     applyReasoningResult,
     evaluateTransition,
+    setPersistence,
     seed: (list) => seedAll(list),
     get: (id) => byId.get(id) || null,
     list: () => [...byId.values()],
@@ -640,6 +715,8 @@ module.exports = {
   createHypothesisManager,
   HYPOTHESIS_TRANSITIONS,
   HYPOTHESIS_METHODS,
+  HYPOTHESIS_PERSISTENCE,
+  DEFAULT_PERSISTENCE,
   DEFAULT_POLICY,
   INITIAL_STATUS,
   DEDUP_SIMILARITY_THRESHOLD,

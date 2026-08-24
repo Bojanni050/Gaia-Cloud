@@ -358,7 +358,7 @@ test('promotion: confirm calls sink.promote exactly once with the settled payloa
   assert.equal(m.evaluateTransition('hyp-p', 'confirmed', { rationale: 'settled' }).ok, true);
   const h = m.get('hyp-p');
   assert.equal(promotions.length, 1);
-  assert.deepEqual(promotions[0], { hypothesisId: 'hyp-p', statement: 'The emitter owns the wire format.', confidence: 0.72, rationale: 'settled' });
+  assert.deepEqual(promotions[0], { hypothesisId: 'hyp-p', statement: 'The emitter owns the wire format.', confidence: 0.72, persistence: 'ephemeral', rationale: 'settled' });
   assert.equal(h.promoted, true);
   assert.equal(h.promotedFactId, 'hs-fact-77');
   assert.equal(h.promotionPending, false);
@@ -452,3 +452,115 @@ test("0.1 seed(): post-construction seeding never overwrites live state", () => 
   m.seed([{ id: "ext-seed", statement: "From storage.", status: "testing", confidence: 0.55 }]);
   assert.equal(m.get("ext-seed").status, "testing");
 });
+
+// === Gaia Persistence 0.1: the ephemeral|durable dimension ==================
+
+const { HYPOTHESIS_PERSISTENCE, DEFAULT_PERSISTENCE } = require('../src/reasoning/hypothesisManager');
+
+test("0.1 persistence: vocabulary frozen, default is ephemeral", () => {
+  assert.deepEqual([...HYPOTHESIS_PERSISTENCE], ["ephemeral", "durable"]);
+  assert.equal(DEFAULT_PERSISTENCE, "ephemeral");
+});
+
+test("0.1 default: no persistence anywhere -> ephemeral", () => {
+  const m = createHypothesisManager();
+  m.applyReasoningResult({ hypotheses: [{ statement: "Task-scoped guess.", confidence: 0.5 }], hypothesisUpdates: [] });
+  assert.equal(m.get("hyp-1").persistence, "ephemeral");
+});
+
+test("0.1 explicit: ephemeral and durable are both preserved at creation", () => {
+  const m = createHypothesisManager();
+  m.applyReasoningResult({
+    hypotheses: [
+      { statement: "Explicitly short-lived.", confidence: 0.5, persistence: "ephemeral" },
+      { statement: "Recurring pattern candidate.", confidence: 0.6, evidenceFor: ["e1"], persistence: "durable" },
+    ],
+    hypothesisUpdates: [],
+  });
+  assert.equal(m.get("hyp-1").persistence, "ephemeral");
+  assert.equal(m.get("hyp-2").persistence, "durable");
+  // Invalid values degrade to the default instead of being trusted.
+  const m2 = createHypothesisManager();
+  m2.applyReasoningResult({ hypotheses: [{ statement: "Odd.", confidence: 0.5, persistence: "forever" }], hypothesisUpdates: [] });
+  assert.equal(m2.get("hyp-1").persistence, "ephemeral");
+});
+
+test("0.1 lifecycle independence: persistence survives the entire lifecycle in both flavors", () => {
+  for (const persistence of ["ephemeral", "durable"]) {
+    const m = createHypothesisManager({
+      policy: { minSupportEvidence: 2, confirmConfidence: 0.7, minOpposeEvidence: 2, rejectConfidence: 0.35 },
+      sink: { promote: () => ({ factId: `fact-${persistence}` }) },
+      hypotheses: [{ id: `hyp-${persistence}`, statement: `${persistence} claim.`, status: "testing", confidence: 0.72, evidenceFor: ["a"], persistence }],
+    });
+    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "b", relation: "supports", confidenceDelta: 0.01, rationale: "second" });
+    assert.equal(m.evaluateTransition(`hyp-${persistence}`, "confirmed", { rationale: "policy met" }).ok, true);
+    assert.equal(m.get(`hyp-${persistence}`).status, "confirmed");
+    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence); // confirmed ≠ durable
+    m.evaluateTransition(`hyp-${persistence}`, "testing", { rationale: "new pressure" });
+    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
+    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "x1", relation: "contradicts", confidenceDelta: 0.4, rationale: "c1" });
+    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "x2", relation: "weakens", confidenceDelta: 0.05, rationale: "c2" });
+    assert.equal(m.evaluateTransition(`hyp-${persistence}`, "rejected", { rationale: "disproven" }).ok, true);
+    assert.equal(m.get(`hyp-${persistence}`).status, "rejected");
+    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
+    m.evaluateTransition(`hyp-${persistence}`, "testing", { rationale: "re-opened" });
+    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
+  }
+});
+
+test("0.1 update preservation: evidence updates never flip persistence", () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: "hyp-d", statement: "Durable under test.", status: "testing", confidence: 0.6, evidenceFor: [], persistence: "durable" }],
+  });
+  m.applyUpdate({ hypothesisId: "hyp-d", evidenceId: "e9", relation: "supports", confidenceDelta: 0.1, rationale: "more evidence" });
+  m.applyUpdate({ hypothesisId: "hyp-d", evidenceId: "e10", relation: "weakens", confidenceDelta: 0.05, rationale: "counter signal" });
+  assert.equal(m.get("hyp-d").persistence, "durable");
+});
+
+test("0.1 explicit change: setPersistence flips with reason, audits, and is idempotent", () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: "hyp-s", statement: "Promotable idea.", status: "testing", confidence: 0.6 }],
+  });
+  // Change without a reason is refused.
+  assert.equal(m.setPersistence("hyp-s", "durable").ok, false);
+  assert.match(m.setPersistence("hyp-s", "bogus", { reason: "r" }).reason, /invalid persistence/);
+
+  const res = m.setPersistence("hyp-s", "durable", { reason: "recurred across three separate tasks" });
+  assert.equal(res.ok, true);
+  assert.equal(res.changed, true);
+  const h = m.get("hyp-s");
+  assert.equal(h.persistence, "durable");
+  const entry = h.history.at(-1);
+  assert.equal(entry.persistenceFrom, "ephemeral");
+  assert.equal(entry.persistenceTo, "durable");
+  assert.equal(entry.rationale, "recurred across three separate tasks");
+
+  // Idempotent no-op records but does not change.
+  const again = m.setPersistence("hyp-s", "durable", { reason: "same" });
+  assert.equal(again.ok, true);
+  assert.equal(again.changed, false);
+  assert.equal(m.get("hyp-s").persistence, "durable");
+
+  // And back: durable -> ephemeral follows the same audited path.
+  assert.equal(m.setPersistence("hyp-s", "ephemeral", { reason: "turned out task-scoped" }).ok, true);
+  assert.equal(m.get("hyp-s").persistence, "ephemeral");
+});
+
+test("0.1 promotion separation: a CONFIRMED ephemeral hypothesis promotes but stays ephemeral", () => {
+  const promotions = [];
+  const m = createHypothesisManager({
+    sink: { promote: (p) => { promotions.push(p); return { factId: "f-1" }; } },
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: "hyp-ce", statement: "Short-lived but well supported.", status: "testing", confidence: 0.72, evidenceFor: ["a"] }],
+  });
+  assert.equal(manager_get_status(m, "hyp-ce"), "testing");
+  assert.equal(m.evaluateTransition("hyp-ce", "confirmed", { rationale: "policy met" }).ok, true);
+  const h = m.get("hyp-ce");
+  assert.equal(h.status, "confirmed");
+  assert.equal(h.promoted, true);
+  assert.equal(h.promotedFactId, "f-1");
+  assert.equal(h.persistence, "ephemeral"); // promotion ≠ durability
+  assert.equal(promotions[0].persistence, "ephemeral");
+});
+
+function manager_get_status(m, id) { return m.get(id).status; }

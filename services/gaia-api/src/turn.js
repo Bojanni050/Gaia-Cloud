@@ -523,6 +523,7 @@ async function performStreamingTurn({
         confidence: h.confidence,
         evidenceFor: h.evidenceFor,
         evidenceAgainst: h.evidenceAgainst,
+        persistence: h.persistence,
       }));
     } catch (_) { /* seeding must never break the turn */ }
     if (typeof hypothesisRuntime.recallHypotheses === 'function') {
@@ -538,6 +539,7 @@ async function performStreamingTurn({
             confidence: rh.confidence != null ? rh.confidence : undefined,
             evidenceFor: rh.evidenceFor || [],
             evidenceAgainst: rh.evidenceAgainst || [],
+            persistence: rh.persistence,
           });
         }
       } catch (_) { /* same posture */ }

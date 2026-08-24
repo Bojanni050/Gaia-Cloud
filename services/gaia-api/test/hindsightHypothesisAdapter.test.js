@@ -379,3 +379,61 @@ test('boundary: the manager still has zero Hindsight/capability dependencies', (
   }
   assert.ok(!/\bfetch\s*\(/.test(src));
 });
+
+// === Gaia Persistence 0.1: gaia_hypothesis_persistence metadata ============
+
+test("0.1 persistence metadata: durable persists, reconstructs, and defaults to ephemeral when absent", async () => {
+  const fake = makeFakeHindsight();
+  const { manager } = makeRuntime(fake);
+  manager.applyReasoningResult({
+    hypotheses: [
+      { statement: "Recurring user pattern candidate.", confidence: 0.6, evidenceFor: ["n1"], persistence: "durable" },
+      { statement: "Task-scoped guess.", confidence: 0.5 },
+    ],
+    hypothesisUpdates: [],
+  });
+  await drain();
+
+  const durableItem = fake.calls.find((c) => c.method === "POST" && c.body.items[0].metadata.gaia_hypothesis_persistence === "durable").body.items[0];
+  assert.equal(durableItem.metadata.gaia_hypothesis_id, "hyp-1"); // first proposal IS the durable one
+  const ephemeralItem = fake.calls.find((c) => c.body.items[0].metadata.gaia_hypothesis_id === "hyp-2").body.items[0];
+  assert.equal(ephemeralItem.metadata.gaia_hypothesis_persistence, "ephemeral");
+
+  // Reconstruction round-trip.
+  const loaded = await adapter_loadAll(fake);
+  const dur = loaded.find((h) => h.id === "hyp-1");
+  const eph = loaded.find((h) => h.id === "hyp-2");
+  assert.equal(dur.persistence, "durable");
+  assert.equal(eph.persistence, "ephemeral");
+});
+
+async function adapter_loadAll(fake) {
+  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "bojan", fetchImpl: fake.fetchImpl });
+  const adapter = createHindsightHypothesisAdapter({ client });
+  return adapter.loadActiveHypotheses();
+}
+
+test("0.1 retrieval filter: recallHypotheses can narrow to durable/ephemeral adapter-side", async () => {
+  const fake = makeFakeHindsight();
+  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "bojan", fetchImpl: fake.fetchImpl });
+  const adapter = createHindsightHypothesisAdapter({ client });
+  fake.facts.set("hsf_d", {
+    id: "hsf_d", text: "Durable pattern.", type: "world", state: "valid",
+    context: "gaia hypothesis",
+    metadata: { gaia_hypothesis_id: "hyp-D", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.6", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-reasoniq", gaia_hypothesis_persistence: "durable" },
+    tags: ["gaia:hypothesis"], document_id: "gaia-hyp-hyp-D-v1",
+  });
+  fake.facts.set("hsf_e", {
+    id: "hsf_e", text: "Ephemeral task guess.", type: "world", state: "valid",
+    context: "gaia hypothesis",
+    metadata: { gaia_hypothesis_id: "hyp-E", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.5", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-reasoniq" },
+    tags: ["gaia:hypothesis"], document_id: "gaia-hyp-hyp-E-v1",
+  });
+
+  const all = await adapter.recallHypotheses("anything");
+  assert.equal(all.length, 2); // both are relevant by default
+  const durableOnly = await adapter.recallHypotheses("anything", { persistence: "durable" });
+  assert.deepEqual(durableOnly.map((h) => h.id), ["hyp-D"]);
+  const ephemeralOnly = await adapter.recallHypotheses("anything", { persistence: "ephemeral" });
+  assert.deepEqual(ephemeralOnly.map((h) => h.id), ["hyp-E"]);
+});

@@ -84,6 +84,18 @@
         "fields": { "status": "confirmed", "method": "tested", "promoted": true, "promotedFactId": "fact-1", "promotionPending": false },
         "promotionCalls": 1
       }
+    },
+    {
+      "id": "per-01", "behavior": "persistence-default-ephemeral",
+      "setup": { "hypotheses": [] },
+      "action": { "type": "propose", "input": { "statement": "Task-scoped guess.", "confidence": 0.5 } },
+      "expect": { "fields": { "persistence": "ephemeral" } }
+    },
+    {
+      "id": "per-02", "behavior": "persistence-explicit-change-audited",
+      "setup": { "hypotheses": [{ "id": "hyp-m1", "statement": "Recurring pattern candidate.", "status": "testing", "confidence": 0.6 }] },
+      "action": { "type": "setPersistence", "target": "durable", "reason": "recurred across three tasks" },
+      "expect": { "ok": true, "changed": true, "fields": { "persistence": "durable" } }
     }
   ]
 }

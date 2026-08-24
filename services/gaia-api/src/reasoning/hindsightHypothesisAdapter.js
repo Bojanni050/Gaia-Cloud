@@ -70,6 +70,7 @@ function metadataFor(hyp, version) {
     // string→string API: structured values ride as JSON.
     gaia_hypothesis_evidence_for: JSON.stringify(Array.isArray(hyp.evidenceFor) ? hyp.evidenceFor : []),
     gaia_hypothesis_evidence_against: JSON.stringify(Array.isArray(hyp.evidenceAgainst) ? hyp.evidenceAgainst : []),
+    gaia_hypothesis_persistence: String(hyp.persistence || 'ephemeral'),
     gaia_hypothesis_updated_by: UPDATED_BY,
     // Extra Gaia-state that reconstruction needs (same gaia_ namespace).
     gaia_hypothesis_method: String(hyp.method || ''),
@@ -109,6 +110,9 @@ function reconstructFromUnit(unit) {
     sourceRef: unit.id != null ? String(unit.id) : null, // native Hindsight fact id
     updatedAt: unit.mentionedAt || null,
     method: intMetadata(unit, 'gaia_hypothesis_method') || 'asserted',
+    persistence: ['ephemeral', 'durable'].includes(intMetadata(unit, 'gaia_hypothesis_persistence'))
+      ? intMetadata(unit, 'gaia_hypothesis_persistence')
+      : 'ephemeral', // absent/corrupt → the Gaia default, never invented
     rejectionReason: intMetadata(unit, 'gaia_hypothesis_rejection_reason') || null,
     testedAt: null,
     confirmedAt: null,
@@ -248,6 +252,9 @@ function createHindsightHypothesisAdapter(options = {}) {
           gaia_hypothesis_version: 'promoted',
           gaia_hypothesis_status: 'confirmed',
           gaia_hypothesis_confidence: String(p.confidence != null ? p.confidence : ''),
+          // Promotion ≠ durability: an ephemeral hypothesis keeps carrying
+          // ephemeral here even after its confirmed promotion.
+          gaia_hypothesis_persistence: String(p.persistence || 'ephemeral'),
           gaia_hypothesis_updated_by: UPDATED_BY,
           gaia_promotion_rationale: p.rationale != null ? String(p.rationale) : '',
         },
@@ -315,10 +322,14 @@ function createHindsightHypothesisAdapter(options = {}) {
 
   /**
    * Per-turn contextual retrieval: native recall scoped to Gaia hypotheses.
-   * Returns reconstructed hypotheses; Hindsight's ranking scores are
-   * deliberately dropped — they are relevance, never Gaia confidence (§13).
+   * Optional `persistence` filter ('ephemeral'|'durable') is applied
+   * ADAPTER-SIDE — Hindsight recall has no metadata filter (documented API
+   * constraint), and tag-scoping per persistence value would fork the
+   * gaia:hypothesis namespace. Returns reconstructed hypotheses; Hindsight's
+   * ranking scores are deliberately dropped — they are relevance, never Gaia
+   * confidence (§13).
    */
-  async function recallHypotheses(query) {
+  async function recallHypotheses(query, opts = {}) {
     const results = await client.recall(query, {
       types: ['world'],
       tags: [HYPOTHESIS_TAG],
@@ -329,6 +340,7 @@ function createHindsightHypothesisAdapter(options = {}) {
     for (const r of results) {
       const h = reconstructFromUnit(r);
       if (!h || seen.has(h.id)) continue;
+      if (opts.persistence && h.persistence !== opts.persistence) continue;
       seen.add(h.id);
       out.push(h);
     }

@@ -77,6 +77,10 @@ function coerceHypothesis(item) {
     // 0.3: recognized EXISTING hypothesis (validated against the supplied
     // list in resolveProvenance — invented ids become null here).
     existingId: typeof item.existingId === 'string' && item.existingId.trim() ? item.existingId.trim() : null,
+    // Persistence 0.1 — explicit-only passthrough: the model MAY classify a
+    // hypothesis's expected lifetime, but nothing in the prompt asks it to;
+    // anything invalid/absent falls through to the manager's ephemeral default.
+    persistence: ['ephemeral', 'durable'].includes(item.persistence) ? item.persistence : undefined,
     evidenceAssessments: asArray(item.evidenceAssessments).map(coerceEvidenceAssessment),
   };
 }
