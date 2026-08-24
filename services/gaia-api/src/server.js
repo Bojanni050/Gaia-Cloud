@@ -137,6 +137,27 @@ function createApp(env = process.env) {
     }));
 
     if (req.body && req.body.stream) {
+      // PATCH: Resolve attachments for streaming path too
+      const modelSupportsVision = env.GAIA_NATIVE_SUPPORTS_VISION === 'true' || false;
+      const resolvedAttachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
+      
+      // STAGE 2: Log resolved attachments for streaming
+      console.log(JSON.stringify({
+        kind: 'vision.trace',
+        traceId,
+        stage: 'resolution_streaming',
+        modelSupportsVision,
+        attachmentIds,
+        resolvedCount: resolvedAttachments.length,
+        resolvedAttachments: resolvedAttachments.map((a) => ({
+          filename: a.filename,
+          hasImageBytes: !!a.imageBytes,
+          imageBytesLength: a.imageBytes ? a.imageBytes.length : 0,
+          imageMimeType: a.imageMimeType || null,
+          hasContent: !!a.content,
+        })),
+      }));
+
       await performStreamingTurn({
         messages,
         documents,
@@ -148,7 +169,7 @@ function createApp(env = process.env) {
         webSearch,
         historyStore,
         decisionStore,
-        attachmentIds,
+        attachments: resolvedAttachments,
         traceId,
       });
       return;
