@@ -30,6 +30,8 @@ const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient } = require('./hindsightClient');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
+const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternAdapter');
+const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
 const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
@@ -70,15 +72,26 @@ function createApp(env = process.env) {
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
     const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsight });
     const hypothesisManager = createHypothesisManager({ sink: hypothesisAdapter.sink });
+    // ReasonIQ 0.4 — pattern formation over DURABLE hypotheses, persisted
+    // via the same principles (gaia:pattern world-facts). Gated: only runs
+    // when a durable hypothesis actually changed during a turn.
+    const patternAdapter = createHindsightPatternAdapter({ client: hindsight });
+    const patternManager = createPatternManager({ sink: patternAdapter.sink });
     let loadedPromise = null;
     hypothesisRuntime = {
       manager: hypothesisManager,
       recallHypotheses: (query) => hypothesisAdapter.recallHypotheses(query),
+      patternManager,
       ensureLoaded: () => {
         if (!loadedPromise) {
-          loadedPromise = hypothesisAdapter
-            .loadActiveHypotheses()
-            .then((list) => { hypothesisManager.seed(list); })
+          loadedPromise = Promise.all([
+            hypothesisAdapter.loadActiveHypotheses(),
+            patternAdapter.loadActivePatterns().catch(() => []),
+          ])
+            .then(([hypotheses, patterns]) => {
+              hypothesisManager.seed(hypotheses);
+              patternManager.seed(patterns);
+            })
             .catch((err) => {
               console.warn(`[gaia:hypotheses] boot load failed (non-fatal): ${err.message}`);
             });

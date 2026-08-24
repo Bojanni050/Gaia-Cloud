@@ -574,11 +574,40 @@ async function performStreamingTurn({
   // The structured result flows into the manager (lifecycle/policy/promotion
   // via its injected sink → Hindsight adapter). Best-effort: persistence or
   // policy failures are logged and never affect the already-produced reply.
+  let durableSignaturesBefore = null;
   if (hypothesisRuntime && reasoningResult) {
+    try {
+      // Pattern-formation gate input (0.4): which durable hypotheses existed
+      // BEFORE applying this turn's updates — a plain conversational turn
+      // with no durable change must never trigger pattern analysis.
+      durableSignaturesBefore = new Set(
+        hypothesisRuntime.manager.list()
+          .filter((h) => h.persistence === 'durable')
+          .map((h) => `${h.id}:${h.updatedAt}`)
+      );
+    } catch (_) {}
     try {
       hypothesisRuntime.manager.applyReasoningResult(reasoningResult);
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
+    }
+    // Gated pattern formation (ReasonIQ 0.4): only when ≥1 DURABLE
+    // hypothesis was created/changed by THIS turn. PatternManager owns the
+    // rest of the gate (≥2 durable members etc.) and stays conservative.
+    if (hypothesisRuntime.patternManager && durableSignaturesBefore) {
+      try {
+        const changedIds = hypothesisRuntime.manager.list()
+          .filter((h) => h.persistence === 'durable' && !durableSignaturesBefore.has(`${h.id}:${h.updatedAt}`))
+          .map((h) => h.id);
+        if (changedIds.length > 0) {
+          hypothesisRuntime.patternManager.maybeFormPatterns({
+            hypotheses: hypothesisRuntime.manager.list(),
+            changedHypothesisIds: changedIds,
+          });
+        }
+      } catch (err) {
+        console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
+      }
     }
   }
 

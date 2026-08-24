@@ -1323,3 +1323,56 @@ test("0.1 turn: recall/seed failures in the runtime are non-fatal — the reply 
   });
   assert.match(res.written[0], /still fine/);
 });
+
+// --- ReasonIQ 0.4: gated pattern formation ------------------------------------
+
+function patternRuntimeFor() {
+  const { createHypothesisManager } = require("../src/reasoning/hypothesisManager");
+  const { createPatternManager } = require("../src/reasoning/patternManager");
+  return {
+    manager: createHypothesisManager({}),
+    patternManager: createPatternManager({}),
+  };
+}
+
+test("0.4 turn: a durable hypothesis change opens the gate; a plain conversational turn never does", async () => {
+  const runtime = patternRuntimeFor();
+  const reasonIQCalls = [];
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta("ok", false); return "A reply."; } };
+
+  // Turn A: durable analysis -> forms a tracked durable hypothesis.
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Analyseer waarom deze flow vastloopt bij annulering." }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
+    reasonIQ: async (input) => {
+      reasonIQCalls.push(input);
+      return {
+        interpretation: "x",
+        hypotheses: [{ statement: "Concurrent cancellation races stream teardown.", confidence: 0.7, evidenceFor: ["e1"], persistence: "durable" }],
+        hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [],
+        conclusions: [], sufficientForConclusion: false, confidence: 0.6,
+      };
+    },
+    hypothesisRuntime: { manager: runtime.manager, patternManager: runtime.patternManager },
+  });
+  assert.equal(runtime.manager.list().length, 1);
+  assert.equal(runtime.patternManager.list().length, 0); // single durable member: no pattern yet
+
+  // Turn B: plain conversational turn — the pattern gate must stay closed
+  // even though a durable hypothesis exists.
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Hoi Gaia" }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    reasonIQ: async () => ({ interpretation: "hi", hypotheses: [], hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [], conclusions: [], sufficientForConclusion: true, confidence: 0.9 }),
+    hypothesisRuntime: { manager: runtime.manager, patternManager: runtime.patternManager },
+  });
+  assert.equal(runtime.patternManager.list().length, 0); // no pattern from "Hoi Gaia"
+});
