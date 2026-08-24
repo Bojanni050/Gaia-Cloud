@@ -18,21 +18,21 @@
  * capability-agnostic so a future capability (a tool, a second model)
  * slots in without changing this file's shape.
  *
- * Routing:
+ * Routing (v2.2 — capability gate):
  *
- *   1. IntentIQ flagged the turn as needing clarification       -> clarify
- *   2. sourceOfTruth "tool" (act.perform) + a tool capability    -> tool
- *   3. sourceOfTruth "external_knowledge" + a web capability     -> tool: web
- *   4. simple/conversational/personal-memory turn + native       -> native
- *   5. everything else needing a generated response              -> capability: hermes
- *   6. no capability at all can answer                           -> clarify
+ *   0. Meta-intent (meta.question/correction/capability_question)  -> native
+ *      (Gaia answers about her own behavior; no capability needed)
+ *   1. IntentIQ flagged the turn as needing clarification          -> clarify
+ *   2. sourceOfTruth "tool" (act.perform) + a tool capability     -> tool
+ *   3. sourceOfTruth "external_knowledge" + a web capability      -> tool: web
+ *   4. simple/conversational/personal-memory turn + native        -> native
+ *   5. everything else needing a generated response               -> capability: hermes
+ *   6. no capability at all can answer                            -> clarify
  *
- * Branch 4 is deliberately broad — see isNativeTurn's own comment — because
- * "complex = Hermes, everything else = Hermes too" is exactly the posture
- * this Decision Engine exists to move away from (per the module's own
- * design brief): the native generator is used whenever Gaia can genuinely
- * handle the turn herself, Hermes is reserved for turns that actually
- * warrant a specialist/deep-reasoning capability.
+ * v2.2 spec §8-9: capability_candidate is what MIGHT be useful;
+ * capability_execute is what is ACTUALLY authorized. The Response Engine
+ * may override a capability_candidate when conversational context makes
+ * direct Gaia response more appropriate.
  *
  * NOTE on `refuse`: a real, valid action — the Orchestrator and
  * Response Engine both handle it — but nothing upstream (IntentIQ,
@@ -57,9 +57,24 @@ function findCapability(availableCapabilities, id) {
 const NATIVE_INTENTS = new Set([
   'converse',
   'meta.relational',
+  'meta.question',
+  'meta.correction',
+  'meta.capability_question',
   'greet',
   'farewell',
   'acknowledge',
+]);
+
+/**
+ * Meta-intent types that ALWAYS get native response — no capability should
+ * be invoked for these, regardless of what keyword scoring might suggest.
+ * v2.2 spec §2: meta-conversational intents have priority over general
+ * capability intents.
+ */
+const META_INTENT_TYPES = new Set([
+  'meta.question',
+  'meta.correction',
+  'meta.capability_question',
 ]);
 
 /**
@@ -151,9 +166,22 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
 
   let decision;
 
-  if (intent && intent.needsClarification) {
+  // v2.2 spec §2: meta-conversational intents have priority over general
+  // capability intents. When the user is asking about Gaia's own behavior,
+  // previous response, or capability choice, Gaia answers directly — no
+  // capability should be invoked.
+  if (intent && META_INTENT_TYPES.has(intent.intent)) {
+    decision = {
+      action: 'native',
+      capability_candidate: null,
+      capability_execute: false,
+      reason: `meta-intent (${intent.intent}) — Gaia answers about her own behavior`,
+    };
+  } else if (intent && intent.needsClarification) {
     decision = {
       action: 'clarify',
+      capability_candidate: null,
+      capability_execute: false,
       reason: intent.status === 'ambiguous'
         ? 'multiple interpretations of this turn are plausible and were not resolved'
         : 'this turn needs clarification before Gaia can act on it',
@@ -162,6 +190,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
     decision = {
       action: 'tool',
       capability: 'tool',
+      capability_candidate: 'tool',
+      capability_execute: true,
       task: intent.intent || 'act',
       input: { userInput, entities: intent.entities || [] },
       reason: `intent "${intent.intent}" requires acting on an external system`,
@@ -170,6 +200,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
     decision = {
       action: 'tool',
       capability: 'web',
+      capability_candidate: 'web',
+      capability_execute: true,
       task: intent.intent || 'lookup',
       input: { userInput },
       reason: 'this turn needs current external information Gaia does not already have',
@@ -177,6 +209,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   } else if (isNativeTurn(intent, reasoning) && findCapability(capabilities, 'native')) {
     decision = {
       action: 'native',
+      capability_candidate: null,
+      capability_execute: false,
       reason: intent && intent.intent
         ? `conversational turn (${intent.intent}) handled by Gaia's native voice`
         : "simple conversational turn handled by Gaia's native voice",
@@ -185,6 +219,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
     decision = {
       action: 'capability',
       capability: 'hermes',
+      capability_candidate: 'hermes',
+      capability_execute: true,
       task: (intent && intent.intent) || 'respond',
       input: { userInput, context: context || null, reasoning: reasoning || null },
       reason: reasoning && reasoning.reasoningDepth === 'deep'
@@ -192,7 +228,12 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
         : 'this turn requires a generated conversational response',
     };
   } else {
-    decision = { action: 'clarify', reason: 'no capability is available to answer this turn' };
+    decision = {
+      action: 'clarify',
+      capability_candidate: null,
+      capability_execute: false,
+      reason: 'no capability is available to answer this turn',
+    };
   }
 
   decision.context = usedContextSources(context);
@@ -209,4 +250,4 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   return decision;
 }
 
-module.exports = { decide, isNativeTurn, mapReasoningLevel, usedContextSources, NATIVE_INTENTS };
+module.exports = { decide, isNativeTurn, mapReasoningLevel, usedContextSources, NATIVE_INTENTS, META_INTENT_TYPES };

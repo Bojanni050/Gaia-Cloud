@@ -87,6 +87,24 @@ const INTENTS = [
     definition: "The user is addressing Gaia herself — who she is, how she's behaving, or the relationship.",
     notThis: 'A factual, technical question about Gaia\'s architecture in passing (inform.explain, technical register).',
   },
+  {
+    id: 'meta.question',
+    label: 'Meta — Question',
+    definition: 'The user is asking about Gaia\'s own behavior, previous response, reasoning, or interpretation — not a new standalone information request.',
+    notThis: 'A new information request that merely mentions Gaia (inform.explain). The target is Gaia\'s own action, not external knowledge.',
+  },
+  {
+    id: 'meta.correction',
+    label: 'Meta — Correction',
+    definition: 'The user indicates Gaia misunderstood something, interpreted incorrectly, or gave a wrong response — a correction to the conversational state.',
+    notThis: 'A new information request that happens to follow a wrong answer (inform.explain). The signal is "you got this wrong", not "tell me about X".',
+  },
+  {
+    id: 'meta.capability_question',
+    label: 'Meta — Capability Question',
+    definition: 'The user asks why Gaia used a specific capability, tool, or routing choice — not requesting the capability again.',
+    notThis: 'A request to use that capability again (act.perform, inform.explain). The target is Gaia\'s decision, not the capability\'s output.',
+  },
 ];
 
 const INTENT_IDS = INTENTS.map((i) => i.id);

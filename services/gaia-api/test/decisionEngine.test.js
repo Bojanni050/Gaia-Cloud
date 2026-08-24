@@ -156,7 +156,7 @@ test('decide() never produces a "useHermes"-shaped flag — only the schema\'s f
   assert.ok(!('useHermes' in decision));
   assert.deepEqual(
     Object.keys(decision).sort(),
-    ['action', 'capability', 'input', 'reason', 'task', 'context', 'reasoning', 'capabilities'].sort()
+    ['action', 'capability', 'capability_candidate', 'capability_execute', 'input', 'reason', 'task', 'context', 'reasoning', 'capabilities'].sort()
   );
 });
 
@@ -289,4 +289,86 @@ test('validateDecision accepts a full plan and rejects malformed context/reasoni
   assert.match(validateDecision({ action: 'native', context: 'hindsight' }), /context must be an array/);
   assert.match(validateDecision({ action: 'native', reasoning: 'medium' }), /reasoning must be one of/);
   assert.match(validateDecision({ action: 'native', capabilities: 'hermes' }), /capabilities must be an array/);
+});
+
+// --- v2.2: meta-intent priority (spec §2) --------------------------------
+
+test('decide() routes meta.question to native — no capability invoked', () => {
+  const decision = decide({
+    userInput: 'waarom koos je voor websearch?',
+    intent: { intent: 'meta.question', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'web' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.equal(decision.capability_candidate, null);
+  assert.equal(decision.capability_execute, false);
+  assert.match(decision.reason, /meta-intent/);
+});
+
+test('decide() routes meta.correction to native — no capability invoked', () => {
+  const decision = decide({
+    userInput: 'nee, ik bedoel iets anders',
+    intent: { intent: 'meta.correction', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'web' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.equal(decision.capability_candidate, null);
+  assert.equal(decision.capability_execute, false);
+});
+
+test('decide() routes meta.capability_question to native — no capability invoked', () => {
+  const decision = decide({
+    userInput: 'waarom gebruikte je hindsight?',
+    intent: { intent: 'meta.capability_question', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    availableCapabilities: [{ id: 'hermes' }, { id: 'web' }],
+  });
+  assert.equal(decision.action, 'native');
+  assert.equal(decision.capability_candidate, null);
+  assert.equal(decision.capability_execute, false);
+});
+
+// --- v2.2: capability gate (spec §8-9) -----------------------------------
+
+test('decide() sets capability_execute=true for tool/web/capability actions', () => {
+  const toolDecision = decide({
+    userInput: 'send this to Bo',
+    intent: { intent: 'act.perform', status: 'accepted', needsClarification: false, sourceOfTruth: 'tool' },
+    availableCapabilities: [{ id: 'tool' }],
+  });
+  assert.equal(toolDecision.capability_execute, true);
+  assert.equal(toolDecision.capability_candidate, 'tool');
+
+  const webDecision = decide({
+    userInput: 'what is the weather?',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    availableCapabilities: [{ id: 'web' }],
+  });
+  assert.equal(webDecision.capability_execute, true);
+  assert.equal(webDecision.capability_candidate, 'web');
+
+  const hermesDecision = decide({
+    userInput: 'explain quantum computing in depth',
+    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
+    availableCapabilities: [{ id: 'hermes' }],
+  });
+  assert.equal(hermesDecision.capability_execute, true);
+  assert.equal(hermesDecision.capability_candidate, 'hermes');
+});
+
+test('decide() sets capability_execute=false for native/clarify actions', () => {
+  const nativeDecision = decide({
+    userInput: 'hello there',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    availableCapabilities: [{ id: 'native' }],
+  });
+  assert.equal(nativeDecision.capability_execute, false);
+  assert.equal(nativeDecision.capability_candidate, null);
+
+  const clarifyDecision = decide({
+    userInput: 'draft it and send it',
+    intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true },
+    availableCapabilities: [{ id: 'hermes' }],
+  });
+  assert.equal(clarifyDecision.capability_execute, false);
+  assert.equal(clarifyDecision.capability_candidate, null);
 });

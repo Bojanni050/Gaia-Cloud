@@ -558,3 +558,313 @@ test('scenario: capability separation — IntentIQ never calls Hermes, Web/Brave
     assert.ok(!/hermesClient|braveSearch|gaiaGenerator|mimoTts/i.test(modulePath), `interpret() loaded a capability module: ${modulePath}`);
   }
 });
+
+// === IntentIQ 2.2: needsSemanticCheck — a confident heuristic match is no ===
+// === longer automatically safe to trust without verification. ==============
+
+test('2.2 #1 strong safe heuristic: "Hoi Gaia" is accepted, needsSemanticCheck is false, and interpret() never calls the semantic model', async () => {
+  const d = classify(user('Hoi Gaia'), silent);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.needsSemanticCheck, false);
+  assert.equal(d.interpretationStatus, 'resolved');
+
+  const model = { chat: async () => { throw new Error('semantic model must not be called for a strong, unambiguous heuristic match'); } };
+  const resolved = await interpret(user('Hoi Gaia'), { silent: true, model });
+  assert.equal(resolved.intent, 'converse');
+  assert.equal(resolved.status, 'accepted');
+});
+
+test('2.2 #2 strong but overlapping: two intents both carry real signal on one turn — accepted, but needsSemanticCheck escalates to the semantic tier', async () => {
+  // inform.explain scores twice ("waarom", "uitleggen"), create.transform
+  // scores once ("verbeter...") — inform.explain dominates by share
+  // (2/3 >= 0.6) so decideStatus() still calls this 'accepted', but two
+  // distinct intents genuinely fired, which is exactly the "strong but
+  // overlapping signals" case the 2.2 brief asks to no longer wave through
+  // unverified.
+  const input = 'Waarom werkt dit niet? Kun je uitleggen wat er mis is? Verbeter het ook.';
+  const heuristic = classify(user(input), silent);
+  assert.equal(heuristic.status, 'accepted');
+  assert.ok(heuristic.candidates.length > 1);
+  assert.equal(heuristic.needsSemanticCheck, true);
+
+  let called = false;
+  const model = {
+    chat: async () => {
+      called = true;
+      return JSON.stringify({ intent: 'inform.explain', confidence: 0.8, sourceOfTruth: 'external_knowledge' });
+    },
+  };
+  await interpret(user(input), { silent: true, model });
+  assert.equal(called, true);
+});
+
+test('2.2 #2b strong but overlapping (spec phrasing): "Leg uit welke keuze ik volgens jou moet maken." triggers a semantic call', async () => {
+  let called = false;
+  const model = {
+    chat: async () => {
+      called = true;
+      return JSON.stringify({
+        intent: null,
+        confidence: 0,
+        candidates: [{ intent: 'inform.explain', confidence: 0.45 }, { intent: 'decide.support', confidence: 0.4 }],
+        ambiguous: true,
+      });
+    },
+  };
+  const d = await interpret(user('Kun je uitleggen welke keuze ik moet maken?'), { silent: true, model });
+  assert.equal(called, true);
+  assert.equal(d.ambiguous, true);
+});
+
+test('2.2 #3 wrong-looking heuristic: a bare keyword match on the wrong intent is flagged and escalated, not trusted', async () => {
+  // "draft" fires create.generate's bare boundary('draft') cue even though
+  // this sentence has nothing to do with creating anything — a concrete
+  // false-positive-prone single-weak-match case.
+  const input = "I'm not a fan of this new NBA draft process.";
+  const heuristic = classify(user(input), silent);
+  assert.equal(heuristic.status, 'accepted');
+  assert.equal(heuristic.intent, 'create.generate'); // confidently, and wrongly
+  assert.equal(heuristic.candidates.length, 1);
+  assert.equal(heuristic.needsSemanticCheck, true); // the fix: flagged despite being the sole candidate
+
+  let called = false;
+  const model = {
+    chat: async () => {
+      called = true;
+      return JSON.stringify({ intent: 'converse', confidence: 0.7, sourceOfTruth: 'conversation' });
+    },
+  };
+  const resolved = await interpret(user(input), { silent: true, model });
+  assert.equal(called, true);
+  // The heuristic's own (capped) confidence for a single-candidate match is
+  // high, so a lower-confidence semantic disagreement doesn't silently win
+  // — but the conflict is now visible and honest, not swallowed.
+  assert.equal(resolved.ambiguous, true);
+  assert.equal(resolved.status, 'ambiguous');
+});
+
+test('2.2 #4 ambiguous: conflicting signals stay ambiguous, with interpretationStatus reflecting it', () => {
+  const d = classify(user('I need you to handle this.'), silent);
+  assert.notEqual(d.status, 'accepted');
+  if (d.status === 'ambiguous') {
+    assert.equal(d.ambiguous, true);
+    assert.equal(d.interpretationStatus, 'ambiguous');
+  }
+});
+
+test('2.2 #5 low semantic confidence: confidenceLevel is low and interpretationStatus is uncertain, even though status is accepted', async () => {
+  const model = { chat: async () => JSON.stringify({ intent: 'converse', confidence: 0.4, sourceOfTruth: 'conversation' }) };
+  const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.confidenceLevel, 'low');
+  assert.equal(d.interpretationStatus, 'uncertain');
+});
+
+// === IntentIQ 2.2: rawScore vs. calibrated confidence =======================
+
+test('2.2 rawScore is reported alongside confidence and is not the same number', () => {
+  const d = classify(user('Waarom crasht mijn website?'), silent);
+  assert.equal(typeof d.rawScore, 'number');
+  assert.equal(typeof d.confidence, 'number');
+  assert.ok(d.rawScore >= 1);
+});
+
+test('2.2 confidenceLevel buckets: >=0.85 high, 0.60-0.84 medium, <0.60 low', () => {
+  const { confidenceLevelFor } = require('../src/logos/intentIQ').__internals;
+  assert.equal(confidenceLevelFor(0.95), 'high');
+  assert.equal(confidenceLevelFor(0.85), 'high');
+  assert.equal(confidenceLevelFor(0.7), 'medium');
+  assert.equal(confidenceLevelFor(0.6), 'medium');
+  assert.equal(confidenceLevelFor(0.59), 'low');
+  assert.equal(confidenceLevelFor(0), 'low');
+});
+
+// === IntentIQ 2.2: referent resolution (confidence + honest nulls) =========
+
+test('2.2 reference resolution: "Analyseer deze architectuur." then "En deze dan?" — the semantic tier resolves the referent with its own confidence', async () => {
+  const history = [...user('Analyseer deze architectuur.'), msg('assistant', 'Ik zie een paar dingen die opvallen.')];
+  const model = {
+    chat: async () => JSON.stringify({
+      intent: 'inform.explain',
+      confidence: 0.8,
+      sourceOfTruth: 'conversation',
+      referents: [{ expression: 'deze', resolvedTo: 'de architectuur die net besproken werd', confidence: 0.91 }],
+    }),
+  };
+  const d = await interpret(user('En deze dan?', history), { silent: true, model });
+  assert.equal(d.referents.length, 1);
+  assert.equal(d.referents[0].expression, 'deze');
+  assert.equal(d.referents[0].resolvedTo, 'de architectuur die net besproken werd');
+  assert.equal(d.referents[0].confidence, 0.91);
+  assert.equal(d.referents[0].source, 'conversation');
+});
+
+test('2.2 unresolved reference: "Kun je deze doen?" with no prior context — resolvedTo null, interpretationStatus insufficient_context', async () => {
+  const d = await interpret(user('Kun je deze doen?'), silent); // no history, no model configured
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.interpretationStatus, 'insufficient_context');
+});
+
+test('2.2 unresolved reference: the semantic tier itself may honestly report resolvedTo: null with low confidence, rather than guessing', async () => {
+  const model = {
+    chat: async () => JSON.stringify({
+      intent: 'inform.explain',
+      confidence: 0.5,
+      referents: [{ expression: 'deze', resolvedTo: null, confidence: 0.31 }],
+    }),
+  };
+  const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
+  assert.equal(d.referents[0].resolvedTo, null);
+  assert.equal(d.referents[0].confidence, 0.31);
+  assert.equal(d.referents[0].source, null);
+});
+
+// === IntentIQ 2.2: the runtime feedback seam (intentFeedback.js) ===========
+
+test('2.2 recordOutcome: a user correction produces a structured feedback record, without mutating the original decision', async () => {
+  const { recordOutcome } = require('../src/logos/intentFeedback');
+  const original = classify(user('Kun je dit uitleggen?'), silent);
+  const originalSnapshot = JSON.stringify(original);
+
+  let written = null;
+  const record = recordOutcome(
+    {
+      originalInterpretation: original,
+      correctedIntent: 'decide.support',
+      source: 'user_correction',
+      note: 'Nee, ik bedoelde dat ik advies wilde, niet dat je het moest uitleggen.',
+    },
+    (r) => { written = r; }
+  );
+
+  assert.equal(record.kind, 'intentiq.feedback');
+  assert.equal(record.originalIntent, original.intent);
+  assert.equal(record.correctedIntent, 'decide.support');
+  assert.equal(record.source, 'user_correction');
+  assert.equal(written, record);
+  // The original decision object itself must be untouched.
+  assert.equal(JSON.stringify(original), originalSnapshot);
+});
+
+test('2.2 recordOutcome: never throws on missing/partial input', () => {
+  const { recordOutcome } = require('../src/logos/intentFeedback');
+  const record = recordOutcome({}, () => {});
+  assert.equal(record.kind, 'intentiq.feedback');
+  assert.equal(record.originalIntent, null);
+  assert.equal(record.correctedIntent, null);
+  assert.equal(record.source, 'unknown');
+});
+
+test('2.2 boundary: intentFeedback.js never imports Hermes, Hindsight, the Decision Engine, or any capability', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/logos/intentFeedback.js'), 'utf-8');
+  assert.ok(!/require\(.*hermesClient/.test(source));
+  assert.ok(!/require\(.*hindsightClient/.test(source));
+  assert.ok(!/require\(.*decisionEngine/.test(source));
+});
+
+// === v2.2: meta-intent detection from conversation context =================
+
+test('classify detects meta.question when user asks about Gaia\'s previous action', () => {
+  const history = [
+    msg('user', 'Wat is het weer in Groningen?'),
+    msg('assistant', 'Ik heb gezocht en het is 15 graden bewolkt.'),
+  ];
+  // "Waarom koos je voor websearch?" — asks about Gaia's capability choice
+  // -> meta.capability_question (the user specifically mentions websearch)
+  const d = classify([...history, msg('user', 'Waarom koos je voor websearch?')], silent);
+  assert.equal(d.intent, 'meta.capability_question');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.sourceOfTruth, 'conversation');
+  assert.equal(d.meta.reason, 'context_meta_intent_detected');
+});
+
+test('classify detects meta.question when user asks about Gaia\'s reasoning (no capability mentioned)', () => {
+  const history = [
+    msg('user', 'Wat is het weer in Groningen?'),
+    msg('assistant', 'Ik heb gezocht en het is 15 graden bewolkt.'),
+  ];
+  // "Waarom deed je dat?" — asks about Gaia's action, no capability mentioned
+  // -> meta.question
+  const d = classify([...history, msg('user', 'Waarom deed je dat?')], silent);
+  assert.equal(d.intent, 'meta.question');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.sourceOfTruth, 'conversation');
+});
+
+test('classify detects meta.correction when user corrects Gaia\'s interpretation', () => {
+  const history = [
+    msg('user', 'Leg dit uit'),
+    msg('assistant', 'Hier is een uitleg over dit onderwerp...'),
+  ];
+  const d = classify([...history, msg('user', 'Nee, ik bedoel iets anders')], silent);
+  assert.equal(d.intent, 'meta.correction');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.sourceOfTruth, 'conversation');
+});
+
+test('classify detects meta.capability_question when user asks about capability choice', () => {
+  const history = [
+    msg('user', 'Wat is het weer?'),
+    msg('assistant', 'Ik heb gezocht en het is 15 graden.'),
+  ];
+  const d = classify([...history, msg('user', 'Waarom gebruikte je websearch?')], silent);
+  assert.equal(d.intent, 'meta.capability_question');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.sourceOfTruth, 'conversation');
+});
+
+test('classify does NOT detect meta-intent when there is no assistant message in history', () => {
+  const history = [
+    msg('user', 'Wat is het weer?'),
+  ];
+  const d = classify([...history, msg('user', 'Waarom koos je voor websearch?')], silent);
+  // Without a prior assistant message, this is just a standalone question
+  // and should be classified by keyword scoring, not meta-intent detection
+  assert.notEqual(d.intent, 'meta.question');
+});
+
+test('classify does NOT detect meta-intent when user is making a new information request', () => {
+  const history = [
+    msg('user', 'Hallo'),
+    msg('assistant', 'Hoi! Hoe kan ik je helpen?'),
+  ];
+  const d = classify([...history, msg('user', 'Wat is het weer in Amsterdam?')], silent);
+  // This is a new information request, not a question about Gaia's behavior
+  assert.notEqual(d.intent, 'meta.question');
+  assert.notEqual(d.intent, 'meta.correction');
+  assert.notEqual(d.intent, 'meta.capability_question');
+});
+
+test('classify detects meta.correction with English signals', () => {
+  const history = [
+    msg('user', 'Tell me about AI'),
+    msg('assistant', 'AI is artificial intelligence...'),
+  ];
+  const d = classify([...history, msg('user', 'No, I mean something else')], silent);
+  assert.equal(d.intent, 'meta.correction');
+  assert.equal(d.status, 'accepted');
+});
+
+test('classify detects meta.question with English signals', () => {
+  const history = [
+    msg('user', 'What is the weather?'),
+    msg('assistant', 'I searched and found it is 15 degrees.'),
+  ];
+  // "Why did you choose websearch?" — asks about capability choice
+  // -> meta.capability_question
+  const d = classify([...history, msg('user', 'Why did you choose websearch?')], silent);
+  assert.equal(d.intent, 'meta.capability_question');
+  assert.equal(d.status, 'accepted');
+});
+
+test('classify detects meta.question with English signals (no capability)', () => {
+  const history = [
+    msg('user', 'What is the weather?'),
+    msg('assistant', 'I searched and found it is 15 degrees.'),
+  ];
+  // "Why did you do that?" — asks about Gaia's action, no capability mentioned
+  // -> meta.question
+  const d = classify([...history, msg('user', 'Why did you do that?')], silent);
+  assert.equal(d.intent, 'meta.question');
+  assert.equal(d.status, 'accepted');
+});

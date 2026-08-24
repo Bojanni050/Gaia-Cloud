@@ -33,6 +33,13 @@
  *     actually needs, if any — mirrors `capability` for `capability`/`tool`
  *     actions, empty for `native`/`clarify`/`refuse`.
  *
+ * v2.2 spec §8-9: capability_candidate vs capability_execute:
+ *   - `capability_candidate`: what MIGHT be useful (a routing hint, never
+ *     forced into execution)
+ *   - `capability_execute`: whether the capability is ACTUALLY authorized
+ *     to run (the Response Engine may override this when conversational
+ *     context makes direct Gaia response more appropriate)
+ *
  * NOTE on multi-step plans: a future `action: 'sequence'` with a `steps`
  * array (e.g. [{action:'context', source:'hindsight'}, {action:'capability',
  * capability:'hermes'}, {action:'native'}]) is a real extension point this
@@ -58,6 +65,8 @@ const REASONING_LEVELS = Object.freeze(['none', 'light', 'deep']);
  * @property {string[]} [context] - context sources this decision draws on, e.g. ['hindsight']
  * @property {'none'|'light'|'deep'} [reasoning] - how much reasoning this turn needed
  * @property {string[]} [capabilities] - specialist capability id(s) this decision needs
+ * @property {string|null} [capability_candidate] - what capability MIGHT be useful (routing hint)
+ * @property {boolean} [capability_execute] - whether the capability is ACTUALLY authorized to run
  */
 
 /**
@@ -90,6 +99,9 @@ function validateDecision(decision) {
     if (!Array.isArray(decision.capabilities) || decision.capabilities.some((c) => typeof c !== 'string')) {
       return 'decision.capabilities must be an array of strings when present';
     }
+  }
+  if (decision.capability_execute !== undefined && typeof decision.capability_execute !== 'boolean') {
+    return 'decision.capability_execute must be a boolean when present';
   }
   return null;
 }

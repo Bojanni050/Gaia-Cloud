@@ -42,6 +42,35 @@
  * call the web tool"), and neither classify() nor interpret() ever
  * imports or references Hermes, the web tool, the Decision Engine, or the
  * Orchestrator (asserted directly in tests, not just described here).
+ *
+ * IntentIQ 2.2 adds calibration on top of the same two tiers, without a
+ * third tier, a new agent, or an extra arbitration model call:
+ *
+ *   - A heuristic match is no longer trusted just for being the sole
+ *     candidate. Each signal pattern is tagged strong (a specific phrase or
+ *     anchored regex) or weak (a bare single-word cue, via boundary());
+ *     a single weak-only match, an overlapping-but-resolved multi-candidate
+ *     match, or a context-inherited match all set `needsSemanticCheck:
+ *     true` on an otherwise-`accepted` heuristic decision, and interpret()
+ *     escalates to the semantic tier on that flag exactly as it already
+ *     does for `status !== 'accepted'`. A confident-looking but wrong
+ *     regex match no longer silently skips verification.
+ *   - `rawScore` (the underlying raw signal — a heuristic hit count, or a
+ *     model's own self-reported number) is now reported alongside
+ *     `confidence` (the calibrated belief after arbitration/capping) —
+ *     they are not the same number.
+ *   - `confidenceLevel` ('high'|'medium'|'low', via a fixed threshold
+ *     policy) and `interpretationStatus`
+ *     ('resolved'|'uncertain'|'ambiguous'|'insufficient_context') make the
+ *     decision's own honesty about itself explicit, without inventing a
+ *     new `status` value — `status` keeps its original three values for
+ *     backward compatibility; `interpretationStatus` is the richer,
+ *     additive read of the same decision.
+ *   - `recordOutcome()` (intentFeedback.js) is a structured, durable
+ *     feedback seam for later analysis (threshold tuning, example
+ *     collection) — never online training, never a mutation of a past
+ *     IntentDecision, never a persistent per-user profile (that boundary
+ *     stays Hindsight's).
  */
 
 const crypto = require('crypto');
@@ -77,8 +106,15 @@ function isEmptyOrFiller(text) {
   return !n || FILLER.has(n);
 }
 
+// A bare single-word cue is a generic, higher false-positive-risk match —
+// tagged `.weak` at construction time so scoring can tell "one bare keyword
+// fired" apart from "a specific, multi-word phrase or anchored pattern
+// fired" without a second hand-maintained list. phrase() and any regex
+// written out by hand (multi-word or anchored) are strong by construction.
 function boundary(word) {
-  return new RegExp(`\\b${word}\\b`, 'i');
+  const re = new RegExp(`\\b${word}\\b`, 'i');
+  re.weak = true;
+  return re;
 }
 
 function phrase(words) {
@@ -168,6 +204,12 @@ const SIGNALS = {
     // opinion on the user's own next move. Added after a concrete gap: this
     // exact Dutch phrasing scored zero signal anywhere.
     phrase('wat (denk je|vind je) dat ik'), phrase('what do you think i should'),
+    // "which choice" — distinct from "which (one|option)" above; added for
+    // IntentIQ 2.2's needs_semantic_check test coverage, where it
+    // deliberately creates a genuine two-way overlap with inform.explain's
+    // "leg .* uit" on the same turn ("Leg uit welke keuze ik volgens jou
+    // moet maken.") rather than a signal-free miss.
+    phrase('welke keuze'),
   ],
   'memory.inspect': [
     phrase('what (have you|do you) (noticed|know|remember)'),
@@ -198,6 +240,61 @@ const SIGNALS = {
     phrase("i'?m sorry"), phrase('do you get tired'),
     phrase('wie ben je'), phrase('ben je (een mens|echt)'), phrase('het spijt me'),
   ],
+  'meta.question': [
+    // Questions about Gaia's own behavior, previous response, or reasoning.
+    // These are NOT new information requests — the target is Gaia's own action.
+    phrase('waarom (koos je|deed je|zei je|vraag je|antwoord je|gebruikte je)'),
+    phrase('why (did you|chose you|said you|asked you|answered you|used you)'),
+    phrase('hoe (kwam je|bedacht je|interpreteerde je)'),
+    phrase('how (did you come|did you interpret|did you decide)'),
+    phrase('wat (deed je|zei je|bedoelde je)'),
+    phrase('what (did you do|did you say|did you mean)'),
+    phrase('welke (tool|capability|keuze) gebruikte je'),
+    phrase('which (tool|capability|choice) did you use'),
+    phrase('waarom (heb je|was dat)'),
+    phrase('why (did you|was that)'),
+    phrase('leg (je|dit) uit'), phrase('explain (this|that|yourself)'),
+    phrase('wat was je reden'), phrase('what was your reason'),
+    phrase('hoe(zo| come)'), phrase('how come'),
+  ],
+  'meta.correction': [
+    // Signals that Gaia misunderstood or gave a wrong response.
+    // These correct the conversational state, not new information requests.
+    phrase('nee,? ik bedoel'), phrase('no,? i mean'),
+    phrase('dat is niet wat ik (vroeg|bedoelde)'),
+    phrase("that'?s not what i (asked|meant)"),
+    phrase('je zit (verkeerd|ernaast)'),
+    phrase('you (got it wrong|are wrong|misunderstood)'),
+    phrase('kijk naar mijn vorige bericht'),
+    phrase('look at my (previous|last) (message|question)'),
+    phrase('nee,? kijk'), phrase('no,? look'),
+    phrase('dat was niet (bedoeld|wat ik wilde)'),
+    phrase("that wasn'?t (what i meant|the point)"),
+    phrase('je begrijpt me (verkeerd|niet)'),
+    phrase('you (misunderstood|don\'?t understand) me'),
+    phrase('nee,? dat klopt niet'),
+    phrase('no,? that\'?s not right'),
+    phrase('dat is fout'), phrase('that is wrong'),
+    phrase('je antwoord is (verkeerd|niet goed)'),
+    phrase('your answer is (wrong|not right)'),
+  ],
+  'meta.capability_question': [
+    // Questions about why Gaia used a specific capability — not requesting it again.
+    phrase('waarom koos je (voor|om)'),
+    phrase('why did you (choose|use|pick)'),
+    phrase('waarom gebruikte je'),
+    phrase('why did you use'),
+    phrase('waarom riep je'),
+    phrase('why did you call'),
+    phrase('welke tool gebruikte je'),
+    phrase('which tool did you use'),
+    phrase('wat deed je (met|daarmee)'),
+    phrase('what did you (do with|use that for)'),
+    phrase('hoe(zo| come) (koos je|gebruikte je|deed je)'),
+    phrase('how come (did you|chose you|use)'),
+    phrase('leg uit waarom je'),
+    phrase('explain why you'),
+  ],
 };
 
 for (const id of Object.keys(SIGNALS)) {
@@ -222,11 +319,33 @@ function scoreText(text, patterns) {
   return patterns.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
 }
 
-/** @returns {Array<{intent: string, raw: number}>} sorted desc, zero scores excluded */
+/**
+ * Like scoreText, but also tracks whether at least one *strong* (non-weak)
+ * pattern matched — a single bare-keyword hit and a specific-phrase hit
+ * both score `raw: 1`, but only the second is safe to trust without
+ * verification (see computeNeedsSemanticCheck, below).
+ * @returns {{ raw: number, hasStrongMatch: boolean }}
+ */
+function scoreIntentSignals(text, patterns) {
+  let raw = 0;
+  let hasStrongMatch = false;
+  for (const p of patterns) {
+    if (p.test(text)) {
+      raw += 1;
+      if (!p.weak) hasStrongMatch = true;
+    }
+  }
+  return { raw, hasStrongMatch };
+}
+
+/** @returns {Array<{intent: string, raw: number, hasStrongMatch: boolean}>} sorted desc, zero scores excluded */
 function scoreAllIntents(text) {
   const scored = INTENT_IDS
     .filter((id) => SIGNALS[id])
-    .map((id) => ({ intent: id, raw: scoreText(text, SIGNALS[id]) }))
+    .map((id) => {
+      const { raw, hasStrongMatch } = scoreIntentSignals(text, SIGNALS[id]);
+      return { intent: id, raw, hasStrongMatch };
+    })
     .filter((s) => s.raw > 0);
   scored.sort((a, b) => b.raw - a.raw);
   return scored;
@@ -317,6 +436,56 @@ function decideStatus(candidates, rawScored) {
   return (shareOk || marginOk) ? 'accepted' : 'ambiguous';
 }
 
+// --- IntentIQ 2.2: "safe to trust" and calibration -------------------------
+//
+// A heuristic decision reaching `status: 'accepted'` is not automatically
+// safe to skip semantic verification for — see the module comment. This is
+// deliberately a separate, additive judgment from decideStatus() above,
+// not a rewrite of it: `status` keeps meaning exactly what it always has
+// (a real regression concern — see test/intentIQ.test.js's schema-shape
+// test, which still only allows the original three status values).
+
+/**
+ * @param {{ candidates: Array<{intent: string, score: number}>, rawScored: Array<{raw: number, hasStrongMatch: boolean}> }} args
+ * @returns {boolean}
+ */
+function computeNeedsSemanticCheck({ candidates, rawScored }) {
+  // More than one intent matched at all, even though one dominated by
+  // share/margin — "strong but overlapping signals" from the brief.
+  if (candidates.length > 1) return true;
+  // The sole candidate's only support is a bare, generic keyword — a
+  // confident-looking count that is still a weak, false-positive-prone
+  // match (e.g. "draft" firing create.generate inside "the NBA draft").
+  const top = rawScored[0];
+  return !(top && top.hasStrongMatch);
+}
+
+const CONFIDENCE_LEVEL_HIGH = 0.85;
+const CONFIDENCE_LEVEL_MEDIUM = 0.6;
+
+/** @returns {'high'|'medium'|'low'} */
+function confidenceLevelFor(confidence) {
+  if (confidence >= CONFIDENCE_LEVEL_HIGH) return 'high';
+  if (confidence >= CONFIDENCE_LEVEL_MEDIUM) return 'medium';
+  return 'low';
+}
+
+/**
+ * The richer, additive read of a decision's own honesty about itself.
+ * Never changes `status` or drives any behavior downstream of IntentIQ —
+ * purely a clearer label for the same judgment `status`/`confidence`/
+ * `candidates` already encode.
+ * @returns {'resolved'|'uncertain'|'ambiguous'|'insufficient_context'}
+ */
+function interpretationStatusFor(decision) {
+  if (decision.status === 'ambiguous') return 'ambiguous';
+  if (decision.status === 'unknown') {
+    return decision.candidates.length === 0 ? 'insufficient_context' : 'uncertain';
+  }
+  // accepted
+  return decision.confidenceLevel === 'low' ? 'uncertain' : 'resolved';
+}
+
 // --- public API ------------------------------------------------------------
 
 /**
@@ -330,6 +499,13 @@ function decideStatus(candidates, rawScored) {
  * @property {'conversation'|'memory'|'upload'|'external_knowledge'|'tool'|'unknown'} sourceOfTruth
  * @property {boolean} needsClarification
  * @property {{ taxonomyVersion: string, classifierVersion: string }} meta
+ * @property {boolean} ambiguous
+ * @property {string|null} speechAct
+ * @property {Array<{expression: string, resolvedTo: string|null, confidence: number, source: string|null}>} referents
+ * @property {number} rawScore the raw, uncalibrated signal magnitude behind `confidence` (a heuristic hit count, or a semantic model's own self-reported number) — never the same number as `confidence` once arbitration/capping has run
+ * @property {boolean} needsSemanticCheck true only on a heuristic-tier decision that resolved `status: 'accepted'` but is not yet safe to trust without semantic verification; always false once a final (post-consensus) decision has actually been through that verification
+ * @property {'high'|'medium'|'low'} confidenceLevel
+ * @property {'resolved'|'uncertain'|'ambiguous'|'insufficient_context'} interpretationStatus
  */
 
 /** @returns {IntentDecision} */
@@ -343,6 +519,8 @@ function emptyDecision(reason) {
     entities: [],
     sourceOfTruth: 'unknown',
     needsClarification: false,
+    rawScore: 0,
+    needsSemanticCheck: false,
     meta: { taxonomyVersion: TAXONOMY_VERSION, classifierVersion: CLASSIFIER_VERSION, reason },
   };
 }
@@ -367,6 +545,8 @@ function unknownWithSourceAttempt(text, options, reason) {
     entities: extractEntities(text),
     sourceOfTruth: resolveSourceOfTruth(text, { hasAttachment: options.hasAttachment }, null),
     needsClarification: false,
+    rawScore: 0,
+    needsSemanticCheck: false,
     meta: { taxonomyVersion: TAXONOMY_VERSION, classifierVersion: CLASSIFIER_VERSION, reason },
   };
 }
@@ -376,6 +556,91 @@ function latestUserText(messages) {
     if (messages[i] && messages[i].role === 'user') return messages[i].content || '';
   }
   return '';
+}
+
+/**
+ * Inspects conversation context to detect meta-intents — where the user is
+ * referring to Gaia's own behavior, previous response, or capability choice
+ * rather than making a new standalone request.
+ *
+ * Returns the detected meta-intent type, or null if no meta-context is found.
+ * This is a context-layer judgment, separate from keyword scoring — it
+ * answers "is the user talking about Gaia's own actions?" not "what words
+ * did they use?"
+ *
+ * v2.2 spec §1-2: conversational context has priority over capability intents.
+ *
+ * @param {Array<{role: string, content: string}>} messages
+ * @returns {{ type: string, target: string, contextReference: string }|null}
+ */
+function detectMetaIntent(messages) {
+  if (!Array.isArray(messages) || messages.length < 2) return null;
+
+  const lastUserIdx = messages.length - 1;
+  // Find the last user message
+  let currentUserIdx = lastUserIdx;
+  while (currentUserIdx >= 0 && messages[currentUserIdx].role !== 'user') {
+    currentUserIdx -= 1;
+  }
+  if (currentUserIdx < 0) return null;
+
+  const currentUser = messages[currentUserIdx].content || '';
+  const normalizedUser = normalize(currentUser);
+
+  // Find the previous assistant message (before the current user turn)
+  let prevAssistantIdx = currentUserIdx - 1;
+  while (prevAssistantIdx >= 0 && messages[prevAssistantIdx].role !== 'assistant') {
+    prevAssistantIdx -= 1;
+  }
+  if (prevAssistantIdx < 0) return null;
+
+  const prevAssistant = messages[prevAssistantIdx].content || '';
+
+  // Check if user is asking about Gaia's previous response/reasoning
+  // "Waarom deed je dat?" / "Why did you do that?" — refers to prev assistant action
+  const refersToGaiaAction = /(?:waarom|why)\s+(?:koos|deed|zei|vraag|antwoord|gebruik|riep)\s+(?:je|did\s+you|chose|use)/i.test(currentUser)
+    || /(?:hoe|how)\s+(?:kwam|bedacht|interpreteerde|come|decide|interpret)/i.test(currentUser)
+    || /(?:wat|what)\s+(?:deed|zei|bedoelde|did|say|mean)/i.test(currentUser);
+
+  // Check if user is correcting Gaia's interpretation
+  const isCorrection = /(?:nee|no)[,!]?\s+(?:ik\s+bedoel|i\s+mean)/i.test(currentUser)
+    || /(?:dat\s+is\s+niet|that'?s\s+not)\s+(?:wat|what)/i.test(currentUser)
+    || /(?:je\s+zit|you\s+(?:got|are))\s+(?:verkeerd|wrong)/i.test(currentUser)
+    || /(?:begrijpt|understand)\s+(?:me\s+verkeerd|me\s+wrong)/i.test(currentUser)
+    || /(?:nee|no)[,!]?\s+(?:kijk|look)/i.test(currentUser)
+    || /(?:dat\s+klopt|that'?s\s+not\s+right)/i.test(currentUser);
+
+  // Check if user is asking about a capability choice
+  // Handles both NL "Waarom koos je voor websearch?" and EN "Why did you choose websearch?"
+  const asksAboutCapability = (/(?:waarom|why)\s+(?:koos|gebruikte|riep)\s+(?:je|did\s+you)/i.test(currentUser)
+      || /(?:waarom|why)\s+did\s+you\s+(?:choose|chose|use|pick|call)/i.test(currentUser))
+    && /(?:tool|websearch|hindsight|hermes|capability|web)/i.test(currentUser);
+
+  if (isCorrection) {
+    return {
+      type: 'meta.correction',
+      target: 'previous_response',
+      contextReference: 'conversation',
+    };
+  }
+
+  if (asksAboutCapability) {
+    return {
+      type: 'meta.capability_question',
+      target: 'capability_choice',
+      contextReference: 'previous_action',
+    };
+  }
+
+  if (refersToGaiaAction) {
+    return {
+      type: 'meta.question',
+      target: 'previous_response',
+      contextReference: 'conversation',
+    };
+  }
+
+  return null;
 }
 
 function priorUserTexts(messages, excludeLastUser, windowSize = 3) {
@@ -414,49 +679,84 @@ function classify(messages, options = {}) {
   if (isEmptyOrFiller(text)) {
     decision = emptyDecision('empty_or_filler_input');
   } else {
-    const compound = detectCompoundIntents(text);
-    const directScored = scoreAllIntents(text);
+    // v2.2 spec §1-2: conversational context has priority.
+    // Detect meta-intents (user referring to Gaia's own behavior) BEFORE
+    // keyword scoring — these are not new standalone requests.
+    const metaContext = detectMetaIntent(Array.isArray(messages) ? messages : []);
 
-    if (compound) {
-      const candidates = toNormalizedCandidates(compound);
+    if (metaContext) {
+      // Meta-intent detected from conversation context — this takes priority
+      // over keyword-based scoring per v2.2 spec §2 (meta-intent priority).
       decision = {
         schemaVersion: SCHEMA_VERSION,
-        intent: compound[0].intent,
-        status: 'ambiguous',
-        confidence: candidates[0] ? capConfidence(candidates[0].score) : 0,
-        candidates,
+        intent: metaContext.type,
+        status: 'accepted',
+        confidence: capConfidence(0.85),
+        candidates: [{ intent: metaContext.type, score: 0.85 }],
         entities: extractEntities(text),
-        sourceOfTruth: resolveSourceOfTruth(text, { hasAttachment: options.hasAttachment }, compound[0].intent),
-        needsClarification: true,
+        sourceOfTruth: 'conversation',
+        needsClarification: false,
+        rawScore: 1,
+        needsSemanticCheck: false,
         meta: {
           taxonomyVersion: TAXONOMY_VERSION,
           classifierVersion: CLASSIFIER_VERSION,
-          reason: 'compound_turn_detected',
+          reason: 'context_meta_intent_detected',
+          contextReference: metaContext.contextReference,
+          target: metaContext.target,
         },
       };
-    } else if (directScored.length > 0) {
-      const candidates = toNormalizedCandidates(directScored);
-      const status = decideStatus(candidates, directScored);
-      const top = candidates[0];
-      decision = {
-        schemaVersion: SCHEMA_VERSION,
-        intent: status === 'accepted' ? top.intent : null,
-        status,
-        confidence: status === 'accepted' ? capConfidence(top.score) : 0,
-        candidates,
-        entities: extractEntities(text),
-        sourceOfTruth: resolveSourceOfTruth(
-          text,
-          { hasAttachment: options.hasAttachment },
-          status === 'accepted' ? top.intent : null
-        ),
-        needsClarification: status !== 'accepted',
-        meta: { taxonomyVersion: TAXONOMY_VERSION, classifierVersion: CLASSIFIER_VERSION, reason: 'direct_signal' },
-      };
-    } else if (looksLikeContinuation(text)) {
-      decision = resolveByInheritance(text, messages, options);
     } else {
-      decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+      const compound = detectCompoundIntents(text);
+      const directScored = scoreAllIntents(text);
+
+      if (compound) {
+        const candidates = toNormalizedCandidates(compound);
+        decision = {
+          schemaVersion: SCHEMA_VERSION,
+          intent: compound[0].intent,
+          status: 'ambiguous',
+          confidence: candidates[0] ? capConfidence(candidates[0].score) : 0,
+          candidates,
+          entities: extractEntities(text),
+          sourceOfTruth: resolveSourceOfTruth(text, { hasAttachment: options.hasAttachment }, compound[0].intent),
+          needsClarification: true,
+          rawScore: compound[0].raw,
+          needsSemanticCheck: true,
+          meta: {
+            taxonomyVersion: TAXONOMY_VERSION,
+            classifierVersion: CLASSIFIER_VERSION,
+            reason: 'compound_turn_detected',
+          },
+        };
+      } else if (directScored.length > 0) {
+        const candidates = toNormalizedCandidates(directScored);
+        const status = decideStatus(candidates, directScored);
+        const top = candidates[0];
+        decision = {
+          schemaVersion: SCHEMA_VERSION,
+          intent: status === 'accepted' ? top.intent : null,
+          status,
+          confidence: status === 'accepted' ? capConfidence(top.score) : 0,
+          candidates,
+          entities: extractEntities(text),
+          sourceOfTruth: resolveSourceOfTruth(
+            text,
+            { hasAttachment: options.hasAttachment },
+            status === 'accepted' ? top.intent : null
+          ),
+          needsClarification: status !== 'accepted',
+          rawScore: directScored[0].raw,
+          needsSemanticCheck: status === 'accepted'
+            ? computeNeedsSemanticCheck({ candidates, rawScored: directScored })
+            : false,
+          meta: { taxonomyVersion: TAXONOMY_VERSION, classifierVersion: CLASSIFIER_VERSION, reason: 'direct_signal' },
+        };
+      } else if (looksLikeContinuation(text)) {
+        decision = resolveByInheritance(text, messages, options);
+      } else {
+        decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+      }
     }
   }
 
@@ -471,6 +771,10 @@ function classify(messages, options = {}) {
   decision.ambiguous = decision.status === 'ambiguous';
   decision.speechAct = decision.speechAct || null;
   decision.referents = decision.referents || [];
+  decision.needsSemanticCheck = Boolean(decision.needsSemanticCheck);
+  decision.rawScore = typeof decision.rawScore === 'number' ? decision.rawScore : 0;
+  decision.confidenceLevel = confidenceLevelFor(decision.confidence);
+  decision.interpretationStatus = interpretationStatusFor(decision);
 
   if (!options.silent) {
     logIntentDecision(
@@ -514,6 +818,10 @@ function resolveByInheritance(text, messages, options) {
       entities: extractEntities(text),
       sourceOfTruth: 'conversation',
       needsClarification: status !== 'accepted',
+      rawScore: priorScored[0].raw,
+      // Inherited from context, not from this turn's own signal — always
+      // worth a semantic check, even when confident enough to accept.
+      needsSemanticCheck: status === 'accepted',
       meta: {
         taxonomyVersion: TAXONOMY_VERSION,
         classifierVersion: CLASSIFIER_VERSION,
@@ -619,28 +927,36 @@ function combineConsensus(heuristic, semantic) {
   let confidence = 0;
   let ambiguous = false;
   let status = 'unknown';
+  let rawScore = 0;
 
   if (heuristicTop && semantic.intent && heuristicTop === semantic.intent) {
     intent = semantic.intent;
     confidence = capConfidence(Math.max(heuristicTopConfidence, semantic.confidence));
     status = 'accepted';
     ambiguous = false;
+    rawScore = heuristic.rawScore || 0;
   } else if (heuristicTop && semantic.intent && heuristicTop !== semantic.intent) {
     const semanticWins = semantic.confidence >= heuristicTopConfidence;
     intent = semanticWins ? semantic.intent : heuristicTop;
     confidence = capConfidence(semanticWins ? semantic.confidence : heuristicTopConfidence);
     status = 'ambiguous';
     ambiguous = true;
+    // Whichever tier's opinion won is the one whose raw signal explains
+    // the result — the semantic model's own self-reported confidence
+    // stands in for a "raw" number on that side (it has no hit count).
+    rawScore = semanticWins ? semantic.confidence : (heuristic.rawScore || 0);
   } else if (!heuristicTop && semantic.intent) {
     intent = semantic.intent;
     confidence = capConfidence(semantic.confidence);
     ambiguous = Boolean(semantic.ambiguous);
     status = ambiguous ? 'ambiguous' : 'accepted';
+    rawScore = semantic.confidence;
   } else if (heuristicTop && !semantic.intent) {
     intent = heuristicTop;
     confidence = heuristicTopConfidence;
     status = heuristic.status;
     ambiguous = heuristic.status === 'ambiguous';
+    rawScore = heuristic.rawScore || 0;
   } else if (candidates.length > 0) {
     // Neither tier committed to a single top intent — this is what a
     // semantic result legitimately looks like when the model itself
@@ -655,6 +971,7 @@ function combineConsensus(heuristic, semantic) {
     confidence = capConfidence(candidates[0].score);
     status = 'ambiguous';
     ambiguous = true;
+    rawScore = candidates[0].score;
   }
   // else: truly nothing from either tier — stays unknown/0/false, as initialized.
 
@@ -662,7 +979,8 @@ function combineConsensus(heuristic, semantic) {
     ? heuristic.sourceOfTruth
     : (semantic.sourceOfTruth || 'unknown');
 
-  return {
+  const confidenceLevel = confidenceLevelFor(confidence);
+  const combined = {
     ...heuristic,
     intent,
     status,
@@ -673,12 +991,20 @@ function combineConsensus(heuristic, semantic) {
     ambiguous,
     speechAct: semantic.speechAct || null,
     referents: semantic.referents || [],
+    rawScore,
+    // The semantic tier has now actually run and been weighed — there is
+    // nothing further left to check at this point, regardless of what the
+    // heuristic tier's own needsSemanticCheck said going in.
+    needsSemanticCheck: false,
+    confidenceLevel,
     meta: {
       ...heuristic.meta,
       semanticReason: semantic.reason || null,
       classifierVersion: SEMANTIC_CLASSIFIER_VERSION,
     },
   };
+  combined.interpretationStatus = interpretationStatusFor(combined);
+  return combined;
 }
 
 /**
@@ -707,7 +1033,11 @@ async function interpret(messages, options = {}) {
   const text = latestUserText(Array.isArray(messages) ? messages : []);
 
   let semantic = { attempted: false, result: null };
-  if (heuristic.status !== 'accepted') {
+  // IntentIQ 2.2: a strong heuristic match is not automatically sufficient
+  // any more — an accepted-but-unverified match (weak-only signal,
+  // resolved-but-overlapping candidates, or a context-inherited intent)
+  // still escalates via needsSemanticCheck, even though status:'accepted'.
+  if (heuristic.status !== 'accepted' || heuristic.needsSemanticCheck) {
     // The full recent history (both roles), not just prior user turns —
     // resolving "en deze dan?" needs to see what the assistant said too,
     // not only what the user has typed. messages ends with the current
@@ -732,6 +1062,25 @@ async function interpret(messages, options = {}) {
         correlationId,
         classifierVersion: CLASSIFIER_VERSION,
         semanticCalled: semantic.attempted,
+        // Both tiers' own perspective, kept for calibration/debug logging
+        // only (item 11/14 of the 2.2 brief) — never part of the returned
+        // IntentDecision itself, and never the raw input text again (that
+        // is already truncated once, above, by `input`).
+        tiers: {
+          heuristic: {
+            intent: heuristic.intent,
+            status: heuristic.status,
+            confidence: heuristic.confidence,
+            needsSemanticCheck: heuristic.needsSemanticCheck,
+          },
+          semantic: semantic.result
+            ? {
+                intent: semantic.result.intent,
+                confidence: semantic.result.confidence,
+                ambiguous: semantic.result.ambiguous,
+              }
+            : null,
+        },
       },
       options.logger
     );
@@ -750,5 +1099,14 @@ module.exports = {
   SEMANTIC_CLASSIFIER_VERSION,
   // exported for the eval harness and tests only — not part of the public
   // cognitive contract other Gaia modules should depend on.
-  __internals: { scoreAllIntents, toNormalizedCandidates, resolveSourceOfTruth, extractEntities, isEmptyOrFiller },
+  __internals: {
+    scoreAllIntents,
+    toNormalizedCandidates,
+    resolveSourceOfTruth,
+    extractEntities,
+    isEmptyOrFiller,
+    computeNeedsSemanticCheck,
+    confidenceLevelFor,
+    interpretationStatusFor,
+  },
 };
