@@ -171,6 +171,15 @@ function truncate(content) {
 async function resolveAttachmentsForPrompt(store, ids, options = {}) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const results = [];
+  
+  // Diagnostic logging (temporary)
+  console.log(JSON.stringify({
+    kind: 'attachment.resolution.debug',
+    inputIds: ids,
+    optionsModelSupportsVision: options.modelSupportsVision,
+    optionsKeys: Object.keys(options),
+  }));
+  
   for (const id of ids) {
     let resolved;
     try {
@@ -180,6 +189,18 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
       continue;
     }
     const { meta, buffer } = resolved;
+
+    // Diagnostic logging (temporary)
+    console.log(JSON.stringify({
+      kind: 'attachment.resolution.file',
+      id,
+      filename: meta.filename,
+      mimeType: meta.mimeType,
+      bufferSize: buffer.length,
+      isText: isTextMime(meta.mimeType),
+      isImage: isImageMime(meta.mimeType),
+      modelSupportsVision: options.modelSupportsVision,
+    }));
 
     if (isTextMime(meta.mimeType)) {
       results.push({ filename: meta.filename, content: truncate(buffer.toString('utf-8')) });
@@ -192,6 +213,7 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
           attachmentDetected: true,
           imageMimeType: meta.mimeType,
           imageBytesAvailable: buffer.length > 0,
+          imageBytesLength: buffer.length,
           modelSupportsVision: true,
           visionPathSelected: true,
           ocrFallbackSelected: false,
