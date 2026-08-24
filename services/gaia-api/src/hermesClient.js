@@ -19,6 +19,21 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
   async function chat(messages) {
+    // Diagnostic logging (temporary)
+    const imageBlockPresent = messages.some((m) => 
+      Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url')
+    );
+    console.log(JSON.stringify({
+      kind: 'vision.trace',
+      stage: 'llm_client',
+      messageCount: messages.length,
+      messageRoles: messages.map((m) => m.role),
+      contentTypesPerMessage: messages.map((m) => 
+        Array.isArray(m.content) ? m.content.map((c) => c.type) : ['text']
+      ),
+      imageBlockPresent,
+    }));
+
     let response;
     try {
       response = await fetchImpl(`${root}/chat/completions`, {

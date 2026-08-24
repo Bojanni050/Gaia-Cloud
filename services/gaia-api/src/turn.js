@@ -96,10 +96,12 @@ function validateMessages(messages) {
  *   ]
  */
 function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
-  const baseMessages = [
-    { role: 'system', content: systemPrompt },
-    ...messages.map(({ role, content }) => ({ role, content })),
-  ];
+  // Build base messages, handling null/undefined systemPrompt
+  const baseMessages = [];
+  if (systemPrompt) {
+    baseMessages.push({ role: 'system', content: systemPrompt });
+  }
+  baseMessages.push(...messages.map(({ role, content }) => ({ role, content })));
 
   // PATCH: If no multimodal attachments, return plain text messages
   if (!Array.isArray(multimodalAttachments) || multimodalAttachments.length === 0) {
@@ -386,6 +388,8 @@ async function performStreamingTurn({
   conversationId,
   nativeGenerator,
   webSearch,
+  attachments,
+  traceId,
   intentIQ = classifyIntent,
   reasonIQ = evaluateReasoning,
   historyStore,
@@ -464,10 +468,37 @@ async function performStreamingTurn({
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
 
+  // PATCH: Categorize attachments for streaming path
+  const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
+  const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
+
+  const attachmentBlock = renderTextAttachmentContext(textAttachments);
+  
   const systemMessages = [{ role: 'system', content: systemPrompt }];
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
-  const assembled = [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))];
+  if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
+  
+  // PATCH: Use assembleMessages to handle multimodal content
+  const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);
+  
+  // Diagnostic logging (temporary)
+  const lastUserMsg = assembled.find((m) => m.role === 'user');
+  if (lastUserMsg) {
+    console.log(JSON.stringify({
+      kind: 'vision.trace',
+      traceId,
+      stage: 'assembly',
+      contentIsArray: Array.isArray(lastUserMsg.content),
+      contentTypes: Array.isArray(lastUserMsg.content) 
+        ? lastUserMsg.content.map((c) => c.type) 
+        : ['text'],
+      imageBlockPresent: Array.isArray(lastUserMsg.content) 
+        ? lastUserMsg.content.some((c) => c.type === 'image_url')
+        : false,
+      imageMimeType: multimodalAttachments.length > 0 ? multimodalAttachments[0].imageMimeType : null,
+    }));
+  }
 
   // A capability (Hermes, a tool) streams internal reasoning/content
   // deltas; it never touches `res`. Every delta is handed to the Response

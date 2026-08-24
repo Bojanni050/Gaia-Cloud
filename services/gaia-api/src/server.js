@@ -121,6 +121,7 @@ function createApp(env = process.env) {
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;
     const conversationId = req.body && req.body.conversationId;
+    const traceId = `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     if (req.body && req.body.stream) {
       await performStreamingTurn({
@@ -134,13 +135,34 @@ function createApp(env = process.env) {
         webSearch,
         historyStore,
         decisionStore,
+        traceId,
       });
       return;
     }
 
     const attachmentIds = (req.body && req.body.attachmentIds) || [];
-    const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds);
-    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch });
+    
+    // PATCH: Pass modelSupportsVision when nativeGenerator is available
+    const modelSupportsVision = !!nativeGenerator;
+    
+    const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
+    
+    // Diagnostic logging (temporary)
+    console.log(JSON.stringify({
+      kind: 'vision.trace',
+      traceId,
+      stage: 'upload',
+      attachmentCount: attachmentIds.length,
+      resolvedAttachments: attachments.map((a) => ({
+        filename: a.filename,
+        mimeType: a.imageMimeType || 'text',
+        imageBytesAvailable: !!a.imageBytes,
+        imageBytesLength: a.imageBytes ? a.imageBytes.length : 0,
+        visionPathSelected: modelSupportsVision,
+      })),
+    }));
+
+    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch, traceId });
     res.status(result.status).json(result.body);
 
     // Chat history — fire-and-forget, after the response is already sent,

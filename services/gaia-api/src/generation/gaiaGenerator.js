@@ -87,10 +87,22 @@ function createGaiaGenerator(options = {}) {
 
   /**
    * Non-streaming generation — returns the full reply as a string.
-   * @param {Array<{role: string, content: string}>} messages
+   * @param {Array<{role: string, content: string|Array}>} messages
    * @returns {Promise<string>}
    */
   async function generate(messages) {
+    // Diagnostic logging (temporary)
+    const imageBlockPresent = messages.some((m) => 
+      Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url')
+    );
+    console.log(JSON.stringify({
+      kind: 'vision.trace',
+      stage: 'native_generator',
+      model,
+      messageCount: messages.length,
+      imageBlockPresent,
+    }));
+
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
