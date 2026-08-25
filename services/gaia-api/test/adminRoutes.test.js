@@ -8,10 +8,11 @@ const os = require('os');
 const path = require('path');
 const { createAdminRouter } = require('../src/adminRoutes');
 const { createReasoningModelStore } = require('../src/logos/reasoningModelStore');
+const { createProviderStore } = require('../src/providerStore');
 const { createDecisionStore } = require('../src/logos/decisionStore');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
-function startTestServer({ withDecisionStore = true } = {}) {
+function startTestServer({ withDecisionStore = true, withProviderStore = false } = {}) {
   const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-')), 'config.json');
   const store = createReasoningModelStore({ storePath });
   const decisionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-decisions-'));
@@ -27,9 +28,20 @@ function startTestServer({ withDecisionStore = true } = {}) {
     },
   });
 
+  let fakeProviderModels = null;
+  let fakeProviderError = null;
+  const retrieveModelsFn = async () => {
+    if (fakeProviderError) throw fakeProviderError;
+    return fakeProviderModels || [];
+  };
+
+  const providerStore = withProviderStore
+    ? createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') })
+    : undefined;
+
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ store, decisionStore, auth, createOpenRouterClientFn }));
+  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -38,9 +50,12 @@ function startTestServer({ withDecisionStore = true } = {}) {
   return {
     baseUrl,
     store,
+    providerStore,
     decisionStore,
     setModels: (models) => { fakeOpenRouterModels = models; },
     setError: (err) => { fakeOpenRouterError = err; },
+    setProviderModels: (models) => { fakeProviderModels = models; },
+    setProviderError: (err) => { fakeProviderError = err; },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -258,6 +273,247 @@ test('GET /admin/api/logos/decisions returns an empty list rather than erroring 
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.deepEqual(body.decisions, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+// --- Provider Settings routes ---
+
+test('GET /admin/api/provider/config requires auth', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`);
+    assert.equal(res.status, 401);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/config returns empty defaults before anything is saved', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, null);
+    assert.equal(body.hasApiKey, false);
+    assert.deepEqual(body.catalog, []);
+    assert.deepEqual(body.roles.generation, { mode: 'catalog', model: '' });
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/config saves provider and apiKey, response never contains raw key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v1', apiKey: 'sk-eden-super-secret' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, 'edenai');
+    assert.equal(body.baseUrl, 'https://api.edenai.run/v1');
+    assert.equal(body.hasApiKey, true);
+    assert.ok(!JSON.stringify(body).includes('sk-eden-super-secret'));
+    // Verify persisted
+    assert.equal(ctx.providerStore.getConfig().apiKey, 'sk-eden-super-secret');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/config with only a provider does not clear the previously saved key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ apiKey: 'sk-secret' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'openrouter' }),
+    });
+    const body = await res.json();
+    assert.equal(body.provider, 'openrouter');
+    assert.equal(body.hasApiKey, true);
+    assert.equal(ctx.providerStore.getConfig().apiKey, 'sk-secret');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/config rejects an empty body', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/models requires a configured provider first', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/models`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.ok(body.error.includes('configure a provider'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/models returns catalog on success', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v1', apiKey: 'sk-x' }),
+    });
+    ctx.setProviderModels([
+      { id: 'google/gemini-flash', name: 'Gemini Flash', capabilities: ['vision'] },
+    ]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/models`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.catalog.length, 1);
+    assert.equal(body.catalog[0].id, 'google/gemini-flash');
+    assert.ok(body.catalogRetrievedAt);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/models returns 502 on provider failure', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v1', apiKey: 'sk-x' }),
+    });
+    ctx.setProviderError(new Error('authentication failed'));
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/models`, { headers: authHeaders() });
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.ok(body.error.includes('authentication'));
+    // Must not leak the API key
+    assert.ok(!JSON.stringify(body).includes('sk-x'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/roles saves a role selection', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'generation', mode: 'catalog', model: 'google/gemini-flash' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.roles.generation.mode, 'catalog');
+    assert.equal(body.roles.generation.model, 'google/gemini-flash');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/roles rejects unknown role', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'unknown', mode: 'catalog', model: 'x' }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/roles rejects invalid mode', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'tts', mode: 'invalid', model: 'x' }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/roles saves manual mode selection', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'tts', mode: 'manual', model: 'custom-tts-model' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.roles.tts.mode, 'manual');
+    assert.equal(body.roles.tts.model, 'custom-tts-model');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/capabilities returns capability availability', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://x', apiKey: 'k' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'generation', mode: 'catalog', model: 'g1' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'tts', mode: 'manual', model: 't1' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/capabilities`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.generation, true);
+    assert.equal(body.reasoning, false);
+    assert.equal(body.vision, false);
+    assert.equal(body.tts, true);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/capabilities reports all false when nothing configured', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/capabilities`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.generation, false);
+    assert.equal(body.reasoning, false);
+    assert.equal(body.vision, false);
+    assert.equal(body.tts, false);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('Provider routes are not available when providerStore is not provided', async () => {
+  const ctx = startTestServer({ withProviderStore: false });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    assert.equal(res.status, 404);
   } finally {
     await ctx.close();
   }

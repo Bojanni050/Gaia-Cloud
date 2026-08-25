@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Gaia Cloud — ReasonIQ model</title>
+<title>Gaia Cloud — Provider Settings</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root { color-scheme: dark; }
@@ -12,8 +12,9 @@
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
     display: flex; justify-content: center;
   }
-  main { width: 100%; max-width: 560px; }
+  main { width: 100%; max-width: 600px; }
   h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 0.25rem; }
+  h1 small { font-weight: 400; color: #9b9484; font-size: 0.85rem; }
   p.lede { color: #9b9484; margin: 0 0 2rem; font-size: 0.9rem; }
   section {
     background: #17150f; border: 1px solid #2a2620; border-radius: 10px;
@@ -40,10 +41,22 @@
   .status.err { color: #d98a8a; }
   .hint { font-size: 0.76rem; color: #6b6459; margin-top: 0.4rem; }
   .model-meta { font-size: 0.76rem; color: #9b9484; margin-top: 0.3rem; }
-  .field-row { display: flex; gap: 0.6rem; align-items: flex-end; flex-wrap: wrap; }
-  .field-row > div { flex: 1; min-width: 130px; }
-  .field-row label { margin-top: 0; }
-  .field-row button { margin-top: 0; align-self: flex-end; }
+  .role-section {
+    background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px;
+    padding: 1rem 1.1rem; margin-bottom: 0.8rem;
+  }
+  .role-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+  .role-label { font-size: 0.88rem; font-weight: 600; color: #ece7dc; }
+  .role-badge {
+    font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.5rem;
+    border-radius: 999px; letter-spacing: 0.02em;
+  }
+  .role-badge.configured { background: #1a2e1a; color: #7fbf8f; }
+  .role-badge.unconfigured { background: #2e1a1a; color: #d98a8a; }
+  .mode-toggle { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
+  .mode-toggle label { margin: 0; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; }
+  .mode-toggle input[type="radio"] { width: auto; accent-color: #d2a24c; }
+  .manual-input { margin-top: 0.5rem; }
   .decisions-list { margin-top: 1rem; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
   .decision-row { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
   .decision-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
@@ -54,55 +67,186 @@
   .decision-summary { color: #ece7dc; }
   .decision-input { color: #9b9484; margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
   .decisions-empty { color: #6b6459; font-size: 0.82rem; }
+  .separator { border: none; border-top: 1px solid #2a2620; margin: 1.5rem 0; }
+  .capabilities-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .cap-chip {
+    font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+    border: 1px solid #332d24; color: #9b9484;
+  }
+  .cap-chip.active { background: #1a2e1a; color: #7fbf8f; border-color: #2a4a2a; }
 </style>
 </head>
 <body>
 <main>
-  <h1>ReasonIQ — reasoning model</h1>
-  <p class="lede">Operator-only configuration for Gaia's ReasonIQ. Never surfaced to Gaia Desktop or Gaia Web — see architecture.md's no-provider-leakage rule.</p>
+  <h1>Model Provider Settings <small>v1.0</small></h1>
+  <p class="lede">Configure one model provider and assign models to four Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
     <h2>Gaia API access</h2>
     <label for="token">Bearer token</label>
     <input id="token" type="password" placeholder="one of GAIA_API_TOKEN's values" autocomplete="off">
-    <p class="hint">Stored only in this browser's local storage, sent as an Authorization header. The same token used by Gaia's clients.</p>
+    <p class="hint">Stored only in this browser's local storage, sent as an Authorization header.</p>
   </section>
 
+  <!-- Provider Configuration -->
   <section>
-    <h2>OpenRouter</h2>
-    <label for="apiKey">API key</label>
-    <input id="apiKey" type="password" placeholder="sk-or-..." autocomplete="off">
+    <h2>Provider</h2>
+    <label for="providerSelect">Provider</label>
+    <select id="providerSelect">
+      <option value="">— select provider —</option>
+      <option value="edenai">EdenAI</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+
+    <label for="baseUrl">Base URL</label>
+    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1" autocomplete="off">
+
+    <label for="apiKey">API Key</label>
+    <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
     <p class="hint" id="keyHint">No key saved yet.</p>
-    <button id="saveKeyBtn">Save key</button>
-    <div class="status" id="keyStatus"></div>
+
+    <button id="saveProviderBtn">Save provider</button>
+    <button id="retrieveModelsBtn" class="secondary">Retrieve Models</button>
+    <div class="status" id="providerStatus"></div>
   </section>
 
+  <!-- Capabilities Overview -->
+  <section id="capabilitiesSection" style="display:none;">
+    <h2>Capability Availability</h2>
+    <div class="capabilities-bar" id="capabilitiesBar"></div>
+    <p class="hint" style="margin-top:0.5rem;">Derived from configured role models. No credentials exposed.</p>
+  </section>
+
+  <!-- Role Selectors -->
+  <section id="rolesSection" style="display:none;">
+    <h2>Model Roles</h2>
+    <p class="hint" style="margin-top:0; margin-bottom:1rem;">Each role selects a model from the provider's catalog, or a manual model ID.</p>
+
+    <!-- Generation -->
+    <div class="role-section" id="roleGeneration">
+      <div class="role-header">
+        <span class="role-label">Generation</span>
+        <span class="role-badge unconfigured" id="genBadge">unconfigured</span>
+      </div>
+      <div class="mode-toggle">
+        <label><input type="radio" name="genMode" value="catalog" checked> Catalog</label>
+        <label><input type="radio" name="genMode" value="manual"> Manual</label>
+      </div>
+      <div id="genCatalog">
+        <select id="genSelect"><option value="">— retrieve models first —</option></select>
+        <div class="model-meta" id="genMeta"></div>
+      </div>
+      <div id="genManual" class="manual-input" style="display:none;">
+        <label for="genManualId">Model ID</label>
+        <input id="genManualId" type="text" placeholder="e.g. google/gemini-2.5-flash" autocomplete="off">
+      </div>
+      <button class="save-role-btn" data-role="generation">Save</button>
+      <div class="status" id="genStatus"></div>
+    </div>
+
+    <!-- Reasoning -->
+    <div class="role-section" id="roleReasoning">
+      <div class="role-header">
+        <span class="role-label">Reasoning</span>
+        <span class="role-badge unconfigured" id="reasonBadge">unconfigured</span>
+      </div>
+      <div class="mode-toggle">
+        <label><input type="radio" name="reasonMode" value="catalog" checked> Catalog</label>
+        <label><input type="radio" name="reasonMode" value="manual"> Manual</label>
+      </div>
+      <div id="reasonCatalog">
+        <select id="reasonSelect"><option value="">— retrieve models first —</option></select>
+        <div class="model-meta" id="reasonMeta"></div>
+      </div>
+      <div id="reasonManual" class="manual-input" style="display:none;">
+        <label for="reasonManualId">Model ID</label>
+        <input id="reasonManualId" type="text" placeholder="e.g. anthropic/claude-sonnet-4-6" autocomplete="off">
+      </div>
+      <button class="save-role-btn" data-role="reasoning">Save</button>
+      <div class="status" id="reasonStatus"></div>
+    </div>
+
+    <!-- Vision -->
+    <div class="role-section" id="roleVision">
+      <div class="role-header">
+        <span class="role-label">Vision / Multimodal</span>
+        <span class="role-badge unconfigured" id="visionBadge">unconfigured</span>
+      </div>
+      <div class="mode-toggle">
+        <label><input type="radio" name="visionMode" value="catalog" checked> Catalog</label>
+        <label><input type="radio" name="visionMode" value="manual"> Manual</label>
+      </div>
+      <div id="visionCatalog">
+        <select id="visionSelect"><option value="">— retrieve models first —</option></select>
+        <div class="model-meta" id="visionMeta"></div>
+      </div>
+      <div id="visionManual" class="manual-input" style="display:none;">
+        <label for="visionManualId">Model ID</label>
+        <input id="visionManualId" type="text" placeholder="e.g. google/gemini-2.5-flash" autocomplete="off">
+      </div>
+      <button class="save-role-btn" data-role="vision">Save</button>
+      <div class="status" id="visionStatus"></div>
+    </div>
+
+    <!-- TTS -->
+    <div class="role-section" id="roleTts">
+      <div class="role-header">
+        <span class="role-label">TTS</span>
+        <span class="role-badge unconfigured" id="ttsBadge">unconfigured</span>
+      </div>
+      <div class="mode-toggle">
+        <label><input type="radio" name="ttsMode" value="catalog" checked> Catalog</label>
+        <label><input type="radio" name="ttsMode" value="manual"> Manual</label>
+      </div>
+      <div id="ttsCatalog">
+        <select id="ttsSelect"><option value="">— retrieve models first —</option></select>
+        <div class="model-meta" id="ttsMeta"></div>
+      </div>
+      <div id="ttsManual" class="manual-input" style="display:none;">
+        <label for="ttsManualId">Model ID</label>
+        <input id="ttsManualId" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+      </div>
+      <button class="save-role-btn" data-role="tts">Save</button>
+      <div class="status" id="ttsStatus"></div>
+    </div>
+  </section>
+
+  <hr class="separator">
+
+  <!-- ReasonIQ (existing, preserved) -->
   <section>
-    <h2>Model</h2>
-    <button id="fetchModelsBtn" class="secondary">Fetch available models</button>
-    <label for="modelSelect">Model for ReasonIQ</label>
-    <select id="modelSelect"><option value="">— save a key and fetch models —</option></select>
-    <div class="model-meta" id="modelMeta"></div>
-    <button id="saveModelBtn" disabled>Save selection</button>
-    <div class="status" id="modelStatus"></div>
+    <h2>ReasonIQ — reasoning model</h2>
+    <p class="hint" style="margin-top:0;">Operator-only configuration for Gaia's ReasonIQ cognitive layer.</p>
+    <label for="riqApiKey">OpenRouter API key</label>
+    <input id="riqApiKey" type="password" placeholder="sk-or-..." autocomplete="off">
+    <p class="hint" id="riqKeyHint">No key saved yet.</p>
+    <button id="riqSaveKeyBtn">Save key</button>
+    <div class="status" id="riqKeyStatus"></div>
+
+    <button id="riqFetchModelsBtn" class="secondary">Fetch available models</button>
+    <label for="riqModelSelect">Model for ReasonIQ</label>
+    <select id="riqModelSelect"><option value="">— save a key and fetch models —</option></select>
+    <div class="model-meta" id="riqModelMeta"></div>
+    <button id="riqSaveModelBtn" disabled>Save selection</button>
+    <div class="status" id="riqModelStatus"></div>
+
+    <label for="riqVisionModelSelect">Vision model (image OCR)</label>
+    <select id="riqVisionModelSelect"><option value="">— reuse ReasonIQ's model —</option></select>
+    <div class="model-meta" id="riqVisionModelMeta"></div>
+    <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
+    <button id="riqClearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
+    <div class="status" id="riqVisionModelStatus"></div>
   </section>
 
-  <section>
-    <h2>Vision model (image OCR)</h2>
-    <p class="hint" style="margin-top:0;">Used only to read attached images (see ocrResolver.js) — separate from ReasonIQ's own model above, since a good reasoning model and a good vision model aren't always the same one. Leave unset to reuse the ReasonIQ model for images too.</p>
-    <label for="visionModelSelect">Vision model</label>
-    <select id="visionModelSelect"><option value="">— reuse ReasonIQ's model —</option></select>
-    <div class="model-meta" id="visionModelMeta"></div>
-    <button id="saveVisionModelBtn" disabled>Save selection</button>
-    <button id="clearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
-    <div class="status" id="visionModelStatus"></div>
-  </section>
-
+  <!-- Decision Log (existing, preserved) -->
   <section>
     <h2>Logos — decision log</h2>
-    <p class="hint" style="margin-top:0;">Durable copy of IntentIQ/ReasonIQ decisions (decisionStore.js) — for debugging classification and reasoning after the fact, not a live conversation view.</p>
-    <div class="field-row">
-      <div>
+    <p class="hint" style="margin-top:0;">Durable copy of IntentIQ/ReasonIQ decisions.</p>
+    <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
+      <div style="flex:1; min-width:130px;">
         <label for="decisionsKind">Kind</label>
         <select id="decisionsKind">
           <option value="">All</option>
@@ -110,7 +254,7 @@
           <option value="reasoniq.result">ReasonIQ</option>
         </select>
       </div>
-      <div style="flex: 0 0 90px; min-width: 90px;">
+      <div style="flex:0 0 90px; min-width:90px;">
         <label for="decisionsLimit">Limit</label>
         <input id="decisionsLimit" type="number" value="50" min="1" max="500">
       </div>
@@ -124,16 +268,24 @@
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
-  const tokenEl = $('token'), apiKeyEl = $('apiKey'), keyHintEl = $('keyHint'), keyStatusEl = $('keyStatus');
-  const modelSelectEl = $('modelSelect'), modelMetaEl = $('modelMeta'), modelStatusEl = $('modelStatus');
-  const saveKeyBtn = $('saveKeyBtn'), fetchModelsBtn = $('fetchModelsBtn'), saveModelBtn = $('saveModelBtn');
-  const visionModelSelectEl = $('visionModelSelect'), visionModelMetaEl = $('visionModelMeta'), visionModelStatusEl = $('visionModelStatus');
-  const saveVisionModelBtn = $('saveVisionModelBtn'), clearVisionModelBtn = $('clearVisionModelBtn');
+  const tokenEl = $('token');
+  const providerSelectEl = $('providerSelect'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey');
+  const keyHintEl = $('keyHint'), providerStatusEl = $('providerStatus');
+  const saveProviderBtn = $('saveProviderBtn'), retrieveModelsBtn = $('retrieveModelsBtn');
+  const capabilitiesSection = $('capabilitiesSection'), capabilitiesBar = $('capabilitiesBar');
+  const rolesSection = $('rolesSection');
 
-  let models = [];
-  let currentModel = null;
-  let currentVisionModel = null;
+  const ROLE_CONFIG = {
+    generation: { selectEl: $('genSelect'), metaEl: $('genMeta'), badgeEl: $('genBadge'), statusEl: $('genStatus'), modeName: 'genMode', catalogId: 'genCatalog', manualId: 'genManual', manualInputId: 'genManualId' },
+    reasoning:  { selectEl: $('reasonSelect'), metaEl: $('reasonMeta'), badgeEl: $('reasonBadge'), statusEl: $('reasonStatus'), modeName: 'reasonMode', catalogId: 'reasonCatalog', manualId: 'reasonManual', manualInputId: 'reasonManualId' },
+    vision:     { selectEl: $('visionSelect'), metaEl: $('visionMeta'), badgeEl: $('visionBadge'), statusEl: $('visionStatus'), modeName: 'visionMode', catalogId: 'visionCatalog', manualId: 'visionManual', manualInputId: 'visionManualId' },
+    tts:        { selectEl: $('ttsSelect'), metaEl: $('ttsMeta'), badgeEl: $('ttsBadge'), statusEl: $('ttsStatus'), modeName: 'ttsMode', catalogId: 'ttsCatalog', manualId: 'ttsManual', manualInputId: 'ttsManualId' },
+  };
 
+  let catalog = [];
+  let currentConfig = null;
+
+  // --- Auth ---
   tokenEl.value = localStorage.getItem('gaia_admin_token') || '';
   tokenEl.addEventListener('change', () => localStorage.setItem('gaia_admin_token', tokenEl.value));
 
@@ -146,49 +298,270 @@
     el.className = 'status ' + (ok ? 'ok' : 'err');
   }
 
-  async function loadConfig() {
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // --- Provider config ---
+  async function loadProviderConfig() {
+    try {
+      const res = await fetch('/admin/api/provider/config', { headers: authHeaders() });
+      if (!res.ok) return;
+      const cfg = await res.json();
+      currentConfig = cfg;
+      if (cfg.provider) providerSelectEl.value = cfg.provider;
+      if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
+      keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      catalog = cfg.catalog || [];
+      if (catalog.length > 0) {
+        rolesSection.style.display = '';
+        populateAllDropdowns();
+      }
+      if (cfg.roles) {
+        restoreRoles(cfg.roles);
+      }
+      updateCapabilities(cfg.roles || {});
+    } catch (_) { /* ignore on initial load */ }
+  }
+
+  saveProviderBtn.addEventListener('click', async () => {
+    const provider = providerSelectEl.value;
+    if (!provider) { setStatus(providerStatusEl, 'Select a provider first.', false); return; }
+    const baseUrl = baseUrlEl.value.trim();
+    if (!baseUrl) { setStatus(providerStatusEl, 'Enter a base URL.', false); return; }
+    const body = { provider, baseUrl };
+    if (apiKeyEl.value.trim()) body.apiKey = apiKeyEl.value.trim();
+    saveProviderBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/provider/config', {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const cfg = await res.json();
+      currentConfig = cfg;
+      keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      apiKeyEl.value = '';
+      setStatus(providerStatusEl, 'Provider saved.', true);
+    } catch (err) {
+      setStatus(providerStatusEl, 'Could not save provider — check the bearer token.', false);
+    } finally {
+      saveProviderBtn.disabled = false;
+    }
+  });
+
+  retrieveModelsBtn.addEventListener('click', async () => {
+    retrieveModelsBtn.disabled = true;
+    setStatus(providerStatusEl, 'Retrieving models…', true);
+    try {
+      const res = await fetch('/admin/api/provider/models', { headers: authHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'request failed');
+      }
+      const body = await res.json();
+      catalog = body.catalog || [];
+      rolesSection.style.display = catalog.length === 0 ? 'none' : '';
+      if (catalog.length > 0) {
+        populateAllDropdowns();
+        setStatus(providerStatusEl, catalog.length + ' models retrieved.', true);
+      } else {
+        setStatus(providerStatusEl, 'No models returned. Use Manual mode.', true);
+      }
+    } catch (err) {
+      setStatus(providerStatusEl, 'Could not retrieve models: ' + err.message, false);
+    } finally {
+      retrieveModelsBtn.disabled = false;
+    }
+  });
+
+  // --- Catalog dropdown population ---
+  function populateAllDropdowns() {
+    for (const [role, cfg] of Object.entries(ROLE_CONFIG)) {
+      populateSelect(cfg.selectEl, catalog, currentConfig?.roles?.[role]?.model);
+    }
+  }
+
+  function populateSelect(selectEl, models, selectedId) {
+    selectEl.innerHTML = '<option value="">— select model —</option>';
+    for (const m of models) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name + ' (' + m.id + ')';
+      if (m.capabilities && m.capabilities.length > 0) {
+        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
+      }
+      selectEl.appendChild(opt);
+    }
+    if (selectedId && models.some((m) => m.id === selectedId)) {
+      selectEl.value = selectedId;
+    }
+  }
+
+  function updateModelMeta(selectEl, metaEl) {
+    const m = catalog.find((x) => x.id === selectEl.value);
+    metaEl.textContent = m
+      ? (m.capabilities && m.capabilities.length > 0 ? 'capabilities: ' + m.capabilities.join(', ') : 'no capability metadata')
+      : '';
+  }
+
+  // Wire up change handlers for model meta
+  for (const cfg of Object.values(ROLE_CONFIG)) {
+    cfg.selectEl.addEventListener('change', () => updateModelMeta(cfg.selectEl, cfg.metaEl));
+  }
+
+  // --- Mode toggle ---
+  document.querySelectorAll('input[type="radio"][name$="Mode"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const roleName = radio.name.replace('Mode', '');
+      const roleKey = roleName === 'gen' ? 'generation' : roleName === 'reason' ? 'reasoning' : roleName === 'vision' ? 'vision' : 'tts';
+      const cfg = ROLE_CONFIG[roleKey];
+      if (!cfg) return;
+      const isManual = radio.value === 'manual';
+      $(cfg.catalogId).style.display = isManual ? 'none' : '';
+      $(cfg.manualId).style.display = isManual ? '' : 'none';
+    });
+  });
+
+  // --- Save role selections ---
+  document.querySelectorAll('.save-role-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const role = btn.dataset.role;
+      const cfg = ROLE_CONFIG[role];
+      if (!cfg) return;
+      const mode = document.querySelector(`input[name="${cfg.modeName}"]:checked`).value;
+      let model = '';
+      if (mode === 'catalog') {
+        model = cfg.selectEl.value;
+      } else {
+        model = $(cfg.manualInputId).value.trim();
+      }
+      if (!model) {
+        setStatus(cfg.statusEl, 'Select or enter a model first.', false);
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const res = await fetch('/admin/api/provider/roles', {
+          method: 'PUT', headers: authHeaders(),
+          body: JSON.stringify({ role, mode, model }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const updated = await res.json();
+        currentConfig = updated;
+        updateBadge(cfg.badgeEl, model);
+        setStatus(cfg.statusEl, role + ' set to ' + model, true);
+        updateCapabilities(updated.roles || {});
+      } catch (err) {
+        setStatus(cfg.statusEl, 'Could not save: ' + err.message, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  function updateBadge(badgeEl, model) {
+    if (model) {
+      badgeEl.textContent = 'configured';
+      badgeEl.className = 'role-badge configured';
+    } else {
+      badgeEl.textContent = 'unconfigured';
+      badgeEl.className = 'role-badge unconfigured';
+    }
+  }
+
+  // --- Restore roles from saved config ---
+  function restoreRoles(roles) {
+    for (const [role, selection] of Object.entries(roles)) {
+      const cfg = ROLE_CONFIG[role];
+      if (!cfg) continue;
+      const mode = selection.mode || 'catalog';
+      const model = selection.model || '';
+      // Set radio
+      const radio = document.querySelector(`input[name="${cfg.modeName}"][value="${mode}"]`);
+      if (radio) radio.checked = true;
+      // Toggle visibility
+      $(cfg.catalogId).style.display = mode === 'manual' ? 'none' : '';
+      $(cfg.manualId).style.display = mode === 'manual' ? '' : 'none';
+      // Set model
+      if (mode === 'catalog' && model) {
+        cfg.selectEl.value = model;
+        updateModelMeta(cfg.selectEl, cfg.metaEl);
+      } else if (mode === 'manual' && model) {
+        $(cfg.manualInputId).value = model;
+      }
+      updateBadge(cfg.badgeEl, model);
+    }
+  }
+
+  // --- Capabilities ---
+  function updateCapabilities(roles) {
+    const caps = [];
+    if (roles.generation && roles.generation.model) caps.push('generation');
+    if (roles.reasoning && roles.reasoning.model) caps.push('reasoning');
+    if (roles.vision && roles.vision.model) caps.push('vision');
+    if (roles.tts && roles.tts.model) caps.push('tts');
+    // Always show the known capabilities
+    const allCaps = ['generation', 'reasoning', 'vision', 'tts'];
+    capabilitiesSection.style.display = '';
+    capabilitiesBar.innerHTML = allCaps.map((c) =>
+      '<span class="cap-chip ' + (caps.includes(c) ? 'active' : '') + '">' + escapeHtml(c) + '</span>'
+    ).join('');
+  }
+
+  // --- ReasonIQ section (existing, preserved) ---
+  const riqApiKeyEl = $('riqApiKey'), riqKeyHintEl = $('riqKeyHint'), riqKeyStatusEl = $('riqKeyStatus');
+  const riqModelSelectEl = $('riqModelSelect'), riqModelMetaEl = $('riqModelMeta'), riqModelStatusEl = $('riqModelStatus');
+  const riqSaveKeyBtn = $('riqSaveKeyBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn'), riqSaveModelBtn = $('riqSaveModelBtn');
+  const riqVisionModelSelectEl = $('riqVisionModelSelect'), riqVisionModelMetaEl = $('riqVisionModelMeta'), riqVisionModelStatusEl = $('riqVisionModelStatus');
+  const riqSaveVisionModelBtn = $('riqSaveVisionModelBtn'), riqClearVisionModelBtn = $('riqClearVisionModelBtn');
+
+  let riqModels = [];
+  let riqCurrentModel = null;
+  let riqCurrentVisionModel = null;
+
+  async function loadRiqConfig() {
     try {
       const res = await fetch('/admin/api/reasoniq/config', { headers: authHeaders() });
       if (!res.ok) return;
       const cfg = await res.json();
-      currentModel = cfg.model;
-      currentVisionModel = cfg.visionModel;
-      keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      riqCurrentModel = cfg.model;
+      riqCurrentVisionModel = cfg.visionModel;
+      riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.model) {
-        modelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
-        modelSelectEl.value = cfg.model;
+        riqModelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
+        riqModelSelectEl.value = cfg.model;
       }
       if (cfg.visionModel) {
-        visionModelSelectEl.innerHTML = '<option value="' + cfg.visionModel + '">' + cfg.visionModel + ' (saved)</option>';
-        visionModelSelectEl.value = cfg.visionModel;
-        saveVisionModelBtn.disabled = false;
+        riqVisionModelSelectEl.innerHTML = '<option value="' + cfg.visionModel + '">' + cfg.visionModel + ' (saved)</option>';
+        riqVisionModelSelectEl.value = cfg.visionModel;
+        riqSaveVisionModelBtn.disabled = false;
       }
-    } catch (_) { /* ignore on initial load */ }
+    } catch (_) { /* ignore */ }
   }
 
-  saveKeyBtn.addEventListener('click', async () => {
-    if (!apiKeyEl.value.trim()) { setStatus(keyStatusEl, 'Enter an API key first.', false); return; }
-    saveKeyBtn.disabled = true;
+  riqSaveKeyBtn.addEventListener('click', async () => {
+    if (!riqApiKeyEl.value.trim()) { setStatus(riqKeyStatusEl, 'Enter an API key first.', false); return; }
+    riqSaveKeyBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: apiKeyEl.value.trim() }),
+        body: JSON.stringify({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: riqApiKeyEl.value.trim() }),
       });
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
-      keyHintEl.textContent = 'Key saved: ' + cfg.maskedApiKey;
-      apiKeyEl.value = '';
-      setStatus(keyStatusEl, 'Saved.', true);
+      riqKeyHintEl.textContent = 'Key saved: ' + cfg.maskedApiKey;
+      riqApiKeyEl.value = '';
+      setStatus(riqKeyStatusEl, 'Saved.', true);
     } catch (err) {
-      setStatus(keyStatusEl, 'Could not save the key — check the bearer token and try again.', false);
+      setStatus(riqKeyStatusEl, 'Could not save the key.', false);
     } finally {
-      saveKeyBtn.disabled = false;
+      riqSaveKeyBtn.disabled = false;
     }
   });
 
-  fetchModelsBtn.addEventListener('click', async () => {
-    fetchModelsBtn.disabled = true;
-    setStatus(modelStatusEl, 'Fetching…', true);
+  riqFetchModelsBtn.addEventListener('click', async () => {
+    riqFetchModelsBtn.disabled = true;
+    setStatus(riqModelStatusEl, 'Fetching…', true);
     try {
       const res = await fetch('/admin/api/reasoniq/models', { headers: authHeaders() });
       if (!res.ok) {
@@ -196,22 +569,22 @@
         throw new Error(body.error || 'request failed');
       }
       const body = await res.json();
-      models = body.models || [];
-      populateSelect(modelSelectEl, currentModel);
-      populateSelect(visionModelSelectEl, currentVisionModel, true);
-      saveModelBtn.disabled = models.length === 0;
-      saveVisionModelBtn.disabled = models.length === 0;
-      setStatus(modelStatusEl, models.length + ' models available.', true);
-      updateModelMeta(modelSelectEl, modelMetaEl);
-      updateModelMeta(visionModelSelectEl, visionModelMetaEl);
+      riqModels = body.models || [];
+      riqPopulateSelect(riqModelSelectEl, riqCurrentModel);
+      riqPopulateSelect(riqVisionModelSelectEl, riqCurrentVisionModel, true);
+      riqSaveModelBtn.disabled = riqModels.length === 0;
+      riqSaveVisionModelBtn.disabled = riqModels.length === 0;
+      setStatus(riqModelStatusEl, riqModels.length + ' models available.', true);
+      riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl);
+      riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl);
     } catch (err) {
-      setStatus(modelStatusEl, 'Could not fetch models: ' + err.message, false);
+      setStatus(riqModelStatusEl, 'Could not fetch models: ' + err.message, false);
     } finally {
-      fetchModelsBtn.disabled = false;
+      riqFetchModelsBtn.disabled = false;
     }
   });
 
-  function populateSelect(selectEl, selectedId, withEmptyOption) {
+  function riqPopulateSelect(selectEl, selectedId, withEmptyOption) {
     selectEl.innerHTML = '';
     if (withEmptyOption) {
       const empty = document.createElement('option');
@@ -219,72 +592,68 @@
       empty.textContent = '— reuse ReasonIQ\'s model —';
       selectEl.appendChild(empty);
     }
-    for (const m of models) {
+    for (const m of riqModels) {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.name + ' (' + m.id + ')';
       selectEl.appendChild(opt);
     }
-    if (selectedId && models.some((m) => m.id === selectedId)) selectEl.value = selectedId;
+    if (selectedId && riqModels.some((m) => m.id === selectedId)) selectEl.value = selectedId;
   }
 
-  function updateModelMeta(selectEl, metaEl) {
-    const m = models.find((x) => x.id === selectEl.value);
+  function riqUpdateModelMeta(selectEl, metaEl) {
+    const m = riqModels.find((x) => x.id === selectEl.value);
     metaEl.textContent = m
       ? 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—')
       : '';
   }
-  modelSelectEl.addEventListener('change', () => updateModelMeta(modelSelectEl, modelMetaEl));
-  visionModelSelectEl.addEventListener('change', () => updateModelMeta(visionModelSelectEl, visionModelMetaEl));
+  riqModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl));
+  riqVisionModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl));
 
-  saveModelBtn.addEventListener('click', async () => {
-    if (!modelSelectEl.value) return;
-    saveModelBtn.disabled = true;
+  riqSaveModelBtn.addEventListener('click', async () => {
+    if (!riqModelSelectEl.value) return;
+    riqSaveModelBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ model: modelSelectEl.value }),
+        body: JSON.stringify({ model: riqModelSelectEl.value }),
       });
       if (!res.ok) throw new Error(await res.text());
-      currentModel = modelSelectEl.value;
-      setStatus(modelStatusEl, 'ReasonIQ will use ' + currentModel + '.', true);
+      riqCurrentModel = riqModelSelectEl.value;
+      setStatus(riqModelStatusEl, 'ReasonIQ will use ' + riqCurrentModel + '.', true);
     } catch (err) {
-      setStatus(modelStatusEl, 'Could not save the selection.', false);
+      setStatus(riqModelStatusEl, 'Could not save the selection.', false);
     } finally {
-      saveModelBtn.disabled = false;
+      riqSaveModelBtn.disabled = false;
     }
   });
 
-  saveVisionModelBtn.addEventListener('click', async () => {
-    saveVisionModelBtn.disabled = true;
+  riqSaveVisionModelBtn.addEventListener('click', async () => {
+    riqSaveVisionModelBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ visionModel: visionModelSelectEl.value }),
+        body: JSON.stringify({ visionModel: riqVisionModelSelectEl.value }),
       });
       if (!res.ok) throw new Error(await res.text());
-      currentVisionModel = visionModelSelectEl.value;
-      setStatus(visionModelStatusEl, currentVisionModel ? ('Image OCR will use ' + currentVisionModel + '.') : 'Image OCR will reuse ReasonIQ\'s model.', true);
+      riqCurrentVisionModel = riqVisionModelSelectEl.value;
+      setStatus(riqVisionModelStatusEl, riqCurrentVisionModel ? ('Image OCR will use ' + riqCurrentVisionModel + '.') : 'Image OCR will reuse ReasonIQ\'s model.', true);
     } catch (err) {
-      setStatus(visionModelStatusEl, 'Could not save the selection.', false);
+      setStatus(riqVisionModelStatusEl, 'Could not save the selection.', false);
     } finally {
-      saveVisionModelBtn.disabled = false;
+      riqSaveVisionModelBtn.disabled = false;
     }
   });
 
-  clearVisionModelBtn.addEventListener('click', () => {
-    visionModelSelectEl.value = '';
-    updateModelMeta(visionModelSelectEl, visionModelMetaEl);
-    saveVisionModelBtn.click();
+  riqClearVisionModelBtn.addEventListener('click', () => {
+    riqVisionModelSelectEl.value = '';
+    riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl);
+    riqSaveVisionModelBtn.click();
   });
 
-  // --- Logos decision log ---------------------------------------------
+  // --- Logos decision log (existing) ---
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
   const refreshDecisionsBtn = $('refreshDecisionsBtn'), decisionsStatusEl = $('decisionsStatus'), decisionsListEl = $('decisionsList');
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
 
   function formatTime(iso) {
     try { return new Date(iso).toLocaleString(); } catch (_) { return iso || ''; }
@@ -292,24 +661,22 @@
 
   function summarizeDecision(d) {
     if (d.kind === 'intentiq.decision') {
-      const parts = [
+      return [
         'intent: ' + (d.intent || '—'),
         'status: ' + (d.status || '—'),
         typeof d.confidence === 'number' ? 'confidence: ' + d.confidence.toFixed(2) : null,
         d.needsClarification ? 'needs clarification' : null,
-      ].filter(Boolean);
-      return parts.join(' · ');
+      ].filter(Boolean).join(' · ');
     }
     if (d.kind === 'reasoniq.result') {
-      const parts = [
+      return [
         'depth: ' + (d.reasoningDepth || '—'),
         typeof d.confidence === 'number' ? 'confidence: ' + d.confidence.toFixed(2) : null,
         'hypotheses: ' + (d.hypothesisCount ?? '—'),
         'contradictions: ' + (d.contradictionCount ?? '—'),
         d.sufficientForConclusion ? 'sufficient' : null,
         d.fallbackReason ? 'fallback: ' + d.fallbackReason : null,
-      ].filter(Boolean);
-      return parts.join(' · ');
+      ].filter(Boolean).join(' · ');
     }
     return JSON.stringify(d);
   }
@@ -358,8 +725,9 @@
   refreshDecisionsBtn.addEventListener('click', loadDecisions);
   decisionsKindEl.addEventListener('change', loadDecisions);
 
-  if (tokenEl.value) { loadConfig(); loadDecisions(); }
-  tokenEl.addEventListener('change', () => { loadConfig(); loadDecisions(); });
+  // --- Init ---
+  if (tokenEl.value) { loadProviderConfig(); loadRiqConfig(); loadDecisions(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadRiqConfig(); loadDecisions(); });
 })();
 </script>
 </body>

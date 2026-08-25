@@ -42,6 +42,8 @@ const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
 const { createReasoningModelStore } = require('./logos/reasoningModelStore');
+const { createProviderStore } = require('./providerStore');
+const { resolveRoleConfig } = require('./providerConfigResolver');
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
@@ -109,6 +111,7 @@ function createApp(env = process.env) {
   // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case the
   // Decision Engine never sees a "native" capability and every turn routes
   // through Hermes exactly as before this existed (see .env.example).
+  // Provider store may override env vars when role selections exist.
   const nativeGenerator = createNativeGeneratorFromEnv(env);
   // Gaia's voice (src/speech/mimoTts.js) — undefined when GAIA_TTS_BASE_URL/
   // GAIA_TTS_MODEL are unset, in which case POST /speech answers 503
@@ -146,10 +149,35 @@ function createApp(env = process.env) {
   const reasoningModelStore = createReasoningModelStore(
     env.REASONIQ_CONFIG_PATH !== undefined ? { storePath: env.REASONIQ_CONFIG_PATH } : {}
   );
+  const providerStore = createProviderStore(
+    env.GAIA_PROVIDER_CONFIG_PATH !== undefined ? { storePath: env.GAIA_PROVIDER_CONFIG_PATH } : {}
+  );
   const decisionStore = createDecisionStore(
     env.LOGOS_DECISIONS_PATH !== undefined ? { decisionsDir: env.LOGOS_DECISIONS_PATH } : {}
   );
-  app.use('/admin', createAdminRouter({ store: reasoningModelStore, decisionStore, auth }));
+  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, auth }));
+
+  // Provider store role overrides — when a role has a model selected via
+  // the admin surface, it takes precedence over env vars. This is
+  // backwards-compatible: env vars remain the fallback when no provider
+  // store config exists.
+  const providerNativeConfig = resolveRoleConfig('generation', providerStore, env);
+  const effectiveNativeGenerator = providerNativeConfig && providerNativeConfig.baseUrl && providerNativeConfig.model
+    ? require('./generation/gaiaGenerator').createGaiaGenerator({
+        baseUrl: providerNativeConfig.baseUrl,
+        model: providerNativeConfig.model,
+        authToken: providerNativeConfig.apiKey,
+      })
+    : nativeGenerator;
+
+  const providerTtsConfig = resolveRoleConfig('tts', providerStore, env);
+  const effectiveTts = providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
+    ? require('./speech/mimoTts').createMimoTts({
+        baseUrl: providerTtsConfig.baseUrl,
+        model: providerTtsConfig.model,
+        authToken: providerTtsConfig.apiKey,
+      })
+    : tts;
 
   const libraryStore = createLibraryStore(env.LIBRARY_PATH !== undefined ? { libraryDir: env.LIBRARY_PATH } : {});
   const libraryMaxFileSizeMb = Number(env.LIBRARY_MAX_FILE_SIZE_MB) || undefined;
@@ -226,7 +254,7 @@ function createApp(env = process.env) {
         hypothesisRuntime,
         res,
         conversationId,
-        nativeGenerator,
+        nativeGenerator: effectiveNativeGenerator,
         webSearch,
         historyStore,
         decisionStore,
@@ -275,7 +303,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       attachments,
-      nativeGenerator,
+      nativeGenerator: effectiveNativeGenerator,
       webSearch,
       traceId,
       conversationId,
@@ -310,11 +338,11 @@ function createApp(env = process.env) {
     if (typeof text !== 'string' || text.trim() === '') {
       return res.status(400).json({ error: 'text must be a non-empty string' });
     }
-    if (!tts) {
+    if (!effectiveTts) {
       return res.status(503).json({ error: 'speech is not configured' });
     }
     try {
-      const { audio, mimeType } = await tts.synthesize(text);
+      const { audio, mimeType } = await effectiveTts.synthesize(text);
       res.status(200).type(mimeType).send(audio);
     } catch (_) {
       // Calm, generic — same posture as responseEngine.js's toCalmError:
