@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createProviderStore, maskKey, DEFAULT_ROLES } = require('../src/providerStore');
+const { createProviderStore, maskKey, DEFAULT_ROLES, DEFAULT_TTS } = require('../src/providerStore');
 
 function tempStore() {
   const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json');
@@ -71,17 +71,17 @@ test('saveRoleSelection persists role config', () => {
   const store = tempStore();
   store.saveProviderConfig({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v1' });
   store.saveRoleSelection('generation', { mode: 'catalog', model: 'google/gemini-flash' });
-  store.saveRoleSelection('tts', { mode: 'manual', model: 'mimo-tts' });
+  store.saveRoleSelection('reasoning', { mode: 'manual', model: 'r1' });
   const config = store.getConfig();
   assert.equal(config.roles.generation.mode, 'catalog');
   assert.equal(config.roles.generation.model, 'google/gemini-flash');
-  assert.equal(config.roles.tts.mode, 'manual');
-  assert.equal(config.roles.tts.model, 'mimo-tts');
+  assert.equal(config.roles.reasoning.model, 'r1');
 });
 
-test('saveRoleSelection throws for unknown role', () => {
+test('saveRoleSelection throws for unknown role (including tts)', () => {
   const store = tempStore();
   assert.throws(() => store.saveRoleSelection('unknown', { mode: 'catalog', model: 'x' }), /unknown role/);
+  assert.throws(() => store.saveRoleSelection('tts', { mode: 'catalog', model: 'x' }), /unknown role/);
 });
 
 test('saveRoleSelection does not affect other roles', () => {
@@ -140,11 +140,70 @@ test('clear removes the stored config', () => {
   assert.equal(store.getConfig(), null);
 });
 
-test('DEFAULT_ROLES contains all four roles with empty defaults', () => {
+test('DEFAULT_ROLES contains three roles with empty defaults (TTS is independent)', () => {
   assert.deepEqual(DEFAULT_ROLES, {
     generation: { mode: 'catalog', model: '' },
     reasoning: { mode: 'catalog', model: '' },
     vision: { mode: 'catalog', model: '' },
-    tts: { mode: 'catalog', model: '' },
   });
+});
+
+test('DEFAULT_TTS contains empty TTS defaults', () => {
+  assert.deepEqual(DEFAULT_TTS, {
+    provider: '',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+  });
+});
+
+// --- TTS (independent) ---
+
+test('saveTtsConfig persists TTS provider config', () => {
+  const store = tempStore();
+  store.saveTtsConfig({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'tts-key', model: 'mimo-v2.5-tts' });
+  const config = store.getConfig();
+  assert.equal(config.tts.provider, 'xiaomi');
+  assert.equal(config.tts.baseUrl, 'https://api.xiaomimimo.com/v1');
+  assert.equal(config.tts.apiKey, 'tts-key');
+  assert.equal(config.tts.model, 'mimo-v2.5-tts');
+});
+
+test('saveTtsConfig partial update keeps previously stored apiKey', () => {
+  const store = tempStore();
+  store.saveTtsConfig({ provider: 'xiaomi', apiKey: 'tts-key', model: 'm1' });
+  store.saveTtsConfig({ model: 'm2' }); // no apiKey
+  const config = store.getConfig();
+  assert.equal(config.tts.apiKey, 'tts-key');
+  assert.equal(config.tts.model, 'm2');
+});
+
+test('saveTtsConfig does not affect main provider or roles', () => {
+  const store = tempStore();
+  store.saveProviderConfig({ provider: 'edenai', apiKey: 'main-key' });
+  store.saveRoleSelection('generation', { mode: 'catalog', model: 'g1' });
+  store.saveTtsConfig({ provider: 'xiaomi', apiKey: 'tts-key', model: 't1' });
+  const config = store.getConfig();
+  assert.equal(config.provider, 'edenai');
+  assert.equal(config.apiKey, 'main-key');
+  assert.equal(config.roles.generation.model, 'g1');
+  assert.equal(config.tts.provider, 'xiaomi');
+  assert.equal(config.tts.apiKey, 'tts-key');
+});
+
+test('getMaskedConfig includes TTS config with masked key', () => {
+  const store = tempStore();
+  store.saveTtsConfig({ provider: 'xiaomi', apiKey: 'tts-super-secret', model: 'm1' });
+  const masked = store.getMaskedConfig();
+  assert.equal(masked.tts.provider, 'xiaomi');
+  assert.equal(masked.tts.model, 'm1');
+  assert.equal(masked.tts.hasApiKey, true);
+  assert.ok(!JSON.stringify(masked).includes('tts-super-secret'));
+});
+
+test('getMaskedConfig reports TTS defaults when nothing saved', () => {
+  const store = tempStore();
+  const masked = store.getMaskedConfig();
+  assert.equal(masked.tts.provider, '');
+  assert.equal(masked.tts.hasApiKey, false);
 });

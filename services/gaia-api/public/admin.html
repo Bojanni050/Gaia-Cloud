@@ -78,8 +78,8 @@
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.0</small></h1>
-  <p class="lede">Configure one model provider and assign models to four Gaia roles. Operator-only — never surfaced to clients.</p>
+  <h1>Model Provider Settings <small>v1.1</small></h1>
+  <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
     <h2>Gaia API access</h2>
@@ -117,10 +117,10 @@
   <section id="capabilitiesSection" style="display:none;">
     <h2>Capability Availability</h2>
     <div class="capabilities-bar" id="capabilitiesBar"></div>
-    <p class="hint" style="margin-top:0.5rem;">Derived from configured role models. No credentials exposed.</p>
+    <p class="hint" style="margin-top:0.5rem;">Derived from configured models. No credentials exposed.</p>
   </section>
 
-  <!-- Role Selectors -->
+  <!-- Role Selectors (Generation, Reasoning, Vision) -->
   <section id="rolesSection" style="display:none;">
     <h2>Model Roles</h2>
     <p class="hint" style="margin-top:0; margin-bottom:1rem;">Each role selects a model from the provider's catalog, or a manual model ID.</p>
@@ -190,45 +190,65 @@
       <button class="save-role-btn" data-role="vision">Save</button>
       <div class="status" id="visionStatus"></div>
     </div>
+  </section>
 
-    <!-- TTS -->
-    <div class="role-section" id="roleTts">
-      <div class="role-header">
-        <span class="role-label">TTS</span>
-        <span class="role-badge unconfigured" id="ttsBadge">unconfigured</span>
-      </div>
-      <div class="mode-toggle">
-        <label><input type="radio" name="ttsMode" value="catalog" checked> Catalog</label>
-        <label><input type="radio" name="ttsMode" value="manual"> Manual</label>
-      </div>
-      <div id="ttsCatalog">
-        <select id="ttsSelect"><option value="">— retrieve models first —</option></select>
-        <div class="model-meta" id="ttsMeta"></div>
-      </div>
-      <div id="ttsManual" class="manual-input" style="display:none;">
-        <label for="ttsManualId">Model ID</label>
-        <input id="ttsManualId" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
-      </div>
-      <button class="save-role-btn" data-role="tts">Save</button>
-      <div class="status" id="ttsStatus"></div>
-    </div>
+  <!-- TTS (independent) -->
+  <section>
+    <h2>TTS — Text-to-Speech</h2>
+    <p class="hint" style="margin-top:0;">Fully independent from the main provider. Can be a different provider with its own API key.</p>
+
+    <label for="ttsProviderSelect">Provider</label>
+    <select id="ttsProviderSelect">
+      <option value="">— select provider —</option>
+      <option value="xiaomi">Xiaomi MiMo</option>
+      <option value="openai">OpenAI</option>
+      <option value="edenai">EdenAI</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+
+    <label for="ttsBaseUrl">Base URL</label>
+    <input id="ttsBaseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="off">
+
+    <label for="ttsApiKey">API Key</label>
+    <input id="ttsApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+    <p class="hint" id="ttsKeyHint">No key saved yet.</p>
+
+    <label for="ttsModel">Model</label>
+    <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+
+    <button id="saveTtsBtn">Save TTS</button>
+    <div class="status" id="ttsStatus"></div>
   </section>
 
   <hr class="separator">
 
-  <!-- ReasonIQ (existing, preserved) -->
+  <!-- ReasonIQ (provider-agnostic) -->
   <section>
     <h2>ReasonIQ — reasoning model</h2>
-    <p class="hint" style="margin-top:0;">Operator-only configuration for Gaia's ReasonIQ cognitive layer.</p>
-    <label for="riqApiKey">OpenRouter API key</label>
-    <input id="riqApiKey" type="password" placeholder="sk-or-..." autocomplete="off">
+    <p class="hint" style="margin-top:0;">Cognitive reasoning layer. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, etc.).</p>
+
+    <label for="riqProviderSelect">Provider</label>
+    <select id="riqProviderSelect">
+      <option value="">— select provider —</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="edenai">EdenAI</option>
+      <option value="openai">OpenAI</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+
+    <label for="riqBaseUrl">Base URL</label>
+    <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+
+    <label for="riqApiKey">API key</label>
+    <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
     <p class="hint" id="riqKeyHint">No key saved yet.</p>
-    <button id="riqSaveKeyBtn">Save key</button>
-    <div class="status" id="riqKeyStatus"></div>
+
+    <button id="riqSaveConfigBtn">Save config</button>
+    <div class="status" id="riqConfigStatus"></div>
 
     <button id="riqFetchModelsBtn" class="secondary">Fetch available models</button>
     <label for="riqModelSelect">Model for ReasonIQ</label>
-    <select id="riqModelSelect"><option value="">— save a key and fetch models —</option></select>
+    <select id="riqModelSelect"><option value="">— save config and fetch models —</option></select>
     <div class="model-meta" id="riqModelMeta"></div>
     <button id="riqSaveModelBtn" disabled>Save selection</button>
     <div class="status" id="riqModelStatus"></div>
@@ -241,7 +261,7 @@
     <div class="status" id="riqVisionModelStatus"></div>
   </section>
 
-  <!-- Decision Log (existing, preserved) -->
+  <!-- Decision Log -->
   <section>
     <h2>Logos — decision log</h2>
     <p class="hint" style="margin-top:0;">Durable copy of IntentIQ/ReasonIQ decisions.</p>
@@ -279,7 +299,6 @@
     generation: { selectEl: $('genSelect'), metaEl: $('genMeta'), badgeEl: $('genBadge'), statusEl: $('genStatus'), modeName: 'genMode', catalogId: 'genCatalog', manualId: 'genManual', manualInputId: 'genManualId' },
     reasoning:  { selectEl: $('reasonSelect'), metaEl: $('reasonMeta'), badgeEl: $('reasonBadge'), statusEl: $('reasonStatus'), modeName: 'reasonMode', catalogId: 'reasonCatalog', manualId: 'reasonManual', manualInputId: 'reasonManualId' },
     vision:     { selectEl: $('visionSelect'), metaEl: $('visionMeta'), badgeEl: $('visionBadge'), statusEl: $('visionStatus'), modeName: 'visionMode', catalogId: 'visionCatalog', manualId: 'visionManual', manualInputId: 'visionManualId' },
-    tts:        { selectEl: $('ttsSelect'), metaEl: $('ttsMeta'), badgeEl: $('ttsBadge'), statusEl: $('ttsStatus'), modeName: 'ttsMode', catalogId: 'ttsCatalog', manualId: 'ttsManual', manualInputId: 'ttsManualId' },
   };
 
   let catalog = [];
@@ -317,10 +336,8 @@
         rolesSection.style.display = '';
         populateAllDropdowns();
       }
-      if (cfg.roles) {
-        restoreRoles(cfg.roles);
-      }
-      updateCapabilities(cfg.roles || {});
+      if (cfg.roles) restoreRoles(cfg.roles);
+      updateCapabilities(cfg.roles || {}, cfg.tts || {});
     } catch (_) { /* ignore on initial load */ }
   }
 
@@ -404,7 +421,6 @@
       : '';
   }
 
-  // Wire up change handlers for model meta
   for (const cfg of Object.values(ROLE_CONFIG)) {
     cfg.selectEl.addEventListener('change', () => updateModelMeta(cfg.selectEl, cfg.metaEl));
   }
@@ -413,7 +429,7 @@
   document.querySelectorAll('input[type="radio"][name$="Mode"]').forEach((radio) => {
     radio.addEventListener('change', () => {
       const roleName = radio.name.replace('Mode', '');
-      const roleKey = roleName === 'gen' ? 'generation' : roleName === 'reason' ? 'reasoning' : roleName === 'vision' ? 'vision' : 'tts';
+      const roleKey = roleName === 'gen' ? 'generation' : roleName === 'reason' ? 'reasoning' : 'vision';
       const cfg = ROLE_CONFIG[roleKey];
       if (!cfg) return;
       const isManual = radio.value === 'manual';
@@ -450,7 +466,7 @@
         currentConfig = updated;
         updateBadge(cfg.badgeEl, model);
         setStatus(cfg.statusEl, role + ' set to ' + model, true);
-        updateCapabilities(updated.roles || {});
+        updateCapabilities(updated.roles || {}, updated.tts || {});
       } catch (err) {
         setStatus(cfg.statusEl, 'Could not save: ' + err.message, false);
       } finally {
@@ -476,13 +492,10 @@
       if (!cfg) continue;
       const mode = selection.mode || 'catalog';
       const model = selection.model || '';
-      // Set radio
       const radio = document.querySelector(`input[name="${cfg.modeName}"][value="${mode}"]`);
       if (radio) radio.checked = true;
-      // Toggle visibility
       $(cfg.catalogId).style.display = mode === 'manual' ? 'none' : '';
       $(cfg.manualId).style.display = mode === 'manual' ? '' : 'none';
-      // Set model
       if (mode === 'catalog' && model) {
         cfg.selectEl.value = model;
         updateModelMeta(cfg.selectEl, cfg.metaEl);
@@ -494,13 +507,12 @@
   }
 
   // --- Capabilities ---
-  function updateCapabilities(roles) {
+  function updateCapabilities(roles, tts) {
     const caps = [];
     if (roles.generation && roles.generation.model) caps.push('generation');
     if (roles.reasoning && roles.reasoning.model) caps.push('reasoning');
     if (roles.vision && roles.vision.model) caps.push('vision');
-    if (roles.tts && roles.tts.model) caps.push('tts');
-    // Always show the known capabilities
+    if (tts && tts.model) caps.push('tts');
     const allCaps = ['generation', 'reasoning', 'vision', 'tts'];
     capabilitiesSection.style.display = '';
     capabilitiesBar.innerHTML = allCaps.map((c) =>
@@ -508,11 +520,62 @@
     ).join('');
   }
 
-  // --- ReasonIQ section (existing, preserved) ---
-  const riqApiKeyEl = $('riqApiKey'), riqKeyHintEl = $('riqKeyHint'), riqKeyStatusEl = $('riqKeyStatus');
+  // --- TTS (independent) ---
+  const ttsProviderEl = $('ttsProviderSelect'), ttsBaseUrlEl = $('ttsBaseUrl'), ttsApiKeyEl = $('ttsApiKey');
+  const ttsModelEl = $('ttsModel'), ttsKeyHintEl = $('ttsKeyHint'), ttsStatusEl = $('ttsStatus');
+  const saveTtsBtn = $('saveTtsBtn');
+
+  async function loadTtsConfig() {
+    try {
+      const res = await fetch('/admin/api/tts/config', { headers: authHeaders() });
+      if (!res.ok) return;
+      const cfg = await res.json();
+      if (cfg.provider) ttsProviderEl.value = cfg.provider;
+      if (cfg.baseUrl) ttsBaseUrlEl.value = cfg.baseUrl;
+      if (cfg.model) ttsModelEl.value = cfg.model;
+      ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+    } catch (_) { /* ignore */ }
+  }
+
+  saveTtsBtn.addEventListener('click', async () => {
+    const provider = ttsProviderEl.value;
+    if (!provider) { setStatus(ttsStatusEl, 'Select a TTS provider.', false); return; }
+    const baseUrl = ttsBaseUrlEl.value.trim();
+    if (!baseUrl) { setStatus(ttsStatusEl, 'Enter a base URL.', false); return; }
+    const model = ttsModelEl.value.trim();
+    if (!model) { setStatus(ttsStatusEl, 'Enter a model.', false); return; }
+    const body = { provider, baseUrl, model };
+    if (ttsApiKeyEl.value.trim()) body.apiKey = ttsApiKeyEl.value.trim();
+    saveTtsBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/tts/config', {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const cfg = await res.json();
+      ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      ttsApiKeyEl.value = '';
+      setStatus(ttsStatusEl, 'TTS saved.', true);
+      // Update capabilities
+      if (currentConfig) {
+        currentConfig.tts = cfg;
+        updateCapabilities(currentConfig.roles || {}, cfg);
+      }
+    } catch (err) {
+      setStatus(ttsStatusEl, 'Could not save TTS — check the bearer token.', false);
+    } finally {
+      saveTtsBtn.disabled = false;
+    }
+  });
+
+  // --- ReasonIQ (provider-agnostic) ---
+  const riqProviderEl = $('riqProviderSelect'), riqBaseUrlEl = $('riqBaseUrl'), riqApiKeyEl = $('riqApiKey');
+  const riqKeyHintEl = $('riqKeyHint'), riqConfigStatusEl = $('riqConfigStatus');
+  const riqSaveConfigBtn = $('riqSaveConfigBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn');
   const riqModelSelectEl = $('riqModelSelect'), riqModelMetaEl = $('riqModelMeta'), riqModelStatusEl = $('riqModelStatus');
-  const riqSaveKeyBtn = $('riqSaveKeyBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn'), riqSaveModelBtn = $('riqSaveModelBtn');
-  const riqVisionModelSelectEl = $('riqVisionModelSelect'), riqVisionModelMetaEl = $('riqVisionModelMeta'), riqVisionModelStatusEl = $('riqVisionModelStatus');
+  const riqSaveModelBtn = $('riqSaveModelBtn');
+  const riqVisionModelSelectEl = $('riqVisionModelSelect'), riqVisionModelMetaEl = $('riqVisionModelMeta');
+  const riqVisionModelStatusEl = $('riqVisionModelStatus');
   const riqSaveVisionModelBtn = $('riqSaveVisionModelBtn'), riqClearVisionModelBtn = $('riqClearVisionModelBtn');
 
   let riqModels = [];
@@ -526,6 +589,8 @@
       const cfg = await res.json();
       riqCurrentModel = cfg.model;
       riqCurrentVisionModel = cfg.visionModel;
+      if (cfg.provider) riqProviderEl.value = cfg.provider;
+      if (cfg.baseUrl) riqBaseUrlEl.value = cfg.baseUrl;
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.model) {
         riqModelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
@@ -539,23 +604,27 @@
     } catch (_) { /* ignore */ }
   }
 
-  riqSaveKeyBtn.addEventListener('click', async () => {
-    if (!riqApiKeyEl.value.trim()) { setStatus(riqKeyStatusEl, 'Enter an API key first.', false); return; }
-    riqSaveKeyBtn.disabled = true;
+  riqSaveConfigBtn.addEventListener('click', async () => {
+    const provider = riqProviderEl.value;
+    if (!provider) { setStatus(riqConfigStatusEl, 'Select a provider first.', false); return; }
+    const baseUrl = riqBaseUrlEl.value.trim();
+    if (!baseUrl) { setStatus(riqConfigStatusEl, 'Enter a base URL.', false); return; }
+    const body = { provider, baseUrl };
+    if (riqApiKeyEl.value.trim()) body.apiKey = riqApiKeyEl.value.trim();
+    riqSaveConfigBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: riqApiKeyEl.value.trim() }),
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
-      riqKeyHintEl.textContent = 'Key saved: ' + cfg.maskedApiKey;
+      riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       riqApiKeyEl.value = '';
-      setStatus(riqKeyStatusEl, 'Saved.', true);
+      setStatus(riqConfigStatusEl, 'Config saved.', true);
     } catch (err) {
-      setStatus(riqKeyStatusEl, 'Could not save the key.', false);
+      setStatus(riqConfigStatusEl, 'Could not save config.', false);
     } finally {
-      riqSaveKeyBtn.disabled = false;
+      riqSaveConfigBtn.disabled = false;
     }
   });
 
@@ -603,9 +672,15 @@
 
   function riqUpdateModelMeta(selectEl, metaEl) {
     const m = riqModels.find((x) => x.id === selectEl.value);
-    metaEl.textContent = m
-      ? 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—')
-      : '';
+    if (!m) { metaEl.textContent = ''; return; }
+    // Show capabilities if available (EdenAI), else show context/pricing (OpenRouter)
+    if (m.capabilities && m.capabilities.length > 0) {
+      metaEl.textContent = 'capabilities: ' + m.capabilities.join(', ');
+    } else if (m.contextLength || m.pricing) {
+      metaEl.textContent = 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—');
+    } else {
+      metaEl.textContent = '';
+    }
   }
   riqModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl));
   riqVisionModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl));
@@ -651,7 +726,7 @@
     riqSaveVisionModelBtn.click();
   });
 
-  // --- Logos decision log (existing) ---
+  // --- Logos decision log ---
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
   const refreshDecisionsBtn = $('refreshDecisionsBtn'), decisionsStatusEl = $('decisionsStatus'), decisionsListEl = $('decisionsList');
 
@@ -726,8 +801,8 @@
   decisionsKindEl.addEventListener('change', loadDecisions);
 
   // --- Init ---
-  if (tokenEl.value) { loadProviderConfig(); loadRiqConfig(); loadDecisions(); }
-  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadRiqConfig(); loadDecisions(); });
+  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadDecisions(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadDecisions(); });
 })();
 </script>
 </body>

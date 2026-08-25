@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveRoleConfig, resolveEnvFallback, deriveCapabilities } = require('../src/providerConfigResolver');
+const { resolveRoleConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities } = require('../src/providerConfigResolver');
 
 function createMockStore(config) {
   return { getConfig: () => config };
@@ -19,7 +19,6 @@ test('resolveRoleConfig: uses provider store config when apiKey is present', () 
       generation: { mode: 'catalog', model: 'google/gemini-flash' },
       reasoning: { mode: 'manual', model: 'anthropic/claude' },
       vision: { mode: 'catalog', model: '' },
-      tts: { mode: 'catalog', model: '' },
     },
   });
   const config = resolveRoleConfig('generation', store);
@@ -38,7 +37,6 @@ test('resolveRoleConfig: returns null when role has no model', () => {
       generation: { mode: 'catalog', model: '' },
       reasoning: { mode: 'catalog', model: '' },
       vision: { mode: 'catalog', model: '' },
-      tts: { mode: 'catalog', model: '' },
     },
   });
   assert.equal(resolveRoleConfig('generation', store), null);
@@ -109,9 +107,9 @@ test('resolveEnvFallback: vision falls back to reasoning config', () => {
 test('resolveEnvFallback: tts reads GAIA_TTS_* vars', () => {
   const env = { GAIA_TTS_BASE_URL: 'https://tts.com', GAIA_TTS_MODEL: 'tts1', GAIA_TTS_AUTH_TOKEN: 'tk' };
   const config = resolveEnvFallback('tts', env);
-  assert.equal(config.baseUrl, 'https://tts.com');
-  assert.equal(config.model, 'tts1');
-  assert.equal(config.apiKey, 'tk');
+  // TTS is now handled by resolveTtsConfig, not resolveEnvFallback
+  // resolveEnvFallback no longer handles 'tts' case
+  assert.equal(config, null);
 });
 
 test('resolveEnvFallback: tts returns null when vars unset', () => {
@@ -120,6 +118,45 @@ test('resolveEnvFallback: tts returns null when vars unset', () => {
 
 test('resolveEnvFallback: unknown role returns null', () => {
   assert.equal(resolveEnvFallback('unknown', {}), null);
+});
+
+// --- resolveTtsConfig ---
+
+test('resolveTtsConfig: uses provider store TTS config when present', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    tts: { provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'tts-key', model: 'mimo-tts' },
+  });
+  const config = resolveTtsConfig(store);
+  assert.equal(config.provider, 'xiaomi');
+  assert.equal(config.baseUrl, 'https://api.xiaomimimo.com/v1');
+  assert.equal(config.model, 'mimo-tts');
+  assert.equal(config.apiKey, 'tts-key');
+});
+
+test('resolveTtsConfig: returns null when TTS has no model', () => {
+  const store = createMockStore({
+    tts: { provider: 'xiaomi', baseUrl: 'https://x', model: '' },
+  });
+  assert.equal(resolveTtsConfig(store), null);
+});
+
+test('resolveTtsConfig: returns null when no TTS config', () => {
+  const store = createMockStore({});
+  assert.equal(resolveTtsConfig(store), null);
+});
+
+test('resolveTtsConfig: falls back to env vars', () => {
+  const env = { GAIA_TTS_BASE_URL: 'https://tts.com', GAIA_TTS_MODEL: 'tts1', GAIA_TTS_AUTH_TOKEN: 'tk' };
+  const config = resolveTtsConfig(null, env);
+  assert.equal(config.provider, 'env');
+  assert.equal(config.baseUrl, 'https://tts.com');
+  assert.equal(config.model, 'tts1');
+  assert.equal(config.apiKey, 'tk');
+});
+
+test('resolveTtsConfig: env fallback returns null when vars unset', () => {
+  assert.equal(resolveTtsConfig(null, {}), null);
 });
 
 // --- deriveCapabilities ---
@@ -141,8 +178,8 @@ test('deriveCapabilities: reflects store role selections', () => {
       generation: { mode: 'catalog', model: 'g1' },
       reasoning: { mode: 'manual', model: 'r1' },
       vision: { mode: 'catalog', model: '' },
-      tts: { mode: 'manual', model: 't1' },
     },
+    tts: { provider: 'xiaomi', model: 't1' },
   });
   const caps = deriveCapabilities(store);
   assert.equal(caps.generation, true);

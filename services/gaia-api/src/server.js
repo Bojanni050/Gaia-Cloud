@@ -43,7 +43,7 @@ const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
 const { createReasoningModelStore } = require('./logos/reasoningModelStore');
 const { createProviderStore } = require('./providerStore');
-const { resolveRoleConfig } = require('./providerConfigResolver');
+const { resolveRoleConfig, resolveTtsConfig } = require('./providerConfigResolver');
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
@@ -170,7 +170,7 @@ function createApp(env = process.env) {
       })
     : nativeGenerator;
 
-  const providerTtsConfig = resolveRoleConfig('tts', providerStore, env);
+  const providerTtsConfig = resolveTtsConfig(providerStore, env);
   const effectiveTts = providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
     ? require('./speech/mimoTts').createMimoTts({
         baseUrl: providerTtsConfig.baseUrl,

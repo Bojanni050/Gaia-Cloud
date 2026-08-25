@@ -161,9 +161,9 @@ test('GET /admin/api/reasoniq/models returns the fetched model list once a key i
   const ctx = startTestServer();
   try {
     await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x' }),
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x', baseUrl: 'https://openrouter.ai/api/v1' }),
     });
-    ctx.setModels([{ id: 'openai/gpt-4o-mini', name: 'GPT-4o mini', contextLength: 128000, pricing: { prompt: '0.15', completion: '0.6' } }]);
+    ctx.setProviderModels([{ id: 'openai/gpt-4o-mini', name: 'GPT-4o mini', contextLength: 128000, pricing: { prompt: '0.15', completion: '0.6' } }]);
 
     const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/models`, { headers: authHeaders() });
     assert.equal(res.status, 200);
@@ -207,9 +207,9 @@ test('GET /admin/api/reasoniq/models maps an OpenRouter failure to a calm 502', 
   const ctx = startTestServer();
   try {
     await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x' }),
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x', baseUrl: 'https://openrouter.ai/api/v1' }),
     });
-    ctx.setError(new Error('openrouter rejected the api key'));
+    ctx.setProviderError(new Error('openrouter rejected the api key'));
 
     const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/models`, { headers: authHeaders() });
     assert.equal(res.status, 502);
@@ -443,7 +443,7 @@ test('PUT /admin/api/provider/roles rejects invalid mode', async () => {
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ role: 'tts', mode: 'invalid', model: 'x' }),
+      body: JSON.stringify({ role: 'vision', mode: 'invalid', model: 'x' }),
     });
     assert.equal(res.status, 400);
   } finally {
@@ -456,12 +456,12 @@ test('PUT /admin/api/provider/roles saves manual mode selection', async () => {
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ role: 'tts', mode: 'manual', model: 'custom-tts-model' }),
+      body: JSON.stringify({ role: 'vision', mode: 'manual', model: 'custom-vision-model' }),
     });
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.roles.tts.mode, 'manual');
-    assert.equal(body.roles.tts.model, 'custom-tts-model');
+    assert.equal(body.roles.vision.mode, 'manual');
+    assert.equal(body.roles.vision.model, 'custom-vision-model');
   } finally {
     await ctx.close();
   }
@@ -478,9 +478,9 @@ test('GET /admin/api/provider/capabilities returns capability availability', asy
       method: 'PUT', headers: authHeaders(),
       body: JSON.stringify({ role: 'generation', mode: 'catalog', model: 'g1' }),
     });
-    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ role: 'tts', mode: 'manual', model: 't1' }),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://tts.x', model: 't1' }),
     });
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/capabilities`, { headers: authHeaders() });
     assert.equal(res.status, 200);
@@ -514,6 +514,144 @@ test('Provider routes are not available when providerStore is not provided', asy
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
     assert.equal(res.status, 404);
+  } finally {
+    await ctx.close();
+  }
+});
+
+// --- TTS routes ---
+
+test('GET /admin/api/tts/config returns TTS defaults', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/config`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, '');
+    assert.equal(body.hasApiKey, false);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/tts/config saves TTS config', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'tts-secret', model: 'mimo-tts' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, 'xiaomi');
+    assert.equal(body.baseUrl, 'https://api.xiaomimimo.com/v1');
+    assert.equal(body.model, 'mimo-tts');
+    assert.equal(body.hasApiKey, true);
+    assert.ok(!JSON.stringify(body).includes('tts-secret'));
+    // Verify persisted
+    assert.equal(ctx.providerStore.getConfig().tts.apiKey, 'tts-secret');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/tts/config partial update keeps previously stored apiKey', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', apiKey: 'tts-key', model: 'm1' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ model: 'm2' }),
+    });
+    const body = await res.json();
+    assert.equal(body.model, 'm2');
+    assert.equal(body.hasApiKey, true);
+    assert.equal(ctx.providerStore.getConfig().tts.apiKey, 'tts-key');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/tts/config rejects empty body', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/models requires TTS provider first', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/models`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.ok(body.error.includes('configure a TTS provider'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/models returns models on success', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'k' }),
+    });
+    ctx.setProviderModels([{ id: 'mimo-tts', name: 'MiMo TTS', capabilities: [] }]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/models`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.models.length, 1);
+    assert.equal(body.models[0].id, 'mimo-tts');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/models returns 502 on provider failure', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'k' }),
+    });
+    ctx.setProviderError(new Error('provider unreachable'));
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/models`, { headers: authHeaders() });
+    assert.equal(res.status, 502);
+    const body = await res.json();
+    assert.ok(!JSON.stringify(body).includes('k'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('TTS config is independent from main provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v1', apiKey: 'main-key' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'tts-key', model: 'mimo' }),
+    });
+    const mainConfig = await (await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() })).json();
+    const ttsConfig = await (await fetch(`${ctx.baseUrl}/admin/api/tts/config`, { headers: authHeaders() })).json();
+    assert.equal(mainConfig.provider, 'edenai');
+    assert.equal(ttsConfig.provider, 'xiaomi');
+    assert.equal(ttsConfig.model, 'mimo');
+    // Main config should not contain TTS apiKey
+    assert.ok(!JSON.stringify(mainConfig).includes('tts-key'));
   } finally {
     await ctx.close();
   }
