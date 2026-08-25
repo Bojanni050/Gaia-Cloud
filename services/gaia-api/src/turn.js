@@ -45,6 +45,7 @@ const {
 } = require('./responseEngine');
 const { decide: decideAction } = require('./decision/decisionEngine');
 const { execute: executeDecision } = require('./orchestration/orchestrator');
+const { createTurnTiming, trackFirstToken } = require('./timing');
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
 
@@ -335,6 +336,11 @@ async function runTurnCore({
 }) {
   const userText = latestUserText(messages);
 
+  // Pipeline latency tracing — one timing context per turn, shared across
+  // all stages. Zero overhead when no log function is available.
+  const timing = createTurnTiming(traceId || `trace-${Date.now()}`);
+  timing.start('turn');
+
   // Both console.log (unchanged, for live `docker logs` tailing) and, when
   // a decisionStore is given, a durable JSONL line (decisionStore.js) —
   // console output alone doesn't survive past Docker's own log retention.
@@ -357,11 +363,13 @@ async function runTurnCore({
   // call. Never allowed to throw into the turn path; a failure degrades to
   // `intentDecision: null`, which downstream treats conservatively.
   let intentDecision = null;
+  timing.start('intent');
   try {
     intentDecision = await intentIQ(messages, { contextId: conversationId, logger: decisionLogger });
   } catch (_) {
     // Observability must never take down a real conversational turn.
   }
+  timing.end('intent');
 
   // Gaia context layer: recall happens BEFORE ReasonIQ so its output can be
   // assembled into evidence — Hindsight stays the only retriever (memory.js's
@@ -377,6 +385,7 @@ async function runTurnCore({
     && hindsight
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
+  timing.start('memory_recall');
   const [reflections, mentalModels, recalledPatterns] = await Promise.all([
     hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
@@ -389,6 +398,7 @@ async function runTurnCore({
       })
       : Promise.resolve([]),
   ]);
+  timing.end('memory_recall');
 
   // Memoryworthiness 0.1 (memoryWorthiness.js): a cheap DETERMINISTIC
   // judgment — no LLM, never user-facing — of whether this turn deserves a
@@ -398,6 +408,7 @@ async function runTurnCore({
   // trigger below; conversation history keeps the turn either way — only
   // MEMORY is being judged here.
   let memoryDecision = null;
+  timing.start('memory_worthiness');
   try {
     const mwStartMs = Date.now();
     memoryDecision = evaluateMemoryWorthiness({
@@ -411,6 +422,7 @@ async function runTurnCore({
     // A classification failure degrades to null → pre-0.1 behavior (the
     // legacy shouldReflect gate still guards the reflection).
   }
+  timing.end('memory_worthiness');
 
   // Categorize attachments: text files become evidence/context, images are
   // model-native input handled at assembly time.
@@ -421,12 +433,14 @@ async function runTurnCore({
   // turn already has in hand into normalized evidence with stable ids. Pure
   // and local; no retrieval happens here.
   let evidence = [];
+  timing.start('evidence_assembly');
   try {
     evidence = assembleEvidence({ reflections, mentalModels, attachments: textAttachments });
   } catch (_) {
     // Assembly must never take down a turn; an empty list just means
     // ReasonIQ runs shallow, exactly as it always has without evidence.
   }
+  timing.end('evidence_assembly');
 
   // Hypothesis Persistence 0.1 (optional runtime, wired by server.js): seed
   // ReasonIQ with Gaia's tracked hypotheses — manager state first, then a
@@ -472,6 +486,7 @@ async function runTurnCore({
   // sufficiency, gaps) to route the turn. A reasoning failure degrades to
   // `reasoningResult: null`, same posture as intentDecision above.
   let reasoningResult = null;
+  timing.start('reasoniq');
   try {
     reasoningResult = await reasonIQ(
       {
@@ -488,6 +503,7 @@ async function runTurnCore({
     // A reasoning failure degrades to `reasoningResult: null`, never
     // allowed to take down the turn.
   }
+  timing.end('reasoniq');
 
   // The structured result flows into the manager (lifecycle/policy/promotion
   // via its injected sink → Hindsight adapter). Best-effort: persistence or
@@ -553,6 +569,7 @@ async function runTurnCore({
   if (webSearch) availableCapabilities.push({ id: 'web' });
 
   let decision;
+  timing.start('decision');
   try {
     decision = decisionEngine({
       userInput: userText,
@@ -572,6 +589,7 @@ async function runTurnCore({
       reason: 'decision engine failed; defaulting to the hermes capability',
     };
   }
+  timing.end('decision');
   logDecisionPlan(decision, decisionLogger);
 
   // Pattern Awareness observability: what was recalled and what the
@@ -659,11 +677,36 @@ async function runTurnCore({
   };
 
   let executionResult;
+  timing.start('capability');
   try {
-    executionResult = await orchestrate(decision, { capabilities, nativeGenerator, messages: assembled, onDelta, conversationId });
+    // Capability-level timing: wrap each capability's invoke to measure
+    // individual capability duration without changing behavior.
+    const timedCapabilities = {};
+    for (const [capId, cap] of Object.entries(capabilities)) {
+      if (cap && typeof cap.invoke === 'function') {
+        timedCapabilities[capId] = {
+          invoke: async (msgs, opts = {}) => {
+            timing.start(`capability.${capId}`);
+            try {
+              const result = await cap.invoke(msgs, opts);
+              timing.end(`capability.${capId}`, { capability: capId });
+              return result;
+            } catch (err) {
+              timing.fail(`capability.${capId}`, err.constructor.name || 'Error', { capability: capId });
+              throw err;
+            }
+          },
+        };
+      } else {
+        timedCapabilities[capId] = cap;
+      }
+    }
+
+    executionResult = await orchestrate(decision, { capabilities: timedCapabilities, nativeGenerator, messages: assembled, onDelta, conversationId });
   } catch (_) {
     executionResult = null;
   }
+  timing.end('capability');
 
   // Response Engine seam: both transports share resolveReplyText's judgment
   // of what the ExecutionResult means as text. Null ⇒ the caller's transport
@@ -690,7 +733,26 @@ async function runTurnCore({
     });
   }
 
-  return { decision, executionResult, replyText };
+  // Pipeline latency breakdown — log turn.done with aggregated timings.
+  // Capability durations are extracted from individual capability.X events
+  // and summarized. No double-counting: each stage measures only its own
+  // wall-clock time, not nested stages.
+  timing.end('turn');
+  const capabilityEvents = timing.getEvents().filter((e) => e.stage && e.stage.startsWith('capability.') && e.stage !== 'capability');
+  const capabilitiesSummary = capabilityEvents.map((e) => ({
+    name: e.capability || e.stage.replace('capability.', ''),
+    durationMs: e.durationMs,
+  }));
+  timing.done({
+    intentMs: timing.getDuration('intent'),
+    retrievalMs: timing.getDuration('memory_recall'),
+    reasoningMs: timing.getDuration('reasoniq'),
+    decisionMs: timing.getDuration('decision'),
+    capabilityMs: timing.getDuration('capability'),
+    capabilities: capabilitiesSummary.length > 0 ? capabilitiesSummary : undefined,
+  });
+
+  return { decision, executionResult, replyText, timing };
 }
 
 /**
@@ -744,7 +806,7 @@ async function performTurn({
     return { status: 400, body: { error: problem } };
   }
 
-  const { replyText } = await runTurnCore({
+  const { replyText, timing } = await runTurnCore({
     messages,
     documents,
     hermes,
@@ -762,6 +824,23 @@ async function performTurn({
     decisionEngine,
     orchestrate,
   });
+
+  // Non-streaming generation timing: log generation.start/done
+  // (streaming timing is handled by first_token tracking above)
+  if (timing) {
+    const genEvents = timing.getEvents().filter((e) => e.stage && e.stage.startsWith('capability.native') || e.stage && e.stage.startsWith('capability.hermes'));
+    if (genEvents.length > 0) {
+      try {
+        console.log(JSON.stringify({
+          kind: 'gaia.timing',
+          traceId,
+          stage: 'generation.done',
+          durationMs: genEvents.reduce((sum, e) => sum + e.durationMs, 0),
+          mode: 'non-streaming',
+        }));
+      } catch (_) { /* never break a turn */ }
+    }
+  }
 
   return formatReply(replyText);
 }
@@ -827,9 +906,14 @@ async function performStreamingTurn({
   // frame shape, the lazy header-send, and the completion/failure
   // lifecycle (responseEngine.js).
   const emitter = createStreamEmitter(res);
-  const onDelta = (chunk, isReasoning) => {
-    emitter.delta(chunk, { reasoning: isReasoning });
-  };
+
+  // First-token tracking: wraps onDelta to capture time-to-first-token
+  // for streaming generation.
+  let timeToFirstTokenMs = null;
+  const onDelta = trackFirstToken(
+    (chunk, isReasoning) => { emitter.delta(chunk, { reasoning: isReasoning }); },
+    { onFirstToken: (ms) => { timeToFirstTokenMs = ms; } }
+  );
 
   let coreResult;
   try {
@@ -860,7 +944,19 @@ async function performStreamingTurn({
     return;
   }
 
-  const { decision, executionResult, replyText } = coreResult;
+  const { decision, executionResult, replyText, timing } = coreResult;
+
+  // Log first_token for streaming generation
+  if (timeToFirstTokenMs !== null) {
+    try {
+      console.log(JSON.stringify({
+        kind: 'gaia.timing',
+        traceId,
+        stage: 'generation.first_token',
+        timeToFirstTokenMs,
+      }));
+    } catch (_) { /* never break a turn */ }
+  }
 
   // Nothing usable was said (execution failed / empty output): report the
   // calm failure through the emitter — before any content shipped this is

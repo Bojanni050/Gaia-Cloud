@@ -342,7 +342,18 @@ function createApp(env = process.env) {
       return res.status(503).json({ error: 'speech is not configured' });
     }
     try {
+      const ttsTraceId = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const ttsStart = process.hrtime.bigint();
       const { audio, mimeType } = await effectiveTts.synthesize(text);
+      const ttsDurationMs = Number(process.hrtime.bigint() - ttsStart) / 1e6;
+      try {
+        console.log(JSON.stringify({
+          kind: 'gaia.timing',
+          traceId: ttsTraceId,
+          stage: 'tts.done',
+          durationMs: Math.round(ttsDurationMs * 100) / 100,
+        }));
+      } catch (_) { /* never break a turn */ }
       res.status(200).type(mimeType).send(audio);
     } catch (_) {
       // Calm, generic — same posture as responseEngine.js's toCalmError:
