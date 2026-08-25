@@ -1209,3 +1209,70 @@ test('v0.3: without ANY preceding context the system remains uncertain', () => {
   assert.equal(d.sourceOfTruth, 'unknown');
   assert.deepEqual(d.referents, []);
 });
+
+// --- heuristic-v0.4: declarative status updates -------------------------------
+//
+// A first-person statement about something the user just DID is a report,
+// never a request. Before v0.4 such turns scored unknown at the heuristic
+// tier; with a semantic classifier configured, the consensus tier could then
+// judge the un-opinionated turn "ambiguous" and bounce a plain status update
+// into a clarification loop (real production failure: two consecutive
+// "ik heb ... toegevoegd" turns both answered with the clarify fallback).
+
+test('v0.4: a declarative status update is an accepted converse statement — never clarify-bait', () => {
+  const d = classify(user('ik heb de capability toegevoegd dat je kan zoeken in chatgeschiedenis maar kennelijk werkt het nog niet'), silent);
+  assert.equal(d.intent, 'converse');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.needsClarification, false);
+  assert.equal(d.sourceOfTruth, 'conversation');
+  assert.equal(d.meta.reason, 'declarative_status_update');
+  // The speech act is certain by construction: no semantic second opinion
+  // that could reintroduce ambiguity.
+  assert.equal(d.needsSemanticCheck, false);
+});
+
+test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
+  for (const text of [
+    'ik heb die mogelijkheid wel toegevoegd. Kennelijk moet ik terug naar de tekenafel',
+    'ik heb net de nieuwe retrieval-capability gebouwd',
+    'ik heb de tests bijgewerkt maar twee falen nog',
+  ]) {
+    const d = classify(user(text), silent);
+    assert.equal(d.meta.reason, 'declarative_status_update', text);
+    assert.equal(d.needsClarification, false);
+  }
+});
+
+test('v0.4: English mirrors work', () => {
+  const d = classify(user('Added the new capability to the registry.'), silent);
+  assert.equal(d.intent, 'converse');
+  assert.equal(d.meta.reason, 'declarative_status_update');
+});
+
+test('v0.4: requests, questions and non-completion statements stay outside the frame', () => {
+  // Imperative request — NOT a status report.
+  assert.equal(classify(user('Voeg de capability toe aan de registry'), silent).meta.reason, 'no_signal_matched');
+  // 'ik heb' without a completion verb.
+  assert.equal(classify(user('Ik heb een vraag'), silent).status, 'unknown');
+  assert.equal(classify(user('ik heb honger'), silent).status, 'unknown');
+  // A question is never a status report, even with the same words.
+  const q = classify(user('heb ik die capability toegevoegd?'), silent);
+  assert.notEqual(q.meta.reason, 'declarative_status_update');
+  // Meta-intent about Gaia's own actions keeps its existing path.
+  const meta = classify(user('Waarom heb je dat toegevoegd?'), silent);
+  assert.notEqual(meta.meta.reason, 'declarative_status_update');
+});
+
+test('v0.4: decision integration — status updates route native, never to clarify', () => {
+  const { decide } = require('../src/decision/decisionEngine');
+  const intent = classify(user('ik heb de capability toegevoegd maar kennelijk werkt het nog niet'), silent);
+  const decision = decide({
+    userInput: 'ik heb de capability toegevoegd maar kennelijk werkt het nog niet',
+    intent,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.notEqual(decision.action, 'clarify');
+  assert.equal(decision.action, 'native');
+});

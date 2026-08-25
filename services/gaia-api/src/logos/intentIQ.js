@@ -102,10 +102,10 @@ const { parseAndValidateSemanticOutput, MalformedSemanticOutputError } = require
 const { createFromEnv: createIntentModelFromEnv } = require('./intentModelClient');
 
 const SCHEMA_VERSION = 'intentiq.v1';
-// heuristic-v0.3: assistant-originated referent anchoring — a follow-up may
-// now be interpreted against Gaia's OWN previous response (term anchoring +
-// referent provenance), not only prior user turns. No taxonomy changes.
-const CLASSIFIER_VERSION = 'heuristic-v0.3';
+// heuristic-v0.4: declarative status updates resolve as accepted converse
+// without a semantic check — a user statement about their own actions can
+// no longer be bounced into clarification by the consensus tier.
+const CLASSIFIER_VERSION = 'heuristic-v0.4';
 const SEMANTIC_CLASSIFIER_VERSION = 'semantic-v2.0';
 
 // --- tiny local text helpers (deliberately not shared with memoryPolicy.js
@@ -489,6 +489,35 @@ function isBareInterrogativeFollowUp(text) {
   if (words.length === 0 || words.length > 3) return false;
   if (!INTERROGATIVE_HEADS.has(words[0])) return false;
   return words.every((w) => INTERROGATIVE_MODIFIERS.has(w));
+}
+
+// --- heuristic-v0.4: declarative status updates -----------------------------
+//
+// A first-person statement about something the user just DID ("ik heb de
+// capability toegevoegd maar kennelijk werkt het nog niet") is a report, not
+// a request. Such turns carry no request-shaped signal, so the heuristic
+// tier reports unknown — and when a semantic classifier is configured, the
+// consensus tier then gets a second opinion on an un-opinionated turn, which
+// can come back "ambiguous" and bounce a plain status update into a
+// clarification loop. That was a real production failure mode.
+//
+// The frame below is deliberately TIGHT: first person, past-tense completion
+// verb, and NEVER a question. When it matches, the speech act is already
+// clear (statement → converse), so the decision is accepted WITHOUT a
+// semantic check — a second opinion on "is this a statement?" is exactly
+// the ambiguity factory this branch exists to close.
+
+const STATUS_UPDATE_VERBS = /(?:toegevoegd|toegevoeg|erbij gezet|geüpdatet|geupdate|bijgewerkt|aangepast|veranderd|gebouwd|gemaakt|ingeschakeld|uitgeschakeld|verwijderd|neergezet|geschreven)/i;
+
+function isDeclarativeStatusUpdate(text) {
+  const raw = String(text || '');
+  if (raw.includes('?')) return false; // questions are never status reports
+  const t = normalize(raw);
+  if (!t) return false;
+  const nlFrame = new RegExp(`^ik heb\\b[\\s\\S]{0,100}${STATUS_UPDATE_VERBS.source}`, 'i').test(t);
+  const enFrame = /^i (?:just |also |finally )?(?:added|updated|built|implemented|shipped|enabled|removed|wrote)\b/i.test(t)
+    || /^(?:added|updated|built|implemented|shipped)\b/i.test(t);
+  return Boolean(nlFrame || enFrame);
 }
 
 /**
@@ -903,13 +932,38 @@ function classify(messages, options = {}) {
         },
       };
     } else {
-      // IntentIQ 2.4: a bare interrogative turn ("why?", "waarom dan?")
-      // has no standalone intent — resolve it against conversation
-      // context BEFORE any keyword scoring, so a bare "Waarom?" can no
-      // longer ride phrase('waarom') to a context-free confident
-      // inform.explain. With a resolvable prior turn it inherits (still
-      // needsSemanticCheck); without one it is honest insufficient_context.
-      if (isBareInterrogativeFollowUp(text)) {
+      // heuristic-v0.4: a declarative first-person status update ("ik heb de
+      // capability toegevoegd, maar het werkt nog niet") is a STATEMENT, not
+      // a request. Resolving it here — accepted, no semantic check — keeps
+      // the consensus tier from bouncing plain reports into clarification.
+      if (isDeclarativeStatusUpdate(text)) {
+        decision = {
+          schemaVersion: SCHEMA_VERSION,
+          intent: 'converse',
+          status: 'accepted',
+          confidence: capConfidence(0.7),
+          candidates: [{ intent: 'converse', score: 0.7 }],
+          entities: extractEntities(text),
+          sourceOfTruth: 'conversation',
+          needsClarification: false,
+          rawScore: 1,
+          // The speech act is certain by construction; a second opinion on
+          // "is this a statement?" is the ambiguity factory this branch
+          // closes. Deliberately false.
+          needsSemanticCheck: false,
+          meta: {
+            taxonomyVersion: TAXONOMY_VERSION,
+            classifierVersion: CLASSIFIER_VERSION,
+            reason: 'declarative_status_update',
+          },
+        };
+      } else if (isBareInterrogativeFollowUp(text)) {
+        // IntentIQ 2.4: a bare interrogative turn ("why?", "waarom dan?")
+        // has no standalone intent — resolve it against conversation
+        // context BEFORE any keyword scoring, so a bare "Waarom?" can no
+        // longer ride phrase('waarom') to a context-free confident
+        // inform.explain. With a resolvable prior turn it inherits (still
+        // needsSemanticCheck); without one it is honest insufficient_context.
         decision = resolveByInheritance(text, messages, options, {
           inheritedReason: 'bare_interrogative_inherited',
           unresolvedReason: 'bare_interrogative_without_resolvable_context',
@@ -1548,6 +1602,7 @@ module.exports = {
     interpretationStatusFor,
     collectMatchedSignals,
     isBareInterrogativeFollowUp,
+    isDeclarativeStatusUpdate,
     assistantAnchorTerms,
     previousAssistantText,
     resolveAssistantAnchoredFollowUp,
