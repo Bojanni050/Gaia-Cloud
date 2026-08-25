@@ -110,4 +110,48 @@ test('pattern persistence: loadActivePatterns reconstructs the highest active ve
   assert.equal(p.sourceRef.startsWith('ptf_'), true);
 });
 
+// --- Pattern Awareness 0.1: per-turn recall ------------------------------------
+
+test('pattern recall: tag-scoped recall reconstructs patterns with retrieval relevance', async () => {
+  const calls = [];
+  const client = {
+    recall: async (query, opts) => {
+      calls.push({ query, opts });
+      return [
+        { id: 'ptf_1', text: 'Technische doorbraken hangen samen met langere creatieve werkfasen.', tags: [PATTERN_TAG], scores: { final: 0.84 },
+          metadata: { gaia_pattern_id: 'pattern-1', gaia_pattern_version: '2', gaia_pattern_status: 'established', gaia_pattern_confidence: '0.85', gaia_pattern_hypotheses: '["hyp-a"]' } },
+        { id: 'ptf_2', text: 'Onrelevant patroon.', tags: [PATTERN_TAG], scores: { final: 0.21 },
+          metadata: { gaia_pattern_id: 'pattern-2', gaia_pattern_version: '1', gaia_pattern_status: 'supported', gaia_pattern_confidence: '0.7', gaia_pattern_hypotheses: '[]' } },
+      ];
+    },
+  };
+  const adapter = createHindsightPatternAdapter({ client });
+  const out = await adapter.recallPatterns('creatieve werkfasen na doorbraken');
+
+  assert.equal(calls[0].opts.tags[0], PATTERN_TAG);
+  assert.equal(calls[0].opts.tagsMatch, 'all_strict');
+  assert.deepEqual(calls[0].opts.types, ['world']);
+
+  assert.equal(out.length, 2);
+  assert.equal(out[0].id, 'pattern-1');
+  assert.equal(out[0].status, 'established'); // from metadata — never from relevance
+  assert.equal(out[0].confidence, 0.85);      // Gaia confidence ≠ relevance
+  assert.equal(out[0].relevance, 0.84);       // Hindsight retrieval score only
+  assert.deepEqual(out[0].hypothesisIds, ['hyp-a']);
+});
+
+test('pattern recall: dedupes per pattern id and degrades missing scores to 0', async () => {
+  const client = {
+    recall: async () => [
+      { id: 'ptf_1', text: 'P1.', tags: [PATTERN_TAG], scores: { final: 0.5 }, metadata: { gaia_pattern_id: 'p1', gaia_pattern_version: '1', gaia_pattern_status: 'supported', gaia_pattern_hypotheses: '[]' } },
+      { id: 'ptf_x', text: 'P1 again.', tags: [PATTERN_TAG], scores: { final: 0.9 }, metadata: { gaia_pattern_id: 'p1', gaia_pattern_version: '2', gaia_pattern_status: 'supported', gaia_pattern_hypotheses: '[]' } },
+      { id: 'ptf_3', text: 'P3.', tags: [PATTERN_TAG], scores: {}, metadata: { gaia_pattern_id: 'p3', gaia_pattern_version: '1', gaia_pattern_status: 'candidate', gaia_pattern_hypotheses: '[]' } },
+      { id: 'ptf_4', text: 'No metadata at all.', tags: [PATTERN_TAG], scores: { final: 0.9 } },
+    ],
+  };
+  const out = await createHindsightPatternAdapter({ client }).recallPatterns('q');
+  assert.deepEqual(out.map((p) => p.id), ['p1', 'p3']); // dedupe + corrupt dropped
+  assert.equal(out.find((p) => p.id === 'p3').relevance, 0); // unscored can never pass a floor
+});
+
 async function drain() { for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r)); }

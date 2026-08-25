@@ -17,9 +17,12 @@
  * patterns have no rejected state — downgrades are just newer versions with
  * lower confidence/status.
  *
- * Boundary: pure mapping — no reasoning, no status judgment, no dedup. The
- * PatternManager owns all of that; this file only speaks to Hindsight via
- * the injected client's existing primitives.
+ * Boundary: pure mapping — no reasoning, no status judgment, no dedup at
+ * rest, no relevance policy. The PatternManager owns all of that; this file
+ * only speaks to Hindsight via the injected client's existing primitives.
+ * `recallPatterns` (Pattern Awareness 0.1) is the one retrieval-shaped
+ * exception, mirroring recallHypotheses: Hindsight ranks, this reconstructs,
+ * and every consumption decision stays downstream (Decision Engine).
  */
 
 const PATTERN_TAG = 'gaia:pattern';
@@ -149,12 +152,43 @@ function createHindsightPatternAdapter(options = {}) {
     return out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
 
+  /**
+   * Per-turn contextual retrieval (Pattern Awareness 0.1): native recall
+   * scoped to gaia:pattern — the same tag-scoped recall shape as the
+   * hypothesis adapter's recallHypotheses. No new search engine; Hindsight
+   * ranks, this only reconstructs. Each result carries `relevance`, which is
+   * Hindsight's RETRIEVAL score for THIS query and is never Gaia confidence
+   * (the same §13 rule as hypotheses): confidence lives in the persisted
+   * gaia_pattern_confidence metadata alone. Deduplicated per pattern id;
+   * a missing/absent score degrades to 0 so an unscored pattern can never
+   * pass a relevance floor by accident.
+   */
+  async function recallPatterns(query) {
+    const results = await client.recall(query, {
+      types: ['world'],
+      tags: [PATTERN_TAG],
+      tagsMatch: 'all_strict',
+    });
+    const seen = new Set();
+    const out = [];
+    for (const r of results) {
+      const p = reconstructFromUnit(r);
+      if (!p || seen.has(p.id)) continue;
+      seen.add(p.id);
+      const scores = (r && r.scores) || {};
+      const relevance = [scores.final, scores.reranker, scores.semantic].find((v) => Number.isFinite(v));
+      out.push({ ...p, relevance: Number.isFinite(relevance) ? relevance : 0 });
+    }
+    return out;
+  }
+
   return {
     sink: {
       save: (next) => enqueue(next.id, () => saveImpl(next)),
       update: (id, next) => enqueue(next.id, () => updateImpl(next)),
     },
     loadActivePatterns,
+    recallPatterns,
     PATTERN_TAG,
   };
 }
