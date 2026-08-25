@@ -101,17 +101,23 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * Async by design — retain runs LLM-based fact extraction server-side on
    * Hindsight's own end and can take 10-20s+; the caller must never block
    * a turn on it (matches gaia-web's HindsightProvider.storeReflection).
-   * @param {{ summary: string, domain?: string, provenance?: object }} reflection
+   * Memoryworthiness 0.1: an optional `metadata` record rides along on the
+   * retained item (string→string, same as every Hindsight metadata field)
+   * alongside the existing source_message_id provenance.
+   * @param {{ summary: string, domain?: string, provenance?: object,
+   *           metadata?: Record<string,string> }} reflection
    */
-  async function reflect({ summary, domain, provenance = {} }) {
+  async function reflect({ summary, domain, provenance = {}, metadata }) {
+    const mergedMetadata = {
+      ...(provenance.source_message_id ? { source_message_id: provenance.source_message_id } : {}),
+      ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
+    };
     const item = {
       content: summary,
       context: domain || null,
       timestamp: provenance.observed_at || null,
       document_id: provenance.conversation_id || undefined,
-      metadata: provenance.source_message_id
-        ? { source_message_id: provenance.source_message_id }
-        : undefined,
+      metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
       tags: domain ? [domain] : undefined,
     };
 

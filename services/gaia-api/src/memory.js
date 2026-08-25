@@ -87,13 +87,18 @@ function renderMemoryContext(reflections) {
 /**
  * Best-effort recall, policy-gated. Never throws — a slow or unreachable
  * Hindsight, or a query the policy judges not worth a lookup, both
- * resolve to [] rather than failing or delaying the turn.
+ * resolve to [] rather than failing or delaying the turn. The optional
+ * `intentDecision` rides into the policy so an IntentIQ-resolved
+ * memory-anchored follow-up (assistant-originated referents — see
+ * memoryPolicy.shouldRecall) can open the gate even without a lexical
+ * past-reference cue in the query text.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {string} query
+ * @param {{ intentDecision?: object|null }} [options]
  */
-async function recallRelevantContext(hindsight, query) {
+async function recallRelevantContext(hindsight, query, options = {}) {
   if (!query || !query.trim()) return [];
-  if (!shouldRecall(query)) return [];
+  if (!shouldRecall(query, { intentDecision: options.intentDecision })) return [];
   try {
     return await hindsight.recall(query);
   } catch (_) {
@@ -104,10 +109,18 @@ async function recallRelevantContext(hindsight, query) {
 /**
  * Fire-and-forget reflection, policy-gated. Callers must not await this
  * for turn completion — matches gaia-web's reflectOnTurn contract exactly.
+ *
+ * Memoryworthiness 0.1: an optional `metadata` object (gaia_memory_* keys
+ * describing the ingest decision, see memoryWorthiness.js) rides along on
+ * the retained item — same gaia_ namespace as hypotheses/patterns, merged
+ * additively over the existing provenance metadata. The retain/discard
+ * GATE itself lives at the call site (turn.js); this function stays the
+ * transport.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
- * @param {{ conversationId: string, userText: string, assistantText: string, assistantMessageId: string }} turn
+ * @param {{ conversationId: string, userText: string, assistantText: string,
+ *          assistantMessageId?: string, metadata?: Record<string,string> }} turn
  */
-function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId }) {
+function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText)) return;
   hindsight.reflect({
@@ -118,6 +131,7 @@ function reflectOnTurn(hindsight, { conversationId, userText, assistantText, ass
       source_message_id: assistantMessageId,
       observed_at: new Date().toISOString(),
     },
+    metadata,
   }).catch((err) => {
     console.warn(`reflection failed (non-fatal): ${err.message}`);
   });

@@ -56,10 +56,30 @@ function hasSignal(text, patterns) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
-/** @param {string} query */
-function shouldRecall(query) {
+/**
+ * Recall gate. The second parameter is an ADDITIVE context object — every
+ * existing caller and the lexical signals below behave exactly as before
+ * when it is omitted.
+ *
+ * Memoryworthiness-era addition: IntentIQ may resolve a turn as anchored to
+ * shared conversational memory even when its text carries no lexical
+ * past-reference cue ("wat was er in juni ook alweer?" right after GAIA
+ * herself mentioned juni — the referent is hers, not the user's). When the
+ * IntentDecision says the answer's truth lives in memory
+ * (`sourceOfTruth: 'memory'`) or explicitly marks an assistant-anchored
+ * follow-up, a lookup must run; the lexical cues are then irrelevant.
+ * @param {string} query
+ * @param {{ intentDecision?: object|null }} [context]
+ */
+function shouldRecall(query, context = {}) {
   const text = (query || '').trim();
   if (isTrivial(text, MIN_RECALL_LENGTH)) return false;
+  const intent = context && context.intentDecision;
+  if (intent) {
+    if (intent.sourceOfTruth === 'memory') return true;
+    if (intent.meta && intent.meta.reason === 'assistant_anchored_follow_up_unresolved_intent') return true;
+    if (intent.meta && intent.meta.reason === 'assistant_anchored_follow_up_inherited') return true;
+  }
   return hasSignal(text, PAST_REFERENCE_SIGNALS) || hasSignal(text, DURABLE_CONTEXT_SIGNALS);
 }
 
@@ -75,4 +95,16 @@ const MEMORY_POLICY = Object.freeze({
   minReflectLength: MIN_REFLECT_LENGTH,
 });
 
-module.exports = { shouldRecall, shouldReflect, MEMORY_POLICY };
+module.exports = {
+  shouldRecall,
+  shouldReflect,
+  isTrivial,
+  MEMORY_POLICY,
+  // Additive exports (Memoryworthiness 0.1 reuses the same signal
+  // vocabulary instead of duplicating it): FILLER_PATTERNS stays a Set, the
+  // two signal groups stay arrays of RegExps — consumers treat them
+  // read-only.
+  FILLER_PATTERNS,
+  PAST_REFERENCE_SIGNALS,
+  DURABLE_CONTEXT_SIGNALS,
+};
