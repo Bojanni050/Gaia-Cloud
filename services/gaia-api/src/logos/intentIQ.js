@@ -1801,6 +1801,41 @@ function combineConsensus(heuristic, semantic) {
   return combined;
 }
 
+// --- Semantic fallback gate ------------------------------------------------
+//
+// The semantic LLM is expensive (~9s). It should only be called when local
+// heuristic evidence is genuinely insufficient. When the heuristic returns
+// `unknown` with zero candidates and no needsSemanticCheck flag, the
+// semantic model would just confirm "I don't know" or guess "converse" —
+// neither adds value over the heuristic's honest result. The Decision
+// Engine already routes unknown intents to native/conversational.
+//
+// This gate does NOT skip semantic when:
+//   - The heuristic found candidates (status may be 'unknown' with
+//     candidates from continuation/inheritance paths)
+//   - needsSemanticCheck is set (weak cues, overlapping candidates)
+//   - The heuristic resolved to 'accepted' or 'ambiguous'
+//   - The turn is empty/filler (already handled by classify)
+
+/**
+ * Determines whether the semantic LLM call can be safely skipped.
+ * @param {IntentDecision} heuristic
+ * @returns {{ skip: boolean, reason: string|null }}
+ */
+function shouldSkipSemanticFallback(heuristic) {
+  // Only skip for genuinely signal-free unknown results
+  if (heuristic.status !== 'unknown') return { skip: false, reason: null };
+  if (heuristic.candidates.length > 0) return { skip: false, reason: null };
+  if (heuristic.needsSemanticCheck) return { skip: false, reason: null };
+
+  // The heuristic found nothing — no intent signals, no continuation,
+  // no inheritance, no compound. The semantic model would just confirm
+  // "unknown" or resolve to "converse" (which the Decision Engine
+  // already does for unknown intents). Skip the expensive LLM call.
+  const reason = (heuristic.meta && heuristic.meta.reason) || 'unknown';
+  return { skip: true, reason: `conversational_fast_path:${reason}` };
+}
+
 /**
  * IntentIQ 2.0's entry point — turn.js's own `intentIQ` default. Runs the
  * unchanged heuristic classify() first (cheap, synchronous), and only
@@ -1827,22 +1862,34 @@ async function interpret(messages, options = {}) {
   const text = latestUserText(Array.isArray(messages) ? messages : []);
 
   let semantic = { attempted: false, result: null };
+  let semanticSkipReason = null;
+
   // IntentIQ 2.2: a strong heuristic match is not automatically sufficient
   // any more — an accepted-but-unverified match (weak-only signal,
   // resolved-but-overlapping candidates, or a context-inherited intent)
   // still escalates via needsSemanticCheck, even though status:'accepted'.
   if (heuristic.status !== 'accepted' || heuristic.needsSemanticCheck) {
-    // The full recent history (both roles), not just prior user turns —
-    // resolving "en deze dan?" needs to see what the assistant said too,
-    // not only what the user has typed. messages ends with the current
-    // turn (this codebase's convention — see turn.js), so drop the last
-    // entry; buildSemanticPrompt itself caps this to its own last-6 window.
-    const recentTurns = Array.isArray(messages) ? messages.slice(0, -1) : [];
-    semantic = await classifySemantic(
-      text,
-      { recentTurns, heuristicResult: heuristic },
-      { model: options.model }
-    );
+    // IntentIQ conversational fast-path: skip the semantic LLM when the
+    // heuristic honestly returned "unknown" with zero candidates and no
+    // needsSemanticCheck flag. The semantic model would just confirm
+    // "unknown" or guess "converse" — neither adds value. The Decision
+    // Engine already routes unknown intents to native/conversational.
+    const skipCheck = shouldSkipSemanticFallback(heuristic);
+    if (skipCheck.skip) {
+      semanticSkipReason = skipCheck.reason;
+    } else {
+      // The full recent history (both roles), not just prior user turns —
+      // resolving "en deze dan?" needs to see what the assistant said too,
+      // not only what the user has typed. messages ends with the current
+      // turn (this codebase's convention — see turn.js), so drop the last
+      // entry; buildSemanticPrompt itself caps this to its own last-6 window.
+      const recentTurns = Array.isArray(messages) ? messages.slice(0, -1) : [];
+      semantic = await classifySemantic(
+        text,
+        { recentTurns, heuristicResult: heuristic },
+        { model: options.model }
+      );
+    }
   }
 
   const final = combineConsensus(heuristic, semantic.result);
@@ -1856,6 +1903,7 @@ async function interpret(messages, options = {}) {
         correlationId,
         classifierVersion: CLASSIFIER_VERSION,
         semanticCalled: semantic.attempted,
+        semanticSkipReason,
         // Both tiers' own perspective, kept for calibration/debug logging
         // only (item 11/14 of the 2.2 brief) — never part of the returned
         // IntentDecision itself, and never the raw input text again (that
@@ -1888,6 +1936,7 @@ module.exports = {
   interpret,
   classifySemantic,
   combineConsensus,
+  shouldSkipSemanticFallback,
   SCHEMA_VERSION,
   CLASSIFIER_VERSION,
   SEMANTIC_CLASSIFIER_VERSION,

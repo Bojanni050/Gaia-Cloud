@@ -30,6 +30,7 @@ function truncate(text) {
  *   correlationId: string,
  *   classifierVersion: string,
  *   semanticCalled?: boolean,
+ *   semanticSkipReason?: string|null,
  *   tiers?: { heuristic: object, semantic: object|null },
  *   timestamp?: string,
  * }} entry
@@ -54,6 +55,7 @@ function logIntentDecision(entry, sink = (line) => console.log(line)) {
     ambiguous: Boolean(entry.decision.ambiguous),
     speechAct: entry.decision.speechAct || null,
     semanticCalled: Boolean(entry.semanticCalled),
+    semanticSkipReason: entry.semanticSkipReason || null,
     // IntentIQ 2.2 additions — calibration/observability, additive.
     confidenceLevel: entry.decision.confidenceLevel || null,
     interpretationStatus: entry.decision.interpretationStatus || null,

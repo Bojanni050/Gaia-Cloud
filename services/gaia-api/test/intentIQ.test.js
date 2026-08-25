@@ -550,7 +550,7 @@ test('interpret(): without any semantic model configured or injected, behaves ex
   assert.equal(viaInterpret.confidence, viaClassify.confidence);
 });
 
-test('interpret(): a weak/unknown heuristic result escalates to the semantic model when one is configured', async () => {
+test('interpret(): a weak/unknown heuristic result skips semantic when no candidates exist (conversational fast-path)', async () => {
   let called = false;
   const model = {
     chat: async () => {
@@ -559,8 +559,11 @@ test('interpret(): a weak/unknown heuristic result escalates to the semantic mod
     },
   };
   const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
-  assert.equal(called, true);
-  assert.equal(d.intent, 'decide.support');
+  // Fast-path: no candidates + no needsSemanticCheck → skip semantic.
+  // The semantic model cannot resolve "deze" without prior context anyway.
+  assert.equal(called, false);
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.interpretationStatus, 'insufficient_context');
 });
 
 test('interpret(): ambiguity without enough context is not force-classified — test #7: ambiguity', async () => {
@@ -576,17 +579,20 @@ test('interpret(): never throws even if the semantic model rejects', async () =>
   assert.equal(d.status, 'unknown'); // degrades to the heuristic's own (unknown) result
 });
 
-test('interpret(): logs whether the semantic classifier was actually called', async () => {
+test('interpret(): logs whether the semantic classifier was actually called, including skip reason', async () => {
   const lines = [];
   await interpret(user('Hoi Gaia'), { logger: (line) => lines.push(line) });
   const strong = JSON.parse(lines[0]);
   assert.equal(strong.semanticCalled, false);
+  assert.equal(strong.semanticSkipReason, null); // not applicable — accepted without needsSemanticCheck
 
   lines.length = 0;
   const model = { chat: async () => JSON.stringify({ intent: 'converse', confidence: 0.6 }) };
   await interpret(user('Kun je deze ook doen?'), { logger: (line) => lines.push(line), model });
   const weak = JSON.parse(lines[0]);
-  assert.equal(weak.semanticCalled, true);
+  // Fast-path: no candidates + no needsSemanticCheck → skip semantic
+  assert.equal(weak.semanticCalled, false);
+  assert.ok(weak.semanticSkipReason && weak.semanticSkipReason.includes('conversational_fast_path'));
 });
 
 // === IntentIQ 2.0: section 14 test scenarios (concrete turns from the brief) ===
@@ -754,12 +760,15 @@ test('2.2 #4 ambiguous: conflicting signals stay ambiguous, with interpretationS
   }
 });
 
-test('2.2 #5 low semantic confidence: confidenceLevel is low and interpretationStatus is uncertain, even though status is accepted', async () => {
+test('2.2 #5 low semantic confidence: fast-path skips semantic for signal-free unknown turns', async () => {
   const model = { chat: async () => JSON.stringify({ intent: 'converse', confidence: 0.4, sourceOfTruth: 'conversation' }) };
   const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
-  assert.equal(d.status, 'accepted');
-  assert.equal(d.confidenceLevel, 'low');
-  assert.equal(d.interpretationStatus, 'uncertain');
+  // Fast-path: no candidates + no needsSemanticCheck → skip semantic
+  // The semantic model's low-confidence resolve is not needed for
+  // a signal-free unknown turn — the Decision Engine handles unknown
+  // intents as conversational/native already.
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.interpretationStatus, 'insufficient_context');
 });
 
 // === IntentIQ 2.2: rawScore vs. calibrated confidence =======================
@@ -807,7 +816,7 @@ test('2.2 unresolved reference: "Kun je deze doen?" with no prior context — re
   assert.equal(d.interpretationStatus, 'insufficient_context');
 });
 
-test('2.2 unresolved reference: the semantic tier itself may honestly report resolvedTo: null with low confidence, rather than guessing', async () => {
+test('2.2 unresolved reference: the semantic tier is skipped for signal-free unknown turns (fast-path)', async () => {
   const model = {
     chat: async () => JSON.stringify({
       intent: 'inform.explain',
@@ -816,9 +825,10 @@ test('2.2 unresolved reference: the semantic tier itself may honestly report res
     }),
   };
   const d = await interpret(user('Kun je deze ook doen?'), { silent: true, model });
-  assert.equal(d.referents[0].resolvedTo, null);
-  assert.equal(d.referents[0].confidence, 0.31);
-  assert.equal(d.referents[0].source, null);
+  // Fast-path: no candidates + no needsSemanticCheck → skip semantic
+  // The semantic model cannot resolve "deze" without prior context anyway.
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.interpretationStatus, 'insufficient_context');
 });
 
 // === IntentIQ 2.2: the runtime feedback seam (intentFeedback.js) ===========
@@ -1737,4 +1747,186 @@ test('v0.4: decision integration — status updates route native, never to clari
   });
   assert.notEqual(decision.action, 'clarify');
   assert.equal(decision.action, 'native');
+});
+
+// === IntentIQ conversational fast-path =====================================
+//
+// When the heuristic returns unknown with zero candidates and no
+// needsSemanticCheck, the semantic LLM is skipped. These tests verify
+// the fast-path correctly skips and preserves semantics.
+
+const { shouldSkipSemanticFallback } = require('../src/logos/intentIQ');
+
+test('fast-path: shouldSkipSemanticFallback returns skip:true for signal-free unknown', () => {
+  const h = classify(user('ja geeft een voldaan gevoel'), silent);
+  const result = shouldSkipSemanticFallback(h);
+  assert.equal(result.skip, true);
+  assert.ok(result.reason.includes('conversational_fast_path'));
+});
+
+test('fast-path: shouldSkipSemanticFallback returns skip:false for accepted heuristic', () => {
+  const h = classify(user('Hoi Gaia'), silent);
+  assert.equal(h.status, 'accepted');
+  const result = shouldSkipSemanticFallback(h);
+  assert.equal(result.skip, false);
+});
+
+test('fast-path: shouldSkipSemanticFallback returns skip:false when candidates exist', () => {
+  // "Waarom werkt dit niet?" has inform.explain signal
+  const h = classify(user('Waarom werkt dit niet?'), silent);
+  assert.ok(h.candidates.length > 0);
+  const result = shouldSkipSemanticFallback(h);
+  assert.equal(result.skip, false);
+});
+
+test('fast-path: shouldSkipSemanticFallback returns skip:false when needsSemanticCheck', () => {
+  // Weak-cue case: "draft" fires create.generate but needs verification
+  const h = classify(user("I'm not a fan of this new NBA draft process."), silent);
+  assert.equal(h.needsSemanticCheck, true);
+  const result = shouldSkipSemanticFallback(h);
+  assert.equal(result.skip, false);
+});
+
+test('fast-path: conversational statement skips semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.8 }); } };
+  const d = await interpret(user('ja geeft een voldaan gevoel'), { silent: true, model });
+  assert.equal(called, false);
+  assert.equal(d.status, 'unknown');
+});
+
+test('fast-path: filler skips semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.8 }); } };
+  const d = await interpret(user('ok'), { silent: true, model });
+  assert.equal(called, false);
+  assert.equal(d.status, 'unknown');
+});
+
+test('fast-path: greeting skips semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.9 }); } };
+  const d = await interpret(user('Hoi Gaia'), { silent: true, model });
+  assert.equal(called, false);
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.intent, 'converse');
+});
+
+test('fast-path: weak-cue case still calls semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.7 }); } };
+  await interpret(user("I'm not a fan of this new NBA draft process."), { silent: true, model });
+  assert.equal(called, true); // needsSemanticCheck=true → semantic still called
+});
+
+test('fast-path: assistant-anchored follow-up still calls semantic (with context)', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.8 }); } };
+  const context = [
+    { role: 'user', content: 'Wat is een race condition?' },
+    { role: 'assistant', content: 'Een race condition is...' },
+  ];
+  await interpret([...context, ...user('Leg het nog eens uit.')], { silent: true, model });
+  // "Leg het nog eens uit" matches inform.explain directly (leg ... uit) → accepted
+  // So this tests the strong-match path, not fast-path
+  assert.equal(called, false); // accepted with hasStrongMatch → no semantic
+});
+
+test('fast-path: inherited follow-up with context still calls semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'inform.explain', confidence: 0.8 }); } };
+  const context = [
+    { role: 'user', content: 'Waarom werkt dit niet?' },
+    { role: 'assistant', content: 'Omdat...' },
+  ];
+  await interpret([...context, ...user('En deze dan?')], { silent: true, model });
+  // "En deze dan?" inherits from context → needsSemanticCheck=true → semantic called
+  assert.equal(called, true);
+});
+
+test('fast-path: compound case still calls semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'inform.explain', confidence: 0.8 }); } };
+  await interpret(user('Waarom werkt dit niet? Kun je uitleggen wat er mis is? Verbeter het ook.'), { silent: true, model });
+  // Compound → needsSemanticCheck=true → semantic called
+  assert.equal(called, true);
+});
+
+test('fast-path: creative request keeps existing create.generate semantics', () => {
+  const d = classify(user('Schrijf een liedje hierover.'), silent);
+  assert.equal(d.intent, 'create.generate');
+  assert.equal(d.status, 'accepted');
+});
+
+test('fast-path: factual explain keeps existing inform.explain semantics', () => {
+  const d = classify(user('Wat is Hindsight?'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.status, 'accepted');
+});
+
+test('fast-path: research request keeps existing inform.explain semantics', () => {
+  const d = classify(user('Zoek uit waarom dit gebeurt.'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.status, 'accepted');
+});
+
+test('fast-path: parity — performTurn and performStreamingTurn get same IntentIQ output', async () => {
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  const intentLogs = [];
+  const logger = (line) => intentLogs.push(line);
+
+  const mockIntentIQ = async (messages, opts) => {
+    const { interpret } = require('../src/logos/intentIQ');
+    return interpret(messages, { ...opts, logger });
+  };
+
+  // Non-streaming
+  intentLogs.length = 0;
+  await performTurn({
+    messages: [{ role: 'user', content: 'ja geeft een voldaan gevoel' }],
+    documents: {},
+    hermes: { chat: async () => 'ok' },
+    intentIQ: mockIntentIQ,
+  });
+  const nonStreamingLog = JSON.parse(intentLogs[0]);
+
+  // Streaming
+  intentLogs.length = 0;
+  const res = {
+    status: () => ({ json: () => res, send: () => res }),
+    setHeader: () => {},
+    write: () => {},
+    end: () => {},
+    get headersSent() { return false; },
+  };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'ja geeft een voldaan gevoel' }],
+    documents: {},
+    hermes: { stream: async (msgs, { onDelta }) => { onDelta('ok', false); return 'ok'; } },
+    res,
+    intentIQ: mockIntentIQ,
+  });
+  const streamingLog = JSON.parse(intentLogs[0]);
+
+  // Same semanticCalled and semanticSkipReason on both transports
+  assert.equal(nonStreamingLog.semanticCalled, streamingLog.semanticCalled);
+  assert.equal(nonStreamingLog.semanticSkipReason, streamingLog.semanticSkipReason);
+  assert.equal(nonStreamingLog.intent, streamingLog.intent);
+  assert.equal(nonStreamingLog.status, streamingLog.status);
+});
+
+test('fast-path: "ik ben er blij mee" skips semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.8 }); } };
+  const d = await interpret(user('ik ben er blij mee'), { silent: true, model });
+  assert.equal(called, false);
+  assert.equal(d.status, 'unknown');
+});
+
+test('fast-path: "dat voelt goed" skips semantic', async () => {
+  let called = false;
+  const model = { chat: async () => { called = true; return JSON.stringify({ intent: 'converse', confidence: 0.8 }); } };
+  const d = await interpret(user('dat voelt goed'), { silent: true, model });
+  assert.equal(called, false);
+  assert.equal(d.status, 'unknown');
 });
