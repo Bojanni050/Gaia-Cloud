@@ -38,6 +38,45 @@ test('shouldRecall fires on past-reference and durable-context signals, EN and N
   assert.equal(shouldRecall('What did we decide about the project database?'), true);
 });
 
+test('shouldRecall opens for an IntentDecision that resolves the answer to memory (assistant-anchored follow-ups)', () => {
+  // "wat was er in juni ook alweer?" right after GAIA said "...context rond
+  // juni...": no lexical past-reference cue, but IntentIQ resolved the turn
+  // as a memory-anchored follow-up — recall must run.
+  const anchored = {
+    intent: null,
+    status: 'unknown',
+    sourceOfTruth: 'memory',
+    meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' },
+  };
+  assert.equal(shouldRecall('wat was er in juni ook alweer?', { intentDecision: anchored }), true);
+
+  const inherited = {
+    intent: 'inform.explain',
+    status: 'accepted',
+    sourceOfTruth: 'memory',
+    meta: { reason: 'assistant_anchored_follow_up_inherited' },
+  };
+  assert.equal(shouldRecall('wat verklaart die piek dan in juni?', { intentDecision: inherited }), true);
+
+  // Any memory-source decision qualifies — the truth lives in memory.
+  assert.equal(
+    shouldRecall('en hoe ging dat ook alweer?', { intentDecision: { intent: null, status: 'unknown', sourceOfTruth: 'memory' } }),
+    true
+  );
+});
+
+test('shouldRecall stays closed without the context object or with non-memory intents', () => {
+  assert.equal(shouldRecall('wat was er in juni ook alweer?'), false); // legacy single-arg call
+  assert.equal(
+    shouldRecall('wat was er in juni ook alweer?', { intentDecision: { sourceOfTruth: 'conversation' } }),
+    false
+  );
+  assert.equal(
+    shouldRecall('wat was er in juni ook alweer?', { intentDecision: null }),
+    false
+  );
+});
+
 test('shouldReflect keeps an exchange unless both sides are trivial', () => {
   assert.equal(shouldReflect('thanks', "you're welcome"), false);
   assert.equal(shouldReflect('why', 'no reason'), false);

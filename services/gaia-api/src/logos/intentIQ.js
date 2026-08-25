@@ -102,10 +102,10 @@ const { parseAndValidateSemanticOutput, MalformedSemanticOutputError } = require
 const { createFromEnv: createIntentModelFromEnv } = require('./intentModelClient');
 
 const SCHEMA_VERSION = 'intentiq.v1';
-// 2.4: targeted heuristic refinement from the measured 2.3 findings —
-// new personhood/explanation frames, bare-interrogative contextual
-// resolution, weak-only confidence cap. No taxonomy or cascade changes.
-const CLASSIFIER_VERSION = 'heuristic-v0.2';
+// heuristic-v0.3: assistant-originated referent anchoring — a follow-up may
+// now be interpreted against Gaia's OWN previous response (term anchoring +
+// referent provenance), not only prior user turns. No taxonomy changes.
+const CLASSIFIER_VERSION = 'heuristic-v0.3';
 const SEMANTIC_CLASSIFIER_VERSION = 'semantic-v2.0';
 
 // --- tiny local text helpers (deliberately not shared with memoryPolicy.js
@@ -147,10 +147,14 @@ function phrase(words) {
 
 // Anaphora / continuation cues — used only to decide whether a signal-free
 // turn is a follow-up worth inheriting context for, never scored as an
-// intent on their own.
+// intent on their own. heuristic-v0.3 adds the Dutch pronominal adverbs
+// ("daar", "daarmee", ...) — deictic references to what was just said,
+// including what GAIA just said, exactly like the pronouns beside them.
 const CONTINUATION_SIGNALS = [
   boundary('this'), boundary('that'), boundary('these'), boundary('those'),
   boundary('it'), boundary('dit'), boundary('deze'), boundary('dat'), boundary('die'),
+  boundary('daar'), boundary('daarmee'), boundary('hier'), boundary('hiermee'),
+  boundary('ermee'), boundary('eraan'),
   phrase('and (this|that|these)'), phrase('en (deze|dat|die)'),
 ];
 
@@ -970,10 +974,21 @@ function classify(messages, options = {}) {
               matchedSignals: collectMatchedSignals(directScored),
             },
           };
-        } else if (looksLikeContinuation(text)) {
-          decision = resolveByInheritance(text, messages, options);
         } else {
-          decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+          // heuristic-v0.3: before declaring a signal-free turn context-free,
+          // check whether it reuses a content term from Gaia's own previous
+          // response — an assistant-originated follow-up ("...context rond
+          // juni..." → "wat was er in juni ook alweer?"). Null without such
+          // an anchor; the classic paths below stay authoritative then.
+          const anchored = resolveAssistantAnchoredFollowUp(text, messages, options);
+          if (anchored) {
+            decision = anchored;
+          } else if (looksLikeContinuation(text)) {
+            decision = resolveByInheritance(text, messages, options);
+            attachAssistantReferents(decision, text, messages);
+          } else {
+            decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
+          }
         }
       }
     }
@@ -981,15 +996,18 @@ function classify(messages, options = {}) {
 
   // Additive IntentIQ 2.0 fields, defaulted uniformly here regardless of
   // which cascade branch produced `decision` above — the heuristic tier
-  // alone never computes speechAct/referents (that needs real semantic
+  // alone never computed speechAct (that needs real semantic
   // interpretation, not keyword matching), and `ambiguous` is simply a
   // named alias of the existing `status === 'ambiguous'` judgment so
-  // callers don't have to know that encoding. combineConsensus() (used by
-  // interpret(), below) overwrites these when a semantic result actually
-  // ran.
+  // callers don't have to know that encoding. Since heuristic-v0.3 the
+  // assistant-anchored path DOES populate referents heuristically; the
+  // bare-interrogative and pronominal paths record deictic provenance via
+  // attachAssistantReferents. combineConsensus() (used by interpret(),
+  // below) overwrites these when a semantic result actually ran.
   decision.ambiguous = decision.status === 'ambiguous';
   decision.speechAct = decision.speechAct || null;
   decision.referents = decision.referents || [];
+  attachAssistantReferents(decision, text, messages);
   decision.needsSemanticCheck = Boolean(decision.needsSemanticCheck);
   decision.rawScore = typeof decision.rawScore === 'number' ? decision.rawScore : 0;
   decision.confidenceLevel = confidenceLevelFor(decision.confidence);
@@ -1027,26 +1045,19 @@ function classify(messages, options = {}) {
 function resolveByInheritance(text, messages, options, reasons = {}) {
   const inheritedReason = reasons.inheritedReason || 'inherited_from_prior_turn';
   const unresolvedReason = reasons.unresolvedReason || 'continuation_with_no_resolvable_prior_turn';
-  const priors = priorUserTexts(messages, true);
-  for (const priorText of priors) {
-    const priorScored = scoreAllIntents(priorText);
-    if (priorScored.length === 0) continue;
-    const priorCandidates = toNormalizedCandidates(priorScored);
-    const priorStatus = decideStatus(priorCandidates, priorScored);
-    if (priorStatus !== 'accepted') continue;
-
-    const inheritedConfidence = Math.round(priorCandidates[0].score * 0.7 * 100) / 100;
-    const status = inheritedConfidence >= 0.4 ? 'accepted' : 'ambiguous';
+  const inherited = findInheritablePriorIntent(messages);
+  if (inherited) {
+    const status = inherited.confidence >= 0.4 ? 'accepted' : 'ambiguous';
     return {
       schemaVersion: SCHEMA_VERSION,
-      intent: status === 'accepted' ? priorCandidates[0].intent : null,
+      intent: status === 'accepted' ? inherited.intent : null,
       status,
-      confidence: status === 'accepted' ? inheritedConfidence : 0,
-      candidates: [{ intent: priorCandidates[0].intent, score: inheritedConfidence }],
+      confidence: status === 'accepted' ? inherited.confidence : 0,
+      candidates: [{ intent: inherited.intent, score: inherited.confidence }],
       entities: extractEntities(text),
       sourceOfTruth: 'conversation',
       needsClarification: status !== 'accepted',
-      rawScore: priorScored[0].raw,
+      rawScore: inherited.rawScore,
       // Inherited from context, not from this turn's own signal — always
       // worth a semantic check, even when confident enough to accept.
       needsSemanticCheck: status === 'accepted',
@@ -1058,6 +1069,205 @@ function resolveByInheritance(text, messages, options, reasons = {}) {
     };
   }
   return unknownWithSourceAttempt(text, options, unresolvedReason);
+}
+
+/**
+ * The inheritance core shared by resolveByInheritance and the
+ * assistant-anchored path: scans prior USER turns (most recent first) for
+ * one whose intent resolved confidently enough to lend to a follow-up.
+ * @returns {{ intent: string, confidence: number, rawScore: number }|null}
+ */
+function findInheritablePriorIntent(messages) {
+  const priors = priorUserTexts(messages, true);
+  for (const priorText of priors) {
+    const priorScored = scoreAllIntents(priorText);
+    if (priorScored.length === 0) continue;
+    const priorCandidates = toNormalizedCandidates(priorScored);
+    const priorStatus = decideStatus(priorCandidates, priorScored);
+    if (priorStatus !== 'accepted') continue;
+    return {
+      intent: priorCandidates[0].intent,
+      confidence: Math.round(priorCandidates[0].score * 0.7 * 100) / 100,
+      rawScore: priorScored[0].raw,
+    };
+  }
+  return null;
+}
+
+// --- heuristic-v0.3: assistant-originated referents -------------------------
+//
+// A follow-up frequently reuses a term GAIA introduced in her own previous
+// response ("...gezien de context rond juni..." → "wat was er in juni ook
+// alweer?"). Until v0.3 such turns scored zero signals AND carried no
+// pronoun, so they fell through to plain unknown with sourceOfTruth
+// "unknown" — and memory recall never ran, even though the answer lives in
+// exactly that shared context. The generic mechanism below anchors a user
+// turn back to the immediately preceding ASSISTANT turn through CONTENT-TERM
+// OVERLAP. Deliberately NOT a keyword list of months/dates/topics: any
+// substantive term either side introduces can anchor, and nothing anchors
+// without a real preceding assistant turn mentioning it.
+
+/** Function words only — comparison machinery for anchoring, never intent signals. */
+const ANCHOR_STOPWORDS = new Set([
+  // NL function words + deictic pronouns (deictics are handled by the
+  // pronominal continuation path, never as content-term anchors)
+  'de', 'het', 'een', 'en', 'van', 'in', 'op', 'voor', 'met', 'dat', 'die',
+  'deze', 'dit', 'maar', 'ook', 'als', 'bij', 'uit', 'over', 'onder', 'tot',
+  'door', 'om', 'naar', 'wat', 'wie', 'waar', 'wanneer', 'hoe', 'geen',
+  'niet', 'wel', 'nog', 'alle', 'er', 'erin', 'eraan', 'hier', 'hiermee',
+  'daar', 'daarmee', 'daarin', 'daarop', 'dan', 'toen', 'dus', 'zo', 'even',
+  'heel', 'meer', 'meest', 'veel', 'weinig', 'graag', 'eigen', 'gewoon',
+  'alweer', 'welke', 'zulke', 'zulk', 'hebben', 'heeft', 'had', 'worden',
+  'wordt', 'werd', 'zijn', 'was', 'waren', 'kunnen', 'kan', 'zou', 'gaan',
+  'gaat', 'ging', 'maken', 'maakt', 'zeggen', 'zegt', 'zeiden',
+  // EN mirrors
+  'the', 'and', 'for', 'with', 'that', 'this', 'these', 'those', 'what',
+  'when', 'where', 'which', 'there', 'here', 'again', 'actually',
+]);
+
+const MIN_ANCHOR_TOKEN_LENGTH = 4;
+const MAX_ASSISTANT_REFERENTS = 3;
+
+/** Content tokens for anchor comparison: normalized, stopword-free, length-bounded. */
+function anchorTokens(text) {
+  return normalize(text).replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= MIN_ANCHOR_TOKEN_LENGTH && !ANCHOR_STOPWORDS.has(w));
+}
+
+/**
+ * The assistant turn immediately before the latest user turn — the
+ * antecedent source for references Gaia herself introduced. Null when
+ * there is none (first turn of a conversation).
+ */
+function previousAssistantText(messages) {
+  if (!Array.isArray(messages)) return null;
+  let idx = messages.length - 1;
+  while (idx >= 0 && messages[idx] && messages[idx].role !== 'user') idx -= 1; // latest user turn
+  idx -= 1;
+  while (idx >= 0 && messages[idx] && messages[idx].role !== 'assistant') idx -= 1;
+  return idx >= 0 ? (messages[idx].content || '') : null;
+}
+
+/**
+ * Content terms the user reused from Gaia's immediately preceding response.
+ * @returns {string[]} unique anchored terms, most recent-turn order first, capped
+ */
+function assistantAnchorTerms(text, messages) {
+  const prev = previousAssistantText(messages);
+  if (!prev || !normalize(prev)) return [];
+  const prevTokens = new Set(anchorTokens(prev));
+  const seen = new Set();
+  const out = [];
+  for (const t of anchorTokens(text)) {
+    if (prevTokens.has(t) && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+      if (out.length >= MAX_ASSISTANT_REFERENTS) break;
+    }
+  }
+  return out;
+}
+
+/**
+ * heuristic-v0.3 cascade branch: the user's turn shares a content term with
+ * Gaia's immediately preceding response — she introduced it, the user is
+ * following up on it. Resolution:
+ *   - intent: inherited from the nearest resolvable prior USER turn at the
+ *     same reduced confidence as any other follow-up, or honestly unknown —
+ *     the anchor resolves the TOPIC, not the speech act;
+ *   - sourceOfTruth: 'memory' — the answer must come from what Gaia recalls
+ *     about that shared topic (this is what opens Hindsight recall);
+ *   - referents: populated with provenance pointing at the assistant turn,
+ *     so downstream consumers can see WHY this is a follow-up.
+ * Returns null whenever there are no anchored terms (callers fall through
+ * unchanged) — without sufficient preceding context the system stays as
+ * uncertain as it always was.
+ */
+function resolveAssistantAnchoredFollowUp(text, messages, options) {
+  const anchors = assistantAnchorTerms(text, messages);
+  if (anchors.length === 0) return null;
+
+  const referents = anchors.map((term) => ({
+    expression: term,
+    resolvedTo: `previous_assistant_turn:${term}`,
+    confidence: 0.6,
+    source: 'previous_assistant_turn',
+  }));
+
+  const inherited = findInheritablePriorIntent(messages);
+  if (inherited) {
+    const status = inherited.confidence >= 0.4 ? 'accepted' : 'ambiguous';
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      intent: status === 'accepted' ? inherited.intent : null,
+      status,
+      confidence: status === 'accepted' ? inherited.confidence : 0,
+      candidates: [{ intent: inherited.intent, score: inherited.confidence }],
+      entities: extractEntities(text),
+      sourceOfTruth: 'memory',
+      needsClarification: status !== 'accepted',
+      rawScore: inherited.rawScore,
+      needsSemanticCheck: true, // context-resolved, like every inherited decision
+      referents,
+      meta: {
+        taxonomyVersion: TAXONOMY_VERSION,
+        classifierVersion: CLASSIFIER_VERSION,
+        reason: 'assistant_anchored_follow_up_inherited',
+        anchoredTerms: anchors,
+      },
+    };
+  }
+
+  // No inheritable intent — remain uncertain about the speech act, but the
+  // topical anchor itself is still real: record it and point recall at
+  // memory rather than declaring the turn context-free.
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: null,
+    status: 'unknown',
+    confidence: 0,
+    candidates: [],
+    entities: extractEntities(text),
+    sourceOfTruth: 'memory',
+    needsClarification: false,
+    rawScore: 0,
+    needsSemanticCheck: false,
+    referents,
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'assistant_anchored_follow_up_unresolved_intent',
+      anchoredTerms: anchors,
+    },
+  };
+}
+
+/**
+ * Records WHICH deictic expressions in the current turn point at Gaia's own
+ * previous response, on decisions produced by the existing pronominal /
+ * bare-interrogative paths. Purely additive provenance — never changes
+ * status/intent/sourceOfTruth. No-op without an assistant antecedent or
+ * when referents are already populated (the anchored path fills richer ones).
+ */
+const DEICTIC_EXPRESSIONS = new Set([
+  'dit', 'deze', 'dat', 'die', 'daar', 'daarmee', 'daarin', 'daarop',
+  'hier', 'hiermee', 'ermee', 'eraan', 'it', 'this', 'that', 'these', 'those',
+]);
+function attachAssistantReferents(decision, text, messages) {
+  try {
+    if (!decision || (Array.isArray(decision.referents) && decision.referents.length > 0)) return decision;
+    if (!previousAssistantText(messages)) return decision;
+    const found = [...new Set(normalize(text).replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => DEICTIC_EXPRESSIONS.has(w)))];
+    if (found.length === 0) return decision;
+    decision.referents = found.slice(0, MAX_ASSISTANT_REFERENTS).map((expression) => ({
+      expression,
+      resolvedTo: 'previous_assistant_turn',
+      confidence: 0.55,
+      source: 'previous_assistant_turn',
+    }));
+  } catch (_) { /* provenance metadata must never break classification */ }
+  return decision;
 }
 
 // --- IntentIQ 2.0: semantic classification tier ----------------------------
@@ -1338,5 +1548,10 @@ module.exports = {
     interpretationStatusFor,
     collectMatchedSignals,
     isBareInterrogativeFollowUp,
+    assistantAnchorTerms,
+    previousAssistantText,
+    resolveAssistantAnchoredFollowUp,
+    attachAssistantReferents,
+    findInheritablePriorIntent,
   },
 };

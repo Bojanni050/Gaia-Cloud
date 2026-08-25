@@ -1091,3 +1091,121 @@ test('2.4 isBareInterrogativeFollowUp token discipline', () => {
   assert.equal(isBareInterrogativeFollowUp('why is the sky blue'), false);
   assert.equal(isBareInterrogativeFollowUp('dit is een vraag waarom'), false);
 });
+
+// --- heuristic-v0.3: assistant-originated referents -------------------------
+//
+// Gaia's OWN previous response is a legitimate antecedent source: when she
+// introduces a term ("...zeker gezien de context rond juni..."), the user's
+// follow-up ("wat was er in juni ook alweer?") references HER turn, not the
+// void. The mechanism is generic content-term anchoring against the
+// immediately preceding assistant turn — deliberately NOT a keyword list of
+// months/dates/topics.
+
+test("v0.3: a follow-up reusing Gaia's term anchors to her previous turn", () => {
+  const history = [
+    ...user('Vertel eens hoe het afgelopen jaar ging.'),
+    msg('assistant', 'Ik zie vooral veel sessies rond juni — zeker gezien de context rond juni destijds.'),
+  ];
+  const d = classify(user('wat was er in juni ook alweer?', history), silent);
+
+  // The anchor is real and visible with provenance.
+  assert.equal(d.sourceOfTruth, 'memory');
+  assert.ok(d.referents.length >= 1);
+  const juni = d.referents.find((r) => r.expression === 'juni');
+  assert.ok(juni, 'juni recorded as a referent');
+  assert.equal(juni.source, 'previous_assistant_turn');
+  assert.match(juni.resolvedTo, /previous_assistant_turn:juni/);
+  assert.match(d.meta.reason, /^assistant_anchored_follow_up/);
+});
+
+test('v0.3: the same question without an assistant antecedent stays honestly uncertain', () => {
+  // "oktober" appears nowhere in the (short) assistant reply — no anchor.
+  const history = [
+    ...user('Hoi'),
+    msg('assistant', 'Hoi! Leuk dat je er bent.'),
+  ];
+  const d = classify(user('wat was er in oktober ook alweer?', history), silent);
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.sourceOfTruth, 'unknown');
+  assert.deepEqual(d.referents, []);
+  assert.equal(d.meta.reason, 'no_signal_matched');
+});
+
+test('v0.3: anchoring is generic — any substantive term Gaia introduced works', () => {
+  const history = [
+    ...user('Wat vind je van mijn planning?'),
+    msg('assistant', 'De sprintstructuur oogt goed, maar het review-moment elke vrijdag is krap.'),
+  ];
+  // No pronoun, no interrogative head, no lexical signal of its own — the
+  // ONLY thing tying this turn to anything is the term Gaia used first.
+  const d = classify(user('wat gebeurde er rond vrijdag precies?', history), silent);
+  assert.equal(d.sourceOfTruth, 'memory');
+  assert.match(d.meta.reason, /^assistant_anchored_follow_up/);
+  assert.ok(d.referents.some((r) => r.expression === 'vrijdag'), 'vrijdag recorded as an assistant-originated referent');
+});
+
+test('v0.3: anchored follow-up inherits intent from the prior user turn when resolvable', () => {
+  const history = [
+    ...user('Analyseer even mijn publicatie-ritme.'),
+    msg('assistant', 'Opvallend: de pieken liggen allemaal in juni.'),
+  ];
+  const d = classify(user('wat verklaart die piek dan in juni?', history), silent);
+  assert.equal(d.meta.reason, 'assistant_anchored_follow_up_inherited');
+  assert.equal(d.intent, 'inform.explain'); // inherited from "analyseer"
+  assert.equal(d.sourceOfTruth, 'memory');   // anchored to shared context, not just conversation
+  assert.ok(d.referents.some((r) => r.expression === 'juni'));
+  assert.equal(d.needsSemanticCheck, true);  // context-resolved: verify before trusting
+});
+
+test('v0.3: function-word overlap alone never anchors', () => {
+  // Only function words shared — no content-term anchor may fire.
+  const history = [
+    ...user('Kun je dit analyseren?'),
+    msg('assistant', 'Dat was wat er in de tekst stond over de structuur ervan.'),
+  ];
+  const d = classify(user('wat betekent dit nog meer eigenlijk?', history), silent);
+  // May resolve as a pronominal continuation, but never via a content anchor:
+  if (d.meta.reason.startsWith('assistant_anchored')) {
+    assert.fail('function words must not produce an anchored decision');
+  }
+});
+
+test('v0.3: pronominal adverbs ("daar", "daarmee") are continuation cues that record assistant provenance', () => {
+  const history = [
+    ...user('Waarom crasht mijn website?'),
+    msg('assistant', 'Ik zie een probleem met de database-connectie tijdens pieken.'),
+  ];
+  const d = classify(user('daar twijfel ik nog aan.', history), silent);
+  assert.notEqual(d.status, 'unknown'); // continuation inherits/ambiguates, not unknown
+  assert.ok(Array.isArray(d.referents));
+  for (const r of d.referents) {
+    assert.equal(r.source, 'previous_assistant_turn');
+    assert.equal(r.resolvedTo, 'previous_assistant_turn');
+  }
+});
+
+test('v0.3: "dat"/"die" follow-ups keep their inherited-intent semantics', () => {
+  const history = [...user('Kun je dit analyseren?'), msg('assistant', 'Ja, ik kijk ernaar.')];
+  const d = classify(user('En deze dan?', history), silent);
+  assert.equal(d.sourceOfTruth, 'conversation'); // unchanged classic path
+  assert.notEqual(d.status, 'unknown');
+});
+
+test('v0.3: "wat bedoelde je daarmee?" refers to Gaia\'s previous response', () => {
+  const history = [
+    ...user('Hoe staat mijn project ervoor?'),
+    msg('assistant', 'De mixage loopt, maar mastering wacht op feedback.'),
+  ];
+  const d = classify(user('wat bedoelde je daarmee?', history), silent);
+  // Meta-intent detection already treats this as a question about Gaia's own
+  // words; pin that so the anchoring work never regresses it.
+  assert.equal(d.intent, 'meta.question');
+  assert.equal(d.status, 'accepted');
+});
+
+test('v0.3: without ANY preceding context the system remains uncertain', () => {
+  const d = classify(user('wat was er in juni ook alweer?'), silent);
+  assert.equal(d.status, 'unknown');
+  assert.equal(d.sourceOfTruth, 'unknown');
+  assert.deepEqual(d.referents, []);
+});
