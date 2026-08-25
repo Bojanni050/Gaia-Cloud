@@ -2,11 +2,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { decide, isNativeTurn, mapReasoningLevel, usedContextSources } = require('../src/decision/decisionEngine');
-const { ACTIONS, REASONING_LEVELS, validateDecision } = require('../src/decision/decisionSchema');
+const { decide, isNativeTurn, mapReasoningLevel, usedContextSources, shouldUseConversationSearch } = require('../src/decision/decisionEngine');
+const { ACTIONS, REASONING_LEVELS, PATTERN_USAGE_MODES, validateDecision } = require('../src/decision/decisionSchema');
 
-test('decisionSchema exposes exactly the five allowed actions', () => {
-  assert.deepEqual(ACTIONS, ['native', 'capability', 'tool', 'clarify', 'refuse']);
+test('decisionSchema exposes exactly the allowed actions — five originals plus the 3.0 plan action', () => {
+  assert.deepEqual(ACTIONS, ['native', 'capability', 'tool', 'clarify', 'refuse', 'plan']);
 });
 
 test('validateDecision rejects an unknown action', () => {
@@ -291,6 +291,87 @@ test('validateDecision accepts a full plan and rejects malformed context/reasoni
   assert.match(validateDecision({ action: 'native', capabilities: 'hermes' }), /capabilities must be an array/);
 });
 
+// --- Pattern Awareness 0.1: patternUsage schema + decision ownership ---------
+
+const ESTABLISHED_PATTERN = {
+  id: 'pattern-1',
+  statement: 'Bo lijkt vaker langdurig creatief te werken na technische doorbraken.',
+  status: 'established',
+  confidence: 0.85,
+  hypothesisIds: ['hyp-a', 'hyp-b'],
+  persistence: 'durable',
+  sourceRef: 'ptf_1',
+  relevance: 0.88,
+};
+
+test('patternUsage modes are exactly the three the spec names', () => {
+  assert.deepEqual(PATTERN_USAGE_MODES, ['ignore', 'use_as_context', 'mention_as_observation']);
+});
+
+test('decide() judges offered patterns itself — established + relevant becomes usable context', () => {
+  const decision = decide({
+    userInput: 'ik ga zo weer creatief werken aan Melodiq',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    context: { reflections: [], mentalModels: [], patterns: [ESTABLISHED_PATTERN] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.ok(decision.patternUsage, 'the decision owns pattern usage');
+  assert.notEqual(decision.patternUsage.mode, 'ignore');
+  assert.deepEqual(decision.patternUsage.patterns, ['pattern-1']); // provenance preserved
+  assert.equal(validateDecision(decision), null);
+});
+
+test('decide() never lets a candidate pattern become user-facing — default is ignore', () => {
+  const decision = decide({
+    userInput: 'vertel over mijn creatieve werkritme aub',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    context: { reflections: [], mentalModels: [], patterns: [{ ...ESTABLISHED_PATTERN, status: 'candidate' }] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'native' }],
+  });
+  assert.equal(decision.patternUsage.mode, 'ignore');
+  assert.deepEqual(decision.patternUsage.mentions, []);
+});
+
+test('mention_as_observation requires the engine to choose it — never implied by retrieval alone', () => {
+  const decision = decide({
+    userInput: 'zag je hoe ik werk na doorbraken?',
+    intent: null,
+    context: { reflections: [], mentalModels: [], patterns: [ESTABLISHED_PATTERN] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'native' }],
+  });
+  const usage = decision.patternUsage;
+  if (usage.mode === 'mention_as_observation') {
+    assert.equal(usage.mentions.length, 1);
+    assert.equal(usage.mentions[0].phrasing, 'tentative');
+    assert.deepEqual(usage.patterns, [usage.mentions[0].patternId]);
+  } else {
+    // use_as_context is the safe floor; mention must have been withheld deliberately
+    assert.equal(usage.mode, 'use_as_context');
+  }
+  assert.equal(validateDecision(decision), null);
+});
+
+test('validateDecision rejects malformed patternUsage shapes', () => {
+  assert.match(validateDecision({ action: 'native', patternUsage: 'nope' }), /patternUsage must be an object/);
+  assert.match(validateDecision({ action: 'native', patternUsage: { mode: 'shout' } }), /mode must be one of/);
+  assert.match(validateDecision({ action: 'native', patternUsage: { mode: 'ignore', patterns: 'x' } }), /patterns must be an array/);
+  assert.match(
+    validateDecision({ action: 'native', patternUsage: { mode: 'ignore', patterns: [], mentions: [{}] } }),
+    /mentions entry requires/
+  );
+  assert.match(
+    validateDecision({ action: 'native', patternUsage: { mode: 'ignore', patterns: [], decisions: [{ patternId: 'p' }] } }),
+    /decisions entry requires/
+  );
+  assert.equal(
+    validateDecision({ action: 'native', patternUsage: { mode: 'use_as_context', patterns: ['pattern-1'], contextPatternIds: ['pattern-1'], mentions: [], decisions: [] } }),
+    null
+  );
+});
+
 // --- v2.2: meta-intent priority (spec §2) --------------------------------
 
 test('decide() routes meta.question to native — no capability invoked', () => {
@@ -371,4 +452,67 @@ test('decide() sets capability_execute=false for native/clarify actions', () => 
   });
   assert.equal(clarifyDecision.capability_execute, false);
   assert.equal(clarifyDecision.capability_candidate, null);
+});
+
+// --- conversation_search: Decision Engine routing (v0.1, deliberately narrow) --
+
+const ANCHORED_INTENT = {
+  schemaVersion: 'intentiq.v1',
+  intent: null,
+  status: 'unknown',
+  sourceOfTruth: 'memory',
+  referents: [{ expression: 'juni', resolvedTo: 'previous_assistant_turn:juni', confidence: 0.6, source: 'previous_assistant_turn' }],
+  meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' },
+};
+
+test('conversation_search policy fires only on assistant-anchored follow-up reasons', () => {
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT), true);
+  assert.equal(shouldUseConversationSearch({
+    intent: 'memory.inspect', status: 'accepted', sourceOfTruth: 'memory',
+    meta: { reason: 'direct_signal' },
+  }), false);
+  assert.equal(shouldUseConversationSearch({ intent: null, status: 'unknown' }), false);
+  assert.equal(shouldUseConversationSearch(null), false);
+});
+
+test('decide() routes an anchored follow-up to the conversation_search capability when available', () => {
+  const decision = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: ANCHORED_INTENT,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'conversation_search' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'conversation_search');
+  assert.equal(decision.capability_execute, true);
+  // Scope pinned by Gaia (the anchor is from THIS conversation) — the
+  // capability never chooses scope itself.
+  assert.equal(decision.input.scope, 'current');
+  assert.match(decision.input.query, /juni/);
+  assert.ok(decision.input.limit >= 1 && decision.input.limit <= 20);
+  assert.equal(validateDecision(decision), null);
+});
+
+test('decide() falls back to existing routing when conversation_search is not registered', () => {
+  const decision = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: ANCHORED_INTENT,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.notEqual(decision.capability, 'conversation_search');
+  assert.equal(validateDecision(decision), null);
+});
+
+test('decide() keeps ordinary memory.inspect turns on their existing routing', () => {
+  const decision = decide({
+    userInput: 'What have you noticed about how I work?',
+    intent: { intent: 'memory.inspect', status: 'accepted', needsClarification: false, sourceOfTruth: 'memory' },
+    context: { reflections: [{ text: 'Bo prefers async updates' }], mentalModels: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
+  });
+  assert.notEqual(decision.capability, 'conversation_search');
 });

@@ -35,6 +35,8 @@ const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
 const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
+const { createConversationSearchTool } = require('./tools/conversationSearch');
+const { createHindsightRetrievalCapability } = require('./tools/hindsightRetrieval');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -50,7 +52,6 @@ const PORT = Number(process.env.PORT || 8891);
 
 function createApp(env = process.env) {
   const soul = loadSoulWithEnv(env);
-  const systemPrompt = soul.prompt;
   const documents = loadFoundationDocumentsWithEnv(env);
   const hermes = createHermesClient({
     baseUrl: env.HERMES_BASE_URL,
@@ -81,6 +82,10 @@ function createApp(env = process.env) {
     hypothesisRuntime = {
       manager: hypothesisManager,
       recallHypotheses: (query) => hypothesisAdapter.recallHypotheses(query),
+      // Pattern Awareness 0.1 — per-turn scoped pattern recall through the
+      // same adapter that persists patterns (turn.js gates the call on
+      // IntentIQ signals; the Decision Engine owns whatever happens next).
+      recallPatterns: (query) => patternAdapter.recallPatterns(query),
       patternManager,
       ensureLoaded: () => {
         if (!loadedPromise) {
@@ -160,6 +165,19 @@ function createApp(env = process.env) {
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
   app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
 
+  // conversation_search — a real capability/tool over the EXISTING
+  // conversation persistence (no second store). Registered like any other
+  // tool; the Decision Engine decides when it runs, never the capability.
+  const conversationSearchTool = createConversationSearchTool({ historyStore });
+  // hindsight — read-only retrieval capability for Decision Engine 3.0
+  // plans. Same client instance every other Hindsight use shares; it can
+  // never write (Memoryworthiness owns ingestion).
+  const hindsightRetrieval = createHindsightRetrievalCapability({ hindsight });
+  const turnTools = {
+    conversation_search: conversationSearchTool,
+    hindsight: hindsightRetrieval,
+  };
+
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;
     const conversationId = req.body && req.body.conversationId;
@@ -212,6 +230,7 @@ function createApp(env = process.env) {
         webSearch,
         historyStore,
         decisionStore,
+        tools: turnTools,
         attachments: resolvedAttachments,
         traceId,
       });
@@ -242,7 +261,27 @@ function createApp(env = process.env) {
       })),
     }));
 
-    const result = await performTurn({ messages, systemPrompt, hermes, attachments, nativeGenerator, webSearch, traceId });
+    // COGNITIVE PARITY: the non-streaming route runs the SAME cognitive
+    // pipeline as the streaming one (IntentIQ, Hindsight recall,
+    // Memoryworthiness, ReasonIQ, hypotheses/patterns, Decision Engine,
+    // reflection) — turn.js's runTurnCore is shared verbatim. Only delivery
+    // differs: one JSON body instead of SSE. Chat history stays a
+    // fire-and-forget save in this handler after the response, mirroring
+    // performStreamingTurn's inline save.
+    const result = await performTurn({
+      messages,
+      documents,
+      hermes,
+      hindsight,
+      hypothesisRuntime,
+      attachments,
+      nativeGenerator,
+      webSearch,
+      traceId,
+      conversationId,
+      decisionStore,
+      tools: turnTools,
+    });
     res.status(result.status).json(result.body);
 
     // Chat history — fire-and-forget, after the response is already sent,

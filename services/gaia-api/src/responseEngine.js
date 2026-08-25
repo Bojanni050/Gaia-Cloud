@@ -188,6 +188,7 @@ function resolveReplyText(executionResult, context = {}) {
     case 'capability':
     case 'tool':
     case 'native':
+    case 'plan': // Decision Engine 3.0: the last successful step's output (normally Gaia's own generation, or a terminal capability result)
       return typeof executionResult.output === 'string' && executionResult.output.length > 0
         ? executionResult.output
         : null;
@@ -269,6 +270,7 @@ module.exports = {
   createStreamEmitter,
   generateReply,
   generateStreamingReply,
+  resolveReplyText,
   toCalmError,
   CALM_FALLBACK,
   CLARIFY_FALLBACK,

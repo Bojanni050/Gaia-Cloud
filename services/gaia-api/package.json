@@ -12,7 +12,9 @@
     "eval:intent-eval": "node eval/evaluationRunner.js",
     "eval:reason": "node eval/run-reason.js",
     "eval:hypothesis": "node eval/run-hypothesis.js",
-    "eval:pattern": "node eval/run-pattern.js"
+    "eval:pattern": "node eval/run-pattern.js",
+    "eval:memory": "node eval/run-memoryworthiness.js",
+    "eval:planning": "node eval/run-planning.js"
   },
   "dependencies": {
     "express": "^4.19.2",
