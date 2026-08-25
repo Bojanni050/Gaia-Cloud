@@ -27,6 +27,16 @@ const RUNTIME_CONSTANTS = Object.freeze({
   ambiguityShareThreshold: 0.6,
   /** ...or lead the runner-up by more than this many raw matches (AMBIGUITY_RAW_MARGIN). */
   ambiguityRawMargin: 1,
+  /**
+   * Semantic-tier ambiguity reconciliation (AMBIGUITY_CONFIDENCE_MARGIN):
+   * a model-reported `ambiguous: true` flag is overridden by candidate-margin
+   * evidence — the interpretation is accepted when the top semantic candidate
+   * leads the runner-up by MORE than this many confidence points. A margin at
+   * or below this is a genuine tie; a margin above it is a clear winner.
+   * Makes ambiguity depend on genuine interpretive competition, not merely on
+   * the presence of multiple candidates or a reported flag.
+   */
+  ambiguityConfidenceMargin: 0.05,
   /** Confidence is never reported at or above this — "she never pretends certainty" (MAX_CONFIDENCE). */
   maxConfidenceCap: 0.95,
   /** confidenceLevel 'high' starts here (CONFIDENCE_LEVEL_HIGH). */

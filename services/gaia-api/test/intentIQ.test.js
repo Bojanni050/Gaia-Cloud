@@ -423,6 +423,108 @@ test('combineConsensus: sourceOfTruth prefers the heuristic\'s own rule-based ju
   assert.equal(combined.sourceOfTruth, 'tool'); // heuristic's own resolution wins, not semantic's
 });
 
+// --- ambiguity calibration: margin overrides a reported ambiguous flag ----------
+//
+// A turn is ambiguous only when the competing interpretations are genuinely
+// close. A model-reported `ambiguous: true` is reconciled against the
+// semantic candidates' margin: a clear winner is accepted even when the model
+// hedged, and only a genuinely close candidate pair keeps the turn ambiguous.
+
+test('ambiguity calibration: a clear winner (0.85 vs 0.60) is accepted despite a reported ambiguous flag', () => {
+  const heuristic = classify(user('dank je, je bent nog slimmer als het goed is'), silent); // unknown
+  const semantic = {
+    intent: 'converse', confidence: 0.85,
+    candidates: [
+      { intent: 'converse', confidence: 0.85 },
+      { intent: 'meta.relational', confidence: 0.60 },
+      { intent: 'meta.correction', confidence: 0.30 },
+    ],
+    sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: true, reason: 'hedged',
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'converse');
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.ambiguous, false);
+  assert.equal(combined.needsClarification, false);
+  assert.equal(combined.confidence, 0.85);
+  assert.equal(combined.speechAct, 'statement');
+});
+
+test('ambiguity calibration: a moderate winner (0.70 vs 0.60) is accepted, referent provenance preserved', () => {
+  const heuristic = classify(user('i said you must be smarter now if i did it right'), silent); // unknown
+  const semantic = {
+    intent: 'converse', confidence: 0.70,
+    candidates: [
+      { intent: 'converse', confidence: 0.70 },
+      { intent: 'meta.relational', confidence: 0.60 },
+    ],
+    sourceOfTruth: 'conversation', speechAct: 'statement',
+    referents: [{ expression: 'it', resolvedTo: 'presumably an action the user took to make Gaia smarter', confidence: 0.6, source: 'conversation' }],
+    ambiguous: true, reason: 'hedged',
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'converse');
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.ambiguous, false);
+  assert.equal(combined.needsClarification, false);
+  // Referent provenance survives even though the turn itself is accepted.
+  assert.equal(combined.referents.length, 1);
+  assert.equal(combined.referents[0].expression, 'it');
+  assert.equal(combined.referents[0].confidence, 0.6);
+});
+
+test('ambiguity calibration: genuinely close candidates (0.50 vs 0.48) stay ambiguous', () => {
+  const heuristic = classify(user('I need you to handle this.'), silent);
+  const semantic = {
+    intent: 'converse', confidence: 0.50,
+    candidates: [
+      { intent: 'converse', confidence: 0.50 },
+      { intent: 'decide.support', confidence: 0.48 },
+    ],
+    sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: true, reason: 'genuinely close',
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.status, 'ambiguous');
+  assert.equal(combined.ambiguous, true);
+  assert.equal(combined.needsClarification, true);
+});
+
+test('ambiguity calibration: a single candidate overrides a reported ambiguous flag', () => {
+  const heuristic = classify(user('hello there friend'), silent);
+  const semantic = {
+    intent: 'converse', confidence: 0.7,
+    candidates: [{ intent: 'converse', confidence: 0.7 }],
+    sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: true, reason: 'hedged with single candidate',
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.ambiguous, false);
+});
+
+test('ambiguity calibration: a non-ambiguous semantic result stays accepted', () => {
+  const heuristic = classify(user('hello there friend'), silent);
+  const semantic = {
+    intent: 'converse', confidence: 0.7,
+    candidates: [{ intent: 'converse', confidence: 0.7 }],
+    sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: false, reason: null,
+  };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.ambiguous, false);
+});
+
+test('ambiguity calibration: the semantic margin helper reports top and margin correctly', () => {
+  const { semanticTopAndMargin, semanticIsAmbiguous } = require('../src/logos/intentIQ').__internals;
+  const res = semanticTopAndMargin({ candidates: [{ intent: 'a', confidence: 0.8 }, { intent: 'b', confidence: 0.5 }] });
+  assert.equal(res.top.intent, 'a');
+  assert.equal(res.top.confidence, 0.8);
+  assert.ok(Math.abs(res.margin - 0.3) < 1e-9, `expected margin ~0.3, got ${res.margin}`);
+  // Single candidate: margin Infinity (no genuine competition), never ambiguous.
+  assert.equal(semanticTopAndMargin({ candidates: [{ intent: 'a', confidence: 0.8 }] }).margin, Infinity);
+  assert.equal(semanticIsAmbiguous({ ambiguous: true, candidates: [{ intent: 'a', confidence: 0.8 }] }), false);
+  assert.equal(semanticIsAmbiguous({ ambiguous: false, candidates: [] }), false);
+});
+
 test('combineConsensus: sourceOfTruth falls back to the semantic tier\'s judgment when the heuristic genuinely could not tell', () => {
   const heuristic = classify(user('asdkfj alkj qzx'), silent); // sourceOfTruth: unknown
   const semantic = { intent: null, confidence: 0, candidates: [], sourceOfTruth: 'memory', speechAct: null, referents: [], ambiguous: false, reason: null };
@@ -1550,11 +1652,46 @@ test('creative artifact decisions preserve the IntentIQ result through both tran
   await performStreamingTurn({ ...common, res: {
     writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
   } });
-  assert.equal(decisions.length, 2);
+assert.equal(decisions.length, 2);
   assert.deepEqual(decisions[0], decisions[1]);
 });
 
-
+test('ambiguity calibration decisions preserve the IntentIQ result through both transports', async () => {
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  // A semantic-tier decision that is accepted (clear winner) must produce
+  // the identical IntentIQ result on both transports.
+  const intent = {
+    schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted',
+    confidence: 0.85, ambiguous: false, needsClarification: false,
+    speechAct: 'statement', sourceOfTruth: 'conversation', entities: [],
+    candidates: [{ intent: 'converse', score: 0.85 }, { intent: 'meta.relational', score: 0.6 }],
+    referents: [], needsSemanticCheck: false,
+  };
+  const decisions = [];
+  const reasoning = { reasoningDepth: 'shallow' };
+  const decisionEngine = (args) => {
+    decisions.push(args.intent);
+    return { action: 'native', reason: 'test', capability_execute: false };
+  };
+  const orchestrate = async () => ({ action: 'native', output: 'ok' });
+  const common = {
+    messages: [{ role: 'user', content: 'dank je, je bent nog slimmer als het goed is' }],
+    documents: {},
+    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
+    hindsight: { recall: async () => [], reflect: async () => {} },
+    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
+    intentIQ: async () => intent,
+    reasonIQ: async () => reasoning,
+    decisionEngine,
+    orchestrate,
+  };
+  await performTurn(common);
+  await performStreamingTurn({ ...common, res: {
+    writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
+  } });
+assert.equal(decisions.length, 2);
+  assert.deepEqual(decisions[0], decisions[1]);
+});
 
 test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
   for (const text of [

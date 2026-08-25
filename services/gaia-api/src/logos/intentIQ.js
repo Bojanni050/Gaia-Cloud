@@ -810,6 +810,13 @@ function resolveSourceOfTruth(text, ctx, resolvedIntent) {
 
 const AMBIGUITY_SHARE_THRESHOLD = 0.6; // top candidate must hold >=60% of signal weight
 const AMBIGUITY_RAW_MARGIN = 1; // or lead the runner-up by more than this many raw matches
+// Semantic-tier ambiguity reconciliation: a model-reported `ambiguous: true`
+// flag is overridden by candidate-margin evidence — the interpretation is
+// accepted when the top semantic candidate leads the runner-up by MORE than
+// this many confidence points. A margin at or below this is a genuine tie; a
+// margin above it is a clear winner. Kept in sync with intentCalibrationConfig
+// RUNTIME_CONSTANTS.ambiguityConfidenceMargin.
+const AMBIGUITY_CONFIDENCE_MARGIN = 0.05;
 const MAX_CONFIDENCE = 0.95; // soul.md: "she never pretends certainty" — never report 1.0
 // IntentIQ 2.4, from the 2.3 calibration findings: when an accepted match's
 // ONLY support is a bare weak cue ("draft" the NBA kind of hit), the raw
@@ -1645,6 +1652,46 @@ async function classifySemantic(text, context = {}, options = {}) {
  * @param {object|null} semantic a validated SemanticResult, or null
  * @returns {object} the final IntentDecision
  */
+
+/**
+ * Returns the top semantic candidate and the confidence margin over the
+ * runner-up. `top` is null when there is no candidate; `margin` is Infinity
+ * when there is only one candidate (no genuine competition).
+ * @param {object} semantic a validated SemanticResult
+ * @returns {{ top: { intent: string, confidence: number }|null, margin: number }}
+ */
+function semanticTopAndMargin(semantic) {
+  const cands = [...(semantic.candidates || [])]
+    .map((c) => ({ intent: c.intent, confidence: c.confidence }))
+    .sort((a, b) => b.confidence - a.confidence);
+  if (cands.length === 0) return { top: null, margin: 0 };
+  const top = cands[0];
+  const runnerUp = cands[1];
+  return { top, margin: runnerUp ? top.confidence - runnerUp.confidence : Infinity };
+}
+
+/**
+ * Semantic-tier ambiguity, reconciled against candidate-margin evidence.
+ *
+ * A model-reported `ambiguous: true` flag is NOT trusted on its own: the
+ * semantic result carries candidates, and when the top candidate clearly
+ * leads the runner-up (margin above AMBIGUITY_CONFIDENCE_MARGIN), the turn
+ * has a genuine winner and must be accepted — the reported flag is a
+ * calibration inconsistency (the model hedged while also giving a decisive
+ * candidate). Ambiguity therefore depends on genuine interpretive
+ * competition, not merely candidate presence or a self-reported flag.
+ *
+ * @param {object} semantic a validated SemanticResult
+ * @returns {boolean}
+ */
+function semanticIsAmbiguous(semantic) {
+  if (!semantic.ambiguous) return false;
+  const { margin } = semanticTopAndMargin(semantic);
+  // A single candidate (margin Infinity) or a decisive margin both override
+  // the flag; only a genuinely close candidate pair keeps it ambiguous.
+  return margin <= AMBIGUITY_CONFIDENCE_MARGIN;
+}
+
 function combineConsensus(heuristic, semantic) {
   if (!semantic) return heuristic;
 
@@ -1690,7 +1737,12 @@ function combineConsensus(heuristic, semantic) {
   } else if (!heuristicTop && semantic.intent) {
     intent = semantic.intent;
     confidence = capConfidence(semantic.confidence);
-    ambiguous = Boolean(semantic.ambiguous);
+    // Ambiguity is reconciled against the candidate margin, not trusted
+    // blindly from the model's flag: a clear winner (top candidate leading
+    // the runner-up by more than AMBIGUITY_CONFIDENCE_MARGIN) is accepted
+    // even when the model hedged with ambiguous:true. Only genuinely close
+    // candidate pairs keep the turn ambiguous.
+    ambiguous = semanticIsAmbiguous(semantic);
     status = ambiguous ? 'ambiguous' : 'accepted';
     rawScore = semantic.confidence;
   } else if (heuristicTop && !semantic.intent) {
@@ -1855,6 +1907,8 @@ module.exports = {
     isDeclarativeStatusUpdate,
     isSelfDirectedInvestigation,
     isCreativeArtifactRequest,
+    semanticTopAndMargin,
+    semanticIsAmbiguous,
     assistantAnchorTerms,
     previousAssistantText,
     resolveAssistantAnchoredFollowUp,
