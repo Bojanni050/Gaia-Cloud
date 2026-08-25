@@ -1231,6 +1231,92 @@ test('v0.4: a declarative status update is an accepted converse statement — ne
   assert.equal(d.needsSemanticCheck, false);
 });
 
+// --- acknowledgement/greeting + conversational question -----------------
+
+const CONVERSATIONAL_COMPOUNDS = [
+  'dank je. hoe is het?',
+  'dank je, hoe gaat het?',
+  'goedemorgen, hoe is het?',
+  'hoi, hoe gaat het?',
+  'fijn je weer te spreken. hoe is het?',
+];
+
+for (const input of CONVERSATIONAL_COMPOUNDS) {
+  test(`compound conversation: "${input}" resolves from the question clause`, () => {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'converse');
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.confidence, 0.95);
+    assert.equal(d.needsClarification, false);
+    assert.equal(d.ambiguous, false);
+    assert.equal(d.speechAct, 'question');
+    assert.equal(d.needsSemanticCheck, false);
+  });
+}
+
+for (const input of ['dank je', 'goedemorgen', 'ok', 'ja precies']) {
+  test(`compound conversation does not promote pure filler: "${input}"`, () => {
+    const d = classify(user(input), silent);
+    // Preserve each input's existing classification. In particular, the
+    // existing anchored greeting rule accepts "goedemorgen"; the compound
+    // rule must not change it or add question speech-act metadata.
+    assert.notEqual(d.meta.reason, 'acknowledgement_or_greeting_plus_conversational_question');
+    assert.notEqual(d.speechAct, 'question');
+    assert.equal(d.needsClarification, false);
+  });
+}
+
+for (const input of CONVERSATIONAL_COMPOUNDS) {
+  test(`compound conversation: "${input}" does not trigger semantic fallback`, async () => {
+    const lines = [];
+    const d = await interpret(user(input), {
+      logger: (line) => lines.push(JSON.parse(line)),
+      model: { chat: async () => { throw new Error('semantic model must not be called'); } },
+    });
+    assert.equal(d.intent, 'converse');
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.speechAct, 'question');
+    assert.equal(lines.at(-1).semanticCalled, false);
+  });
+}
+
+test('compound conversation does not classify an informational question as converse', () => {
+  const d = classify(user('dank je. wat is een race condition?'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.status, 'accepted');
+  assert.equal(d.needsClarification, false);
+});
+
+test('compound conversational turns preserve the IntentIQ result through both transports', async () => {
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  const input = [{ role: 'user', content: 'dank je. hoe is het?' }];
+  const decisions = [];
+  const intent = classify(input, silent);
+  const reasoning = { reasoningDepth: 'shallow' };
+  const decisionEngine = (args) => {
+    decisions.push(args.intent);
+    return { action: 'native', reason: 'test', capability_execute: false };
+  };
+  const orchestrate = async () => ({ action: 'native', output: 'ok' });
+  const common = {
+    messages: input,
+    documents: {},
+    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
+    hindsight: { recall: async () => [], reflect: async () => {} },
+    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
+    intentIQ: async () => intent,
+    reasonIQ: async () => reasoning,
+    decisionEngine,
+    orchestrate,
+  };
+  await performTurn(common);
+  await performStreamingTurn({ ...common, res: {
+    writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
+  } });
+  assert.equal(decisions.length, 2);
+  assert.deepEqual(decisions[0], decisions[1]);
+});
+
 test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
   for (const text of [
     'ik heb die mogelijkheid wel toegevoegd. Kennelijk moet ik terug naar de tekenafel',

@@ -40,6 +40,12 @@
     { "id": "conv-003", "category": "converse", "input": "Just checking you're still there.", "expectedIntent": "converse" },
     { "id": "conv-004", "category": "converse", "input": "I just need to vent for a second.", "expectedIntent": "converse" },
     { "id": "conv-005", "category": "converse", "input": "Not really looking for advice, I just want to say this out loud.", "expectedIntent": "converse", "notes": "Explicitly declines advice - guards against over-triggering decide.support." },
+    { "id": "conv-006", "category": "converse", "input": "dank je. hoe is het?", "expectedIntent": "converse", "notes": "Social acknowledgement prefix must not mask a conversational question clause." },
+    { "id": "conv-007", "category": "converse", "input": "dank je, hoe gaat het?", "expectedIntent": "converse" },
+    { "id": "conv-008", "category": "converse", "input": "goedemorgen, hoe is het?", "expectedIntent": "converse" },
+    { "id": "conv-009", "category": "converse", "input": "hoi, hoe gaat het?", "expectedIntent": "converse" },
+    { "id": "conv-010", "category": "converse", "input": "fijn je weer te spreken. hoe is het?", "expectedIntent": "converse" },
+    { "id": "inf-009", "category": "inform.explain", "input": "dank je. wat is een race condition?", "expectedIntent": "inform.explain", "notes": "Informational question remains non-conversational despite acknowledgement prefix." },
 
     { "id": "inf-001", "category": "inform.explain", "input": "Why is my website crashing?", "expectedIntent": "inform.explain" },
     { "id": "inf-002", "category": "inform.explain", "input": "Waarom werkt mijn deploy niet zoals verwacht?", "expectedIntent": "inform.explain" },

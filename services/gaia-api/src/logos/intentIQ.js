@@ -520,6 +520,43 @@ function isDeclarativeStatusUpdate(text) {
   return Boolean(nlFrame || enFrame);
 }
 
+// --- compound conversational turns ---------------------------------------
+// A social opener is filler only when it is the whole turn. If it is followed
+// by a meaningful social question, the second clause determines the intent.
+const SOCIAL_OPENER = /^(?:dank(?:\s*je(?:\s+wel)?)?|bedankt|goedemorgen|goedemiddag|goedenavond|hoi|hallo|fijn je weer te spreken)$/i;
+const CONVERSATIONAL_QUESTION = /^(?:hoe gaat het|hoe is het|how are you|how is it)\??$/i;
+
+function splitConversationalCompound(text) {
+  const clauses = String(text || '').split(/(?:[.!?]+|,)/).map((c) => c.trim()).filter(Boolean);
+  if (clauses.length !== 2) return null;
+  const opener = clauses[0].replace(/[.!?]+$/g, '').trim();
+  const question = clauses[1].replace(/[.!?]+$/g, '').trim();
+  if (!SOCIAL_OPENER.test(opener) || !CONVERSATIONAL_QUESTION.test(question)) return null;
+  return { opener, question };
+}
+
+function conversationalCompoundDecision(text) {
+  if (!splitConversationalCompound(text)) return null;
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: 'converse',
+    status: 'accepted',
+    confidence: capConfidence(0.95),
+    candidates: [{ intent: 'converse', score: 1 }],
+    entities: extractEntities(text),
+    sourceOfTruth: 'conversation',
+    needsClarification: false,
+    rawScore: 1,
+    needsSemanticCheck: false,
+    speechAct: 'question',
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'acknowledgement_or_greeting_plus_conversational_question',
+    },
+  };
+}
+
 /**
  * Naive compound-turn split on a top-level "and"/"en" — only trusted when
  * both halves independently carry a non-empty signal for a *different*
@@ -969,10 +1006,13 @@ function classify(messages, options = {}) {
           unresolvedReason: 'bare_interrogative_without_resolvable_context',
         });
       } else {
+        const conversationalCompound = conversationalCompoundDecision(text);
         const compound = detectCompoundIntents(text);
         const directScored = scoreAllIntents(text);
 
-        if (compound) {
+        if (conversationalCompound) {
+          decision = conversationalCompound;
+        } else if (compound) {
           const candidates = toNormalizedCandidates(compound);
           decision = {
             schemaVersion: SCHEMA_VERSION,
