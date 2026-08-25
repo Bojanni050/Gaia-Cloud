@@ -37,6 +37,7 @@ const {
   evaluateMemoryWorthiness, shouldRetainToHindsight, metadataForMemoryDecision, logMemoryWorthiness,
 } = require('./memoryWorthiness');
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
+const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
 const {
@@ -561,6 +562,11 @@ async function runTurnCore({
   );
 
   const systemMessages = [{ role: 'system', content: systemPrompt }];
+  // Capability awareness — Gaia's factual self-knowledge about what she can
+  // do comes from the LIVE registry, not from (lagging) foundation prose, so
+  // she never denies an ability she actually has.
+  const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
+  if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });

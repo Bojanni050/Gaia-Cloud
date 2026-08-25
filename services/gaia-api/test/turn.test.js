@@ -52,10 +52,14 @@ test('assembleMessages prepends SOUL exactly once and strips extra fields', () =
 test('performTurn returns the reply on a happy path', async () => {
   const hermes = {
     async chat(messages) {
-      assert.deepEqual(messages, [
-        { role: 'system', content: 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON' },
-        { role: 'user', content: 'hello' },
-      ]);
+      assert.equal(messages.length, 3);
+      assert.equal(messages[0].role, 'system');
+      assert.equal(messages[0].content, 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON');
+      // Capability awareness block (registry: hermes only on this path).
+      assert.equal(messages[1].role, 'system');
+      assert.match(messages[1].content, /Capabilities you genuinely have THIS turn/);
+      assert.match(messages[1].content, /hermes:/);
+      assert.deepEqual(messages[2], { role: 'user', content: 'hello' });
       return 'hi there';
     },
   };
@@ -122,12 +126,13 @@ test('performTurn without attachments produces the same context-aware foundation
   let seenMessages;
   const hermes = { chat: async (messages) => { seenMessages = messages; return 'hi there'; } };
   await performTurn({ messages: [{ role: 'user', content: 'hello' }], documents: DOCUMENTS, hermes });
-  // COGNITIVE PARITY: identical assembly to performStreamingTurn — one
-  // system message with the selected foundation documents, then history.
-  assert.equal(seenMessages.length, 2);
+  // COGNITIVE PARITY: identical assembly to performStreamingTurn — foundation
+  // prompt first, then the capability-awareness block, then history.
+  assert.equal(seenMessages.length, 3);
   assert.equal(seenMessages[0].role, 'system');
   assert.equal(seenMessages[0].content, 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON');
-  assert.deepEqual(seenMessages[1], { role: 'user', content: 'hello' });
+  assert.match(seenMessages[1].content, /Capabilities you genuinely have THIS turn/);
+  assert.deepEqual(seenMessages[2], { role: 'user', content: 'hello' });
 });
 
 test('performTurn with attachments hands them to Hermes as a dedicated system message', async () => {
@@ -2178,4 +2183,43 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
   // Normalize the per-store meta timestamps (test fixtures differ, cognition does not).
   const norm = (t) => t.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, 'TS');
   assert.deepEqual(norm(sysB.content), norm(sysA.content));
+});
+
+// --- Capability awareness: Gaia's self-knowledge comes from the live registry --
+
+test("capability awareness: registered capabilities are named in the prompt so Gaia never denies them", async () => {
+  let capturedMessages = null;
+  const hermes = { stream: async (m, { onDelta }) => { capturedMessages = m; onDelta("ok", false); return "ok"; } };
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "kun je eigenlijk zoeken in mijn chats?" }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    reasonIQ: async () => ({}),
+    tools: { conversation_search: { invoke: async () => "x" }, hindsight: { invoke: async () => "x" } },
+  });
+  const block = capturedMessages.find((m) => m.role === "system" && /Capabilities you genuinely have THIS turn/.test(m.content));
+  assert.ok(block, "capability awareness block present");
+  assert.match(block.content, /conversation_search/);
+  assert.match(block.content, /literal text of current and past conversations/);
+  assert.match(block.content, /hindsight/);
+  assert.match(block.content, /Never deny them/);
+});
+
+test("capability awareness: unregistered capabilities are never claimed", async () => {
+  let capturedMessages = null;
+  const hermes = { chat: async (m) => { capturedMessages = m; return "ok"; } };
+  await performTurn({
+    messages: [{ role: "user", content: "kun je in mijn chats zoeken?" }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+  });
+  const block = capturedMessages.find((m) => m.role === "system" && /Capabilities you genuinely have/.test(m.content));
+  // Only the core hermes capability is registered on this path: no search
+  // capability may be claimed.
+  assert.ok(block, "core block still present");
+  assert.doesNotMatch(block.content, /conversation_search/);
 });
