@@ -217,6 +217,24 @@ const SIGNALS = {
     // consisting ONLY of such a token never reaches this signal — see
     // isBareInterrogativeFollowUp below; context decides there, not here.
     /,\s*(?:why|waarom)\s*\??\s*$/i,
+    // Explicit research/retrieval requests directed AT Gaia — sentence-
+    // initial imperatives ("Zoek uit hoe …", "Zoek dit even voor me op.",
+    // "Onderzoek wat de huidige API hiervoor is.") and "kun je (uit|op)zoek*/
+    // onderzoek*" requests. Anchored to the sentence start / request frame so
+    // a first-person mention of the same verbs ("ik zoek het zelf wel uit",
+    // "ik ga onderzoeken waarom dit gebeurt") can never fire them: those
+    // shapes are claimed upstream by the self-directed investigation branch
+    // as USER statements, never requests to Gaia. Requiring the separable
+    // particle (uit/op) or the research verb keeps plain "Zoek de
+    // verschillen"-style comparison asks out of the retrieval frame.
+    /^\s*(?:even\s+|nu\s+|eens\s+|eens\s+even\s+)?zoek\w*\b[\s\S]{0,40}\b(?:uit|op)\b/i,
+    /^\s*(?:even\s+|nu\s+|eens\s+)?onderzoek\w*\b/i,
+    // "kun je <research verb>" requests — vetoed when the actual requested
+    // action is HELPING ("kun jij me helpen dit uit te zoeken?" is a help/
+    // decide ask, not a retrieval request), so the search verb must be the
+    // requested action itself.
+    /\bkun(?:nen)?\s+(?:je|jij|u)\b(?![\s\S]{0,40}\bhelp(?:t|en)?\b)[\s\S]{0,40}\b(?:uit|op)?zoek\w*\b/i,
+    /\bkun(?:nen)?\s+(?:je|jij|u)\b(?![\s\S]{0,40}\bhelp(?:t|en)?\b)[\s\S]{0,40}\bonderzoek\w*\b/i,
   ],
   'create.generate': [
     phrase('write (a|an|me|us)'), boundary('draft'), boundary('compose'),
@@ -645,6 +663,93 @@ function selfDirectedInvestigationDecision(text) {
     },
   };
 }
+
+// --- creative artifact requests ---------------------------------------------
+//
+// "Wat is een goede songtekst om te zingen?" asks for something to be
+// PRODUCED; the generic 'wat is' cue alone resolved it as a concept-
+// explanation request (inform.explain @0.95 → sourceOfTruth
+// external_knowledge → the Decision Engine's web branch) — a measured false
+// positive. The frames below read the OBJECT of the question/wish — a
+// generative artifact noun, optionally with a purpose clause — not the bare
+// cue. "Wat is Hindsight?", "Wat is de hoofdstad van Frankrijk?" and "Wat is
+// een goede uitleg van Hindsight?" carry no artifact object and keep their
+// existing inform.explain routing untouched.
+//
+// PRECEDENCE (documented, enforced by the cascade): a creative-artifact
+// frame outranks the generic explain cues ('wat is', 'hoe werkt') because
+// the task meaning — produce an artifact — beats a bare lexical cue. The
+// branch sits AFTER compound detection so a genuine multi-intent turn
+// ("Schrijf een liedje en zoek uit hoe …") keeps its ambiguous semantics.
+const GENERATIVE_ARTIFACT = String.raw`(?:songtekst\w*|gedicht\w*|titel\w*|naam\w*|verhaal\w*|slogan\w*|hook\w*|melodie\w*|refrein\w*|couplet\w*|jingle\w*|bio\b|biografie\w*|captions?\b|lyrics?\b|teksten?\b)`;
+
+const CREATIVE_ARTIFACT_FRAMES = [
+  // Question with an artifact object: "wat is een (goede|…) <artifact>"
+  new RegExp(String.raw`(?:wat|welk\w*)\s+is\s+(?:een|'n)\s+(?:(?:goede?|korte?|leuke?|mooie?|sterke?|lekkere?|pakkende?|bijzondere?|goede)\s+)?(?:` + GENERATIVE_ARTIFACT + `)`, 'i'),
+  // First-person wish: "ik wil (een|een korte|…) <artifact>"
+  new RegExp(String.raw`\bik\s+wil\b[\s\S]{0,60}(?:` + GENERATIVE_ARTIFACT + `)`, 'i'),
+  // Reformulation ask: "een goede manier om dit te formuleren/zeggen/…"
+  /\b(?:goede?|betere?)\s+manier\s+om\b[\s\S]{0,50}\bte\s+(?:formuleren|zeggen|schrijven|vertellen|brengen|verwoorden|omschrijven)\b/i,
+  // Generation-verb request: "kun je … schrijven/dichten/componeren"
+  /\bkun(?:nen)?\s+(?:je|jij|u)\b[\s\S]{0,60}\b(?:schrij\w*|dichten|componeren)\b/i,
+  // EN mirrors of the two main shapes
+  /(?:what|which)\s+is\s+an?\s+(?:(?:good|short|nice|catchy|strong)\s+)?(?:lyrics?|titles?|names?|poems?|stor(?:y|ies)|slogans?|hooks?|melod(?:y|ies)|captions?)/i,
+  /\bi\s+(?:want|need)\b[\s\S]{0,60}\b(?:lyrics?|titles?|names?|poems?|stor(?:y|ies)|slogans?|hooks?|melod(?:y|ies)|captions?)/i,
+];
+
+/**
+ * A first-person wish to KNOW something ("ik wil weten wat een songtekst
+ * is") reads as explanation, never generation — vetoed before the artifact
+ * frames can fire on the shared noun.
+ */
+const CREATIVE_WISH_VETOES = [
+  /\bik\s+wil\s+(?:graag\s+|echt\s+)?(?:weten|begrijpen|snappen|zien)\b/i,
+  /\bi\s+want\s+to\s+(?:know|understand|see)\b/i,
+];
+
+/**
+ * True when the turn's object is a generative artifact — a question, wish or
+ * request whose answer is something Gaia should PRODUCE (a lyric, a title, a
+ * formulation) rather than a concept to explain. Structural: artifact-noun
+ * frames with an explicit know-veto; no bare-cue routing.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isCreativeArtifactRequest(text) {
+  const t = String(text || '');
+  if (!t.trim()) return false;
+  if (CREATIVE_WISH_VETOES.some((v) => v.test(t))) return false;
+  return CREATIVE_ARTIFACT_FRAMES.some((f) => f.test(t));
+}
+
+/**
+ * The accepted create.generate decision for a creative-artifact request.
+ * sourceOfTruth 'conversation': the artifact is produced in-conversation —
+ * resolveSourceOfTruth's inform.explain → external_knowledge rule can never
+ * apply, because the intent is create.generate, not inform.explain.
+ * @param {string} text
+ */
+function creativeArtifactRequestDecision(text) {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: 'create.generate',
+    status: 'accepted',
+    confidence: capConfidence(0.8),
+    candidates: [{ intent: 'create.generate', score: 0.8 }],
+    entities: extractEntities(text),
+    sourceOfTruth: 'conversation',
+    needsClarification: false,
+    rawScore: 1,
+    needsSemanticCheck: false,
+    speechAct: 'request',
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'creative_artifact_request',
+    },
+  };
+}
+
 
 
 /**
@@ -1106,6 +1211,7 @@ function classify(messages, options = {}) {
       } else {
         const conversationalCompound = conversationalCompoundDecision(text);
         const compound = detectCompoundIntents(text);
+        const creativeArtifact = isCreativeArtifactRequest(text);
         const directScored = scoreAllIntents(text);
 
         if (conversationalCompound) {
@@ -1129,6 +1235,12 @@ function classify(messages, options = {}) {
               reason: 'compound_turn_detected',
             },
           };
+        } else if (creativeArtifact) {
+          // PRECEDENCE: the artifact object beats the generic 'wat is' cue.
+          // A question whose answer is something to PRODUCE is a generation
+          // request, never a concept explanation — the bare lexical cue
+          // loses to the turn's task meaning (see the frames' own comment).
+          decision = creativeArtifactRequestDecision(text);
         } else if (directScored.length > 0) {
           const candidates = toNormalizedCandidates(directScored);
           const status = decideStatus(candidates, directScored);
@@ -1742,6 +1854,7 @@ module.exports = {
     isBareInterrogativeFollowUp,
     isDeclarativeStatusUpdate,
     isSelfDirectedInvestigation,
+    isCreativeArtifactRequest,
     assistantAnchorTerms,
     previousAssistantText,
     resolveAssistantAnchoredFollowUp,

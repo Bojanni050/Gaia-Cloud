@@ -1425,6 +1425,136 @@ test('self-directed decisions preserve the IntentIQ result through both transpor
   assert.deepEqual(decisions[0], decisions[1]);
 });
 
+// --- creative artifact requests vs concept explanations ---------------------
+//
+// "Wat is X?" is not automatically inform.explain: when the object of the
+// question is something to be PRODUCED (a lyric, a title, a formulation),
+// the creative frame outranks the generic cue. Concept questions without an
+// artifact object keep their existing inform.explain routing.
+
+const CREATIVE_ARTIFACT_CASES = [
+  'ik wil mijn stem uploaden in Suno, wat is een goede songtekst om te zingen daarvoor?',
+  'wat is een goede songtekst om te zingen?',
+  'wat is een mooie titel voor dit lied?',
+  'wat is een goede manier om dit te formuleren?',
+  'ik wil een korte songtekst voor mijn stem',
+  'kun je een goede songtekst voor me schrijven?',
+  'wat is een mooie naam voor dit project?',
+];
+
+for (const input of CREATIVE_ARTIFACT_CASES) {
+  test(`creative artifact: "${input}" is create.generate — never external_knowledge`, () => {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'create.generate');
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.sourceOfTruth, 'conversation');
+    assert.notEqual(d.sourceOfTruth, 'external_knowledge');
+    assert.equal(d.speechAct, 'request');
+    assert.equal(d.needsClarification, false);
+    assert.equal(d.needsSemanticCheck, false);
+    assert.equal(d.meta.reason, 'creative_artifact_request');
+  });
+}
+
+const CONCEPT_EXPLAIN_CASES = [
+  'Wat is Hindsight?',
+  'Wat is de hoofdstad van Frankrijk?',
+  'Wat is de huidige API van Suno?',
+  'Wat is een goede uitleg van Hindsight?',
+  'Hoe werkt het uploaden van mijn stem in Suno?',
+];
+
+for (const input of CONCEPT_EXPLAIN_CASES) {
+  test(`concept explanation: "${input}" keeps inform.explain + external_knowledge`, () => {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'inform.explain');
+    assert.equal(d.sourceOfTruth, 'external_knowledge');
+    assert.notEqual(d.meta.reason, 'creative_artifact_request');
+  });
+}
+
+test('creative artifact: a first-person wish to KNOW is vetoed — never generation', () => {
+  const d = classify(user('ik wil weten wat een songtekst is'), silent);
+  assert.notEqual(d.meta.reason, 'creative_artifact_request');
+  assert.notEqual(d.intent, 'create.generate');
+});
+
+test('creative artifact requests never trigger the semantic fallback', async () => {
+  const lines = [];
+  const d = await interpret(user('wat is een goede songtekst om te zingen?'), {
+    logger: (line) => lines.push(JSON.parse(line)),
+    model: { chat: async () => { throw new Error('semantic model must not be called'); } },
+  });
+  assert.equal(d.intent, 'create.generate');
+  assert.equal(lines.at(-1).semanticCalled, false);
+});
+
+// --- explicit research requests (assistant-directed) -------------------------
+
+const RESEARCH_CASES = [
+  'Zoek uit hoe ik mijn stem in Suno kan uploaden.',
+  'Zoek dit even voor me op.',
+  'Kun je onderzoeken waarom dit gebeurt?',
+  'Onderzoek wat de huidige API hiervoor is.',
+  'Kun je dit voor me onderzoeken?',
+];
+
+for (const input of RESEARCH_CASES) {
+  test(`research request: "${input}" is inform.explain + external_knowledge (web-eligible)`, () => {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'inform.explain');
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.sourceOfTruth, 'external_knowledge');
+    assert.equal(d.needsClarification, false);
+  });
+}
+
+test('research requests keep self-directed phrasing out — "ik zoek/onderzoek" stays a user statement', () => {
+  for (const input of [
+    'Ik zoek het zelf wel even uit.',
+    'ik zoek wel even uit waarom jij traag reageert.',
+    'Ik ga onderzoeken waarom dit gebeurt.',
+    'Ik zal het zelf opzoeken.',
+  ]) {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'converse', input);
+    assert.equal(d.sourceOfTruth, 'conversation', input);
+    assert.notEqual(d.sourceOfTruth, 'external_knowledge', input);
+    assert.equal(d.meta.reason, 'self_directed_investigation_statement', input);
+  }
+});
+
+test('creative artifact decisions preserve the IntentIQ result through both transports', async () => {
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  const input = [{ role: 'user', content: 'ik wil mijn stem uploaden in Suno, wat is een goede songtekst om te zingen daarvoor?' }];
+  const decisions = [];
+  const intent = classify(input, silent);
+  const reasoning = { reasoningDepth: 'shallow' };
+  const decisionEngine = (args) => {
+    decisions.push(args.intent);
+    return { action: 'native', reason: 'test', capability_execute: false };
+  };
+  const orchestrate = async () => ({ action: 'native', output: 'ok' });
+  const common = {
+    messages: input,
+    documents: {},
+    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
+    hindsight: { recall: async () => [], reflect: async () => {} },
+    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
+    intentIQ: async () => intent,
+    reasonIQ: async () => reasoning,
+    decisionEngine,
+    orchestrate,
+  };
+  await performTurn(common);
+  await performStreamingTurn({ ...common, res: {
+    writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
+  } });
+  assert.equal(decisions.length, 2);
+  assert.deepEqual(decisions[0], decisions[1]);
+});
+
+
 
 test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
   for (const text of [
