@@ -45,6 +45,12 @@
     { "id": "conv-008", "category": "converse", "input": "goedemorgen, hoe is het?", "expectedIntent": "converse" },
     { "id": "conv-009", "category": "converse", "input": "hoi, hoe gaat het?", "expectedIntent": "converse" },
     { "id": "conv-010", "category": "converse", "input": "fijn je weer te spreken. hoe is het?", "expectedIntent": "converse" },
+    { "id": "conv-011", "category": "converse", "input": "Ik ga nu uitzoeken waarom jij relatief traag reageert.", "expectedIntent": "converse", "expectedSourceOfTruth": "conversation", "notes": "Self-directed investigation statement: the embedded waarom-clause is the object of the user's own action, never a web-search request." },
+    { "id": "conv-012", "category": "converse", "input": "Ik zoek het zelf wel even uit.", "expectedIntent": "converse", "expectedSourceOfTruth": "conversation" },
+    { "id": "conv-013", "category": "converse", "input": "Ik ga onderzoeken waarom dit gebeurt.", "expectedIntent": "converse", "expectedSourceOfTruth": "conversation" },
+    { "id": "conv-014", "category": "converse", "input": "Ja, best ver eigenlijk. Ik ga nu even uitzoeken waarom jij relatief traag reageert.", "expectedIntent": "converse", "expectedSourceOfTruth": "conversation", "notes": "The live false-positive turn: acknowledgement prefix plus self-directed intention." },
+    { "id": "inf-010", "category": "inform.explain", "input": "Zoek uit waarom jij traag reageert.", "expectedIntent": "inform.explain", "expectedSourceOfTruth": "external_knowledge", "notes": "Assistant-directed imperative: web-eligible routing must be preserved." },
+    { "id": "inf-011", "category": "inform.explain", "input": "Kun je opzoeken waarom dit gebeurt?", "expectedIntent": "inform.explain", "expectedSourceOfTruth": "external_knowledge", "notes": "Assistant-directed request: web-eligible routing must be preserved." },
     { "id": "inf-009", "category": "inform.explain", "input": "dank je. wat is een race condition?", "expectedIntent": "inform.explain", "notes": "Informational question remains non-conversational despite acknowledgement prefix." },
 
     { "id": "inf-001", "category": "inform.explain", "input": "Why is my website crashing?", "expectedIntent": "inform.explain" },

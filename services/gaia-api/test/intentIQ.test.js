@@ -1317,6 +1317,115 @@ test('compound conversational turns preserve the IntentIQ result through both tr
   assert.deepEqual(decisions[0], decisions[1]);
 });
 
+// --- self-directed investigation statements vs assistant-directed requests --
+
+// "Ik ga X doen" means the USER is about to do X. The embedded waarom/wat
+// clause is the object of their own action, never a request to Gaia — so the
+// bare 'waarom' cue must not resolve these turns to inform.explain +
+// external_knowledge (which routed a personal remark into web search).
+const SELF_DIRECTED = [
+  'Ja, best ver eigenlijk. Ik ga nu even uitzoeken waarom jij relatief traag reageert.',
+  'Ik ga dit zelf uitzoeken.',
+  'Ik zoek het zelf wel even uit.',
+  'Ik ga onderzoeken waarom dit gebeurt.',
+  'Ik zal het even opzoeken.',
+  'Ik ga nu uitzoeken waarom jij traag reageert.',
+  "I'm going to look into why this is slow.",
+];
+
+for (const input of SELF_DIRECTED) {
+  test(`self-directed investigation: "${input}" is an accepted converse statement — never external_knowledge`, () => {
+    const d = classify(user(input), silent);
+    assert.equal(d.intent, 'converse');
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.sourceOfTruth, 'conversation');
+    assert.notEqual(d.sourceOfTruth, 'external_knowledge');
+    assert.equal(d.speechAct, 'statement');
+    assert.equal(d.needsClarification, false);
+    assert.equal(d.needsSemanticCheck, false);
+    assert.equal(d.meta.reason, 'self_directed_investigation_statement');
+  });
+}
+
+test('self-directed investigation never triggers the semantic fallback', async () => {
+  const lines = [];
+  const d = await interpret(user('Ik ga nu uitzoeken waarom jij traag reageert.'), {
+    logger: (line) => lines.push(JSON.parse(line)),
+    model: { chat: async () => { throw new Error('semantic model must not be called'); } },
+  });
+  assert.equal(d.intent, 'converse');
+  assert.equal(d.speechAct, 'statement');
+  assert.equal(lines.at(-1).semanticCalled, false);
+});
+
+const SELF_DIRECTED_NEGATIVES = [
+  'Ik ga even kijken naar mijn code.',
+  'Ik zoek dit zelf wel uit.',
+  'Ik ga onderzoeken waarom de app traag is.',
+];
+
+for (const input of SELF_DIRECTED_NEGATIVES) {
+  test(`self-directed negative: "${input}" never resolves to external_knowledge`, () => {
+    const d = classify(user(input), silent);
+    assert.notEqual(d.sourceOfTruth, 'external_knowledge');
+    assert.equal(d.needsClarification, false);
+  });
+}
+
+// Assistant-directed requests keep their EXISTING routing — the new branch
+// must not intercept them. Web-eligible phrasing stays web-eligible.
+test('assistant-directed: "Zoek uit waarom jij traag reageert." keeps existing external_knowledge routing', () => {
+  const d = classify(user('Zoek uit waarom jij traag reageert.'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.sourceOfTruth, 'external_knowledge');
+  assert.equal(d.meta.reason, 'direct_signal');
+});
+
+test('assistant-directed: "Kun je opzoeken waarom dit gebeurt?" keeps existing external_knowledge routing', () => {
+  const d = classify(user('Kun je opzoeken waarom dit gebeurt?'), silent);
+  assert.equal(d.intent, 'inform.explain');
+  assert.equal(d.sourceOfTruth, 'external_knowledge');
+});
+
+test('assistant-directed: bare imperatives and voor-me requests are never self-directed statements', () => {
+  for (const input of ['Zoek dit even voor me.', 'Kun je dit onderzoeken?', 'Onderzoek dit voor me.']) {
+    const d = classify(user(input), silent);
+    assert.notEqual(d.meta.reason, 'self_directed_investigation_statement', input);
+    assert.notEqual(d.speechAct, 'statement', input);
+  }
+});
+
+test('self-directed decisions preserve the IntentIQ result through both transports', async () => {
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  const input = [{ role: 'user', content: 'Ik ga nu uitzoeken waarom jij traag reageert.' }];
+  const decisions = [];
+  const intent = classify(input, silent);
+  const reasoning = { reasoningDepth: 'shallow' };
+  const decisionEngine = (args) => {
+    decisions.push(args.intent);
+    return { action: 'native', reason: 'test', capability_execute: false };
+  };
+  const orchestrate = async () => ({ action: 'native', output: 'ok' });
+  const common = {
+    messages: input,
+    documents: {},
+    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
+    hindsight: { recall: async () => [], reflect: async () => {} },
+    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
+    intentIQ: async () => intent,
+    reasonIQ: async () => reasoning,
+    decisionEngine,
+    orchestrate,
+  };
+  await performTurn(common);
+  await performStreamingTurn({ ...common, res: {
+    writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
+  } });
+  assert.equal(decisions.length, 2);
+  assert.deepEqual(decisions[0], decisions[1]);
+});
+
+
 test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
   for (const text of [
     'ik heb die mogelijkheid wel toegevoegd. Kennelijk moet ik terug naar de tekenafel',

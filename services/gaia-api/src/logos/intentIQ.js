@@ -557,6 +557,96 @@ function conversationalCompoundDecision(text) {
   };
 }
 
+// --- self-directed investigation statements ---------------------------------
+//
+// "Ik ga nu even uitzoeken waarom jij traag reageert." is a STATEMENT about
+// the user's own next action: the embedded "waarom"-clause is the OBJECT of
+// the user's own investigation, not a request to Gaia. Scoring such a turn on
+// the bare 'waarom' cue resolved it as inform.explain + sourceOfTruth
+// "external_knowledge", which pushed a personal remark into the web-search
+// branch — a measured false positive. The structural rule below is the
+// mirror of the assistant-directed request: FIRST-PERSON SUBJECT +
+// INTENTION/INVESTIGATION VERB, and never an assistant-directed marker.
+// Imperatives ("Zoek uit waarom…") and explicit requests ("Kun je opzoeken…",
+// "Onderzoek dit voor me") carry no first-person intention frame and keep
+// their existing routing untouched.
+const SELF_INVESTIGATION_FRAMES = [
+  // NL: "ik ga [nu/even/zelf/… ] … (uit|op)zoek*/onderzoek*/kijk*"
+  /\bik\s+ga\b[\s\S]{0,60}\b(?:uit|op)?zoek\w*\b/i,
+  /\bik\s+ga\b[\s\S]{0,60}\bonderzoek\w*\b/i,
+  /\bik\s+ga\b[\s\S]{0,60}\bkijk\w*\b/i,
+  // NL: "ik zoek/zoekt [het|dit|wel|even|…] … uit"
+  /\bik\s+zoe(?:k|kt)\b[\s\S]{0,40}\buit\b/i,
+  // NL: "ik zal … (uit|op)zoek*/onderzoek*"
+  /\bik\s+zal\b[\s\S]{0,60}\b(?:uit|op)?zoek\w*\b/i,
+  /\bik\s+zal\b[\s\S]{0,60}\bonderzoek\w*\b/i,
+  // EN mirrors: "I('ll) / I('m) going to … look/find/dig/check/investigate/research"
+  /\bi(?:\s*'ll|\s+will|\s*'m\s+going\s+to|\s+am\s+going\s+to|\s+gonna)\b[\s\S]{0,40}\b(?:look|find|dig|check|investigate|research)\w*\b/i,
+];
+
+/**
+ * Assistant-directed request markers — when one is present the action is
+ * being asked OF Gaia, so the turn can never be a self-directed statement,
+ * whatever else it contains ("Kun je opzoeken…", "Onderzoek dit voor me").
+ */
+const ASSISTANT_REQUEST_MARKERS = [
+  /\bkun(?:nen)?\s+(?:je|jij|u)\b/i,
+  /\bwil(?:len)?\s+(?:je|jij|u)\b/i,
+  /\bzou\s+(?:je|jij|u)\b/i,
+  /\bvoor\s+(?:me|mij)\b/i,
+  /\bcan\s+you\b/i,
+  /\bcould\s+you\b/i,
+  /\bwill\s+you\b/i,
+  /\bwould\s+you\b/i,
+  /\bfor\s+me\b/i,
+];
+
+/**
+ * True when the turn is a first-person statement of the user's OWN
+ * investigation intention ("ik ga … uitzoeken", "I'm going to look into…")
+ * rather than a request directed at Gaia. Structural: subject + intention
+ * verb frames, vetoed by assistant-directed markers. Never fires on bare
+ * imperatives (no first-person subject) — those keep their existing routing.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isSelfDirectedInvestigation(text) {
+  const t = String(text || '');
+  if (!t.trim()) return false;
+  if (ASSISTANT_REQUEST_MARKERS.some((m) => m.test(t))) return false;
+  return SELF_INVESTIGATION_FRAMES.some((f) => f.test(t));
+}
+
+/**
+ * The accepted-converse decision for a self-directed investigation statement.
+ * Same posture as the declarative status update branch: the speech act is
+ * certain by construction (statement about one's own next action), so the
+ * decision is accepted WITHOUT a semantic check — a second opinion would
+ * only re-open the false external_knowledge routing this branch closes.
+ * @param {string} text
+ */
+function selfDirectedInvestigationDecision(text) {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: 'converse',
+    status: 'accepted',
+    confidence: capConfidence(0.7),
+    candidates: [{ intent: 'converse', score: 0.7 }],
+    entities: extractEntities(text),
+    sourceOfTruth: 'conversation',
+    needsClarification: false,
+    rawScore: 1,
+    needsSemanticCheck: false,
+    speechAct: 'statement',
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'self_directed_investigation_statement',
+    },
+  };
+}
+
+
 /**
  * Naive compound-turn split on a top-level "and"/"en" — only trusted when
  * both halves independently carry a non-empty signal for a *different*
@@ -994,6 +1084,14 @@ function classify(messages, options = {}) {
             reason: 'declarative_status_update',
           },
         };
+      } else if (isSelfDirectedInvestigation(text)) {
+        // Same declarative-statement posture, for the user's own stated
+        // intention to investigate something themselves: the embedded
+        // "waarom/wat"-clause is the OBJECT of their own action, never a
+        // request to Gaia. Resolving it here — accepted converse, no
+        // semantic check — keeps the bare 'waarom' cue from routing a
+        // personal remark into external_knowledge/web.
+        decision = selfDirectedInvestigationDecision(text);
       } else if (isBareInterrogativeFollowUp(text)) {
         // IntentIQ 2.4: a bare interrogative turn ("why?", "waarom dan?")
         // has no standalone intent — resolve it against conversation
@@ -1643,6 +1741,7 @@ module.exports = {
     collectMatchedSignals,
     isBareInterrogativeFollowUp,
     isDeclarativeStatusUpdate,
+    isSelfDirectedInvestigation,
     assistantAnchorTerms,
     previousAssistantText,
     resolveAssistantAnchoredFollowUp,
