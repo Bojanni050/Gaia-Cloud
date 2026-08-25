@@ -127,6 +127,9 @@ const STEP_TYPES = Object.freeze(['retrieval', 'reasoning', 'generation', 'capab
 const GENERATION_MODES = Object.freeze(['native', 'capability']);
 const MAX_PLAN_STEPS = 4;
 
+/** Generation Policy 0.1 — mode vocabulary (observability field on Decision). */
+const GENERATION_POLICY_MODES = Object.freeze(['native', 'hermes', 'plan']);
+
 // Capability Registry 1.0: skill existence on plan steps is validated
 // against THE registry (single source of truth) so an invalid
 // capability/skill combination is rejected BEFORE execution ever starts.
@@ -267,6 +270,9 @@ function validateDecision(decision) {
   if (decision.capability_execute !== undefined && typeof decision.capability_execute !== 'boolean') {
     return 'decision.capability_execute must be a boolean when present';
   }
+  if (decision.generationMode !== undefined && !GENERATION_POLICY_MODES.includes(decision.generationMode)) {
+    return `decision.generationMode must be one of: ${GENERATION_POLICY_MODES.join(', ')}`;
+  }
   if (decision.patternUsage !== undefined) {
     const u = decision.patternUsage;
     if (!u || typeof u !== 'object' || Array.isArray(u)) {
@@ -317,6 +323,7 @@ module.exports = {
   PATTERN_USAGE_MODES,
   STEP_TYPES,
   GENERATION_MODES,
+  GENERATION_POLICY_MODES,
   MAX_PLAN_STEPS,
   validatePlanSteps,
   validateDecision,

@@ -308,8 +308,8 @@ test('boundary: the Decision Engine imports no Hindsight/PatternManager/Hermes/W
   // capability registry is pure frozen metadata (no I/O) and is the one
   // sanctioned source for skill-aware routing.
   const requiredModules = [...engineSource.matchAll(/require\((['"])([^'"]+)\1\)/g)].map((m) => m[2]);
-  assert.deepEqual(requiredModules, ['./decisionSchema', '../reasoning/patternAwareness', '../capabilityRegistry'],
-    'decisionEngine.js may only require its schema, the pure pattern policy and the capability registry');
+  assert.deepEqual(requiredModules, ['./decisionSchema', '../reasoning/patternAwareness', './generationPolicy', '../capabilityRegistry'],
+    'decisionEngine.js may only require its schema, the pure pattern policy, the generation policy and the capability registry');
 
   // The policy module it imports must be equally I/O-free.
   const awarenessSource = fs.readFileSync(path.resolve(__dirname, '../src/reasoning/patternAwareness.js'), 'utf-8')

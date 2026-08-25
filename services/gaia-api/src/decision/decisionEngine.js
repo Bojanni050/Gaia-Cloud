@@ -63,6 +63,7 @@
 
 const { validateDecision, MAX_PLAN_STEPS } = require('./decisionSchema');
 const { evaluatePatternUsage } = require('../reasoning/patternAwareness');
+const { decideGenerationMode } = require('./generationPolicy');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
@@ -479,6 +480,18 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
     ? candidatePlan
     : null;
 
+  // Generation Policy 0.1: determine the generation mode BEFORE the routing
+  // cascade. This is a pure, deterministic signal — no LLM call — that
+  // informs whether native or Hermes is the appropriate generation path.
+  // The mode is added to the Decision for observability (logging, eval).
+  const selectedSkill = matchSkillTask(userInput);
+  const genPolicy = decideGenerationMode({
+    intent,
+    reasoning,
+    selectedSkill,
+    hasPlan: Boolean(planDecision),
+  });
+
   // PATCH 7: Correct priority order
   // 1. Is the user referring to Gaia's previous behavior? -> native (meta-intent)
   // 2. Is the user asking why Gaia chose or used something? -> native (meta-intent)
@@ -555,9 +568,33 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       input: { userInput },
       reason: 'this turn needs current external information Gaia does not already have',
     };
+  } else if (genPolicy.mode === 'hermes' && findCapability(capabilities, 'hermes')) {
+    // Generation Policy 0.1: Hermes only when there is an EXPLICIT reason
+    // (deep reasoning, selected skill, or plan-owned generation). This is
+    // NOT the fallback — native is.
+    decision = {
+      action: 'capability',
+      capability: 'hermes',
+      capability_candidate: 'hermes',
+      capability_execute: true,
+      task: (intent && intent.intent) || 'respond',
+      input: { userInput, context: context || null, reasoning: reasoning || null },
+      reason: genPolicy.reason,
+    };
+  } else if (genPolicy.mode === 'hermes') {
+    // Generation Policy 0.1: hermes required but not available. Use the
+    // existing fallback (clarify) — never silently degrade to native when
+    // deep reasoning or a skill was actually needed.
+    decision = {
+      action: 'clarify',
+      capability_candidate: null,
+      capability_execute: false,
+      reason: `Hermes required (${genPolicy.reason}) but not available`,
+    };
   } else if (isNativeTurn(intent, reasoning) && findCapability(capabilities, 'native')) {
-    // Priority 4-5: Native model capabilities (including vision)
-    // PATCH 8: Vision is model-native, not external
+    // Generation Policy 0.1: native is the DEFAULT. Gaia speaks natively
+    // unless there is an explicit reason to use Hermes. This branch handles
+    // conversational turns that don't need deep reasoning or a skill.
     decision = {
       action: 'native',
       capability_candidate: null,
@@ -566,7 +603,20 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
         ? `conversational turn (${intent.intent}) handled by Gaia's native voice`
         : "simple conversational turn handled by Gaia's native voice",
     };
+  } else if (findCapability(capabilities, 'native')) {
+    // Generation Policy 0.1: when nothing else matches and native is
+    // available, default to native. This is the explicit default — Hermes
+    // is NOT the fallback.
+    decision = {
+      action: 'native',
+      capability_candidate: null,
+      capability_execute: false,
+      reason: "default — Gaia speaks natively unless specialized reasoning is required",
+    };
   } else if (findCapability(capabilities, 'hermes')) {
+    // Fallback: when native is not available, Hermes can serve as the
+    // generation path. This preserves existing behavior for configurations
+    // where native is not registered.
     decision = {
       action: 'capability',
       capability: 'hermes',
@@ -574,9 +624,7 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: true,
       task: (intent && intent.intent) || 'respond',
       input: { userInput, context: context || null, reasoning: reasoning || null },
-      reason: reasoning && reasoning.reasoningDepth === 'deep'
-        ? 'complex reasoning required for this turn'
-        : 'this turn requires a generated conversational response',
+      reason: 'native generator not available — using Hermes as generation fallback',
     };
   } else {
     decision = {
@@ -591,6 +639,7 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   if (patternUsage) decision.patternUsage = patternUsage;
   decision.reasoning = mapReasoningLevel(reasoning);
   decision.capabilities = decision.capability ? [decision.capability] : [];
+  decision.generationMode = genPolicy.mode;
 
   const problem = validateDecision(decision);
   if (problem) {

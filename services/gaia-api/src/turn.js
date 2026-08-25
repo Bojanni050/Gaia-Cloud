@@ -229,6 +229,7 @@ function logDecisionPlan(decision, logger) {
       context: decision.context || [],
       reasoning: decision.reasoning || 'none',
       capabilities: decision.capabilities || [],
+      generationMode: decision.generationMode || null,
       reason: decision.reason || null,
     });
     if (logger) {

@@ -104,15 +104,15 @@ test('decide() falls back to hermes for missing IntentIQ decision when native is
   assert.equal(decision.capability, 'hermes');
 });
 
-test('decide() routes complex intents to hermes even when native is available', () => {
+test('decide() routes complex intents to native when native is available (Generation Policy 0.1: native is default)', () => {
   const decision = decide({
     userInput: 'explain this',
     intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
     reasoning: null,
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
   });
-  assert.equal(decision.action, 'capability');
-  assert.equal(decision.capability, 'hermes');
+  assert.equal(decision.action, 'native');
+  assert.equal(decision.generationMode, 'native');
 });
 
 test('decide() routes deep reasoning to hermes even when native is available', () => {
@@ -156,7 +156,7 @@ test('decide() never produces a "useHermes"-shaped flag — only the schema\'s f
   assert.ok(!('useHermes' in decision));
   assert.deepEqual(
     Object.keys(decision).sort(),
-    ['action', 'capability', 'capability_candidate', 'capability_execute', 'input', 'reason', 'task', 'context', 'reasoning', 'capabilities'].sort()
+    ['action', 'capabilities', 'capability', 'capability_candidate', 'capability_execute', 'context', 'generationMode', 'input', 'reason', 'reasoning', 'task'].sort()
   );
 });
 
@@ -260,14 +260,14 @@ test('decide() routes current-external-information turns to the web tool when av
   assert.deepEqual(decision.capabilities, ['web']);
 });
 
-test('decide() falls back to Hermes for external-knowledge turns when no web tool is available (test #7: capability availability)', () => {
+test('decide() falls back to native for external-knowledge turns when no web tool is available (Generation Policy 0.1: native is default)', () => {
   const decision = decide({
     userInput: 'what is the current OpenAI API documentation?',
     intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
   });
-  assert.equal(decision.action, 'capability');
-  assert.equal(decision.capability, 'hermes');
+  assert.equal(decision.action, 'native');
+  assert.equal(decision.generationMode, 'native');
 });
 
 test('decide() still clarifies ambiguous turns regardless of context/reasoning (test #5)', () => {
