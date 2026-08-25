@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { decide, isNativeTurn, mapReasoningLevel, usedContextSources, shouldUseConversationSearch } = require('../src/decision/decisionEngine');
+const { matchRequiredSkills } = require('../src/decision/skillMatching');
 const { ACTIONS, REASONING_LEVELS, PATTERN_USAGE_MODES, validateDecision } = require('../src/decision/decisionSchema');
 
 test('decisionSchema exposes exactly the allowed actions — five originals plus the 3.0 plan action', () => {
@@ -473,6 +474,26 @@ test('conversation_search policy fires only on assistant-anchored follow-up reas
   }), false);
   assert.equal(shouldUseConversationSearch({ intent: null, status: 'unknown' }), false);
   assert.equal(shouldUseConversationSearch(null), false);
+});
+
+test('Decision Engine 3.1 exposes requiredSkills separately from capabilities', () => {
+  const decision = decide({
+    userInput: 'Zoek uit waarom deze race condition optreedt.',
+    intent: null,
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.deepEqual(decision.requiredSkills, ['systematic-debugging']);
+  assert.equal(decision.steps[0].capability, 'hermes');
+  assert.equal(decision.steps[0].skill, 'systematic-debugging');
+  assert.deepEqual(decision.requiredCapabilities, ['hermes']);
+});
+
+test('required skill matching uses registry routing flags and does not route explanations', () => {
+  const available = [{ id: 'hermes' }, { id: 'native' }];
+  assert.equal(matchRequiredSkills({ task: 'Wat betekent systematic-debugging?', availableCapabilities: available }).confidence, 'none');
+  assert.deepEqual(matchRequiredSkills({ task: 'Maak een teststrategie voor deze wijziging.', availableCapabilities: available }).requiredSkills, ['test-driven-development']);
+  assert.deepEqual(matchRequiredSkills({ task: 'Help mij met grounded citations voor dit antwoord.', availableCapabilities: available }).requiredSkills, []);
 });
 
 test('decide() routes an anchored follow-up to the conversation_search capability when available', () => {

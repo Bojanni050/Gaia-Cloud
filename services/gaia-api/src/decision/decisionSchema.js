@@ -90,6 +90,8 @@ const PATTERN_USAGE_MODES = Object.freeze(['ignore', 'use_as_context', 'mention_
  * @property {string[]} [context] - context sources this decision draws on, e.g. ['hindsight']
  * @property {'none'|'light'|'deep'} [reasoning] - how much reasoning this turn needed
  * @property {string[]} [capabilities] - specialist capability id(s) this decision needs
+ * @property {string[]} [requiredSkills] - task skills selected by the Decision Engine
+ * @property {string[]} [requiredCapabilities] - capabilities required by a plan
  * @property {string|null} [capability_candidate] - what capability MIGHT be useful (routing hint)
  * @property {boolean} [capability_execute] - whether the capability is ACTUALLY authorized to run
  * @property {{ mode: 'ignore'|'use_as_context'|'mention_as_observation',
@@ -265,6 +267,12 @@ function validateDecision(decision) {
   if (decision.capabilities !== undefined) {
     if (!Array.isArray(decision.capabilities) || decision.capabilities.some((c) => typeof c !== 'string')) {
       return 'decision.capabilities must be an array of strings when present';
+    }
+  }
+  for (const field of ['requiredSkills', 'requiredCapabilities']) {
+    if (decision[field] !== undefined
+      && (!Array.isArray(decision[field]) || decision[field].some((value) => typeof value !== 'string' || value.length === 0))) {
+      return `decision.${field} must be an array of non-empty strings when present`;
     }
   }
   if (decision.capability_execute !== undefined && typeof decision.capability_execute !== 'boolean') {

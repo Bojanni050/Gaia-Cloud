@@ -64,6 +64,7 @@
 const { validateDecision, MAX_PLAN_STEPS } = require('./decisionSchema');
 const { evaluatePatternUsage } = require('../reasoning/patternAwareness');
 const { decideGenerationMode } = require('./generationPolicy');
+const { routingSkills } = require('../capabilityRegistry');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
@@ -172,35 +173,21 @@ function hasPlanningSignal(text, group) {
 // skill's own NAME appearing in the prompt never selects it, and a turn
 // with no matching task shape simply gets Hermes without a skill (spec §13).
 
-const { routingSkills } = require('../capabilityRegistry');
-
 const SKILL_TASK_SIGNALS = Object.freeze([
   {
     skill: 'systematic-debugging',
-    frames: Object.freeze([
-      /\bwaarom\b[\s\S]{0,60}\b(faalt|falen|crasht|crash|fout gaat|misgaat|vastloopt|lekt|niet werkt)\b/i,
-      /\bzoek uit\b[\s\S]{0,50}\b(waarom|oorzaak|root cause)\b/i,
-      /\broot cause\b/i,
-      /\bwaardoor\b[\s\S]{0,60}\b(fout|faalt|crash|probleem|breekt)\b/i,
-      /\bfout opsporen\b/i,
-      /\bdebug\b[\s\S]{0,40}\b(waarom|oorzaak)\b/i,
-    ]),
+    frames: Object.freeze([/\bwaarom\b[\s\S]{0,60}\b(faalt|falen|crasht|crash|fout gaat|misgaat|vastloopt|lekt|niet werkt)\b/i, /\bzoek uit\b[\s\S]{0,50}\b(waarom|oorzaak|root cause)\b/i, /\broot cause\b/i, /\bwaardoor\b[\s\S]{0,60}\b(fout|faalt|crash|probleem|breekt)\b/i, /\bfout opsporen\b/i, /\bdebug\b[\s\S]{0,40}\b(waarom|oorzaak)\b/i]),
+    reason: 'task requires structured debugging workflow',
   },
   {
     skill: 'test-driven-development',
-    frames: Object.freeze([
-      /\btest(strategie|strategieën|plan|suite|dekking|coverage)\b/i,
-      /\bstrategie\b[\s\S]{0,40}\btests?\b/i,
-      /\btdd\b/i,
-    ]),
+    frames: Object.freeze([/\btest(strategie|strategieën|plan|suite|dekking|coverage)\b/i, /\bstrategie\b[\s\S]{0,40}\btests?\b/i, /\btdd\b/i]),
+    reason: 'task requires a test-first development strategy',
   },
   {
     skill: 'requesting-code-review',
-    frames: Object.freeze([
-      /\bcode review\b/i,
-      /\b(beoordeel|review|nakijken)\b[\s\S]{0,40}\b(mijn code|deze code|mijn wijzigingen|de wijzigingen|pull request|mijn pr)\b/i,
-      /\b(mijn code|deze code|mijn wijzigingen|de wijzigingen)\b[\s\S]{0,40}\b(reviewen|review|beoordelen|nakijken)\b/i,
-    ]),
+    frames: Object.freeze([/\bcode review\b/i, /\b(beoordeel|review|nakijken)\b[\s\S]{0,40}\b(mijn code|deze code|mijn wijzigingen|de wijzigingen|pull request|mijn pr)\b/i, /\b(mijn code|deze code|mijn wijzigingen|de wijzigingen)\b[\s\S]{0,40}\b(reviewen|review|beoordelen|nakijken)\b/i]),
+    reason: 'task requires a structured code review workflow',
   },
 ]);
 
@@ -214,10 +201,22 @@ function matchSkillTask(userInput) {
   const text = String(userInput || '');
   const hermesRoutingSkills = new Set(routingSkills('hermes').map((s) => s.id));
   for (const entry of SKILL_TASK_SIGNALS) {
-    if (!hermesRoutingSkills.has(entry.skill)) continue;
-    if (entry.frames.some((f) => f.test(text))) return entry.skill;
+    if (hermesRoutingSkills.has(entry.skill) && entry.frames.some((frame) => frame.test(text))) return entry.skill;
   }
   return null;
+}
+
+function matchRequiredSkills({ task = '', intent = null, reasoning = null, availableCapabilities = [] } = {}) {
+  void intent;
+  void reasoning;
+  const skill = matchSkillTask(task);
+  if (!skill) return { requiredSkills: [], matches: [], confidence: 'none', reason: null };
+  const available = new Set((availableCapabilities || []).map((c) => c && c.id));
+  const policy = SKILL_TASK_SIGNALS.find((entry) => entry.skill === skill);
+  const matches = available.has('hermes')
+    ? [{ skill, capability: 'hermes', confidence: 1, reason: policy.reason }]
+    : [];
+  return { requiredSkills: [skill], matches, confidence: 'strong', reason: policy.reason };
 }
 
 /**
@@ -250,7 +249,8 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   // Capability Registry 1.0: a clear debugging/test-strategy/code-review
   // TASK SHAPE warrants a Hermes reasoning step carrying that skill — even
   // without any retrieval need (spec §14). Generic analysis never does.
-  const skillTask = matchSkillTask(userInput);
+  const skillMatch = matchRequiredSkills({ task: userInput, intent });
+  const skillTask = skillMatch.requiredSkills[0] || null;
 
   // Distinct retrieval needs (§17: never the same source twice). An anchored
   // follow-up's memory-source signal IS its search need — never counted as a
@@ -333,8 +333,11 @@ function buildPlan({ userInput = '', intent = null } = {}) {
     'native',
   ].filter(Boolean).join(' → ');
 
+  const requiredCapabilities = [...new Set(steps.map((step) => step.capability).filter(Boolean))];
   return {
     action: 'plan',
+    ...(skillMatch.requiredSkills.length > 0 ? { requiredSkills: skillMatch.requiredSkills } : {}),
+    requiredCapabilities,
     steps,
     capability_candidate: null,
     capability_execute: false,
@@ -484,7 +487,8 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   // cascade. This is a pure, deterministic signal — no LLM call — that
   // informs whether native or Hermes is the appropriate generation path.
   // The mode is added to the Decision for observability (logging, eval).
-  const selectedSkill = matchSkillTask(userInput);
+  const skillMatch = matchRequiredSkills({ task: userInput, intent, reasoning, availableCapabilities: capabilities });
+  const selectedSkill = skillMatch.requiredSkills[0] || null;
   const genPolicy = decideGenerationMode({
     intent,
     reasoning,
@@ -639,6 +643,9 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   if (patternUsage) decision.patternUsage = patternUsage;
   decision.reasoning = mapReasoningLevel(reasoning);
   decision.capabilities = decision.capability ? [decision.capability] : [];
+  if (decision.action !== 'plan' && skillMatch.requiredSkills.length > 0) {
+    decision.requiredSkills = skillMatch.requiredSkills;
+  }
   decision.generationMode = genPolicy.mode;
 
   const problem = validateDecision(decision);
@@ -660,6 +667,7 @@ module.exports = {
   buildPlan,
   hasPlanningSignal,
   matchSkillTask,
+  matchRequiredSkills,
   NATIVE_INTENTS,
   META_INTENT_TYPES,
   PLANNING_SIGNALS,
