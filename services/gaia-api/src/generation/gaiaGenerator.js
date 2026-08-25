@@ -129,6 +129,14 @@ function createGaiaGenerator(options = {}) {
       throw new Error('native generator returned an unreadable response');
     }
 
+    // Raw response logging — always visible in docker logs, never to the client.
+    console.log(JSON.stringify({
+      kind: 'native.raw_response',
+      model,
+      status: response.status,
+      data,
+    }));
+
     const content = data && data.choices && data.choices[0] && data.choices[0].message
       ? data.choices[0].message.content
       : undefined;
