@@ -597,10 +597,27 @@ async function runTurnCore({
   // with an onDelta, hermes streams through it; without one, hermes.chat
   // returns a final string. Either way the Orchestrator sees the same
   // `{ invoke }` shape and the Decision is executed identically.
+  //
+  // Capability Registry 1.0 — skill forwarding: when a plan step selected a
+  // Hermes skill, the adapter says so EXPLICITLY ("Use the Hermes skill …").
+  // Hermes loads and executes the skill itself; Gaia never imports skill
+  // contents. Without a selected skill the payload is untouched.
+  const hermesSkillInstruction = (skill) => ({
+    role: 'system',
+    content: `Use the Hermes skill "${skill}" for this task. Load and execute that skill yourself.`,
+  });
+  const withHermesSkill = (msgs, skill) => {
+    if (!skill) return msgs;
+    const list = Array.isArray(msgs) ? [...msgs] : [];
+    let insertAt = 0;
+    while (insertAt < list.length && list[insertAt] && list[insertAt].role === 'system') insertAt += 1;
+    list.splice(insertAt, 0, hermesSkillInstruction(skill));
+    return list;
+  };
   const capabilities = {
     hermes: onDelta
-      ? { invoke: (msgs, { onDelta: emitDelta } = {}) => hermes.stream(msgs, { onDelta: emitDelta }) }
-      : { invoke: (msgs) => hermes.chat(msgs) },
+      ? { invoke: (msgs, { onDelta: emitDelta, skill } = {}) => hermes.stream(withHermesSkill(msgs, skill), { onDelta: emitDelta }) }
+      : { invoke: (msgs, { skill } = {}) => hermes.chat(withHermesSkill(msgs, skill)) },
     ...(webSearch ? { web: webCapability(webSearch) } : {}),
     ...(tools || {}),
   };

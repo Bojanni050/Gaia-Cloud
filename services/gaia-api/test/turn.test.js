@@ -2223,3 +2223,70 @@ test("capability awareness: unregistered capabilities are never claimed", async 
   assert.ok(block, "core block still present");
   assert.doesNotMatch(block.content, /conversation_search/);
 });
+
+// --- Capability Registry 1.0 parity: a Hermes skill-plan is identical on both transports ---
+
+test("1.0 parity: a skill plan produces identical decision+skill and the same Hermes instruction on both transports", async () => {
+  const USER_TURN = "Zoek uit waarom deze race condition optreedt.";
+  function harness() {
+    const captured = { decisions: [], hermesMessages: null };
+    return {
+      captured,
+      hermes: {
+        chat: async (m) => { captured.hermesMessages = m; return "analyse"; },
+        stream: async (m, { onDelta } = {}) => { captured.hermesMessages = m; if (onDelta) onDelta("analyse", false); return "analyse"; },
+      },
+      intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: null, status: "unknown" }),
+      decisionEngine: (input) => {
+        const { decide } = require("../src/decision/decisionEngine");
+        const d = decide(input);
+        captured.decisions.push(d);
+        return d;
+      },
+    };
+  }
+
+  const a = harness();
+  await performTurn({
+    messages: [{ role: "user", content: USER_TURN }],
+    documents: DOCUMENTS,
+    hermes: a.hermes,
+    hindsight: SILENT_HINDSIGHT,
+    intentIQ: a.intentIQ,
+    reasonIQ: async () => ({}),
+    decisionEngine: a.decisionEngine,
+    orchestrate: async (decision, ctx) => {
+      const { execute } = require("../src/orchestration/orchestrator");
+      ctx.nativeGenerator = { generate: async () => "GAIA debug-antwoord" };
+      return execute(decision, ctx);
+    },
+  });
+
+  const b = harness();
+  await performStreamingTurn({
+    messages: [{ role: "user", content: USER_TURN }],
+    documents: DOCUMENTS,
+    hermes: b.hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: b.intentIQ,
+    reasonIQ: async () => ({}),
+    decisionEngine: b.decisionEngine,
+    orchestrate: async (decision, ctx) => {
+      const { execute } = require("../src/orchestration/orchestrator");
+      ctx.nativeGenerator = { generate: async () => "GAIA debug-antwoord" };
+      return execute(decision, ctx);
+    },
+  });
+
+  // Identical plan with identical skill selection.
+  assert.equal(a.captured.decisions[0].action, "plan");
+  assert.deepEqual(b.captured.decisions[0], a.captured.decisions[0]);
+  const hermesStepA = a.captured.decisions[0].steps.find((s) => s.capability === "hermes");
+  assert.equal(hermesStepA.skill, "systematic-debugging");
+
+  // Hermes received the SAME explicit skill instruction on both transports.
+  const instrA = a.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
+  const instrB = b.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
+  assert.ok(instrA && instrB, "skill instruction reached Hermes on both transports");
+});

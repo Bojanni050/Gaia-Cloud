@@ -28,6 +28,7 @@
  */
 
 const { validateDecision } = require('../decision/decisionSchema');
+const { validateCapabilitySkill } = require('../capabilityRegistry');
 
 /**
  * @typedef {Object} ExecutionResult
@@ -59,6 +60,20 @@ async function execute(decision, {
   const problem = validateDecision(decision);
   if (problem) {
     throw new Error(`Orchestrator received an invalid decision: ${problem}`);
+  }
+  // Capability Registry 1.0 — defensive pre-execution skill check (the
+  // Decision schema already validates this; an injected decision that
+  // bypassed it must still never reach a capability with a skill its
+  // capability does not expose).
+  if (decision.action === 'plan') {
+    for (const step of decision.steps || []) {
+      if (step.skill) {
+        const skillProblem = validateCapabilitySkill(step.capability, step.skill);
+        if (skillProblem) {
+          throw new Error(`Orchestrator received an invalid decision: plan step "${step.id}": ${skillProblem}`);
+        }
+      }
+    }
   }
 
   switch (decision.action) {
@@ -197,7 +212,7 @@ async function executePlan(decision, ctx = {}) {
           const stepInput = Object.keys(resolvedSources).length > 0
             ? { ...(step.input || {}), sources: resolvedSources }
             : (step.input || {});
-          output = await capability.invoke(messages, { onDelta, task: decision.task, input: stepInput, conversationId });
+          output = await capability.invoke(messages, { onDelta, task: decision.task, input: stepInput, conversationId, skill: step.skill });
           break;
         }
         case 'reasoning': {
@@ -205,7 +220,7 @@ async function executePlan(decision, ctx = {}) {
           if (!capability || typeof capability.invoke !== 'function') {
             throw new Error(`reasoning capability "${step.capability}" is not available`);
           }
-          output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId });
+          output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId, skill: step.skill });
           break;
         }
         case 'generation': {
@@ -221,7 +236,7 @@ async function executePlan(decision, ctx = {}) {
             if (!capability || typeof capability.invoke !== 'function') {
               throw new Error(`generation capability "${step.capability}" is not available`);
             }
-            output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId });
+            output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId, skill: step.skill });
           }
           break;
         }

@@ -162,6 +162,63 @@ function hasPlanningSignal(text, group) {
   return PLANNING_SIGNALS[group].some((p) => p.test(String(text || '')));
 }
 
+// --- Capability Registry 1.0: skill-aware planning ---------------------------
+//
+// A Hermes reasoning step MAY carry a skill when the TASK TYPE clearly
+// matches a registry routing skill. Deliberately narrow, deliberately NOT a
+// name→skill keyword router: the frames below describe failure-investigation
+// / test-strategy / code-review TASK SHAPES (multi-word semantic frames), a
+// skill's own NAME appearing in the prompt never selects it, and a turn
+// with no matching task shape simply gets Hermes without a skill (spec §13).
+
+const { routingSkills } = require('../capabilityRegistry');
+
+const SKILL_TASK_SIGNALS = Object.freeze([
+  {
+    skill: 'systematic-debugging',
+    frames: Object.freeze([
+      /\bwaarom\b[\s\S]{0,60}\b(faalt|falen|crasht|crash|fout gaat|misgaat|vastloopt|lekt|niet werkt)\b/i,
+      /\bzoek uit\b[\s\S]{0,50}\b(waarom|oorzaak|root cause)\b/i,
+      /\broot cause\b/i,
+      /\bwaardoor\b[\s\S]{0,60}\b(fout|faalt|crash|probleem|breekt)\b/i,
+      /\bfout opsporen\b/i,
+      /\bdebug\b[\s\S]{0,40}\b(waarom|oorzaak)\b/i,
+    ]),
+  },
+  {
+    skill: 'test-driven-development',
+    frames: Object.freeze([
+      /\btest(strategie|strategieën|plan|suite|dekking|coverage)\b/i,
+      /\bstrategie\b[\s\S]{0,40}\btests?\b/i,
+      /\btdd\b/i,
+    ]),
+  },
+  {
+    skill: 'requesting-code-review',
+    frames: Object.freeze([
+      /\bcode review\b/i,
+      /\b(beoordeel|review|nakijken)\b[\s\S]{0,40}\b(mijn code|deze code|mijn wijzigingen|de wijzigingen|pull request|mijn pr)\b/i,
+      /\b(mijn code|deze code|mijn wijzigingen|de wijzigingen)\b[\s\S]{0,40}\b(reviewen|review|beoordelen|nakijken)\b/i,
+    ]),
+  },
+]);
+
+/**
+ * Returns the registry routing skill whose TASK SHAPE this turn matches, or
+ * null. Only skills the registry flags routing:true for hermes can match.
+ * @param {string} userInput
+ * @returns {string|null}
+ */
+function matchSkillTask(userInput) {
+  const text = String(userInput || '');
+  const hermesRoutingSkills = new Set(routingSkills('hermes').map((s) => s.id));
+  for (const entry of SKILL_TASK_SIGNALS) {
+    if (!hermesRoutingSkills.has(entry.skill)) continue;
+    if (entry.frames.some((f) => f.test(text))) return entry.skill;
+  }
+  return null;
+}
+
 /**
  * Deterministic planner. Returns a plan decision or null to let the
  * existing single-action cascade run unchanged.
@@ -189,6 +246,10 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const wantsAnalysis = hasPlanningSignal(userInput, 'analysisRequest');
   const wantsExternal = Boolean(intent && intent.sourceOfTruth === 'external_knowledge');
   const isAnchoredFollowUp = shouldUseConversationSearch(intent);
+  // Capability Registry 1.0: a clear debugging/test-strategy/code-review
+  // TASK SHAPE warrants a Hermes reasoning step carrying that skill — even
+  // without any retrieval need (spec §14). Generic analysis never does.
+  const skillTask = matchSkillTask(userInput);
 
   // Distinct retrieval needs (§17: never the same source twice). An anchored
   // follow-up's memory-source signal IS its search need — never counted as a
@@ -199,13 +260,16 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const dedupedRetrievals = [...new Set(distinctRetrievals)];
 
   const multiSource = dedupedRetrievals.length >= 2;
-  const retrievalPlusReasoning = dedupedRetrievals.length >= 1 && wantsAnalysis;
+  const retrievalPlusReasoning = dedupedRetrievals.length >= 1 && (wantsAnalysis || Boolean(skillTask));
   // A standalone exact-history ask that the narrow anchored-single-search
   // route does not already serve earns its own minimal [cs → native] plan.
   const exactHistoryStandalone = wantsExactHistory && !isAnchoredFollowUp;
   const externalCombo = wantsExternal && (wantsRemembered || wantsAnalysis);
+  // A clear skill task (debugging / test strategy / code review) warrants
+  // its own minimal [hermes(skill) → native] plan even without retrievals.
+  const skillReasoning = Boolean(skillTask);
 
-  if (!multiSource && !retrievalPlusReasoning && !externalCombo && !exactHistoryStandalone) return null;
+  if (!multiSource && !retrievalPlusReasoning && !externalCombo && !exactHistoryStandalone && !skillReasoning) return null;
 
   const steps = [];
   let n = 0;
@@ -238,11 +302,14 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   }
 
   const retrievalStepIds = steps.map((s) => s.id);
-  if (wantsAnalysis || wantsExternal) {
+  if (wantsAnalysis || wantsExternal || skillTask) {
     steps.push({
       id: nextId(),
       type: 'reasoning',
       capability: 'hermes',
+      // Capability Registry 1.0: attach the matched routing skill — only
+      // when the task shape clearly asked for it (never a guessed skill).
+      ...(skillTask ? { skill: skillTask } : {}),
       input: {},
       sources: [...retrievalStepIds],
     });
@@ -261,7 +328,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const sourceSummary = [
     dedupedRetrievals.join(' + ') || null,
     wantsExternal ? 'web' : null,
-    (wantsAnalysis || wantsExternal) ? 'hermes' : null,
+    (wantsAnalysis || wantsExternal || skillTask) ? (skillTask ? `hermes:${skillTask}` : 'hermes') : null,
     'native',
   ].filter(Boolean).join(' → ');
 
@@ -543,7 +610,9 @@ module.exports = {
   shouldUseConversationSearch,
   buildPlan,
   hasPlanningSignal,
+  matchSkillTask,
   NATIVE_INTENTS,
   META_INTENT_TYPES,
   PLANNING_SIGNALS,
+  SKILL_TASK_SIGNALS,
 };

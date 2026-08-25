@@ -127,6 +127,11 @@ const STEP_TYPES = Object.freeze(['retrieval', 'reasoning', 'generation', 'capab
 const GENERATION_MODES = Object.freeze(['native', 'capability']);
 const MAX_PLAN_STEPS = 4;
 
+// Capability Registry 1.0: skill existence on plan steps is validated
+// against THE registry (single source of truth) so an invalid
+// capability/skill combination is rejected BEFORE execution ever starts.
+const { validateCapabilitySkill } = require('../capabilityRegistry');
+
 /**
  * Validates one plan step. Returns a problem string or null.
  * @param {object} step
@@ -162,6 +167,22 @@ function validatePlanStep(step, seenIds) {
 
   if (step.optional !== undefined && typeof step.optional !== 'boolean') {
     return `plan step "${step.id}": optional must be a boolean when present`;
+  }
+
+  // Capability Registry 1.0 — optional skill metadata on a step. The step
+  // must name a capability, and THAT capability must expose the skill
+  // (registry-validated; unknown combos are rejected before execution).
+  if (step.skill !== undefined) {
+    if (typeof step.skill !== 'string' || step.skill.length === 0) {
+      return `plan step "${step.id}": skill must be a non-empty string when present`;
+    }
+    if (typeof step.capability !== 'string' || step.capability.length === 0) {
+      return `plan step "${step.id}": skill requires a capability on the same step`;
+    }
+    const skillProblem = validateCapabilitySkill(step.capability, step.skill);
+    if (skillProblem) {
+      return `plan step "${step.id}": ${skillProblem}`;
+    }
   }
 
   if (step.sources !== undefined) {

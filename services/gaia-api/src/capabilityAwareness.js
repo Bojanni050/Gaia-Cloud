@@ -2,28 +2,23 @@
 
 /**
  * Capability awareness — renders the small system-prompt block that tells
- * Gaia which capabilities she GENUINELY has this turn, derived from the
- * caller-provided registry (single source of truth).
+ * Gaia which capabilities she GENUINELY has this turn, plus the skills each
+ * capability exposes. Everything shown is derived from the Capability
+ * Registry (src/capabilityRegistry.js) — the single source of truth —
+ * filtered to the capabilities the caller actually registered this turn.
  *
  * Why this exists: Gaia's factual self-knowledge otherwise lives only in
  * the foundation documents, which lag behind the capability registry — so
- * she would honestly-but-wrongly deny abilities she actually has ("ik kan
- * niet in je chats zoeken"). The registry is the truth; this block carries
- * it into her voice.
+ * she would honestly-but-wrongly deny abilities she actually has. The
+ * registry is the truth; this block carries it into her voice, including
+ * skill awareness (which specialized ways a capability can operate).
  *
- * Boundary: pure rendering. No I/O, no decisions — WHAT she can use is
- * whatever the caller listed; THIS module only phrases it.
+ * Boundary: pure rendering over the registry. No I/O, no decisions.
  */
 
-/** One-line human descriptions per capability id (registry keys). */
-const CAPABILITY_DESCRIPTIONS = Object.freeze({
-  hermes: 'deeper reasoning and longer composition when a turn needs it',
-  native: 'your own voice — direct conversational answers',
-  web: 'searching the live web for current external information',
-  conversation_search: 'searching the literal text of current and past conversations — what was actually said, by either of you',
-  hindsight: 'your long-term memory: selected memories, observations and patterns about the user',
-  tool: 'acting on external systems when a turn requires it',
-});
+const {
+  getCapabilityProfile,
+} = require('./capabilityRegistry');
 
 /**
  * Renders the awareness block, or null when there is nothing meaningful to
@@ -35,12 +30,15 @@ function renderCapabilityAwareness(availableCapabilities) {
   const ids = (Array.isArray(availableCapabilities) ? availableCapabilities : [])
     .map((c) => c && c.id)
     .filter(Boolean);
-  if (ids.length === 0) return null;
 
   const lines = [];
   for (const id of ids) {
-    const description = CAPABILITY_DESCRIPTIONS[id];
-    if (description) lines.push(`- ${id}: ${description}`);
+    const profile = getCapabilityProfile(id);
+    if (!profile) continue; // unknown to the registry: never claimed
+    lines.push(`- ${profile.id}: ${profile.description}`);
+    if (profile.skills.length > 0) {
+      lines.push(`  skills: ${profile.skills.map((s) => s.id).join(', ')}`);
+    }
   }
   if (lines.length === 0) return null;
 
@@ -54,4 +52,4 @@ function renderCapabilityAwareness(availableCapabilities) {
   ].join('\n');
 }
 
-module.exports = { renderCapabilityAwareness, CAPABILITY_DESCRIPTIONS };
+module.exports = { renderCapabilityAwareness };

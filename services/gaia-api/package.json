@@ -14,7 +14,8 @@
     "eval:hypothesis": "node eval/run-hypothesis.js",
     "eval:pattern": "node eval/run-pattern.js",
     "eval:memory": "node eval/run-memoryworthiness.js",
-    "eval:planning": "node eval/run-planning.js"
+    "eval:planning": "node eval/run-planning.js",
+    "eval:skills": "node eval/run-skills.js"
   },
   "dependencies": {
     "express": "^4.19.2",
