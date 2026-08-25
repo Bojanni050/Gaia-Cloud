@@ -250,15 +250,17 @@ test('decide() combines Hindsight context with a Hermes decision under deep reas
   assert.deepEqual(decision.capabilities, ['hermes']);
 });
 
-test('decide() routes current-external-information turns to the web tool when available (test #4)', () => {
+test('decide() routes current-external-information turns to a web→native plan (test #4)', () => {
   const decision = decide({
     userInput: 'what is the current OpenAI API documentation?',
     intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'web' }],
   });
-  assert.equal(decision.action, 'tool');
-  assert.equal(decision.capability, 'web');
-  assert.deepEqual(decision.capabilities, ['web']);
+  assert.equal(decision.action, 'plan');
+  const caps = decision.steps.map((s) => s.capability || s.mode);
+  assert.ok(caps.includes('web'), 'plan must include a web retrieval step');
+  assert.ok(caps.includes('native'), 'plan must end with native generation');
+  assert.equal(validateDecision(decision), null);
 });
 
 test('decide() falls back to native for external-knowledge turns when no web tool is available (Generation Policy 0.1: native is default)', () => {
@@ -420,13 +422,15 @@ test('decide() sets capability_execute=true for tool/web/capability actions', ()
   assert.equal(toolDecision.capability_execute, true);
   assert.equal(toolDecision.capability_candidate, 'tool');
 
+  // web now routes to a plan [web→native]; capability_execute=false (plan)
   const webDecision = decide({
     userInput: 'what is the weather?',
     intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
-    availableCapabilities: [{ id: 'web' }],
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'web' }],
   });
-  assert.equal(webDecision.capability_execute, true);
-  assert.equal(webDecision.capability_candidate, 'web');
+  assert.equal(webDecision.action, 'plan');
+  assert.equal(webDecision.capability_execute, false);
+  assert.ok(webDecision.steps.some((s) => s.capability === 'web'), 'plan must include web step');
 
   const hermesDecision = decide({
     userInput: 'explain quantum computing in depth',

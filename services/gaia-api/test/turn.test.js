@@ -2102,12 +2102,17 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
     };
     // Anchored follow-up + exact-history phrasing => real buildPlan triggers:
     // [conversation_search -> hindsight -> native].
+    // nativeGenerator is provided at top-level so native is in availableCapabilities
+    // when decide() runs — matching production server.js wiring.
+    const nativeGen = {
+      generate: async (messages) => { captured.nativeMessages = messages; return "GAIA-Antwoord A"; },
+    };
     const intentIQ = () => ({
       schemaVersion: "intentiq.v1", intent: null, status: "unknown",
       sourceOfTruth: "memory", needsClarification: false, entities: [],
       meta: { reason: "assistant_anchored_follow_up_unresolved_intent" },
     });
-    return { historyStore, tools, captured, intentIQ };
+    return { historyStore, tools, captured, intentIQ, nativeGen };
   }
 
   const USER_TURN = "Wat weet je nog van mijn plannen en wat zei ik vorige maand precies over de juni-release?";
@@ -2125,6 +2130,7 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
     documents: DOCUMENTS,
     hermes: { chat: async (m) => { a.captured.hermesCalls.push(m); return "fallback"; } },
     hindsight: SILENT_HINDSIGHT,
+    nativeGenerator: a.nativeGen,
     conversationId: "parity-conv",
     intentIQ: a.intentIQ,
     reasonIQ: async () => ({}),
@@ -2132,9 +2138,6 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
     decisionEngine: a.captured.decisionEngine,
     orchestrate: async (decision, ctx) => {
       const { execute } = require("../src/orchestration/orchestrator");
-      ctx.nativeGenerator = {
-        generate: async (messages) => { a.captured.nativeMessages = messages; return "GAIA-Antwoord A"; },
-      };
       return execute(decision, ctx);
     },
   });
@@ -2152,6 +2155,7 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
     documents: DOCUMENTS,
     hermes: { stream: async (m, { onDelta }) => { b.captured.hermesCalls.push(m); onDelta("fallback", false); return "fallback"; } },
     hindsight: SILENT_HINDSIGHT,
+    nativeGenerator: b.nativeGen,
     res: fakeRes(),
     conversationId: "parity-conv",
     intentIQ: b.intentIQ,
@@ -2160,9 +2164,6 @@ test("3.0 parity: a planned turn produces an identical plan, steps and reply on 
     decisionEngine: b.captured.decisionEngine,
     orchestrate: async (decision, ctx) => {
       const { execute } = require("../src/orchestration/orchestrator");
-      ctx.nativeGenerator = {
-        generate: async (messages) => { b.captured.nativeMessages = messages; return "GAIA-Antwoord A"; },
-      };
       return execute(decision, ctx);
     },
   });
@@ -2252,12 +2253,12 @@ test("1.0 parity: a skill plan produces identical decision+skill and the same He
     documents: DOCUMENTS,
     hermes: a.hermes,
     hindsight: SILENT_HINDSIGHT,
+    nativeGenerator: { generate: async () => "GAIA debug-antwoord" },
     intentIQ: a.intentIQ,
     reasonIQ: async () => ({}),
     decisionEngine: a.decisionEngine,
     orchestrate: async (decision, ctx) => {
       const { execute } = require("../src/orchestration/orchestrator");
-      ctx.nativeGenerator = { generate: async () => "GAIA debug-antwoord" };
       return execute(decision, ctx);
     },
   });
@@ -2268,13 +2269,13 @@ test("1.0 parity: a skill plan produces identical decision+skill and the same He
     documents: DOCUMENTS,
     hermes: b.hermes,
     hindsight: SILENT_HINDSIGHT,
+    nativeGenerator: { generate: async () => "GAIA debug-antwoord" },
     res: fakeRes(),
     intentIQ: b.intentIQ,
     reasonIQ: async () => ({}),
     decisionEngine: b.decisionEngine,
     orchestrate: async (decision, ctx) => {
       const { execute } = require("../src/orchestration/orchestrator");
-      ctx.nativeGenerator = { generate: async () => "GAIA debug-antwoord" };
       return execute(decision, ctx);
     },
   });
@@ -2289,4 +2290,147 @@ test("1.0 parity: a skill plan produces identical decision+skill and the same He
   const instrA = a.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
   const instrB = b.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
   assert.ok(instrA && instrB, "skill instruction reached Hermes on both transports");
+});
+
+// --- web → native retrieval flow (Generation Policy 0.1: web as knowledge retrieval) --
+
+test("web → native: simple external-knowledge turn produces a plan [web, native] and Gaia formulates the answer", async () => {
+  let webQuery = null;
+  const webSearch = {
+    search: async (q) => { webQuery = q; return "raw formatted results"; },
+    searchResults: async (q) => { webQuery = q; return { results: [{ title: "Suno Voice Upload", url: "https://suno.com/upload", text: "Upload your voice via Settings > Voice Clone", source: "web", relevance: 1.0 }], total: 1 }; },
+  };
+  const nativeMessages = [];
+  const res = await performTurn({
+    messages: [{ role: "user", content: "Hoe werkt de huidige Suno voice upload?" }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => { throw new Error("Hermes must not be called for web→native"); } },
+    hindsight: SILENT_HINDSIGHT,
+    webSearch,
+    nativeGenerator: { generate: async (m) => { nativeMessages.push(m); return "Gaia: je kunt je stem uploaden via Settings > Voice Clone bij Suno."; } },
+    decisionEngine: (input) => {
+      const { decide } = require("../src/decision/decisionEngine");
+      return decide(input);
+    },
+  });
+  // Plan was [web, native] — web retrieved, native generated.
+  assert.ok(webQuery, "web search must have been called");
+  assert.equal(res.status, 200);
+  assert.match(res.body.reply, /Gaia/);
+  // Native received context containing provenance from the web step.
+  const nativeSys = nativeMessages.flat().find((m) => m.role === "system" && /step-\d+ · web/.test(m.content));
+  assert.ok(nativeSys, "native must receive the web results as context");
+  assert.match(nativeSys.content, /Suno Voice Upload/, "context must include the result title");
+  assert.match(nativeSys.content, /suno\.com/, "context must include the URL provenance");
+  assert.match(nativeSys.content, /background only/, "context must include generation guidance");
+});
+
+test("web failure: optional web step does not kill the plan — native still answers", async () => {
+  const webSearch = {
+    search: async () => { throw new Error("Brave unreachable"); },
+    searchResults: async () => { throw new Error("Brave unreachable"); },
+  };
+  const res = await performTurn({
+    messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => { throw new Error("Hermes must not be called"); } },
+    hindsight: SILENT_HINDSIGHT,
+    webSearch,
+    nativeGenerator: { generate: async () => "Gaia: ik kon helaas geen actuele informatie vinden over de Suno API." },
+    decisionEngine: (input) => {
+      const { decide } = require("../src/decision/decisionEngine");
+      return decide(input);
+    },
+  });
+  assert.equal(res.status, 200);
+  assert.match(res.body.reply, /Gaia/);
+});
+
+test("empty web results: native receives '(geen resultaten)' context and can answer honestly", async () => {
+  const nativeMessages = [];
+  const webSearch = {
+    search: async () => "I looked, but couldn't find anything relevant.",
+    searchResults: async () => ({ results: [], total: 0 }),
+  };
+  const res = await performTurn({
+    messages: [{ role: "user", content: "Wat is de nieuwste Suno feature?" }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => { throw new Error("Hermes must not be called"); } },
+    hindsight: SILENT_HINDSIGHT,
+    webSearch,
+    nativeGenerator: { generate: async (m) => { nativeMessages.push(m); return "Gaia: er is onvoldoende externe informatie gevonden."; } },
+    decisionEngine: (input) => {
+      const { decide } = require("../src/decision/decisionEngine");
+      return decide(input);
+    },
+  });
+  assert.equal(res.status, 200);
+  // Native received context with "(geen resultaten)" marker.
+  const nativeSys = nativeMessages.flat().find((m) => m.role === "system" && /step-\d+ · web/.test(m.content));
+  assert.ok(nativeSys, "native must receive web context even when empty");
+  assert.match(nativeSys.content, /geen resultaten/);
+});
+
+test("web→native streaming/non-streaming parity: same plan, same web query, same step inputs on both transports", async () => {
+  function harness() {
+    const captured = { webQueries: [], nativeMessages: null, decisions: [] };
+    const webSearch = {
+      search: async (q) => { captured.webQueries.push(q); return "formatted"; },
+      searchResults: async (q) => { captured.webQueries.push(q); return { results: [{ title: "test", url: "https://example.com", text: "info", source: "web", relevance: 1.0 }], total: 1 }; },
+    };
+    return {
+      captured,
+      webSearch,
+      decisionEngine: (input) => {
+        const { decide } = require("../src/decision/decisionEngine");
+        const d = decide(input);
+        captured.decisions.push(d);
+        return d;
+      },
+    };
+  }
+
+  const a = harness();
+  await performTurn({
+    messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => { throw new Error("no"); } },
+    hindsight: SILENT_HINDSIGHT,
+    webSearch: a.webSearch,
+    nativeGenerator: { generate: async (m) => { a.captured.nativeMessages = m; return "answer A"; } },
+    decisionEngine: a.decisionEngine,
+    orchestrate: async (decision, ctx) => {
+      const { execute } = require("../src/orchestration/orchestrator");
+      return execute(decision, ctx);
+    },
+  });
+
+  const b = harness();
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
+    documents: DOCUMENTS,
+    hermes: { stream: async () => { throw new Error("no"); } },
+    hindsight: SILENT_HINDSIGHT,
+    nativeGenerator: { generate: async (m) => { b.captured.nativeMessages = m; return "answer A"; }, stream: async (m, { onDelta }) => { b.captured.nativeMessages = m; onDelta("a", false); return "answer A"; } },
+    webSearch: b.webSearch,
+    decisionEngine: b.decisionEngine,
+    res: fakeRes(),
+    orchestrate: async (decision, ctx) => {
+      const { execute } = require("../src/orchestration/orchestrator");
+      return execute(decision, ctx);
+    },
+  });
+
+  // Same plan on both transports.
+  assert.equal(a.captured.decisions[0].action, "plan");
+  assert.deepEqual(b.captured.decisions[0], a.captured.decisions[0]);
+  // Same web query.
+  assert.deepEqual(a.captured.webQueries, b.captured.webQueries);
+  // Same step inputs.
+  const stepsA = a.captured.decisions[0].steps;
+  const stepsB = b.captured.decisions[0].steps;
+  assert.equal(stepsA.length, stepsB.length);
+  for (let i = 0; i < stepsA.length; i++) {
+    assert.deepEqual(stepsA[i].input, stepsB[i].input, `step ${i} input must match`);
+  }
 });

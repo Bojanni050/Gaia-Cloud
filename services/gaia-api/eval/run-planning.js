@@ -49,6 +49,10 @@ const CASES = [
   // --- web + Hermes (+ native) ---
   { id: 'p-11', cat: 'web + Hermes', input: 'Zoek actuele informatie hierover en vergelijk die met mijn eerdere Gaia-architectuur.', intent: { intent: 'inform.explain', status: 'accepted', sourceOfTruth: 'external_knowledge' }, expected: { plan: true, caps: ['web', 'hermes', 'native'] } },
 
+  // --- web only → web → native (minimum-sufficient: no hermes) ---
+  { id: 'p-13', cat: 'web only', input: 'Wat is momenteel de aanbevolen manier om mijn stem in Suno te uploaden?', intent: { intent: 'inform.explain', status: 'accepted', sourceOfTruth: 'external_knowledge' }, expected: { plan: true, caps: ['web', 'native'] } },
+  { id: 'p-14', cat: 'web only', input: 'Hoe werkt de huidige Suno voice upload?', intent: { intent: 'inform.explain', status: 'accepted', sourceOfTruth: 'external_knowledge' }, expected: { plan: true, caps: ['web', 'native'] } },
+
   // --- refuse never selected in v0.1 policy; pinned as not-a-plan ---
   { id: 'p-12', cat: 'refuse', input: 'doe dat verboden ding nu.', intent: { intent: null, status: 'unknown' }, expected: { plan: false, caps: [] } },
 ];

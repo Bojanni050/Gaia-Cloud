@@ -224,6 +224,8 @@ function matchRequiredSkills({ task = '', intent = null, reasoning = null, avail
  * existing single-action cascade run unchanged.
  *
  * Trigger matrix (conservative; minimum-sufficient principle §30):
+ *   - Any turn needing external knowledge (sourceOfTruth external_knowledge)
+ *        → web + native (web is a retrieval step; native speaks for Gaia)
  *   - TWO distinct retrieval needs (conversation search + hindsight)
  *        → both retrievals (+ hermes when analysis requested) → native
  *   - ONE retrieval need + analysis cue → retrieval(s) → hermes → native
@@ -231,9 +233,19 @@ function matchRequiredSkills({ task = '', intent = null, reasoning = null, avail
  *     single-search route → conversation_search → native
  *   - external-knowledge + remembered-knowledge/analysis
  *        → web + retrievals → hermes → native
+ *   - clear skill task → hermes(skill) → native
  * Everything else never becomes a plan: runTurnCore already recalls
  * Hindsight before decide() for ordinary turns, so an extra hindsight step
  * there would be duplicate retrieval (§17), not extra quality.
+ *
+ * Minimum-sufficient hermes: Hermes is only added when explicit analysis
+ * or a skill task requires it. Standalone web-retrieval plans use
+ * web → native (Gaia's own generator formulates the answer from the found
+ * sources). The single-action web branch survives only as a documented
+ * fallback for configurations where the plan's named capabilities
+ * (e.g. native) are not registered — in that case the formatted web
+ * answer is returned directly (the best available output without a
+ * generation path).
  *
  * @param {{ userInput?: string, intent?: object|null }} args
  * @returns {object|null} a full plan decision, or null
@@ -265,12 +277,15 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   // A standalone exact-history ask that the narrow anchored-single-search
   // route does not already serve earns its own minimal [cs → native] plan.
   const exactHistoryStandalone = wantsExactHistory && !isAnchoredFollowUp;
-  const externalCombo = wantsExternal && (wantsRemembered || wantsAnalysis);
+  // Minimum-sufficient: Hermes only when explicit analysis or a skill task
+  // requires it. Standalone web-retrieval plans use web → native — Gaia's
+  // own generator formulates the answer from the found sources.
+  const needsReasoning = wantsAnalysis || Boolean(skillTask);
   // A clear skill task (debugging / test strategy / code review) warrants
   // its own minimal [hermes(skill) → native] plan even without retrievals.
   const skillReasoning = Boolean(skillTask);
 
-  if (!multiSource && !retrievalPlusReasoning && !externalCombo && !exactHistoryStandalone && !skillReasoning) return null;
+  if (!multiSource && !retrievalPlusReasoning && !wantsExternal && !exactHistoryStandalone && !skillReasoning) return null;
 
   const steps = [];
   let n = 0;
@@ -303,7 +318,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   }
 
   const retrievalStepIds = steps.map((s) => s.id);
-  if (wantsAnalysis || wantsExternal || skillTask) {
+  if (needsReasoning) {
     steps.push({
       id: nextId(),
       type: 'reasoning',
@@ -329,7 +344,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const sourceSummary = [
     dedupedRetrievals.join(' + ') || null,
     wantsExternal ? 'web' : null,
-    (wantsAnalysis || wantsExternal || skillTask) ? (skillTask ? `hermes:${skillTask}` : 'hermes') : null,
+    needsReasoning ? (skillTask ? `hermes:${skillTask}` : 'hermes') : null,
     'native',
   ].filter(Boolean).join(' → ');
 
@@ -476,12 +491,16 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   // discarded and the existing branches run unchanged (never a partially
   // executable plan).
   const candidatePlan = buildPlan({ userInput, intent });
-  const planDecision = candidatePlan && candidatePlan.steps
-    .map((s) => s.capability)
-    .filter(Boolean)
-    .every((c) => findCapability(capabilities, c))
-    ? candidatePlan
-    : null;
+  let planDecision = null;
+  if (candidatePlan && candidatePlan.steps) {
+    const namedCaps = candidatePlan.steps.map((s) => s.capability).filter(Boolean);
+    const capsAvailable = namedCaps.every((c) => findCapability(capabilities, c));
+    // Generation steps use mode:'native' (no capability field), but the
+    // Orchestrator requires nativeGenerator to exist for mode 'native'.
+    const hasNativeGenStep = candidatePlan.steps.some((s) => s.type === 'generation');
+    const nativeAvailable = !hasNativeGenStep || findCapability(capabilities, 'native');
+    if (capsAvailable && nativeAvailable) planDecision = candidatePlan;
+  }
 
   // Generation Policy 0.1: determine the generation mode BEFORE the routing
   // cascade. This is a pure, deterministic signal — no LLM call — that
@@ -561,8 +580,12 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       reason: `intent "${intent.intent}" requires acting on an external system`,
     };
   } else if (intent && intent.sourceOfTruth === 'external_knowledge' && findCapability(capabilities, 'web')) {
-    // PATCH 8: Only invoke web if genuinely needed for external knowledge
-    // Don't use websearch as substitute for missing vision or native capabilities
+    // DOCUMENTED FALLBACK — normally external-knowledge turns become a plan
+    // [web → native] (buildPlan). This single-action branch fires only when
+    // the plan was discarded — e.g. the plan named native but no native
+    // generator is registered (web-only configurations). In that case the
+    // web capability's formatted answer is returned directly as the best
+    // available output without a generation path.
     decision = {
       action: 'tool',
       capability: 'web',

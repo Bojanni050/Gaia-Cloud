@@ -189,23 +189,58 @@ function latestUserText(messages) {
 }
 
 /**
- * Adapts a raw web-search client (src/tools/braveSearch.js's `{ search }`)
- * into the generic `{ invoke }` capability shape the Orchestrator expects
- * (orchestration/orchestrator.js). The web tool is a terminal, single-step
- * capability (see braveSearch.js's own header on why): it has no token-by-
- * token stream of its own, so when the caller wants deltas (`onDelta`
- * given, a streaming turn), this emits the whole formatted answer as one
- * chunk rather than leaving the stream silent.
- * @param {{ search: (query: string) => Promise<string> }} webSearch
- * @returns {{ invoke: (messages: Array, options?: object) => Promise<string> }}
+ * Adapts a raw web-search client (src/tools/braveSearch.js's
+ * `{ search, searchResults }`) into the generic `{ invoke }` capability
+ * shape the Orchestrator expects (orchestration/orchestrator.js).
+ *
+ * Two modes, determined by the input convention:
+ *
+ *   PLAN MODE (retrieval step): buildPlan uses `input.query`. Returns
+ *   structured { results, total } for downstream generation steps. Raw
+ *   web results never stream to the client — the native generation step
+ *   speaks for Gaia.
+ *
+ *   LEGACY MODE (documented single-action fallback): input has
+ *   `userInput`. Used when the plan was discarded (e.g. native not
+ *   registered). Returns formatted text and streams it via onDelta —
+ *   the best available output without a generation path.
+ *
+ * Observability: emits web.search JSON lines (completed/failed + latency)
+ * to docker logs — never user content, never capability internals.
+ *
+ * @param {{ search: Function, searchResults?: Function }} webSearch
+ * @returns {{ invoke: (messages: Array, options?: object) => Promise<*> }}
  */
 function webCapability(webSearch) {
   return {
     invoke: async (messages, { onDelta, input } = {}) => {
-      const query = (input && input.userInput) || '';
-      const text = await webSearch.search(query);
-      if (onDelta) onDelta(text, false);
-      return text;
+      const startedAt = Date.now();
+      try {
+        // PLAN MODE: buildPlan convention uses `input.query`.
+        // Returns structured { results, total } for downstream generation;
+        // no onDelta — raw web results never stream to the client.
+        if (typeof input && typeof input.query === 'string') {
+          if (typeof webSearch.searchResults !== 'function') {
+            // Fallback for older webSearch clients without searchResults:
+            // degrade to formatted text wrapped in structured shape.
+            const text = await webSearch.search(input.query);
+            return { results: [{ text, source: 'web', relevance: 0.5 }], total: 1 };
+          }
+          const out = await webSearch.searchResults(input.query);
+          console.log(JSON.stringify({ kind: 'web.search', stage: 'completed', resultCount: out.total, latencyMs: Date.now() - startedAt }));
+          return out;
+        }
+        // LEGACY MODE (documented single-action fallback): input has
+        // `userInput`. Terminal capability; streams formatted text directly.
+        const query = (input && input.userInput) || '';
+        const text = await webSearch.search(query);
+        console.log(JSON.stringify({ kind: 'web.search', stage: 'completed', resultCount: 0, latencyMs: Date.now() - startedAt }));
+        if (onDelta) onDelta(text, false);
+        return text;
+      } catch (err) {
+        console.log(JSON.stringify({ kind: 'web.search', stage: 'failed', latencyMs: Date.now() - startedAt }));
+        throw err;
+      }
     },
   };
 }

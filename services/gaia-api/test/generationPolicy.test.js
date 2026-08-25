@@ -290,15 +290,17 @@ test('Hermes unavailable: native is still the default when hermes is not registe
   assert.equal(d.generationMode, 'native');
 });
 
-test('existing capabilities: web routing unchanged', () => {
+test('existing capabilities: web routing via plan [web → native]', () => {
   const d = decide({
     userInput: 'what is the weather today?',
     intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
     reasoning: null,
     availableCapabilities: FULL_REGISTRY,
   });
-  assert.equal(d.action, 'tool');
-  assert.equal(d.capability, 'web');
+  assert.equal(d.action, 'plan');
+  const caps = d.steps.map((s) => s.capability || s.mode);
+  assert.ok(caps.includes('web'), 'plan must include web step');
+  assert.ok(caps.includes('native'), 'plan must end with native generation');
 });
 
 test('existing capabilities: conversation_search routing unchanged', () => {

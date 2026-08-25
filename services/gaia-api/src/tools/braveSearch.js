@@ -13,15 +13,17 @@
  * the Response Engine — a boundary asserted directly in
  * test/braveSearch.test.js, not just described here.
  *
- * Unlike Hermes/the native generator, this is a terminal, single-step
- * capability: it performs the search and returns Gaia's answer text
- * directly (a calm, formatted summary of the top results), because
- * chaining "search, then hand results to Hermes/native to synthesize"
- * would be a two-step plan — decisionSchema.js's documented `sequence`
- * extension point, deliberately not built yet (see that file's own note).
- * A "no results" search is not a failure; it is an honest answer
- * ("nothing relevant found"), same posture as ReasonIQ's own honest
- * uncertainty reporting.
+ * Unlike Hermes/the native generator, this module historically was a
+ * terminal, single-step capability: it performed the search and returned
+ * Gaia's answer text directly (a calm, formatted summary of the top
+ * results). With the web→native retrieval flow, `searchResults` exposes
+ * the same search as STRUCTURED retrieval for the Decision Engine 3.0
+ * plan path ([web → native] / [web → hermes → native]) — Gaia's native
+ * generator formulates the final answer from the found sources, and the
+ * raw formatted dump survives only as the documented single-action
+ * fallback for configurations without a native generator. A "no results"
+ * search is not a failure; it is an honest answer ("nothing relevant
+ * found"), same posture as ReasonIQ's own honest uncertainty reporting.
  *
  * Request contract (Brave Search API, confirmed 2026-08):
  *   GET {baseUrl}?q={query}&count={resultCount}
@@ -116,14 +118,14 @@ function createBraveSearch(options = {}) {
   }
 
   /**
-   * Searches the web for `query` and returns Gaia's already-formatted
-   * answer text — the final reply, not an intermediate result (see this
-   * module's own header on why the web tool is a terminal, single-step
-   * capability).
+   * Performs the Brave request and returns the raw structured results —
+   * the shared retrieval core for both `search` (formatted terminal text)
+   * and `searchResults` (plan-step retrieval). A "no results" response is
+   * an empty list, not a failure.
    * @param {string} query
-   * @returns {Promise<string>}
+   * @returns {Promise<Array<{ title: string, url: string, description: string }>>}
    */
-  async function search(query) {
+  async function fetchResults(query) {
     const url = new URL(baseUrl);
     url.searchParams.set('q', query);
     url.searchParams.set('count', String(resultCount));
@@ -153,11 +155,46 @@ function createBraveSearch(options = {}) {
       throw new Error('web search returned an unreadable response');
     }
 
-    const results = (data && data.web && Array.isArray(data.web.results)) ? data.web.results : [];
+    return (data && data.web && Array.isArray(data.web.results)) ? data.web.results : [];
+  }
+
+  /**
+   * Searches the web for `query` and returns Gaia's already-formatted
+   * answer text — the terminal single-action path (see this module's own
+   * header). Kept unchanged for configurations without a native generator,
+   * where the web tool's formatted answer is the best available reply.
+   * @param {string} query
+   * @returns {Promise<string>}
+   */
+  async function search(query) {
+    const results = await fetchResults(query);
     return formatResults(results);
   }
 
-  return { search };
+  /**
+   * Searches the web for `query` and returns STRUCTURED results for
+   * downstream generation steps (Decision Engine 3.0 plan flow: web is a
+   * retrieval step; Gaia's native generator formulates the final answer).
+   * Provenance is preserved per result — title, url, cleaned snippet — and
+   * `relevance` is the search RANK (position-based, 1.0 descending), a
+   * retrieval signal only, never a reasoning confidence. `source: 'web'`
+   * matches the evidence-source vocabulary used elsewhere in Gaia.
+   * @param {string} query
+   * @returns {Promise<{ results: Array<{ title: string, url: string, text: string, source: string, relevance: number }>, total: number }>}
+   */
+  async function searchResults(query) {
+    const raw = await fetchResults(query);
+    const results = raw.map((r, i) => ({
+      title: stripHtml(r.title),
+      url: r.url,
+      text: stripHtml(r.description),
+      source: 'web',
+      relevance: Math.max(0.1, Math.round((1 - i * 0.1) * 100) / 100),
+    }));
+    return { results, total: results.length };
+  }
+
+  return { search, searchResults };
 }
 
 /**

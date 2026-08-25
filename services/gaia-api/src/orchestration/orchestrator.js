@@ -137,15 +137,22 @@ function formatStepOutputForContext(step, output) {
   const header = `[${step.id} · ${step.capability || step.mode || step.type}]`;
   if (output == null) return `${header}\n(geen resultaat)`;
   if (typeof output === 'string') return `${header}\n${output}`;
-  // Structured outputs ({results:[...], total}) from retrieval capabilities:
+  // Structured outputs ({results:[], total}) from retrieval capabilities:
   if (Array.isArray(output.results)) {
     if (output.results.length === 0) return `${header}\n(geen resultaten)`;
+    const isWeb = step.capability === 'web';
     const lines = output.results.map((r) => {
-      const text = typeof r === 'string' ? r : (r.text || '');
+      if (typeof r === 'string') return `- ${r.slice(0, 280)}`;
+      const title = r.title ? `${r.title} — ` : '';
+      const text = r.text || r.snippet || '';
       const rel = r && typeof r.relevance === 'number' ? ` (relevance: ${r.relevance})` : '';
-      return `- ${String(text).slice(0, 280)}${rel}`;
+      const url = r.url ? ` (bron: ${r.url})` : '';
+      return `- ${title}${String(text).slice(0, 280)}${rel}${url}`;
     });
-    return [header, ...lines].join('\n');
+    const guidance = isWeb
+      ? '\nUse these sources as background only — answer in your own words; mention sources only where they genuinely support a claim.'
+      : '';
+    return [header, ...lines, guidance].join('\n');
   }
   return `${header}\n${JSON.stringify(output).slice(0, 600)}`;
 }
