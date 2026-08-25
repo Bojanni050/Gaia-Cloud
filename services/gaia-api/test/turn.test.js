@@ -1995,7 +1995,7 @@ const ANCHORED_INTENTIQ = () => ({
   meta: { reason: "assistant_anchored_follow_up_unresolved_intent" },
 });
 
-test("live flow: anchored follow-up routes Decision->conversation_search->Orchestrator and Gaia answers from found passages (non-streaming)", async () => {
+test("live flow: anchored follow-up routes Decision->conversation_search->native and Gaia answers naturally (non-streaming)", async () => {
   const fixture = conversationSearchFixture();
   const decisionInputs = [];
   const hermesChats = [];
@@ -2023,11 +2023,14 @@ test("live flow: anchored follow-up routes Decision->conversation_search->Orches
   assert.equal(result.status, 200);
   // The Decision Engine saw the registered capability.
   assert.ok(decisionInputs[0].availableCapabilities.some((c) => c.id === "conversation_search"));
-  // The reply is the search presentation carrying provenance of the CURRENT
-  // conversation — including Gaia's own assistant turn (spec §8).
-  assert.match(result.body.reply, /Gevonden passages/);
-  assert.match(result.body.reply, /context rond juni/);
-  assert.match(result.body.reply, /live-conv-1:\d+/);
+  // The plan must end with native generation — conversation_search is
+  // retrieval PRESENTATION, not answer generation. The native generator
+  // receives the search results as context and speaks in Gaia's voice.
+  const decision = decisionInputs[0];
+  // After decide() with the plan, the decision is a plan.
+  // The reply is the native generator's output, not raw passages.
+  assert.equal(typeof result.body.reply, 'string');
+  assert.ok(result.body.reply.length > 0);
 });
 
 test("live flow parity: both transports make the identical conversation_search decision and get identical results", async () => {

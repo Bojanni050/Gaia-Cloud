@@ -303,7 +303,7 @@ test('existing capabilities: web routing via plan [web → native]', () => {
   assert.ok(caps.includes('native'), 'plan must end with native generation');
 });
 
-test('existing capabilities: conversation_search routing unchanged', () => {
+test('existing capabilities: conversation_search routes to plan [conversation_search → native]', () => {
   const d = decide({
     userInput: 'wat was er in juni ook alweer?',
     intent: {
@@ -316,8 +316,14 @@ test('existing capabilities: conversation_search routing unchanged', () => {
     reasoning: null,
     availableCapabilities: FULL_REGISTRY,
   });
-  assert.equal(d.action, 'capability');
-  assert.equal(d.capability, 'conversation_search');
+  assert.equal(d.action, 'plan');
+  // Must always end with native generation — conversation_search is
+  // retrieval PRESENTATION, not answer generation.
+  const lastStep = d.steps[d.steps.length - 1];
+  assert.equal(lastStep.type, 'generation');
+  assert.equal(lastStep.mode, 'native');
+  const hasCs = d.steps.some((s) => s.capability === 'conversation_search');
+  assert.ok(hasCs, 'plan must include conversation_search step');
 });
 
 test('existing capabilities: tool routing unchanged', () => {

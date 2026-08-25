@@ -285,7 +285,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   // its own minimal [hermes(skill) → native] plan even without retrievals.
   const skillReasoning = Boolean(skillTask);
 
-  if (!multiSource && !retrievalPlusReasoning && !wantsExternal && !exactHistoryStandalone && !skillReasoning) return null;
+  if (!multiSource && !retrievalPlusReasoning && !wantsExternal && !exactHistoryStandalone && !skillReasoning && !isAnchoredFollowUp) return null;
 
   const steps = [];
   let n = 0;
@@ -301,11 +301,15 @@ function buildPlan({ userInput = '', intent = null } = {}) {
     });
   }
   if (dedupedRetrievals.includes('conversation_search')) {
+    // Anchored follow-ups pin scope to 'current' — the anchor is from THIS
+    // conversation, so searching saved conversations would be dishonest.
+    // Exact-history and past-lookup requests search 'all' scope.
+    const csScope = isAnchoredFollowUp ? 'current' : 'all';
     steps.push({
       id: nextId(),
       type: 'retrieval',
       capability: 'conversation_search',
-      input: { query: userInput, scope: 'all', limit: 8 },
+      input: { query: userInput, scope: csScope, limit: 8 },
     });
   }
   if (dedupedRetrievals.includes('hindsight')) {

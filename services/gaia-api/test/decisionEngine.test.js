@@ -500,22 +500,26 @@ test('required skill matching uses registry routing flags and does not route exp
   assert.deepEqual(matchRequiredSkills({ task: 'Help mij met grounded citations voor dit antwoord.', availableCapabilities: available }).requiredSkills, []);
 });
 
-test('decide() routes an anchored follow-up to the conversation_search capability when available', () => {
+test('decide() routes an anchored follow-up to a conversation_search → native plan', () => {
   const decision = decide({
     userInput: 'wat was er in juni ook alweer?',
     intent: ANCHORED_INTENT,
     context: { reflections: [], mentalModels: [], patterns: [] },
     reasoning: null,
-    availableCapabilities: [{ id: 'hermes' }, { id: 'conversation_search' }],
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
   });
-  assert.equal(decision.action, 'capability');
-  assert.equal(decision.capability, 'conversation_search');
-  assert.equal(decision.capability_execute, true);
-  // Scope pinned by Gaia (the anchor is from THIS conversation) — the
-  // capability never chooses scope itself.
-  assert.equal(decision.input.scope, 'current');
-  assert.match(decision.input.query, /juni/);
-  assert.ok(decision.input.limit >= 1 && decision.input.limit <= 20);
+  assert.equal(decision.action, 'plan');
+  // The plan must always end with native generation — conversation_search
+  // is retrieval PRESENTATION, not answer generation.
+  const stepTypes = decision.steps.map((s) => s.type);
+  const stepCaps = decision.steps.map((s) => s.capability || s.mode);
+  assert.ok(stepTypes.includes('retrieval'), 'plan must include a retrieval step');
+  assert.ok(stepTypes.includes('generation'), 'plan must include a generation step');
+  assert.ok(stepCaps.includes('conversation_search'), 'retrieval step must use conversation_search');
+  assert.ok(stepCaps.includes('native'), 'generation step must use native');
+  // Last step must be generation (Gaia speaks, not raw passages)
+  assert.equal(decision.steps[decision.steps.length - 1].type, 'generation');
+  assert.equal(decision.steps[decision.steps.length - 1].mode, 'native');
   assert.equal(validateDecision(decision), null);
 });
 
@@ -540,4 +544,90 @@ test('decide() keeps ordinary memory.inspect turns on their existing routing', (
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
   });
   assert.notEqual(decision.capability, 'conversation_search');
+});
+
+// --- conversation_search composition: always ends with native generation ---
+
+test('conversation_search plan always ends with native generation (architectural invariant)', () => {
+  const anchored = {
+    schemaVersion: 'intentiq.v1', intent: null, status: 'unknown',
+    sourceOfTruth: 'memory',
+    referents: [{ expression: 'juni', resolvedTo: 'previous_assistant_turn:juni', confidence: 0.6, source: 'previous_assistant_turn' }],
+    meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' },
+  };
+  const d = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: anchored,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
+  });
+  assert.equal(d.action, 'plan');
+  const lastStep = d.steps[d.steps.length - 1];
+  assert.equal(lastStep.type, 'generation');
+  assert.equal(lastStep.mode, 'native');
+  // Raw conversation_search output must never be the final user-facing answer
+  assert.notEqual(d.steps[d.steps.length - 1].capability, 'conversation_search');
+});
+
+test('conversation_search plan includes retrieval step with correct scope', () => {
+  const anchored = {
+    schemaVersion: 'intentiq.v1', intent: null, status: 'unknown',
+    sourceOfTruth: 'memory',
+    referents: [{ expression: 'juni', resolvedTo: 'previous_assistant_turn:juni', confidence: 0.6, source: 'previous_assistant_turn' }],
+    meta: { reason: 'assistant_anchored_follow_up_inherited' },
+  };
+  const d = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: anchored,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
+  });
+  const csStep = d.steps.find((s) => s.capability === 'conversation_search');
+  assert.ok(csStep, 'plan must include conversation_search step');
+  assert.equal(csStep.type, 'retrieval');
+  // Anchored follow-ups pin scope to 'current' — the anchor is from THIS conversation
+  assert.equal(csStep.input.scope, 'current');
+  assert.match(csStep.input.query, /juni/);
+});
+
+test('conversation_search fallback: when conversation_search is not registered, routes to native', () => {
+  const anchored = {
+    schemaVersion: 'intentiq.v1', intent: null, status: 'unknown',
+    sourceOfTruth: 'memory',
+    referents: [],
+    meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' },
+  };
+  const d = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: anchored,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  // Without conversation_search registered, falls through to native
+  assert.equal(d.action, 'native');
+});
+
+test('raw conversation_search output is never returned as final user-facing answer', () => {
+  // This is the architectural invariant: conversation_search retrieves,
+  // native generates. The user never sees raw passages.
+  const anchored = {
+    schemaVersion: 'intentiq.v1', intent: null, status: 'unknown',
+    sourceOfTruth: 'memory',
+    referents: [{ expression: 'juni', resolvedTo: 'previous_assistant_turn:juni', confidence: 0.6, source: 'previous_assistant_turn' }],
+    meta: { reason: 'assistant_anchored_follow_up_inherited' },
+  };
+  const d = decide({
+    userInput: 'wat was er in juni ook alweer?',
+    intent: anchored,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
+  });
+  // The plan's last step must be generation, not a capability
+  const lastStep = d.steps[d.steps.length - 1];
+  assert.equal(lastStep.type, 'generation');
+  assert.equal(lastStep.mode, 'native');
 });
