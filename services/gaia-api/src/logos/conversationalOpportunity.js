@@ -390,6 +390,9 @@ function renderOpportunityGuidance(opp) {
   } else {
     lines.push('- no follow-up question is needed; a brief acknowledgement or reflection is enough.');
   }
+  lines.push('Respond to the HUMAN MEANING of what was shared, not merely that you parsed the facts. Notice something, make a natural observation, acknowledge significance, show gentle curiosity, or connect two things mentioned — then leave space.');
+  lines.push('Do not mechanically summarize, confirm, classify or extract facts. Avoid formulations such as "That is a clear situation.", "I understand.", "So you are...", "You are therefore...", "This gives me a better understanding.", "Thank you for sharing." unless genuinely natural in this specific context.');
+  lines.push('Would this sound natural if a person said it to another person? If the response mainly proves you understood the information rather than actually responding to it, it is not good enough.');
   lines.push('Do not manufacture a question. Do not be verbose. Interest ≠ questioning.');
   return lines.join('\n');
 }
