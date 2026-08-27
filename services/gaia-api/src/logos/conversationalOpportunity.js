@@ -138,6 +138,30 @@ function containsPersonalDetail(text) {
   return patterns.some((p) => p.test(t)) && lower.length > 15;
 }
 
+function containsRichPersonalContext(text) {
+  const t = String(text || '');
+  if (t.length < 80) return false;
+  if (!/\b(ik|mijn|mij|we|ons)\b/i.test(t)) return false;
+  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|papegaai|papegaaien|Ierland|Maarn|jaar|jaren|familie|relatie gehad)\b/gi) || []).length;
+  const capitalizedNames = (t.match(/\b[A-Z][a-z]{2,}\b/g) || []).length;
+  const hasNames = capitalizedNames >= 3;
+  const hasRelationship = personalMarkers >= 1;
+  const hasEmotionalDuration = /\b\d+\s*jaar\b/i.test(t) || /relatie gehad/i.test(t);
+  // Rich if: multiple names + relationship, or markers + duration
+  return (hasNames && hasRelationship) || (personalMarkers >= 2) || hasEmotionalDuration;
+}
+
+function isLongAnswerToLocationQuestion(text, prevQuestion) {
+  if (!prevQuestion) return false;
+  if (!/waar ben je|where are you/i.test(String(prevQuestion).toLowerCase())) return false;
+  const trimmed = String(text || '').trim();
+  // Starts with location answer even if long: "In Maarn, in het huis van ..."
+  if (/^in\s+[A-Z][a-z]+/i.test(trimmed)) return true;
+  // Or contains location + house context
+  if (/in\s+Maarn/i.test(trimmed) && /huis van/i.test(trimmed)) return true;
+  return false;
+}
+
 function isTechnicalTask(intentDecision, text) {
   const t = String(text || '').toLowerCase();
   const technicalKeywords = ['css', 'werkt niet', 'werkt nog steeds niet', 'error', 'bug', 'code', 'function', 'api', 'deploy', 'fout'];
@@ -196,14 +220,26 @@ function evaluateConversationalOpportunity(input) {
   }
 
   const prevQuestion = lastAssistantQuestion(conversationContext);
-  const isAnswer = isShortDirectAnswer(text, prevQuestion);
+  const isAnswer = isShortDirectAnswer(text, prevQuestion) || isLongAnswerToLocationQuestion(text, prevQuestion);
   const hasPersonal = containsPersonalDetail(text);
+  const hasRichContext = containsRichPersonalContext(text);
   const dutch = isDutch(text) || (prevQuestion && isDutch(prevQuestion));
 
   // --- 1. task-focused: stay on task, do not introduce curiosity --------
   // But: answering a previous location question is NOT a technical task, even
   // if intent mis-routes short answer as unknown — prioritize answer detection
   if (isAnswer) {
+    // Long rich answer: reflect the full context, not just location curiosity
+    if (hasRichContext || String(text).length > 80) {
+      return {
+        present: true,
+        strength: 0.88,
+        subject: "user's house-sitting context in Maarn",
+        reason: 'User answered Gaia\'s location question with extensive volunteered personal context (people, relationships, house and pets).',
+        naturalResponse: 'reflection',
+        suggestedFollowUp: null,
+      };
+    }
     const subj = questionSubject(prevQuestion);
     const followUp = dutch ? 'Wat brengt je daar?' : 'What brings you there?';
     // If the answer is to a location question, curiosity is natural
@@ -240,7 +276,19 @@ function evaluateConversationalOpportunity(input) {
     };
   }
 
-  // --- 2. personally meaningful detail ------------------------------------
+  // --- 2. rich volunteered personal context (without needing specific achievement marker) ----
+  if (hasRichContext) {
+    return {
+      present: true,
+      strength: 0.85,
+      subject: "user's volunteered personal context",
+      reason: 'User voluntarily shared rich personal context with multiple people, relationships and details.',
+      naturalResponse: 'reflection',
+      suggestedFollowUp: null,
+    };
+  }
+
+  // --- 3. personally meaningful detail ------------------------------------
   if (hasPersonal) {
     const lower = text.toLowerCase();
     // Celebration: finally finished something, first creation
@@ -288,7 +336,7 @@ function evaluateConversationalOpportunity(input) {
     };
   }
 
-  // --- 3. no natural opening -----------------------------------------------
+  // --- 4. no natural opening -----------------------------------------------
   // Check for already sufficiently explored or no opening
   // For now, default to no opportunity when no signal above fires
   return {

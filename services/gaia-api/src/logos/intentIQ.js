@@ -664,6 +664,102 @@ function selfDirectedInvestigationDecision(text) {
   };
 }
 
+// --- answer to Gaia + volunteered personal sharing --------------------------
+function isGaiaQuestion(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.includes('?')) return true;
+  return /^(waar|wat|wie|wanneer|waarom|hoe|welke|is|ben|heb|heb je|kun je|where|what|who|when|why|how|which|are you|do you|can you)\b/i.test(t);
+}
+
+/**
+ * True when the user is answering a question Gaia herself asked in the
+ * immediately preceding assistant turn. This is the core previous-turn
+ * awareness required to recognise "Waar ben je nu?" → "In Maarn …" as an
+ * answer, not an isolated task. Deliberately not keyword-based: any
+ * declarative statement after a Gaia question counts when no other intent
+ * matched (see classify cascade — this branch only runs for signal-free
+ * turns).
+ */
+function isAnswerToPreviousGaiaQuestion(text, messages) {
+  const prev = previousAssistantText(messages);
+  if (!prev || !isGaiaQuestion(prev)) return false;
+  if (isEmptyOrFiller(text)) return false;
+  // If the user is asking a question back, it's not an answer
+  const trimmed = String(text || '').trim();
+  if (trimmed.includes('?')) return false;
+  // Must be a statement-like turn, not an imperative request
+  if (/^\s*(zoek|maak|schrijf|stuur|plan|herinner|voeg toe|add|send|create|generate|write)\b/i.test(trimmed)) return false;
+  return true;
+}
+
+function answerToGaiaQuestionDecision(text, messages) {
+  const prev = previousAssistantText(messages) || '';
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: 'converse',
+    status: 'accepted',
+    confidence: capConfidence(0.82),
+    candidates: [{ intent: 'converse', score: 0.82 }],
+    entities: extractEntities(text),
+    sourceOfTruth: 'conversation',
+    needsClarification: false,
+    rawScore: 1,
+    needsSemanticCheck: false,
+    speechAct: 'answer',
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'answer_to_gaia_question',
+      previousQuestion: prev.slice(0, 80),
+    },
+  };
+}
+
+/**
+ * Volunteered personal sharing without an explicit question — e.g. a user
+ * telling a story with names, relationships, durations, places. This is
+ * information sharing, not a task. Must be distinguished from privacy-
+ * seeking where Gaia would otherwise ask for details.
+ */
+function isVolunteeredPersonalSharing(text) {
+  const t = String(text || '');
+  if (t.length < 60) return false;
+  if (isEmptyOrFiller(t)) return false;
+  // First-person or possessive signals
+  if (!/\b(ik|mijn|mij|we|ons|met .* heb ik|heb ik)\b/i.test(t)) return false;
+  // Personal narrative markers: family/relationship/house/pet/place names
+  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|papegaai|Ierland|Maarn|jaar|jaren|familie)\b/gi) || []).length;
+  const capitalizedNames = (t.match(/\b[A-Z][a-z]{2,}\b/g) || []).length;
+  // Need either multiple names or relationship markers
+  if (personalMarkers + (capitalizedNames >= 3 ? 2 : 0) < 2) return false;
+  // Must not be a request or question
+  if (t.includes('?')) return false;
+  if (/^\s*(waarom|wat is|hoe|kun je|zoek|maak|leg uit)\b/i.test(t)) return false;
+  return true;
+}
+
+function volunteeredSharingDecision(text) {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    intent: 'converse',
+    status: 'accepted',
+    confidence: capConfidence(0.78),
+    candidates: [{ intent: 'converse', score: 0.78 }],
+    entities: extractEntities(text),
+    sourceOfTruth: 'conversation',
+    needsClarification: false,
+    rawScore: 1,
+    needsSemanticCheck: false,
+    speechAct: 'statement',
+    meta: {
+      taxonomyVersion: TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
+      reason: 'volunteered_personal_sharing',
+    },
+  };
+}
+
 // --- creative artifact requests ---------------------------------------------
 //
 // "Wat is een goede songtekst om te zingen?" asks for something to be
@@ -1297,6 +1393,10 @@ function classify(messages, options = {}) {
           } else if (looksLikeContinuation(text)) {
             decision = resolveByInheritance(text, messages, options);
             attachAssistantReferents(decision, text, messages);
+          } else if (isAnswerToPreviousGaiaQuestion(text, messages)) {
+            decision = answerToGaiaQuestionDecision(text, messages);
+          } else if (isVolunteeredPersonalSharing(text)) {
+            decision = volunteeredSharingDecision(text);
           } else {
             decision = unknownWithSourceAttempt(text, options, 'no_signal_matched');
           }
