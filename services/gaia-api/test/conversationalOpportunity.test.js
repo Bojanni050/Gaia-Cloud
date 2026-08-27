@@ -522,3 +522,61 @@ test('regression: volunteered sharing does not contain privacy disclaimer guidan
   assert.match(guidance, /brief acknowledgement or reflection is enough/i);
 });
 
+const LONG_MAARN_WITH_PREFIX = 'ha duidelijk. Ik ben in Maarn, in het huis van Fons en Helen. Fons en Helen zijn de ouders van Thijs. Met Thijs heb ik ruim 8 jaar een relatie gehad. Thijs woont nu in Ierland. Elk jaar gaan Fons en Helen een maand naar Ierland om hem en zijn huidige partner, Mick, te bezoeken. Ik pas op het huis en de twee papegaaien, Dickie en Bailey';
+
+test('regression: "ha duidelijk. Ik ben in Maarn..." still classified as answer_to_gaia_question and never gets clarify', () => {
+  const { classify } = require('../src/logos/intentIQ');
+  const messages = [
+    { role: 'assistant', content: 'Waar ben je nu?' },
+    { role: 'user', content: LONG_MAARN_WITH_PREFIX },
+  ];
+  const decision = classify(messages, { silent: true });
+  assert.equal(decision.intent, 'converse');
+  assert.equal(decision.needsClarification, false);
+  assert.equal(decision.meta.reason, 'answer_to_gaia_question');
+});
+
+test('regression: "ha duidelijk..." turn produces reflection guidance that forbids summary/clarify phrasing', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: LONG_MAARN_WITH_PREFIX,
+    conversationContext: [
+      { role: 'assistant', content: 'Waar ben je nu?' },
+      { role: 'user', content: LONG_MAARN_WITH_PREFIX },
+    ],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  assert.equal(opp.present, true);
+  const guidance = renderOpportunityGuidance(opp);
+  assert.ok(guidance);
+  assert.match(guidance, /Do not say.*could you say a bit more/i);
+  assert.match(guidance, /Respond to the HUMAN MEANING/i);
+  assert.match(guidance, /Do not mechanically summarize/i);
+  assert.match(guidance, /That is a clear situation/i);
+});
+
+test('regression: generic answer turns do not trigger clarify', () => {
+  const { classify } = require('../src/logos/intentIQ');
+  const cases = [
+    { prev: 'Hoe was je dag?', text: 'Best druk. Ik heb vanmiddag eindelijk dat project afgerond.' },
+    { prev: 'Waar ben je?', text: 'Bij mijn ouders. Ze zijn dit weekend weg dus ik pas op het huis.' },
+    { prev: 'Wat ga je vanavond doen?', text: 'Waarschijnlijk gewoon thuis. Ik moet morgen vroeg op.' },
+  ];
+  for (const c of cases) {
+    const decision = classify([{ role: 'assistant', content: c.prev }, { role: 'user', content: c.text }], { silent: true });
+    assert.equal(decision.needsClarification, false, `should not need clarification: ${c.text}`);
+    assert.equal(decision.intent, 'converse', `should be converse: ${c.text}`);
+  }
+});
+
+test('regression: guidance for personal sharing never contains summary formulations as instruction', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: LONG_MAARN_TEXT,
+    conversationContext: [{ role: 'assistant', content: 'Waar ben je nu?' }, { role: 'user', content: LONG_MAARN_TEXT }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  // Guidance itself must forbid, not contain as instruction to say it
+  assert.match(guidance, /Avoid formulations such as "That is a clear situation\."/);
+  assert.match(guidance, /Would this sound natural if a person said it/);
+});
+
