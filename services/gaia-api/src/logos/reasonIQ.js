@@ -71,6 +71,7 @@ const { resolveReasoningModelConfig } = require('./reasoningModelConfigResolver'
 const { createReasoningModelStore } = require('./reasoningModelStore');
 const { SCHEMA_VERSION, REASONER_VERSION } = require('./reasonModels');
 const { logReasoningResult } = require('./reasonLog');
+const { evaluateConversationalOpportunity } = require('./conversationalOpportunity');
 
 // --- reasoning depth heuristic --------------------------------------------
 
@@ -236,6 +237,30 @@ function degradedResult(reason, modelConfigured, evidence = []) {
   }, evidence);
 }
 
+// --- conversational opportunity (advisory, never an instruction) --------
+
+function attachConversationalOpportunity(result, input) {
+  try {
+    const opp = evaluateConversationalOpportunity({
+      text: input.text,
+      conversationContext: input.conversationContext,
+      intentDecision: input.intentDecision,
+    });
+    result.conversationalOpportunity = opp;
+  } catch (_) {
+    // Advisory only — never break reasoning
+    result.conversationalOpportunity = {
+      present: false,
+      strength: 0,
+      subject: null,
+      reason: null,
+      naturalResponse: 'none',
+      suggestedFollowUp: null,
+    };
+  }
+  return result;
+}
+
 // --- public API ------------------------------------------------------------
 
 /**
@@ -303,6 +328,12 @@ async function evaluate(input, options = {}) {
       result = degradedResult(reason, modelConfigured, input.evidence);
     }
   }
+
+  // Conversational opportunity is advisory guidance for Gaia's response
+  // layer — computed deterministically, never a model call, never a
+  // decision to ask a question. Attached on every path (shallow, deep,
+  // degraded) for backwards compatibility (optional field).
+  attachConversationalOpportunity(result, input);
 
   if (!options.silent) {
     logReasoningResult(

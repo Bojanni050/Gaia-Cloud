@@ -40,6 +40,7 @@ const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwar
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
+const { renderOpportunityGuidance } = require('./logos/conversationalOpportunity');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -625,6 +626,17 @@ async function runTurnCore({
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
+
+  // Conversational opportunity — advisory guidance from ReasonIQ to Gaia's
+  // response layer. Present only when ReasonIQ saw a natural human reason to
+  // show interest; never an instruction to ask a question. Gaia's generator
+  // decides whether and how to express it (acknowledgement, reflection,
+  // curiosity, empathy, celebration). No-op when absent/present=false, so
+  // existing consumers (history, decision store, non-generative paths) never see a difference.
+  const opportunityGuidance = renderOpportunityGuidance(
+    reasoningResult && reasoningResult.conversationalOpportunity ? reasoningResult.conversationalOpportunity : null
+  );
+  if (opportunityGuidance) systemMessages.push({ role: 'system', content: opportunityGuidance });
 
   // Use assembleMessages to handle multimodal content
   const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);
