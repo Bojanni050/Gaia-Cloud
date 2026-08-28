@@ -104,17 +104,17 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * Memoryworthiness 0.1: an optional `metadata` record rides along on the
    * retained item (string→string, same as every Hindsight metadata field)
    * alongside the existing source_message_id provenance.
-   * @param {{ summary: string, domain?: string, provenance?: object,
+   * @param {{ summary: string, domain?: string, context?: string, provenance?: object,
    *           metadata?: Record<string,string> }} reflection
    */
-  async function reflect({ summary, domain, provenance = {}, metadata }) {
+  async function reflect({ summary, domain, context, provenance = {}, metadata }) {
     const mergedMetadata = {
       ...(provenance.source_message_id ? { source_message_id: provenance.source_message_id } : {}),
       ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
     };
     const item = {
       content: summary,
-      context: domain || null,
+      context: context || domain || null,
       timestamp: provenance.observed_at || null,
       document_id: provenance.conversation_id || undefined,
       metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,

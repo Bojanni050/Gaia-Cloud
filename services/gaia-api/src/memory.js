@@ -8,6 +8,7 @@
  * contract.
  */
 const { shouldRecall, shouldReflect } = require('./memoryPolicy');
+const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
 
 const MAX_MEMORY_LINES = 6;
 const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.55;
@@ -116,22 +117,54 @@ async function recallRelevantContext(hindsight, query, options = {}) {
  * additively over the existing provenance metadata. The retain/discard
  * GATE itself lives at the call site (turn.js); this function stays the
  * transport.
+ *
+ * Identity: the persisted conversation is Gaia ↔ User (Bojan for dev,
+ * dynamically derived for multi-user). Hermes is a capability, never the
+ * conversational identity. The context and summary use the authoritative
+ * identity module, not hardcoded strings.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {{ conversationId: string, userText: string, assistantText: string,
- *          assistantMessageId?: string, metadata?: Record<string,string> }} turn
+ *          assistantMessageId?: string, metadata?: Record<string,string>,
+ *          userDisplayName?: string, userIdentityOptions?: object,
+ *          capabilityExecutor?: string }} turn
  */
-function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata }) {
+function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText)) return;
+  const assistantIdentity = getAssistantIdentity();
+  const userIdentity = getUserIdentity(
+    userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}
+  );
+  const context = getConversationContext({ userDisplayName: userIdentity.displayName });
+  // Summary uses the authoritative display names, not hardcoded "Bo"/"Gaia" literals
+  const summary = `${userIdentity.displayName}: ${userText}\n\n${assistantIdentity.displayName}: ${assistantText}`;
+  // Identity metadata: conversational agent is always Gaia, even when a
+  // capability (Hermes, etc.) executed internally. Capability executor may
+  // be recorded separately where useful, but never as the conversation agent.
+  const identityMetadata = {
+    agent_identity: assistantIdentity.displayName,
+    conversation_agent: assistantIdentity.displayName,
+    user_display_name: userIdentity.displayName,
+    // Keep platform for observability; Hindsight may also set its own
+    platform: 'api_server',
+    ...(capabilityExecutor ? { capability_executor: capabilityExecutor } : {}),
+  };
+  const mergedMetadataForReflect = { ...identityMetadata, ...(metadata || {}) };
+  // Ensure agent_identity cannot be overridden to Hermes by caller metadata —
+  // conversational identity is always Gaia.
+  mergedMetadataForReflect.agent_identity = assistantIdentity.displayName;
+  mergedMetadataForReflect.conversation_agent = assistantIdentity.displayName;
+
   hindsight.reflect({
     domain: 'context',
-    summary: `Bo: ${userText}\n\nGaia: ${assistantText}`,
+    context,
+    summary,
     provenance: {
       conversation_id: conversationId,
       source_message_id: assistantMessageId,
       observed_at: new Date().toISOString(),
     },
-    metadata,
+    metadata: mergedMetadataForReflect,
   }).catch((err) => {
     console.warn(`reflection failed (non-fatal): ${err.message}`);
   });

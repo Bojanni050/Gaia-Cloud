@@ -334,6 +334,7 @@ async function runTurnCore({
   decisionEngine = decideAction,
   orchestrate = executeDecision,
   onDelta,
+  userDisplayName,
 }) {
   const userText = latestUserText(messages);
 
@@ -737,11 +738,14 @@ async function runTurnCore({
   // Fire-and-forget on both transports; a null decision (module failure)
   // degrades to the legacy shouldReflect-only gate.
   if (hindsight && (!memoryDecision || shouldRetainToHindsight(memoryDecision))) {
+    const capabilityExecutor = decision && decision.capability ? decision.capability : null;
     reflectOnTurn(hindsight, {
       conversationId,
       userText,
       assistantText: replyText,
       metadata: metadataForMemoryDecision(memoryDecision),
+      userDisplayName,
+      capabilityExecutor,
     });
   }
 
@@ -812,6 +816,7 @@ async function performTurn({
   tools,
   decisionEngine = decideAction,
   orchestrate = executeDecision,
+  userDisplayName,
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -835,6 +840,7 @@ async function performTurn({
     tools,
     decisionEngine,
     orchestrate,
+    userDisplayName,
   });
 
   // Non-streaming generation timing: log generation.start/done
@@ -905,6 +911,7 @@ async function performStreamingTurn({
   tools,
   decisionEngine = decideAction,
   orchestrate = executeDecision,
+  userDisplayName,
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -948,6 +955,7 @@ async function performStreamingTurn({
       decisionEngine,
       orchestrate,
       onDelta,
+      userDisplayName,
     });
   } catch (_) {
     // The core must never take down a turn — degrade to the same safe

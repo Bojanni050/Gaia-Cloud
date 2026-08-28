@@ -49,6 +49,7 @@ const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
+const { getUserIdentity } = require('./identity');
 
 const PORT = Number(process.env.PORT || 8891);
 
@@ -211,6 +212,9 @@ function createApp(env = process.env) {
     const conversationId = req.body && req.body.conversationId;
     const attachmentIds = (req.body && req.body.attachmentIds) || [];
     const traceId = `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Conversation identity: Gaia ↔ User (Bojan for dev, dynamic for multi-user)
+    const userIdentity = getUserIdentity({ req, displayName: req.body && req.body.userDisplayName });
+    const userDisplayName = userIdentity.displayName;
 
     // STAGE 1: Log incoming turn request
     console.log(JSON.stringify({
@@ -261,6 +265,7 @@ function createApp(env = process.env) {
         tools: turnTools,
         attachments: resolvedAttachments,
         traceId,
+        userDisplayName,
       });
       return;
     }
@@ -309,6 +314,7 @@ function createApp(env = process.env) {
       conversationId,
       decisionStore,
       tools: turnTools,
+      userDisplayName,
     });
     res.status(result.status).json(result.body);
 
