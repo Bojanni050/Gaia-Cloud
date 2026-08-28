@@ -41,6 +41,7 @@ const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
 const { renderOpportunityGuidance } = require('./logos/conversationalOpportunity');
+const { renderConversationalState } = require('./logos/conversationalState');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -638,6 +639,19 @@ async function runTurnCore({
     reasoningResult && reasoningResult.conversationalOpportunity ? reasoningResult.conversationalOpportunity : null
   );
   if (opportunityGuidance) systemMessages.push({ role: 'system', content: opportunityGuidance });
+
+  // Immediate conversational state — lightweight, no Hindsight, for casual
+  // conversation as a normal state (not a fallback). Gives the generator
+  // the 1-2 turn context it needs to act as a participant: what Gaia just
+  // said, what the user just said, whether this is an answer/sharing/casual
+  // continuation, and that no task exists. Reuses IntentIQ output, no new
+  // classification.
+  const conversationalState = renderConversationalState({
+    intentDecision,
+    messages,
+    userText,
+  });
+  if (conversationalState) systemMessages.push({ role: 'system', content: conversationalState });
 
   // Use assembleMessages to handle multimodal content
   const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);
