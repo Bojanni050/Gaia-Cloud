@@ -20,10 +20,15 @@ ENV NODE_ENV=production
 COPY package.json ./package.json
 RUN npm install --omit=dev
 
+# Generate build metadata at build time
+COPY scripts ./scripts
+RUN node scripts/generate-build-meta.js
+
 COPY src ./src
 COPY public ./public
 COPY identity/soul.md ./soul.md
 COPY foundation-artifact.json ./foundation-artifact.json
+COPY build-meta.json ./build-meta.json
 
 ENV SOUL_PATH=/app/soul.md
 EXPOSE 8891
