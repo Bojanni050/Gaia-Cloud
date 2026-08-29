@@ -61,6 +61,7 @@ jobs:
             cp foundation-artifact.json services/gaia-api/foundation-artifact.json
 
             cd services/gaia-api
+            node scripts/generate-build-meta.js
             docker compose up -d --build
             docker image prune -f
             docker compose ps

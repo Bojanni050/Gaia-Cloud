@@ -50,6 +50,7 @@ const { createConversationStore } = require('./conversationStore');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { getUserIdentity } = require('./identity');
+const { createVersionRouter } = require('./versionRoutes');
 
 const PORT = Number(process.env.PORT || 8891);
 
@@ -193,6 +194,9 @@ function createApp(env = process.env) {
 
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
   app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
+
+  // Version endpoint - public, no auth required
+  app.use('/api', createVersionRouter());
 
   // conversation_search — a real capability/tool over the EXISTING
   // conversation persistence (no second store). Registered like any other

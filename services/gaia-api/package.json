@@ -22,5 +22,8 @@
   "dependencies": {
     "express": "^4.19.2",
     "multer": "^2.0.0"
+  },
+  "devDependencies": {
+    "supertest": "^6.3.3"
   }
 }

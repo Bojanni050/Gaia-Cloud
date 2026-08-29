@@ -20,7 +20,7 @@ services:
     depends_on:
       - gaia-cognition-db
     ports:
-      - "100.65.0.15:8890:8890"
+      - "${COGNITION_HOST:-100.65.0.15}:8890:8890"
     networks:
       - gaia_cognition_default
 

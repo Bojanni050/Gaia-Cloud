@@ -580,3 +580,146 @@ test('regression: guidance for personal sharing never contains summary formulati
   assert.match(guidance, /Would this sound natural if a person said it/);
 });
 
+
+
+// ---------------------------------------------------------------------------
+// NEW REGRESSION TESTS FOR PARAPHRASE REJECTION
+// ---------------------------------------------------------------------------
+
+test('paraphrase regression 1: Pure paraphrase must be rejected - powerbank example', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  // Guidance must contain the ADDITION TEST
+  assert.match(guidance, /THE ADDITION TEST/);
+  assert.match(guidance, /MUST ADD something/);
+  assert.match(guidance, /RESTATEMENT/);
+  assert.match(guidance, /OBSERVATION/);
+  // Guidance must contain paraphrase detection warnings
+  assert.match(guidance, /PARAPHRASE DETECTION/);
+  assert.match(guidance, /Dus je zegt dat/);
+  assert.match(guidance, /Ok\u00e9, \[repetition/);
+});
+
+test('paraphrase regression 2: Grounded observation is preferred when available', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  // Guidance should show the powerbank example
+  assert.match(guidance, /Ik heb eindelijk een powerbank gekocht/);
+  assert.match(guidance, /Kijk, dan heeft die Action-expeditie/);
+  // Guidance should forbid paraphrase
+  assert.match(guidance, /paraphrase/);
+});
+
+test('paraphrase regression 3: Unsupported inference must be rejected', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  // Guidance must forbid unsupported inferences
+  assert.match(guidance, /DO NOT OVERCORRECT/);
+  assert.match(guidance, /You must be wondering why/);
+  assert.match(guidance, /You probably feel/);
+  assert.match(guidance, /unless explicitly supported/);
+});
+
+test('paraphrase regression 4: Short turns remain short - Ja', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ja.',
+    conversationContext: [{ role: 'user', content: 'Ja.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  assert.equal(opp.present, false);
+  assert.equal(opp.naturalResponse, 'none');
+});
+
+test('paraphrase regression 5: Technical requests remain task-focused', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Mijn CSS werkt nog steeds niet.',
+    conversationContext: [{ role: 'user', content: 'Mijn CSS werkt nog steeds niet.' }],
+    intentDecision: { intent: 'create.transform', status: 'accepted', sourceOfTruth: 'conversation' },
+  });
+  assert.equal(opp.present, false);
+  assert.equal(opp.naturalResponse, 'none');
+  assert.match(opp.reason, /task-focused|distracting/i);
+});
+
+test('paraphrase regression 6: Existing observation examples continue to work - Maarn', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'In Maarn.',
+    conversationContext: [
+      { role: 'assistant', content: 'Waar ben je nu?' },
+      { role: 'user', content: 'In Maarn.' },
+    ],
+    intentDecision: { intent: null, status: 'unknown' },
+  });
+  assert.equal(opp.present, true);
+  assert.ok(opp.strength >= 0.7 && opp.strength <= 1);
+  assert.equal(opp.subject, "user's current location");
+  assert.match(opp.reason, /answered a question Gaia previously asked/);
+  assert.equal(opp.naturalResponse, 'curiosity');
+  assert.ok(typeof opp.suggestedFollowUp === 'string' && opp.suggestedFollowUp.length > 0);
+  assert.match(opp.suggestedFollowUp, /Wat brengt je daar/);
+});
+
+test('paraphrase regression 7: Existing observation examples continue to work - website finished', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik ben eindelijk klaar met mijn website.',
+    conversationContext: [{ role: 'user', content: 'Ik ben eindelijk klaar met mijn website.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  assert.equal(opp.present, true);
+  assert.ok(opp.strength > 0.6);
+  assert.match(opp.subject, /website/i);
+  assert.equal(opp.naturalResponse, 'celebration');
+  assert.ok(typeof opp.suggestedFollowUp === 'string');
+  assert.match(opp.suggestedFollowUp, /Hoe is het geworden/);
+});
+
+test('paraphrase regression 8: Guidance contains the Addition Test', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  assert.match(guidance, /THE ADDITION TEST/);
+  assert.match(guidance, /Does this response contain anything that was NOT already explicitly stated/);
+  assert.match(guidance, /If NO: it is a RESTATEMENT/);
+  assert.match(guidance, /If YES: check whether that addition is directly grounded/);
+});
+
+test('paraphrase regression 9: Guidance contains Paraphrase Detection warnings', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  assert.match(guidance, /PARAPHRASE DETECTION - WARNING SIGNS/);
+  assert.match(guidance, /Dus je zegt dat/);
+  assert.match(guidance, /Je bedoelt dus/);
+  assert.match(guidance, /Ok\u00e9, \[repetition/);
+  assert.match(guidance, /These are appropriate ONLY when clarification is genuinely necessary/);
+});
+
+test('paraphrase regression 10: Guidance contains DO NOT OVERCORRECT section', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Ik heb eindelijk een powerbank gekocht.',
+    conversationContext: [{ role: 'user', content: 'Ik heb eindelijk een powerbank gekocht.' }],
+    intentDecision: { intent: 'converse', status: 'accepted' },
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  assert.match(guidance, /DO NOT OVERCORRECT/);
+  assert.match(guidance, /Small grounded observations are sufficient/);
+  assert.match(guidance, /unless explicitly supported by the conversation/);
+});
