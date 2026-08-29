@@ -19,7 +19,7 @@ services:
       # Tailscale-only, same posture as Hindsight and gaia-cognition:
       # reachable from the tailnet (desktop clients live there), never
       # exposed to the open internet. Auth is the bearer token.
-      - "100.64.144.93:8891:8891"
+      - "100.65.0.15:8891:8891"
     networks:
       - default
       - hermes_net

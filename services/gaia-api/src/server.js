@@ -62,7 +62,7 @@ function createApp(env = process.env) {
     authToken: env.HERMES_AUTH_TOKEN,
   });
   const hindsight = createHindsightClient({
-    baseUrl: env.HINDSIGHT_URL || 'http://100.64.144.93:8888',
+    baseUrl: env.HINDSIGHT_URL || 'http://100.65.0.15:8888',
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });

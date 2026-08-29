@@ -32,6 +32,7 @@
 
 const { buildSystemPrompt } = require('./foundation');
 const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
+const { searchRelevantKnowledgePages, renderKnowledgePageContext } = require('./knowledgePages');
 const { assembleEvidence } = require('./reasoning/evidenceAssembler');
 const {
   evaluateMemoryWorthiness, shouldRetainToHindsight, metadataForMemoryDecision, logMemoryWorthiness,
@@ -389,7 +390,7 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns] = await Promise.all([
+  const [reflections, mentalModels, recalledPatterns, knowledgePages] = await Promise.all([
     hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
@@ -399,6 +400,12 @@ async function runTurnCore({
         console.warn(`[gaia:patterns] recall failed (non-fatal): ${err.message}`);
         return [];
       })
+      : Promise.resolve([]),
+    // Knowledge Pages (knowledgePages.js): current CONSOLIDATED understanding,
+    // distinct from the raw-memory recall above — gated separately
+    // (shouldSearchKnowledgeBase), never throws, never blocks the turn.
+    hindsight
+      ? searchRelevantKnowledgePages(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
@@ -611,6 +618,7 @@ async function runTurnCore({
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
+  const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
 
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
@@ -625,6 +633,7 @@ async function runTurnCore({
   const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
   if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
+  if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });

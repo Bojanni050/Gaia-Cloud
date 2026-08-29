@@ -308,7 +308,268 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     return true;
   }
 
-  return { recall, reflect, getMentalModel, retainSync, listMemories, getMemory, patchMemoryState };
+  /**
+   * Knowledge Pages — Hindsight's native, client-managed knowledge-base
+   * layer (folders + pages) sitting on top of the same bank's raw
+   * memories. A page is a mental model wearing a tree-node identity: its
+   * content is synthesized (and kept current) by Hindsight itself, from
+   * this bank's memories, via `source_query`. This is an ADDITIONAL layer
+   * over recall/reflect above — it never replaces or modifies the raw
+   * memory store; it reads from and rebuilds against it.
+   */
+  const knowledgeBaseUrl = (path = '') => bankUrl(`/knowledge-base${path}`);
+
+  /**
+   * POST /knowledge-base/folders — a pure grouping node, no content of its
+   * own.
+   * @param {{ name: string, parentId?: string|null }} folder
+   * @returns {Promise<{ id: string, kind: string, name: string, parentId: string|null }>}
+   */
+  async function createKnowledgeFolder({ name, parentId } = {}) {
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl('/folders'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name, parent_id: parentId ?? null }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge folder create unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge folder create responded ${response.status}`);
+    }
+    const data = await response.json();
+    return { id: data.id, kind: data.kind, name: data.name, parentId: data.parent_id ?? null };
+  }
+
+  /**
+   * POST /knowledge-base/pages — creates a page (a mental model + tree
+   * node) that synthesizes and periodically re-synthesizes its content
+   * from `sourceQuery` against this bank's memories. Async: the initial
+   * content generation runs after this call returns (see `operationId`);
+   * read it back with getKnowledgePage once ready.
+   * @param {{ name: string, sourceQuery: string, parentId?: string|null,
+   *           tags?: string[], maxTokens?: number,
+   *           refreshAfterConsolidation?: boolean }} page
+   * @returns {Promise<{ pageId: string, mentalModelId: string, operationId: string|null }>}
+   */
+  async function createKnowledgePage({ name, sourceQuery, parentId, tags, maxTokens, refreshAfterConsolidation } = {}) {
+    const body = {
+      name,
+      source_query: sourceQuery,
+      parent_id: parentId ?? null,
+    };
+    if (Array.isArray(tags)) body.tags = tags;
+    if (typeof maxTokens === 'number') body.max_tokens = maxTokens;
+    if (typeof refreshAfterConsolidation === 'boolean') {
+      body.trigger = { refresh_after_consolidation: refreshAfterConsolidation };
+    }
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl('/pages'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge page create unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge page create responded ${response.status}`);
+    }
+    const data = await response.json();
+    return { pageId: data.page_id, mentalModelId: data.mental_model_id, operationId: data.operation_id ?? null };
+  }
+
+  /**
+   * GET /knowledge-base/pages/{id} — reads one page as its full synthesized
+   * markdown document. Null on any failure (unreachable, 404, not yet
+   * generated) — same "not available yet" posture as getMentalModel,
+   * including the same "Generating content..." placeholder a freshly
+   * created (or currently refreshing) page reports before synthesis
+   * finishes.
+   * @param {string} pageId
+   * @returns {Promise<{ id: string, name: string, type: string, description: string|null,
+   *   tags: string[], timestamp: string|null, body: string|null, markdown: string }|null>}
+   */
+  async function getKnowledgePage(pageId) {
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl(`/pages/${encodeURIComponent(pageId)}`), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (_) {
+      return null;
+    }
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    if (!data) return null;
+    if (!data.body || data.body === 'Generating content...') return null;
+    return {
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      description: data.description ?? null,
+      tags: data.tags || [],
+      timestamp: data.timestamp ?? null,
+      body: data.body ?? null,
+      markdown: data.markdown,
+    };
+  }
+
+  /**
+   * GET /knowledge-base/search — hybrid (BM25 + vector, RRF-fused) search
+   * over the curated knowledge base ONLY, never raw memories (that stays
+   * recall()'s job). Throws on failure, same contract as recall() — the
+   * caller (knowledgePages.js) is the policy-gated, never-throws seam.
+   * @param {string} query
+   * @param {{ limit?: number }} [options]
+   * @returns {Promise<Array<{ id: string, name: string, mentalModelId: string|null,
+   *   snippet: string, score: number, updatedAt: string|null }>>}
+   */
+  async function searchKnowledgeBase(query, { limit } = {}) {
+    const params = new URLSearchParams({ q: query });
+    if (limit) params.set('limit', String(limit));
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl(`/search?${params.toString()}`), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge search unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge search responded ${response.status}`);
+    }
+    const data = await response.json();
+    return (data.results || []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      mentalModelId: r.mental_model_id ?? null,
+      snippet: r.snippet,
+      score: r.score,
+      updatedAt: r.updated_at ?? null,
+    }));
+  }
+
+  /**
+   * GET /knowledge-base/tree — the whole knowledge base as a nested
+   * folder/page tree. Used for idempotent provisioning (find-by-name-and-
+   * parent before creating) and for browsing. Throws on failure — callers
+   * that must not break a turn should wrap this themselves.
+   * @returns {Promise<Array<object>>} roots, each `{ id, kind, name, parentId,
+   *   mentalModelId, managed, description, tags, timestamp, isStale, children }`
+   */
+  async function getKnowledgeTree() {
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl('/tree'), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge tree unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge tree responded ${response.status}`);
+    }
+    const data = await response.json();
+    const mapNode = (n) => ({
+      id: n.id,
+      kind: n.kind,
+      name: n.name,
+      parentId: n.parent_id ?? null,
+      mentalModelId: n.mental_model_id ?? null,
+      managed: Boolean(n.managed),
+      description: n.description ?? null,
+      tags: n.tags || [],
+      timestamp: n.timestamp ?? null,
+      isStale: n.is_stale ?? null,
+      children: (n.children || []).map(mapNode),
+    });
+    return (data.roots || []).map(mapNode);
+  }
+
+  /**
+   * PATCH /knowledge-base/nodes/{id} — rename/move a folder or page, and/or
+   * update a page's own options. Only fields explicitly present in the
+   * options object are sent, matching the API's "only what you pass
+   * changes" contract.
+   * @param {string} nodeId
+   * @param {{ name?: string, parentId?: string, sourceQuery?: string,
+   *           tags?: string[], maxTokens?: number }} options
+   */
+  async function updateKnowledgeNode(nodeId, options = {}) {
+    const body = {};
+    if (typeof options.name === 'string') body.name = options.name;
+    if (typeof options.parentId === 'string') body.parent_id = options.parentId;
+    if (typeof options.sourceQuery === 'string') body.source_query = options.sourceQuery;
+    if (Array.isArray(options.tags)) body.tags = options.tags;
+    if (typeof options.maxTokens === 'number') body.max_tokens = options.maxTokens;
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge node update unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge node update responded ${response.status}`);
+    }
+    return true;
+  }
+
+  /**
+   * DELETE /knowledge-base/nodes/{id} — deletes a folder (and its whole
+   * subtree) or a page (and its backing mental model). Irreversible;
+   * never called automatically by anything in this codebase.
+   * @param {string} nodeId
+   */
+  async function deleteKnowledgeNode(nodeId) {
+    let response;
+    try {
+      response = await fetchImpl(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
+        method: 'DELETE',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new Error(`hindsight knowledge node delete unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      throw new Error(`hindsight knowledge node delete responded ${response.status}`);
+    }
+    return true;
+  }
+
+  return {
+    recall,
+    reflect,
+    getMentalModel,
+    retainSync,
+    listMemories,
+    getMemory,
+    patchMemoryState,
+    createKnowledgeFolder,
+    createKnowledgePage,
+    getKnowledgePage,
+    searchKnowledgeBase,
+    getKnowledgeTree,
+    updateKnowledgeNode,
+    deleteKnowledgeNode,
+  };
 }
 
 module.exports = { createHindsightClient };

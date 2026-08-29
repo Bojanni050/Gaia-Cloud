@@ -169,7 +169,7 @@ HERMES_MODEL=llama3 npm start
 ## Deploy (VPS)
 
 Same posture as Hindsight and gaia-cognition: Tailscale-only binding
-(`100.64.144.93:8891`), token auth, `.env` untracked on the host.
+(`100.65.0.15:8891`), token auth, `.env` untracked on the host.
 
 ```bash
 cp .env.example .env   # fill in
@@ -178,7 +178,7 @@ docker compose up -d --build
 
 Desktop clients then configure (Settings → Gaia Cloud):
 
-- **Server URL:** `http://100.64.144.93:8891`
+- **Server URL:** `http://100.65.0.15:8891`
 - **Auth token:** one of the `GAIA_API_TOKEN` values
 
 ## Reaching Hermes
@@ -187,7 +187,7 @@ Desktop clients then configure (Settings → Gaia Cloud):
 (`http://hermes:8642/v1`). hermes-agent binds only to its own docker
 network (`hermes-agent_default`); this service joins that network in
 `docker-compose.yml` exactly like `gaia-hermes-proxy` does. The Tailscale
-IP does **not** expose Hermes — don't use `100.64.144.93:8642`.
+IP does **not** expose Hermes — don't use `100.65.0.15:8642`.
 
 > **Shared secret — rotate in both places.** `HERMES_AUTH_TOKEN` is the
 > same token `gaia-hermes-proxy` injects when *it* talks to hermes-agent
