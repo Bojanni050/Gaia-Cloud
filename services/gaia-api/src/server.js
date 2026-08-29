@@ -109,12 +109,35 @@ function createApp(env = process.env) {
       },
     };
   }
+  // Durable IntentIQ/ReasonIQ decision log (adminRoutes.js's
+  // /admin/api/logos/decisions) — created here, ahead of the native
+  // generator below, so its sink can also capture kind 'llm.call' records:
+  // every actual LLM HTTP call IntentIQ/ReasonIQ/the native generator
+  // makes, not just the decision each one eventually reaches (a decision
+  // can be reached without a model call at all — heuristic-only
+  // classification, shallow reasoning — so the two are genuinely
+  // different observability questions).
+  const decisionStore = createDecisionStore(
+    env.LOGOS_DECISIONS_PATH !== undefined ? { decisionsDir: env.LOGOS_DECISIONS_PATH } : {}
+  );
+  const llmCallLogger = (line) => {
+    console.log(line);
+    try {
+      decisionStore.append(JSON.parse(line));
+    } catch (_) {
+      // Never let observability persistence affect a real call.
+    }
+  };
+
   // Gaia's native voice (src/generation/gaiaGenerator.js) — undefined when
   // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case the
   // Decision Engine never sees a "native" capability and every turn routes
   // through Hermes exactly as before this existed (see .env.example).
   // Provider store may override env vars when role selections exist.
-  const nativeGenerator = createNativeGeneratorFromEnv(env);
+  // `llmCallLogger` is bound here (not threaded per-call like IntentIQ/
+  // ReasonIQ) because this client is a singleton invoked from
+  // orchestrator.js, which has no per-turn logger in scope.
+  const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger);
   // Gaia's voice (src/speech/mimoTts.js) — undefined when GAIA_TTS_BASE_URL/
   // GAIA_TTS_MODEL are unset, in which case POST /speech answers 503
   // rather than attempting a call with nothing configured. Entirely
@@ -153,9 +176,6 @@ function createApp(env = process.env) {
   );
   const providerStore = createProviderStore(
     env.GAIA_PROVIDER_CONFIG_PATH !== undefined ? { storePath: env.GAIA_PROVIDER_CONFIG_PATH } : {}
-  );
-  const decisionStore = createDecisionStore(
-    env.LOGOS_DECISIONS_PATH !== undefined ? { decisionsDir: env.LOGOS_DECISIONS_PATH } : {}
   );
   app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, auth }));
 

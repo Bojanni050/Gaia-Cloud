@@ -297,7 +297,7 @@ async function evaluate(input, options = {}) {
   } else {
     const messages = buildReasoningPrompt(input);
     try {
-      const raw = await model.chat(messages);
+      const raw = await model.chat(messages, { logger: options.logger });
       // The supplied evidence list is also the provenance whitelist (0.2
       // §16): any evidence id the model cites that is not in it was
       // invented, and is stripped before the result goes anywhere. 0.3

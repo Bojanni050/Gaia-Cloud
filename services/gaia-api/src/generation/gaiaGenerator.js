@@ -30,6 +30,8 @@
  *   GAIA_NATIVE_AUTH_TOKEN  – optional bearer token.
  */
 
+const { logLlmCall } = require('../logos/llmCallLog');
+
 const DEFAULT_TIMEOUT_MS = 60000;
 
 /**
@@ -62,7 +64,13 @@ function isConfigured(config) {
  *   authToken?: string,
  *   fetchImpl?: Function,
  *   timeoutMs?: number,
- * }} options
+ *   logger?: (line: string) => void,
+ * }} options `logger` is bound once here rather than passed per-call: unlike
+ *   IntentIQ/ReasonIQ (which get a fresh per-turn logger from turn.js
+ *   threaded through their own options), the native generator is a
+ *   singleton constructed once at server startup and invoked from
+ *   orchestrator.js with no logger in scope there — so server.js supplies
+ *   the same console.log+decisionStore sink at construction time instead.
  * @returns {{
  *   generate: (messages: Array<{role: string, content: string}>, options?: object) => Promise<string>,
  *   stream: (messages: Array<{role: string, content: string}>, options?: { onDelta?: Function }) => Promise<string>,
@@ -74,6 +82,21 @@ function createGaiaGenerator(options = {}) {
   const authToken = options.authToken || '';
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const logger = options.logger;
+
+  const logCall = (ok, errorMessage, latencyMs, purpose) => {
+    if (!logger) return;
+    logLlmCall({
+      system: 'native',
+      provider: 'gaia-native',
+      baseUrl,
+      model,
+      purpose,
+      latencyMs,
+      ok,
+      errorMessage: errorMessage || null,
+    }, logger);
+  };
 
   if (!baseUrl) {
     throw new Error('GAIA_NATIVE_BASE_URL is required for native generation');
@@ -91,8 +114,9 @@ function createGaiaGenerator(options = {}) {
    * @returns {Promise<string>}
    */
   async function generate(messages) {
+    const startedAt = Date.now();
     // Diagnostic logging (temporary)
-    const imageBlockPresent = messages.some((m) => 
+    const imageBlockPresent = messages.some((m) =>
       Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url')
     );
     console.log(JSON.stringify({
@@ -113,11 +137,13 @@ function createGaiaGenerator(options = {}) {
       });
     } catch (error) {
       console.error(`[gaia:native] unreachable at ${baseUrl}: ${error.message}`);
+      logCall(false, 'unreachable', Date.now() - startedAt, 'generate');
       throw new Error('native generator unreachable');
     }
 
     if (!response.ok) {
       console.error(`[gaia:native] responded ${response.status} at ${baseUrl}`);
+      logCall(false, `HTTP ${response.status}`, Date.now() - startedAt, 'generate');
       throw new Error('native generator responded with an error');
     }
 
@@ -126,6 +152,7 @@ function createGaiaGenerator(options = {}) {
       data = await response.json();
     } catch (_) {
       console.error(`[gaia:native] unreadable response at ${baseUrl}`);
+      logCall(false, 'unreadable response', Date.now() - startedAt, 'generate');
       throw new Error('native generator returned an unreadable response');
     }
 
@@ -142,8 +169,10 @@ function createGaiaGenerator(options = {}) {
       : undefined;
     if (typeof content !== 'string' || content.length === 0) {
       console.error(`[gaia:native] no content in response at ${baseUrl}`);
+      logCall(false, 'no content in response', Date.now() - startedAt, 'generate');
       throw new Error('native generator returned no content');
     }
+    logCall(true, null, Date.now() - startedAt, 'generate');
     return content;
   }
 
@@ -158,6 +187,7 @@ function createGaiaGenerator(options = {}) {
    * @returns {Promise<string>}
    */
   async function stream(messages, { signal, onDelta } = {}) {
+    const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
@@ -168,11 +198,13 @@ function createGaiaGenerator(options = {}) {
       });
     } catch (error) {
       console.error(`[gaia:native] stream unreachable at ${baseUrl}: ${error.message}`);
+      logCall(false, 'unreachable', Date.now() - startedAt, 'stream');
       throw new Error('native generator unreachable');
     }
 
     if (!response.ok || !response.body) {
       console.error(`[gaia:native] stream responded ${response.status} at ${baseUrl}`);
+      logCall(false, `HTTP ${response.status}`, Date.now() - startedAt, 'stream');
       throw new Error('native generator responded with an error');
     }
 
@@ -206,13 +238,16 @@ function createGaiaGenerator(options = {}) {
     } catch (error) {
       if (signal?.aborted) throw error;
       console.error(`[gaia:native] stream read failed at ${baseUrl}: ${error.message}`);
+      logCall(false, 'stream read failed', Date.now() - startedAt, 'stream');
       throw new Error('native generator stream failed');
     }
 
     if (fullText.length === 0) {
       console.error(`[gaia:native] stream produced no content at ${baseUrl}`);
+      logCall(false, 'no content in response', Date.now() - startedAt, 'stream');
       throw new Error('native generator returned no content');
     }
+    logCall(true, null, Date.now() - startedAt, 'stream');
     return fullText;
   }
 
@@ -249,11 +284,14 @@ function parseSseFrame(frame) {
  * should treat `undefined` as "no native generator available" and simply
  * omit it, exactly like an omitted `tools` param elsewhere in this codebase.
  * @param {NodeJS.ProcessEnv} [env]
+ * @param {(line: string) => void} [logger] forwarded to createGaiaGenerator
+ *   for llm.call logging — see its own doc comment for why this is bound
+ *   at construction rather than passed per-call.
  * @returns {{ generate: Function, stream: Function }|undefined}
  */
-function createFromEnv(env = process.env) {
+function createFromEnv(env = process.env, logger) {
   const config = readNativeConfig(env);
-  return isConfigured(config) ? createGaiaGenerator(config) : undefined;
+  return isConfigured(config) ? createGaiaGenerator({ ...config, logger }) : undefined;
 }
 
 module.exports = { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv };

@@ -63,6 +63,7 @@
   .decision-badge { font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px; letter-spacing: 0.02em; }
   .decision-badge.intentiq { background: #2a2410; color: #d2a24c; }
   .decision-badge.reasoniq { background: #10241f; color: #7fbf8f; }
+  .decision-badge.llm-call { background: #24191c; color: #d98a9b; }
   .decision-time { color: #6b6459; font-size: 0.72rem; }
   .decision-summary { color: #ece7dc; }
   .decision-input { color: #9b9484; margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
@@ -272,6 +273,7 @@
           <option value="">All</option>
           <option value="intentiq.decision">IntentIQ</option>
           <option value="reasoniq.result">ReasonIQ</option>
+          <option value="llm.call">LLM calls</option>
         </select>
       </div>
       <div style="flex:0 0 90px; min-width:90px;">
@@ -753,7 +755,24 @@
         d.fallbackReason ? 'fallback: ' + d.fallbackReason : null,
       ].filter(Boolean).join(' · ');
     }
+    if (d.kind === 'llm.call') {
+      return [
+        (d.ok ? '✓ ok' : '✗ failed'),
+        'model: ' + (d.model || '—'),
+        d.provider ? 'provider: ' + d.provider : null,
+        d.purpose ? 'purpose: ' + d.purpose : null,
+        typeof d.latencyMs === 'number' ? d.latencyMs + 'ms' : null,
+        d.errorMessage ? 'error: ' + d.errorMessage : null,
+      ].filter(Boolean).join(' · ');
+    }
     return JSON.stringify(d);
+  }
+
+  function systemLabel(system) {
+    if (system === 'intentiq') return 'IntentIQ';
+    if (system === 'reasoniq') return 'ReasonIQ';
+    if (system === 'native') return 'Gaia (native)';
+    return system || '?';
   }
 
   function renderDecisions(decisions) {
@@ -762,8 +781,14 @@
       return;
     }
     decisionsListEl.innerHTML = decisions.map((d) => {
-      const badgeClass = d.kind === 'intentiq.decision' ? 'intentiq' : d.kind === 'reasoniq.result' ? 'reasoniq' : '';
-      const badgeLabel = d.kind === 'intentiq.decision' ? 'IntentIQ' : d.kind === 'reasoniq.result' ? 'ReasonIQ' : (d.kind || '?');
+      const badgeClass = d.kind === 'intentiq.decision' ? 'intentiq'
+        : d.kind === 'reasoniq.result' ? 'reasoniq'
+        : d.kind === 'llm.call' ? 'llm-call'
+        : '';
+      const badgeLabel = d.kind === 'intentiq.decision' ? 'IntentIQ'
+        : d.kind === 'reasoniq.result' ? 'ReasonIQ'
+        : d.kind === 'llm.call' ? 'LLM call · ' + systemLabel(d.system)
+        : (d.kind || '?');
       return (
         '<div class="decision-row">' +
           '<div class="decision-head">' +

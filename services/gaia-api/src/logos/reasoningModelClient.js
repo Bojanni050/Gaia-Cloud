@@ -24,6 +24,8 @@
  *                                upstream, never returned to any client.
  */
 
+const { logLlmCall } = require('./llmCallLog');
+
 const DEFAULT_TIMEOUT_MS = 60000;
 
 /** @param {NodeJS.ProcessEnv} env */
@@ -60,10 +62,25 @@ function createReasoningModelClient(options = {}) {
 
   /**
    * @param {Array<{role: string, content: string|Array<object>}>} messages content may be a plain string, or an OpenAI-compatible content-block array (e.g. for image_url blocks — see ocrResolver.js)
-   * @param {{ responseFormat?: object|null }} [options] Defaults to forcing `{type:"json_object"}`, ReasonIQ's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking ReasonIQ's structured-output question).
+   * @param {{ responseFormat?: object|null, logger?: (line: string) => void }} [options] Defaults to forcing `{type:"json_object"}`, ReasonIQ's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking ReasonIQ's structured-output question). `logger` is the same per-turn sink reasonIQ.js's evaluate() receives for logReasoningResult — forwarded here so an actual LLM call gets logged too (kind 'llm.call'), distinct from the reasoning result itself.
    * @returns {Promise<string>} the raw text content of the completion — the caller parses/validates it, this client does not.
    */
   async function chat(messages, options = {}) {
+    const startedAt = Date.now();
+    const logCall = (ok, errorMessage) => {
+      if (!options.logger) return;
+      logLlmCall({
+        system: 'reasoniq',
+        provider: config.provider,
+        baseUrl: config.baseUrl,
+        model: config.model,
+        purpose: 'reason',
+        latencyMs: Date.now() - startedAt,
+        ok,
+        errorMessage: errorMessage || null,
+      }, options.logger);
+    };
+
     if (!isConfigured(config)) {
       throw new Error('reasoning model not configured (REASONIQ_MODEL_BASE_URL / REASONIQ_MODEL_NAME unset)');
     }
@@ -85,11 +102,13 @@ function createReasoningModelClient(options = {}) {
       });
     } catch (error) {
       console.error(`[reasonIQ:model] unreachable at ${config.baseUrl}: ${error.message}`);
+      logCall(false, 'unreachable');
       throw new Error('reasoning model unreachable');
     }
 
     if (!response.ok) {
       console.error(`[reasonIQ:model] responded ${response.status} at ${config.baseUrl}`);
+      logCall(false, `HTTP ${response.status}`);
       throw new Error('reasoning model responded with an error');
     }
 
@@ -98,6 +117,7 @@ function createReasoningModelClient(options = {}) {
       data = await response.json();
     } catch (_) {
       console.error(`[reasonIQ:model] unreadable response at ${config.baseUrl}`);
+      logCall(false, 'unreadable response');
       throw new Error('reasoning model returned an unreadable response');
     }
 
@@ -106,8 +126,10 @@ function createReasoningModelClient(options = {}) {
       : undefined;
     if (typeof content !== 'string' || content.length === 0) {
       console.error(`[reasonIQ:model] no content in response at ${config.baseUrl}`);
+      logCall(false, 'no content in response');
       throw new Error('reasoning model returned no content');
     }
+    logCall(true);
     return content;
   }
 

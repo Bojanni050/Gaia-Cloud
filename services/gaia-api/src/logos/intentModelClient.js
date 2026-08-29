@@ -27,6 +27,8 @@
  *   GAIA_INTENT_AUTH_TOKEN - optional bearer token.
  */
 
+const { logLlmCall } = require('./llmCallLog');
+
 const DEFAULT_TIMEOUT_MS = 20000;
 
 /** @param {NodeJS.ProcessEnv} [env] */
@@ -72,9 +74,30 @@ function createIntentModelClient(options = {}) {
 
   /**
    * @param {Array<{role: string, content: string}>} messages
+   * @param {{ logger?: (line: string) => void }} [callOptions] `logger` is the
+   *   same per-turn sink intentIQ.js already threads to logIntentDecision
+   *   (console.log + decisionStore.append under kind 'llm.call' when wired
+   *   in turn.js) — omitted in tests/other callers, in which case this call
+   *   simply isn't logged rather than falling back to a default sink, since
+   *   an unwired caller has no durable store to append to anyway.
    * @returns {Promise<string>} the raw text content of the completion — the caller (intentIQ.js) parses/validates it, this client does not.
    */
-  async function chat(messages) {
+  async function chat(messages, callOptions = {}) {
+    const startedAt = Date.now();
+    const logCall = (ok, errorMessage) => {
+      if (!callOptions.logger) return;
+      logLlmCall({
+        system: 'intentiq',
+        provider: 'intent-model',
+        baseUrl,
+        model,
+        purpose: 'classify',
+        latencyMs: Date.now() - startedAt,
+        ok,
+        errorMessage: errorMessage || null,
+      }, callOptions.logger);
+    };
+
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
@@ -85,11 +108,13 @@ function createIntentModelClient(options = {}) {
       });
     } catch (error) {
       console.error(`[intentIQ:model] unreachable at ${baseUrl}: ${error.message}`);
+      logCall(false, 'unreachable');
       throw new Error('intent model unreachable');
     }
 
     if (!response.ok) {
       console.error(`[intentIQ:model] responded ${response.status} at ${baseUrl}`);
+      logCall(false, `HTTP ${response.status}`);
       throw new Error('intent model responded with an error');
     }
 
@@ -98,6 +123,7 @@ function createIntentModelClient(options = {}) {
       data = await response.json();
     } catch (_) {
       console.error(`[intentIQ:model] unreadable response at ${baseUrl}`);
+      logCall(false, 'unreadable response');
       throw new Error('intent model returned an unreadable response');
     }
 
@@ -106,8 +132,10 @@ function createIntentModelClient(options = {}) {
       : undefined;
     if (typeof content !== 'string' || content.length === 0) {
       console.error(`[intentIQ:model] no content in response at ${baseUrl}`);
+      logCall(false, 'no content in response');
       throw new Error('intent model returned no content');
     }
+    logCall(true);
     return content;
   }
 

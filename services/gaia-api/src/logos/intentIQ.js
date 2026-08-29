@@ -1693,7 +1693,7 @@ function attachAssistantReferents(decision, text, messages) {
  *
  * @param {string} text
  * @param {{ recentTurns?: Array<{role:string,content:string}>, heuristicResult?: object }} [context]
- * @param {{ model?: { chat: (messages: Array) => Promise<string> } }} [options] `model` is injectable for tests; defaults to intentModelClient.js's createFromEnv(process.env).
+ * @param {{ model?: { chat: (messages: Array) => Promise<string> }, logger?: (line: string) => void }} [options] `model` is injectable for tests; defaults to intentModelClient.js's createFromEnv(process.env). `logger` is the same per-turn sink passed to intentIQ() for logIntentDecision — forwarded to the model client so an actual LLM call gets logged too (kind 'llm.call'), distinct from the classification decision itself.
  * @returns {Promise<{ attempted: boolean, result: object|null }>} `attempted` is true only when a real model call was actually issued (for observability — "semantic call yes/no"), independent of whether it succeeded.
  */
 async function classifySemantic(text, context = {}, options = {}) {
@@ -1708,7 +1708,7 @@ async function classifySemantic(text, context = {}, options = {}) {
       recentTurns: context.recentTurns,
       heuristicResult: context.heuristicResult,
     });
-    const raw = await model.chat(messages);
+    const raw = await model.chat(messages, { logger: options.logger });
     const result = parseAndValidateSemanticOutput(raw);
     return { attempted: true, result };
   } catch (err) {
@@ -1987,7 +1987,7 @@ async function interpret(messages, options = {}) {
       semantic = await classifySemantic(
         text,
         { recentTurns, heuristicResult: heuristic },
-        { model: options.model }
+        { model: options.model, logger: options.logger }
       );
     }
   }
