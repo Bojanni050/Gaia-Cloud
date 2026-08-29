@@ -189,6 +189,7 @@ function createApp(env = process.env) {
         baseUrl: providerNativeConfig.baseUrl,
         model: providerNativeConfig.model,
         authToken: providerNativeConfig.apiKey,
+        logger: llmCallLogger,
       })
     : nativeGenerator;
 
