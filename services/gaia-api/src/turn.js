@@ -644,9 +644,10 @@ async function runTurnCore({
   // decides whether and how to express it (acknowledgement, reflection,
   // curiosity, empathy, celebration). No-op when absent/present=false, so
   // existing consumers (history, decision store, non-generative paths) never see a difference.
-  const opportunityGuidance = renderOpportunityGuidance(
-    reasoningResult && reasoningResult.conversationalOpportunity ? reasoningResult.conversationalOpportunity : null
-  );
+  const opportunity = reasoningResult && reasoningResult.conversationalOpportunity
+    ? reasoningResult.conversationalOpportunity
+    : null;
+  const opportunityGuidance = renderOpportunityGuidance(opportunity);
   if (opportunityGuidance) systemMessages.push({ role: 'system', content: opportunityGuidance });
 
   // Immediate conversational state — lightweight, no Hindsight, for casual
@@ -654,11 +655,14 @@ async function runTurnCore({
   // the 1-2 turn context it needs to act as a participant: what Gaia just
   // said, what the user just said, whether this is an answer/sharing/casual
   // continuation, and that no task exists. Reuses IntentIQ output, no new
-  // classification.
+  // classification. `opportunityPresent` tells it whether the opportunity
+  // block above already carried the anti-generic-empathy quality bar this
+  // turn, so it isn't duplicated when both fire.
   const conversationalState = renderConversationalState({
     intentDecision,
     messages,
     userText,
+    opportunityPresent: Boolean(opportunity && opportunity.present),
   });
   if (conversationalState) systemMessages.push({ role: 'system', content: conversationalState });
 

@@ -9,6 +9,7 @@
  * not a Hindsight retrieval. It reuses IntentIQ's output and the last
  * 1-2 turns to produce a 2-4 line advisory for the prompt.
  */
+const { renderQualityBar } = require('./conversationalOpportunity');
 
 function lastAssistantText(messages) {
   if (!Array.isArray(messages)) return null;
@@ -82,7 +83,7 @@ function isTrivialGreeting(text) {
   return false;
 }
 
-function renderConversationalState({ intentDecision, messages, userText }) {
+function renderConversationalState({ intentDecision, messages, userText, opportunityPresent = false }) {
   if (isTrivialGreeting(userText)) return null;
   const type = inferInteractionType({ intentDecision, userText, messages });
   const prevAssistant = lastAssistantText(messages);
@@ -116,6 +117,18 @@ function renderConversationalState({ intentDecision, messages, userText }) {
     lines.push('- Keep it light and short: 1 sentence for small turns, 1–3 for normal. No paragraphs for "haha ja"/"Ja."');
     lines.push('- Question discipline: only ask a question if earned by the conversation and grounded in specific details; never append a generic question to continue engagement.');
     lines.push('- Be specific to this conversation (could this response have been written without the preceding context? If yes, too generic). Do not over-interpret or invent hidden meaning/personality traits.');
+
+    // The full anti-generic-empathy/paraphrase quality bar (conversationalOpportunity.js)
+    // used to reach the model ONLY when evaluateConversationalOpportunity's narrow
+    // achievement/rich-context/answer heuristics happened to fire — an ordinary
+    // casual/sharing turn with none of those markers got none of this guidance at
+    // all. This is the broader, always-applicable gate (any non-task turn), so
+    // fold it in here too. Skipped when the opportunity block already included it
+    // this turn (opportunityPresent) to avoid sending the same ~50 lines twice.
+    if (!opportunityPresent) {
+      lines.push('');
+      lines.push(renderQualityBar());
+    }
   }
 
   return lines.join('\n');
