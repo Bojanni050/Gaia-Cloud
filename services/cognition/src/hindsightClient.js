@@ -4,7 +4,7 @@
  * real Hindsight memory (architecture.md §6.1: confirmed hypotheses promote
  * into facts through the normal memory-policy path).
  */
-const HINDSIGHT_URL = (process.env.HINDSIGHT_URL || 'http://100.64.144.93:8888').replace(/\/+$/, '');
+const HINDSIGHT_URL = (process.env.HINDSIGHT_URL || 'http://100.65.0.15:8888').replace(/\/+$/, '');
 
 /**
  * Retains one item into Hindsight. Hindsight's retain response never

@@ -10,7 +10,7 @@
  * Tailscale, or on the VPS itself) whenever the set of mental models needs
  * to change:
  *
- *   HINDSIGHT_URL=http://100.64.144.93:8888 HINDSIGHT_BANK_ID=bojan \
+ *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=bojan \
  *     node scripts/provision-mental-models.js
  *
  * Re-run-safe: an id that already exists gets PATCHed (name/source_query/

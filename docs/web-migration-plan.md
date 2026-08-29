@@ -76,7 +76,7 @@ the UI. This behavior is the actual bar a migration has to clear, not just
 → `hermes.chat()` (**non-streaming**) → `{ reply }`. No memory recall, no
 reflection, no context-aware document selection (always the full SOUL,
 nothing else), Bearer-token auth (`GAIA_API_TOKEN`, fail-closed), Tailscale-only
-bind (`100.64.144.93:8891`).
+bind (`100.65.0.15:8891`).
 
 ### 2.3 The gap, stated plainly
 
@@ -92,7 +92,7 @@ bind (`100.64.144.93:8891`).
 The last row is not a detail — it is the actual blocker. Desktop reaches
 `gaia-api` because Desktop runs on Bo's own Tailscale-joined machines.
 `higaia.nl` is a public website; an arbitrary visitor's browser cannot
-reach `100.64.144.93` under any circumstance. Nothing about "Web calls
+reach `100.65.0.15` under any circumstance. Nothing about "Web calls
 `gaia-api` instead of Hermes/Hindsight directly" works until this is
 solved — it is Step 1 of the plan below, not an afterthought.
 
