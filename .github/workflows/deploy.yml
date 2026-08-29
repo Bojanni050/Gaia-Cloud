@@ -34,12 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Public SSH reopened 2026-08-29 (temporary — see project notes) after
+      # briefly being closed in favor of a Tailscale-only runner connection.
+      # That Tailscale step required TS_OAUTH_CLIENT_ID/TS_OAUTH_CLIENT_SECRET
+      # repo secrets that were never actually added, so it only ever failed;
+      # reverted back to plain public SSH until those secrets exist.
+      # DEPLOY_HOST must be set back to the public IP (62.169.27.129).
       - name: Deploy gaia-api on the VPS
         uses: appleboy/ssh-action@v1.2.2
         with:
-          # The VPS's public IPv4 — SSH is exposed there, same pattern as
-          # MelodIQ. Services stay Tailscale-bound; only this deploy hop is
-          # public.
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
