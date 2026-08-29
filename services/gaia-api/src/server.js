@@ -183,24 +183,37 @@ function createApp(env = process.env) {
   // the admin surface, it takes precedence over env vars. This is
   // backwards-compatible: env vars remain the fallback when no provider
   // store config exists.
-  const providerNativeConfig = resolveRoleConfig('generation', providerStore, env);
-  const effectiveNativeGenerator = providerNativeConfig && providerNativeConfig.baseUrl && providerNativeConfig.model
-    ? require('./generation/gaiaGenerator').createGaiaGenerator({
-        baseUrl: providerNativeConfig.baseUrl,
-        model: providerNativeConfig.model,
-        authToken: providerNativeConfig.apiKey,
-        logger: llmCallLogger,
-      })
-    : nativeGenerator;
+  //
+  // Resolved fresh on every call (not once at startup): providerStore's
+  // config can change at any time via the admin panel, and a value
+  // computed once here at boot would keep serving the OLD provider/model
+  // until the process restarted — confirmed live: clearing an override
+  // through /admin/api/provider/roles updated the persisted config
+  // immediately, but the running server kept calling the stale provider
+  // until `docker restart`. createGaiaGenerator/createMimoTts are cheap,
+  // I/O-free constructors, so re-resolving per turn/request costs nothing.
+  function getEffectiveNativeGenerator() {
+    const providerNativeConfig = resolveRoleConfig('generation', providerStore, env);
+    return providerNativeConfig && providerNativeConfig.baseUrl && providerNativeConfig.model
+      ? require('./generation/gaiaGenerator').createGaiaGenerator({
+          baseUrl: providerNativeConfig.baseUrl,
+          model: providerNativeConfig.model,
+          authToken: providerNativeConfig.apiKey,
+          logger: llmCallLogger,
+        })
+      : nativeGenerator;
+  }
 
-  const providerTtsConfig = resolveTtsConfig(providerStore, env);
-  const effectiveTts = providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
-    ? require('./speech/mimoTts').createMimoTts({
-        baseUrl: providerTtsConfig.baseUrl,
-        model: providerTtsConfig.model,
-        authToken: providerTtsConfig.apiKey,
-      })
-    : tts;
+  function getEffectiveTts() {
+    const providerTtsConfig = resolveTtsConfig(providerStore, env);
+    return providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
+      ? require('./speech/mimoTts').createMimoTts({
+          baseUrl: providerTtsConfig.baseUrl,
+          model: providerTtsConfig.model,
+          authToken: providerTtsConfig.apiKey,
+        })
+      : tts;
+  }
 
   const libraryStore = createLibraryStore(env.LIBRARY_PATH !== undefined ? { libraryDir: env.LIBRARY_PATH } : {});
   const libraryMaxFileSizeMb = Number(env.LIBRARY_MAX_FILE_SIZE_MB) || undefined;
@@ -283,7 +296,7 @@ function createApp(env = process.env) {
         hypothesisRuntime,
         res,
         conversationId,
-        nativeGenerator: effectiveNativeGenerator,
+        nativeGenerator: getEffectiveNativeGenerator(),
         webSearch,
         historyStore,
         decisionStore,
@@ -333,7 +346,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       attachments,
-      nativeGenerator: effectiveNativeGenerator,
+      nativeGenerator: getEffectiveNativeGenerator(),
       webSearch,
       traceId,
       conversationId,
@@ -369,6 +382,7 @@ function createApp(env = process.env) {
     if (typeof text !== 'string' || text.trim() === '') {
       return res.status(400).json({ error: 'text must be a non-empty string' });
     }
+    const effectiveTts = getEffectiveTts();
     if (!effectiveTts) {
       return res.status(503).json({ error: 'speech is not configured' });
     }
