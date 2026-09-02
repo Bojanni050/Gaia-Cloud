@@ -142,7 +142,7 @@ function containsRichPersonalContext(text) {
   const t = String(text || '');
   if (t.length < 20) return false;
   if (!/\b(ik|mijn|mij|we|ons)\b/i.test(t)) return false;
-  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|papegaai|papegaaien|Ierland|Maarn|jaar|jaren|familie|relatie gehad|vriend|vrienden|gebleven|ondanks|uit is|pas op)\b/gi) || []).length;
+  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|gezin|familie|vriend|vrienden|gebleven|ondanks|uit is|pas op)\b/gi) || []).length;
   const capitalizedNames = (t.match(/\b[A-Z][a-z]{2,}\b/g) || []).length;
   const hasNames = capitalizedNames >= 2;
   const hasRelationship = personalMarkers >= 1;
@@ -156,10 +156,10 @@ function isLongAnswerToLocationQuestion(text, prevQuestion) {
   if (!prevQuestion) return false;
   if (!/waar ben je|where are you/i.test(String(prevQuestion).toLowerCase())) return false;
   const trimmed = String(text || '').trim();
-  // Starts with location answer even if long: "In Maarn, in het huis van ..."
+  // Starts with location answer even if long: "In een stad, in het huis van ..."
   if (/^in\s+[A-Z][a-z]+/i.test(trimmed)) return true;
   // Or contains location + house context
-  if (/in\s+Maarn/i.test(trimmed) && /huis van/i.test(trimmed)) return true;
+  if (/in\s+[A-Z][a-z]+/i.test(trimmed) && /huis van/i.test(trimmed)) return true;
   return false;
 }
 
@@ -235,7 +235,7 @@ function evaluateConversationalOpportunity(input) {
       return {
         present: true,
         strength: 0.88,
-        subject: "user's house-sitting context in Maarn",
+        subject: "user's volunteered location context", 
         reason: 'User answered Gaia\'s location question with extensive volunteered personal context (people, relationships, house and pets).',
         naturalResponse: 'reflection',
         suggestedFollowUp: null,
@@ -389,14 +389,14 @@ function coerceOpportunity(value) {
 function renderQualityBarLines() {
   return [
     'Quality bar — observation over evaluation, specificity over summary, natural reflection over therapeutic language, presence over prompting, understanding over explanation:',
-    '- Prefer a specific observation grounded in this conversation over a generic evaluation. Example bad: "Dat is waardevol, dat jullie vriendschap stand heeft gehouden..." Example good: "Ze kwamen via Thijs in je leven, maar blijkbaar zijn ze na jullie relatie hun eigen plek blijven houden." / "Ze zijn dus niet alleen de ouders van Thijs gebleven; jullie hebben echt een eigen band opgebouwd."',
+    '- Prefer a specific observation grounded in this conversation over a generic evaluation. Example bad: "Dat is waardevol, dat jullie vriendschap stand heeft gehouden..." Example good: "Ze kwamen via een gemeenschappelijke connectie in je leven, maar blijkbaar zijn ze na jullie relatie hun eigen weg blijven gaan."',
     '- Do not label the experience as meaningful to show you understood it. Avoid evaluative adjectives like waardevol/bijzonder/mooi/prachtig/ontroerend/betekenisvol/bijzonder sterk/moedig/moeilijk unless the context genuinely calls for it; the observation itself is enough.',
     '- Avoid therapeutic projections: "Dat moet...", "Ik kan me voorstellen dat...", "Dat klinkt alsof...", "Dat is waardevol...", "Dat is mooi...", "Het is duidelijk dat...", "Dat laat zien dat...", "Dat zegt veel over...", "Je hebt duidelijk...". Also avoid generic empathy openers used as a preamble before the real reply: "Dat is zwaar...", "Dat klinkt moeilijk...", "Dat lijkt me lastig...", "Ik begrijp dat...", "Ik hoop dat...". Stay grounded in what is actually present.',
     '- Specificity test: Could I have written this response without knowing the specific details of this conversation? If yes, it is too generic.',
-    '- Do not mechanically summarize facts ("Je bent dus in Maarn en past op het huis... terwijl zij in Ierland zijn."). If something deserves attention, respond to the relationship between the facts ("Je bent daar dus eigenlijk via een heel andere band terechtgekomen dan alleen via Thijs.") — only if genuinely supported.',
+    '- Do not mechanically summarize facts. If something deserves attention, respond to the relationship between the facts — only if genuinely supported.',
     '- Respond to the newest thing the user actually said, not to the general topic of the last few turns. When the user adds new information, build on THAT specific addition rather than reverting to the earlier topic (e.g. the topic was sleep; the user then calls it "een uitdaging" — respond to what makes it a challenge, not to sleep/rest in general again).',
     'Respond to the HUMAN MEANING of what was shared, not merely that you parsed the facts. Notice something, make a natural observation, acknowledge significance, show gentle curiosity, or connect two things mentioned — then leave space. Often the observation alone is enough; do not automatically add "Hoe is dat voor je?"',
-    'If you do ask a question, let it emerge from the specific observation, not from a generic desire to continue. Weak: "Hoe voelt dat?" Better: "Hoe is die band met Fons en Helen eigenlijk zo gebleven?"',
+    'If you do ask a question, let it emerge from the specific observation, not from a generic desire to continue.   Weak: "Hoe voelt dat?" Better: "Hoe is die verbinding eigenlijk zo gebleven?"',
     '',
     '==================================================',
     'THE ADDITION TEST',

@@ -429,13 +429,13 @@ test('reasonIQ never generates final user-facing response', async () => {
 // Regression: long Maarn house-sitting scenario (the failing interaction)
 // ---------------------------------------------------------------------------
 
-const LONG_MAARN_TEXT = 'In Maarn, in het huis van Fons en Helen. Fons en Helen zijn de ouders van Thijs. Met Thijs heb ik ruim 8 jaar een relatie gehad. Thijs woont nu in Ierland. Elk jaar gaan Fons en Helen een maand naar Ierland om hem en zijn huidige partner, Mick, te bezoeken. Ik pas op het huis en de twee papegaaien, Dickie en Bailey.';
+const LONG_VOLUNTEERED_CONTEXT_TEXT = 'In een stad, in het huis van vrienden. Die vrienden zijn via een gemeenschappelijke connectie in mijn leven gekomen. Ze wonen nu in het buitenland. Elk jaar gaan ze een maand terug om hen te bezoeken. Ik pas op het huis en hun twee huisdieren.';
 
-test('regression: long Maarn house-sitting answer is recognised as answer_to_gaia_question, not unknown', () => {
+test('regression: long volunteered context answer is recognised as answer_to_gaia_question, not unknown', () => {
   const { classify } = require('../src/logos/intentIQ');
   const messages = [
     { role: 'assistant', content: 'Waar ben je nu?' },
-    { role: 'user', content: LONG_MAARN_TEXT },
+    { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT },
   ];
   const decision = classify(messages, { silent: true });
   assert.equal(decision.intent, 'converse');
@@ -444,12 +444,12 @@ test('regression: long Maarn house-sitting answer is recognised as answer_to_gai
   assert.equal(decision.meta.reason, 'answer_to_gaia_question');
 });
 
-test('regression: long Maarn answer produces rich conversational opportunity (reflection, no forced question)', () => {
+test('regression: long volunteered context answer produces rich conversational opportunity (reflection, no forced question)', () => {
   const opp = evaluateConversationalOpportunity({
-    text: LONG_MAARN_TEXT,
+    text: LONG_VOLUNTEERED_CONTEXT_TEXT,
     conversationContext: [
       { role: 'assistant', content: 'Waar ben je nu?' },
-      { role: 'user', content: LONG_MAARN_TEXT },
+      { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT },
     ],
     intentDecision: { intent: 'converse', status: 'accepted' },
   });
@@ -463,21 +463,21 @@ test('regression: long Maarn answer produces rich conversational opportunity (re
   assert.match(guidance, /never an instruction/i);
 });
 
-test('regression: long Maarn turn never routes to clarify / "what are you looking for?"', async () => {
+test('regression: long volunteered context turn never routes to clarify / "what are you looking for?"', async () => {
   const { performTurn } = require('../src/turn');
   const DOCUMENTS = { 'soul.md': 'SOUL', 'principles.md': 'PRINCIPLES', 'lexicon.md': 'LEXICON' };
   let seenMessages;
   const nativeGenerator = {
     generate: async (messages) => {
       seenMessages = messages;
-      return 'Ah, dus je bent daar op het huis en op Dickie en Bailey aan het passen.';
+      return 'Ah, dus je bent daar op het huis aan het passen.';
     },
   };
   const hermes = { chat: async () => { throw new Error('hermes must not be called'); } };
   const result = await performTurn({
     messages: [
       { role: 'assistant', content: 'Waar ben je nu?' },
-      { role: 'user', content: LONG_MAARN_TEXT },
+      { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT },
     ],
     documents: DOCUMENTS,
     hermes,
@@ -496,14 +496,14 @@ test('regression: long Maarn turn never routes to clarify / "what are you lookin
 
 test('regression: volunteered personal sharing without previous question is converse, not unknown, and yields opportunity', () => {
   const { classify } = require('../src/logos/intentIQ');
-  const decision = classify([{ role: 'user', content: LONG_MAARN_TEXT }], { silent: true });
+  const decision = classify([{ role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT }], { silent: true });
   assert.equal(decision.intent, 'converse');
   assert.equal(decision.needsClarification, false);
   assert.equal(decision.meta.reason, 'volunteered_personal_sharing');
 
   const opp = evaluateConversationalOpportunity({
-    text: LONG_MAARN_TEXT,
-    conversationContext: [{ role: 'user', content: LONG_MAARN_TEXT }],
+    text: LONG_VOLUNTEERED_CONTEXT_TEXT,
+    conversationContext: [{ role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT }],
     intentDecision: decision,
   });
   assert.equal(opp.present, true);
@@ -512,8 +512,8 @@ test('regression: volunteered personal sharing without previous question is conv
 
 test('regression: volunteered sharing does not contain privacy disclaimer guidance', () => {
   const opp = evaluateConversationalOpportunity({
-    text: LONG_MAARN_TEXT,
-    conversationContext: [{ role: 'user', content: LONG_MAARN_TEXT }],
+    text: LONG_VOLUNTEERED_CONTEXT_TEXT,
+    conversationContext: [{ role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT }],
     intentDecision: { intent: 'converse', status: 'accepted' },
   });
   const guidance = renderOpportunityGuidance(opp);
@@ -522,13 +522,13 @@ test('regression: volunteered sharing does not contain privacy disclaimer guidan
   assert.match(guidance, /brief acknowledgement or reflection is enough/i);
 });
 
-const LONG_MAARN_WITH_PREFIX = 'ha duidelijk. Ik ben in Maarn, in het huis van Fons en Helen. Fons en Helen zijn de ouders van Thijs. Met Thijs heb ik ruim 8 jaar een relatie gehad. Thijs woont nu in Ierland. Elk jaar gaan Fons en Helen een maand naar Ierland om hem en zijn huidige partner, Mick, te bezoeken. Ik pas op het huis en de twee papegaaien, Dickie en Bailey';
+const LONG_VOLUNTEERED_CONTEXT_WITH_PREFIX = 'aha duidelijk. Ik ben in een stad, in het huis van vrienden. Die vrienden zijn via een gemeenschappelijke connectie in mijn leven gekomen. Ze wonen nu in het buitenland. Elk jaar gaan ze een maand terug om hen te bezoeken. Ik pas op het huis en hun twee huisdieren';
 
-test('regression: "ha duidelijk. Ik ben in Maarn..." still classified as answer_to_gaia_question and never gets clarify', () => {
+test('regression: "aha duidelijk. Ik ben in een stad..." still classified as answer_to_gaia_question and never gets clarify', () => {
   const { classify } = require('../src/logos/intentIQ');
   const messages = [
     { role: 'assistant', content: 'Waar ben je nu?' },
-    { role: 'user', content: LONG_MAARN_WITH_PREFIX },
+    { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_WITH_PREFIX },
   ];
   const decision = classify(messages, { silent: true });
   assert.equal(decision.intent, 'converse');
@@ -536,12 +536,12 @@ test('regression: "ha duidelijk. Ik ben in Maarn..." still classified as answer_
   assert.equal(decision.meta.reason, 'answer_to_gaia_question');
 });
 
-test('regression: "ha duidelijk..." turn produces reflection guidance that forbids summary/clarify phrasing', () => {
+test('regression: "aha duidelijk..." turn produces reflection guidance that forbids summary/clarify phrasing', () => {
   const opp = evaluateConversationalOpportunity({
-    text: LONG_MAARN_WITH_PREFIX,
+    text: LONG_VOLUNTEERED_CONTEXT_WITH_PREFIX,
     conversationContext: [
       { role: 'assistant', content: 'Waar ben je nu?' },
-      { role: 'user', content: LONG_MAARN_WITH_PREFIX },
+      { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_WITH_PREFIX },
     ],
     intentDecision: { intent: 'converse', status: 'accepted' },
   });
@@ -570,8 +570,8 @@ test('regression: generic answer turns do not trigger clarify', () => {
 
 test('regression: guidance for personal sharing never contains summary formulations as instruction', () => {
   const opp = evaluateConversationalOpportunity({
-    text: LONG_MAARN_TEXT,
-    conversationContext: [{ role: 'assistant', content: 'Waar ben je nu?' }, { role: 'user', content: LONG_MAARN_TEXT }],
+    text: LONG_VOLUNTEERED_CONTEXT_TEXT,
+    conversationContext: [{ role: 'assistant', content: 'Waar ben je nu?' }, { role: 'user', content: LONG_VOLUNTEERED_CONTEXT_TEXT }],
     intentDecision: { intent: 'converse', status: 'accepted' },
   });
   const guidance = renderOpportunityGuidance(opp);
@@ -722,4 +722,22 @@ test('paraphrase regression 10: Guidance contains DO NOT OVERCORRECT section', (
   assert.match(guidance, /DO NOT OVERCORRECT/);
   assert.match(guidance, /Small grounded observations are sufficient/);
   assert.match(guidance, /unless explicitly supported by the conversation/);
+});
+
+test('regression: Anton case - no hardcoded personal narrative in system prompt', () => {
+  const opp = evaluateConversationalOpportunity({
+    text: 'Anton heeft van zich laten horen.',
+    conversationContext: [],
+    intentDecision: null,
+  });
+  const guidance = renderOpportunityGuidance(opp);
+  
+  // Must NOT contain the problematic Thijs narrative or personal conclusions
+  assert.ok(!guidance || !guidance.includes('Thijs'), 'Guidance must not contain hardcoded personal names like Thijs');
+  assert.ok(!guidance || !guidance.includes('ouders van Thijs'), 'Guidance must not contain "ouders van Thijs"');
+  assert.ok(!guidance || !guidance.includes('eigen band opgebouwd'), 'Guidance must not contain "eigen band opgebouwd"');
+  assert.ok(!guidance || !/jullie hebben.*eigen band/i.test(guidance), 'Guidance must not contain fabricated relationship conclusions');
+  
+  // Should still allow natural follow-up questions
+  assert.ok(opp.present === false || opp.naturalResponse !== 'forced_question', 'Should not force questions');
 });

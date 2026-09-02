@@ -44,12 +44,11 @@ test('CASE 2: house context - no generic location summary', () => {
 
 // CASE 3: Friends remained
 test('CASE 3: friendship survived - specific observation not generic evaluation', () => {
-  const text = 'Fons en Helen en ik zijn vrienden gebleven ondanks dat het uit is met Thijs.';
+  const text = 'Vrienden zijn gebleven ondanks een relatiebreuk.';
   const { opp, oppGuidance, stateGuidance } = getAdvisories({ prev: null, text });
   assert.equal(opp.present, true);
   assert.equal(opp.naturalResponse, 'reflection');
   assert.ok(oppGuidance.includes('Quality bar — observation over evaluation'));
-  assert.ok(oppGuidance.includes('Ze kwamen via Thijs'));
   assert.ok(oppGuidance.includes('Avoid therapeutic projections'));
   assert.ok(oppGuidance.includes('Specificity test'));
   // State should be sharing
@@ -143,10 +142,10 @@ test('CASE 10: abrupt topic change - follow new direction', () => {
 test('casual conversation is normal state, not fallback to task', async () => {
   // Simulate a full turn for a casual sharing that previously went to clarify
   let seenMessages;
-  const native = { generate: async (msgs) => { seenMessages = msgs; return 'Ze kwamen via Thijs, maar zijn hun eigen plek blijven houden.'; } };
+  const native = { generate: async (msgs) => { seenMessages = msgs; return 'Ze kwamen via een gemeenschappelijke connectie, maar zijn hun eigen weg blijven gaan.'; } };
   const hermes = { chat: async () => { throw new Error('should not be called'); } };
   const result = await performTurn({
-    messages: [{ role: 'assistant', content: 'Waar ben je nu?' }, { role: 'user', content: 'Fons en Helen en ik zijn vrienden gebleven ondanks dat het uit is met Thijs.' }],
+    messages: [{ role: 'assistant', content: 'Waar ben je nu?' }, { role: 'user', content: 'Vrienden zijn gebleven ondanks een relatiebreuk.' }],
     documents: DOCUMENTS,
     hermes,
     nativeGenerator: native,
@@ -172,8 +171,8 @@ test('Hindsight identity still Gaia↔Bojan after casual refinement', async () =
   const fake = { reflect: async (opts) => { captured = opts; } };
   reflectOnTurn(fake, {
     conversationId: 'c1',
-    userText: 'Fons en Helen en ik zijn vrienden gebleven',
-    assistantText: 'Ze kwamen via Thijs...',
+    userText: 'Vrienden zijn gebleven',
+    assistantText: 'Ze kwamen via een gemeenschappelijke connectie...',
     metadata: {},
   });
   await new Promise(r => setImmediate(r));
