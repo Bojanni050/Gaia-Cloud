@@ -1487,10 +1487,6 @@ test("0.1 turn: pattern recall failure is non-fatal — the reply still streams 
   const hermes = {
     stream: async (messages, { onDelta }) => {
       // "Derived patterns" is renderPatternContextBlock's own marker text (patternAwareness.js).
-      // A bare /pattern/i match is too broad: the always-on conversational quality bar
-      // (conversationalOpportunity.js's renderQualityBar, folded into every casual/sharing
-      // turn via conversationalState.js) legitimately says "Avoid these patterns as they
-      // often indicate paraphrase" — that is not the pattern-awareness block this test guards.
       sawPatternBlock = messages.some((m) => m.role === "system" && /Derived patterns/i.test(m.content));
       onDelta("nog steeds goed", false);
       return "nog steeds goed";

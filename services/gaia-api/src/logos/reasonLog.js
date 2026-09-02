@@ -42,14 +42,6 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
     informationGapCount: Array.isArray(entry.result.informationGaps) ? entry.result.informationGaps.length : 0,
     confidence: entry.result.confidence,
     fallbackReason: meta.fallbackReason || null,
-    // Conversational opportunity — advisory only, additive
-    conversationalOpportunity: entry.result.conversationalOpportunity
-      ? {
-          present: entry.result.conversationalOpportunity.present,
-          strength: entry.result.conversationalOpportunity.strength,
-          naturalResponse: entry.result.conversationalOpportunity.naturalResponse,
-        }
-      : null,
   };
   sink(JSON.stringify(record));
   return record;

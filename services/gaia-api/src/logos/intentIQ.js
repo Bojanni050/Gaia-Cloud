@@ -675,7 +675,7 @@ function isGaiaQuestion(text) {
 /**
  * True when the user is answering a question Gaia herself asked in the
  * immediately preceding assistant turn. This is the core previous-turn
- * awareness required to recognise "Waar ben je nu?" → "In Maarn …" as an
+ * awareness required to recognise "Waar ben je nu?" → "In Utrecht …" as an
  * answer, not an isolated task. Deliberately not keyword-based: any
  * declarative statement after a Gaia question counts when no other intent
  * matched (see classify cascade — this branch only runs for signal-free
@@ -729,7 +729,7 @@ function isVolunteeredPersonalSharing(text) {
   // First-person or possessive signals
   if (!/\b(ik|mijn|mij|we|ons|met .* heb ik|heb ik)\b/i.test(t)) return false;
   // Personal narrative markers: family/relationship/house/pet/place names
-  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|papegaai|Ierland|Maarn|jaar|jaren|familie)\b/gi) || []).length;
+  const personalMarkers = (t.match(/\b(ouders|relatie|partner|huis|gezin|familie|vriend|vrienden|jaar|jaren)\b/gi) || []).length;
   const capitalizedNames = (t.match(/\b[A-Z][a-z]{2,}\b/g) || []).length;
   // Need either multiple names or relationship markers
   if (personalMarkers + (capitalizedNames >= 3 ? 2 : 0) < 2) return false;

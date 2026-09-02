@@ -41,8 +41,6 @@ const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwar
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
-const { renderOpportunityGuidance } = require('./logos/conversationalOpportunity');
-const { renderConversationalState } = require('./logos/conversationalState');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -638,33 +636,11 @@ async function runTurnCore({
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
 
-  // Conversational opportunity — advisory guidance from ReasonIQ to Gaia's
-  // response layer. Present only when ReasonIQ saw a natural human reason to
-  // show interest; never an instruction to ask a question. Gaia's generator
-  // decides whether and how to express it (acknowledgement, reflection,
-  // curiosity, empathy, celebration). No-op when absent/present=false, so
-  // existing consumers (history, decision store, non-generative paths) never see a difference.
-  const opportunity = reasoningResult && reasoningResult.conversationalOpportunity
-    ? reasoningResult.conversationalOpportunity
-    : null;
-  const opportunityGuidance = renderOpportunityGuidance(opportunity);
-  if (opportunityGuidance) systemMessages.push({ role: 'system', content: opportunityGuidance });
-
-  // Immediate conversational state — lightweight, no Hindsight, for casual
-  // conversation as a normal state (not a fallback). Gives the generator
-  // the 1-2 turn context it needs to act as a participant: what Gaia just
-  // said, what the user just said, whether this is an answer/sharing/casual
-  // continuation, and that no task exists. Reuses IntentIQ output, no new
-  // classification. `opportunityPresent` tells it whether the opportunity
-  // block above already carried the anti-generic-empathy quality bar this
-  // turn, so it isn't duplicated when both fire.
-  const conversationalState = renderConversationalState({
-    intentDecision,
-    messages,
-    userText,
-    opportunityPresent: Boolean(opportunity && opportunity.present),
-  });
-  if (conversationalState) systemMessages.push({ role: 'system', content: conversationalState });
+  // Conversational tone, empathy, follow-up judgment, and "how to respond"
+  // reasoning are left entirely to the LLM, guided by SOUL (identity.md) —
+  // see docs/architecture-conversational-guidance.md for why the former
+  // per-turn opportunity/quality-bar/conversational-state injection here
+  // was removed rather than kept as app-level orchestration.
 
   // Use assembleMessages to handle multimodal content
   const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);

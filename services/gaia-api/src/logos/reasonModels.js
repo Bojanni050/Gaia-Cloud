@@ -124,23 +124,6 @@ function isValidHypothesisStatus(v) {
  */
 
 /**
- * @typedef {Object} ConversationalOpportunity
- * @property {boolean} present
- * @property {number} strength - 0..1
- * @property {string|null} subject
- * @property {string|null} reason
- * @property {'none'|'acknowledgement'|'curiosity'|'empathy'|'celebration'|'reflection'} naturalResponse
- * @property {string|null} suggestedFollowUp - optional guidance, never a command
- */
-
-/** Advisory conversational opportunity responses. */
-const CONVERSATIONAL_RESPONSES = Object.freeze(['none', 'acknowledgement', 'curiosity', 'empathy', 'celebration', 'reflection']);
-
-function isValidNaturalResponse(v) {
-  return CONVERSATIONAL_RESPONSES.includes(v);
-}
-
-/**
  * @typedef {Object} ReasoningResult
  * @property {'reasoniq.v1'} schemaVersion
  * @property {string} interpretation - what Logos understood the turn to mean
@@ -156,7 +139,6 @@ function isValidNaturalResponse(v) {
  * @property {boolean} evidenceSufficient - named alias of sufficientForConclusion (0.2; brief §7's field name)
  * @property {number} confidence - overall confidence in interpretation + conclusions
  * @property {{ reasonerVersion: string, reasoningModelConfigured: boolean, fallbackReason: string|null, evidenceCount: number, evidenceSources: string[] }} meta
- * @property {ConversationalOpportunity} [conversationalOpportunity] - optional advisory opportunity (reasonIQ advisory, not instruction)
  */
 
 function makeHypothesis({ statement, confidence = 0.5, status = 'proposed', verificationPlan = null, evidenceAssessments = [] }) {
@@ -178,10 +160,8 @@ module.exports = {
   HYPOTHESIS_STATUSES,
   REASONING_DEPTHS,
   CONTRADICTION_SIGNIFICANCE,
-  CONVERSATIONAL_RESPONSES,
   isValidEpistemicStatus,
   isValidVerdict,
   isValidHypothesisStatus,
-  isValidNaturalResponse,
   makeHypothesis,
 };
