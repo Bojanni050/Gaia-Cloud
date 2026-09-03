@@ -56,6 +56,7 @@ function preservesGoal(original, reformulated) {
  *   evaluate?: Function,                   // (request, result, attempt) => OutcomeEvaluation
  *   formulateAlternative?: Function,       // (request, lastResult, evaluation, attempt) => request
  *   max_attempts?: number,                 // configurable hard limit (default 3, clamped to 1..10)
+ *   adapterOptions?: object,               // opaque passthrough forwarded to every invokeCapability call (e.g. onDelta)
  *   onAttempt?: Function,                  // observability hook ({ attempt, verdict, reason }) — never affects control flow
  * }} options
  * @returns {Promise<{
@@ -73,6 +74,7 @@ async function runCapabilityLoop({
   evaluate = evaluateOutcome,
   formulateAlternative = defaultFormulateAlternative,
   max_attempts = DEFAULT_MAX_ATTEMPTS,
+  adapterOptions = {},
   onAttempt,
 } = {}) {
   if (!adapter || typeof adapter.invokeCapability !== 'function') {
@@ -101,7 +103,7 @@ async function runCapabilityLoop({
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let raw;
     try {
-      raw = await adapter.invokeCapability(current);
+      raw = await adapter.invokeCapability(current, adapterOptions);
     } catch (err) {
       raw = { ok: false, technicalSuccess: false, output: null, error: String((err && err.message) || err) };
     }

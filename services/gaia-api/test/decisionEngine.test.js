@@ -157,7 +157,7 @@ test('decide() never produces a "useHermes"-shaped flag — only the schema\'s f
   assert.ok(!('useHermes' in decision));
   assert.deepEqual(
     Object.keys(decision).sort(),
-    ['action', 'capabilities', 'capability', 'capability_candidate', 'capability_execute', 'context', 'generationMode', 'input', 'reason', 'reasoning', 'task'].sort()
+    ['action', 'capabilities', 'capability', 'capability_candidate', 'capability_execute', 'context', 'expected_outcome', 'generationMode', 'input', 'reason', 'reasoning', 'task'].sort()
   );
 });
 

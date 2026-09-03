@@ -46,6 +46,7 @@ const {
 } = require('./responseEngine');
 const { decide: decideAction } = require('./decision/decisionEngine');
 const { execute: executeDecision } = require('./orchestration/orchestrator');
+const { createHermesCapability } = require('./capabilities/hermesAdapter');
 const { createTurnTiming, trackFirstToken } = require('./timing');
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
@@ -663,31 +664,16 @@ async function runTurnCore({
     }));
   }
 
-  // Capability wiring — the ONE place transport shows up inside the core:
-  // with an onDelta, hermes streams through it; without one, hermes.chat
-  // returns a final string. Either way the Orchestrator sees the same
-  // `{ invoke }` shape and the Decision is executed identically.
-  //
-  // Capability Registry 1.0 — skill forwarding: when a plan step selected a
-  // Hermes skill, the adapter says so EXPLICITLY ("Use the Hermes skill …").
-  // Hermes loads and executes the skill itself; Gaia never imports skill
-  // contents. Without a selected skill the payload is untouched.
-  const hermesSkillInstruction = (skill) => ({
-    role: 'system',
-    content: `Use the Hermes skill "${skill}" for this task. Load and execute that skill yourself.`,
-  });
-  const withHermesSkill = (msgs, skill) => {
-    if (!skill) return msgs;
-    const list = Array.isArray(msgs) ? [...msgs] : [];
-    let insertAt = 0;
-    while (insertAt < list.length && list[insertAt] && list[insertAt].role === 'system') insertAt += 1;
-    list.splice(insertAt, 0, hermesSkillInstruction(skill));
-    return list;
-  };
+  // Capability wiring — P0 runtime integration: Hermes runs behind its
+  // capability adapter (capabilities/hermesAdapter.js), the single place
+  // that translates the generic contract to the Hermes interface
+  // (chat/stream, skill instruction). Transport still shows up here once:
+  // with an onDelta the adapter streams through it, without one chat()
+  // returns a final string. All other capabilities keep their existing
+  // `{ invoke }` shape and reach the same outcome loop via the neutral
+  // legacy bridge — nothing else is rewired.
   const capabilities = {
-    hermes: onDelta
-      ? { invoke: (msgs, { onDelta: emitDelta, skill } = {}) => hermes.stream(withHermesSkill(msgs, skill), { onDelta: emitDelta }) }
-      : { invoke: (msgs, { skill } = {}) => hermes.chat(withHermesSkill(msgs, skill)) },
+    hermes: createHermesCapability({ hermes }),
     ...(webSearch ? { web: webCapability(webSearch) } : {}),
     ...(tools || {}),
   };
@@ -695,11 +681,29 @@ async function runTurnCore({
   let executionResult;
   timing.start('capability');
   try {
-    // Capability-level timing: wrap each capability's invoke to measure
-    // individual capability duration without changing behavior.
+    // Capability-level timing: wrap each capability's P0 entry point to
+    // measure individual capability duration without changing behavior.
+    // P0 adapters expose invokeCapability; legacy `{ invoke }` entries
+    // (injected tools, test doubles) keep working through the same wrapper.
     const timedCapabilities = {};
     for (const [capId, cap] of Object.entries(capabilities)) {
-      if (cap && typeof cap.invoke === 'function') {
+      if (cap && typeof cap.invokeCapability === 'function') {
+        const inner = cap.invokeCapability.bind(cap);
+        timedCapabilities[capId] = {
+          ...cap,
+          invokeCapability: async (request, opts = {}) => {
+            timing.start(`capability.${capId}`);
+            try {
+              const result = await inner(request, opts);
+              timing.end(`capability.${capId}`, { capability: capId });
+              return result;
+            } catch (err) {
+              timing.fail(`capability.${capId}`, err.constructor.name || 'Error', { capability: capId });
+              throw err;
+            }
+          },
+        };
+      } else if (cap && typeof cap.invoke === 'function') {
         timedCapabilities[capId] = {
           invoke: async (msgs, opts = {}) => {
             timing.start(`capability.${capId}`);

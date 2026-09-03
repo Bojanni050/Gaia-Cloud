@@ -155,10 +155,16 @@ function createCapabilityRequest(input = {}) {
 
 /**
  * Normalizes any adapter output to the generic CapabilityResult model:
- *   { ok, technicalSuccess, output, error, requiresUserInput, missingInfo }
+ *   { ok, technicalSuccess, output, error, requiresUserInput, missingInfo, data? }
  * `ok` false means the execution itself failed (transport error, empty
  * output) — which says nothing yet about the OUTCOME (evaluateOutcome
  * decides that). Never throws.
+ *
+ * `output` is always the EVALUATION text (a string): outcome checks run
+ * against it. An adapter whose raw payload is structured (a retrieval
+ * result object, not prose) puts that text in `output` and may carry the
+ * original payload in the generic, capability-neutral `data` field, which
+ * passes through untouched for the caller to unwrap on success.
  */
 function toCapabilityResult(raw) {
   if (typeof raw === 'string') {
@@ -191,6 +197,7 @@ function toCapabilityResult(raw) {
     error,
     requiresUserInput: raw.requiresUserInput === true,
     missingInfo: isNonEmptyString(raw.missingInfo) ? raw.missingInfo.trim() : null,
+    ...(raw.data !== undefined ? { data: raw.data } : {}),
   };
 }
 

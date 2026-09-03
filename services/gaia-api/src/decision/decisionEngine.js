@@ -570,6 +570,11 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
         scope: 'current',
         limit: 8,
       },
+      // P0: what this execution must achieve (evaluated by the Orchestrator).
+      expected_outcome: {
+        description: 'A conversation-search result covering the follow-up',
+        minLength: 1,
+      },
       reason: 'follow-up on Gaia\'s own previous response — searching the conversation transcript',
     };
   } else if (intent && intent.sourceOfTruth === 'tool' && findCapability(capabilities, 'tool')) {
@@ -581,6 +586,11 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: true,
       task: intent.intent || 'act',
       input: { userInput, entities: intent.entities || [] },
+      // P0: what this execution must achieve (evaluated by the Orchestrator).
+      expected_outcome: {
+        description: `A completed tool result for intent "${intent.intent}"`,
+        minLength: 1,
+      },
       reason: `intent "${intent.intent}" requires acting on an external system`,
     };
   } else if (intent && intent.sourceOfTruth === 'external_knowledge' && findCapability(capabilities, 'web')) {
@@ -597,6 +607,11 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: true,
       task: intent.intent || 'lookup',
       input: { userInput },
+      // P0: what this execution must achieve (evaluated by the Orchestrator).
+      expected_outcome: {
+        description: 'A web lookup result covering the requested external information',
+        minLength: 1,
+      },
       reason: 'this turn needs current external information Gaia does not already have',
     };
   } else if (genPolicy.mode === 'hermes' && findCapability(capabilities, 'hermes')) {
@@ -610,6 +625,11 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: true,
       task: (intent && intent.intent) || 'respond',
       input: { userInput, context: context || null, reasoning: reasoning || null },
+      // P0: what this execution must achieve (evaluated by the Orchestrator).
+      expected_outcome: {
+        description: 'A completed Hermes response addressing the turn',
+        minLength: 1,
+      },
       reason: genPolicy.reason,
     };
   } else if (genPolicy.mode === 'hermes') {
@@ -655,6 +675,11 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: true,
       task: (intent && intent.intent) || 'respond',
       input: { userInput, context: context || null, reasoning: reasoning || null },
+      // P0: what this execution must achieve (evaluated by the Orchestrator).
+      expected_outcome: {
+        description: 'A completed Hermes response addressing the turn',
+        minLength: 1,
+      },
       reason: 'native generator not available — using Hermes as generation fallback',
     };
   } else {

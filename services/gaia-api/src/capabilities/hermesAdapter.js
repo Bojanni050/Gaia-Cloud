@@ -24,6 +24,17 @@
  */
 
 const { validateCapabilityRequest, toCapabilityResult } = require('../logos/capabilityContract');
+const { runCapabilityLoop } = require('../logos/capabilityLoop');
+
+/** Last string user turn — the instruction fallback for the legacy shape. */
+function lastUserString(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m && m.role === 'user' && typeof m.content === 'string' && m.content.trim()) return m.content;
+  }
+  return null;
+}
 
 function describeExpectedOutcome(expectedOutcome) {
   if (typeof expectedOutcome === 'string') return expectedOutcome.trim();
@@ -34,30 +45,71 @@ function describeExpectedOutcome(expectedOutcome) {
 }
 
 /**
- * Default translation of a generic request to Hermes messages: the contract
- * fields become explicit context the model can work with. Callers may inject
+ * Default translation of a generic request to Hermes messages.
+ *
+ * When the runtime hands over assembled messages (the normal path), they
+ * pass through VERBATIM — same order, same content blocks, multimodal
+ * included — so the Hermes payload is byte-for-byte what it always was.
+ * Only two narrow additions ever apply, both after the leading system
+ * messages / at the tail, mirroring the previous turn.js wiring:
+ *
+ *   - a selected skill becomes the explicit skill instruction;
+ *   - a REFORMULATED instruction (retry loop `alternative`) is appended as
+ *     a final user note, so the new approach actually reaches Hermes. An
+ *     unchanged instruction is never duplicated.
+ *
+ * Without assembled messages (direct adapter use) the payload is built
+ * from objective/instruction/expected_outcome instead. Callers may inject
  * their own `buildMessages(request)`; the default stays dependency-free.
  */
 function defaultBuildMessages(request) {
-  const messages = [];
   const contextMessages = request.context && Array.isArray(request.context.messages)
-    ? request.context.messages.filter((m) => m && typeof m.content === 'string')
+    ? request.context.messages.filter((m) => m && typeof m.role === 'string' && 'content' in m)
     : [];
-  messages.push({
-    role: 'system',
-    content: [
-      `Objective: ${request.objective.trim()}`,
-      `Expected outcome: ${describeExpectedOutcome(request.expected_outcome)}`,
-    ].join('\n'),
-  });
-  if (typeof request.context?.skill === 'string' && request.context.skill.trim()) {
-    messages.push({
+  const skill = request.context && typeof request.context.skill === 'string' && request.context.skill.trim()
+    ? request.context.skill.trim()
+    : null;
+
+  if (contextMessages.length === 0) {
+    const messages = [{
       role: 'system',
-      content: `Apply the capability skill "${request.context.skill.trim()}" for this task.`,
+      content: [
+        `Objective: ${String(request.objective || '').trim()}`,
+        `Expected outcome: ${describeExpectedOutcome(request.expected_outcome)}`,
+      ].join('\n'),
+    }];
+    if (skill) {
+      messages.push({
+        role: 'system',
+        content: `Use the Hermes skill "${skill}" for this task. Load and execute that skill yourself.`,
+      });
+    }
+    messages.push({ role: 'user', content: String(request.instruction || '').trim() });
+    return messages;
+  }
+
+  const messages = contextMessages.map((m) => ({ role: m.role, content: m.content }));
+  if (skill) {
+    // Same explicit skill instruction the runtime has always sent
+    // (previously assembled in turn.js): Hermes loads and executes the
+    // skill itself. Centralized here so this adapter stays the single
+    // translation site.
+    let insertAt = 0;
+    while (insertAt < messages.length && messages[insertAt] && messages[insertAt].role === 'system') insertAt += 1;
+    messages.splice(insertAt, 0, {
+      role: 'system',
+      content: `Use the Hermes skill "${skill}" for this task. Load and execute that skill yourself.`,
     });
   }
-  for (const m of contextMessages) messages.push({ role: m.role || 'user', content: m.content });
-  messages.push({ role: 'user', content: request.instruction.trim() });
+  // Append the instruction only when it carries something new (an
+  // `alternative` reformulation). The initial instruction already is the
+  // last user turn — duplicating it would change every payload for nothing.
+  const last = messages[messages.length - 1];
+  const lastUserText = last && last.role === 'user' && typeof last.content === 'string' ? last.content : null;
+  const instruction = String(request.instruction || '').trim();
+  if (lastUserText !== null && instruction && instruction !== lastUserText) {
+    messages.push({ role: 'user', content: instruction });
+  }
   return messages;
 }
 
@@ -109,7 +161,38 @@ function createHermesCapability({ hermes, buildMessages = defaultBuildMessages, 
     }
   }
 
-  return { id, invokeCapability };
+  /**
+   * Backward-compatible `{ invoke(messages, options) }` shape for callers
+   * that predate the contract (custom orchestrate injections, external
+   * consumers). NOT a second loop or a second translation: it synthesizes
+   * a neutral default request and runs the SAME loop through the SAME
+   * `invokeCapability` above, then returns the raw output string — throwing
+   * on failure exactly like the old direct call did.
+   */
+  async function invoke(messages, options = {}) {
+    const list = Array.isArray(messages) ? messages : [];
+    const request = {
+      objective: (options && typeof options.task === 'string' && options.task) || 'respond',
+      instruction: lastUserString(list) || 'respond',
+      expected_outcome: { description: 'A completed Hermes response', minLength: 1 },
+      context: {
+        messages: list,
+        ...(options && typeof options.skill === 'string' && options.skill ? { skill: options.skill } : {}),
+      },
+    };
+    const loop = await runCapabilityLoop({
+      request,
+      adapter: { id, invokeCapability },
+      max_attempts: options && options.max_attempts,
+      adapterOptions: { onDelta: options && options.onDelta },
+    });
+    if (loop.verdict === 'success' && loop.lastResult) {
+      return loop.lastResult.data !== undefined ? loop.lastResult.data : loop.lastResult.output;
+    }
+    throw new Error((loop.lastEvaluation && loop.lastEvaluation.reason) || 'hermes execution failed');
+  }
+
+  return { id, invokeCapability, invoke };
 }
 
 module.exports = { createHermesCapability, defaultBuildMessages };

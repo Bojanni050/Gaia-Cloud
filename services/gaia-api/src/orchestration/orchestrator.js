@@ -22,22 +22,107 @@
  *                  plan (see executePlan below).
  *
  * A capability's raw output is returned as-is; this module never touches
- * capability internals (retries, provider routing, streaming framing) and
- * never writes to a response itself — see responseEngine.js for the seam
- * that turns an ExecutionResult into what the client actually sees.
+ * capability internals (provider routing, streaming framing) and never
+ * writes to a response itself — see responseEngine.js for the seam that
+ * turns an ExecutionResult into what the client actually sees.
+ *
+ * P0 Logos ↔ Capability contract (runtime integration): every capability
+ * invocation — single actions AND plan steps — runs through the generic
+ * outcome loop (logos/capabilityLoop.js). The Decision carries what Logos
+ * demands (`expected_outcome`); the result is evaluated against it, so a
+ * technically successful capability call is NOT automatically a successful
+ * task. Adapters expose `invokeCapability`; legacy `{ invoke }` entries are
+ * wrapped by the neutral bridge (capabilities/legacyBridge.js). This module
+ * holds no capability-specific logic — routing is by id only.
  */
 
 const { validateDecision } = require('../decision/decisionSchema');
 const { validateCapabilitySkill } = require('../capabilityRegistry');
+const { normalizeExpectedOutcome } = require('../logos/capabilityContract');
+const { runCapabilityLoop } = require('../logos/capabilityLoop');
+const { wrapLegacyCapability } = require('../capabilities/legacyBridge');
 
 /**
  * @typedef {Object} ExecutionResult
  * @property {'native'|'capability'|'tool'|'clarify'|'refuse'} action
  * @property {string} [capability]
- * @property {*} [output] - the capability's raw result, or null when none was called
- * @property {string} [error] - set when a named capability/tool was not available
+ * @property {*} [output] - the capability's result on success (structured payloads unwrapped), or null when none was called
+ * @property {string} [error] - set when a named capability/tool was not available, or when the outcome loop ends in failure
  * @property {string} [reason] - carried through from the Decision, for clarify/refuse
+ * @property {{ verdict: string, attempts: number, maxAttempts: number, reason: string|null }} [outcome] - the P0 outcome evaluation for capability executions
  */
+
+/**
+ * Resolves a registered capability entry to the generic P0 adapter
+ * interface. Entries exposing `invokeCapability` (Hermes via its adapter)
+ * are used directly; legacy `{ invoke }` entries go through the neutral
+ * bridge. Returns null when the id is not registered or has no usable
+ * shape — the caller reports "not available" exactly as before.
+ */
+function resolveAdapter(capabilities, capabilityId) {
+  const entry = capabilities ? capabilities[capabilityId] : null;
+  if (!entry || typeof entry !== 'object') return null;
+  if (typeof entry.invokeCapability === 'function') return entry;
+  if (typeof entry.invoke === 'function') {
+    return wrapLegacyCapability({ id: capabilityId, invoke: entry.invoke });
+  }
+  return null;
+}
+
+/** Fallback expectation when Logos stated none: a completed, non-empty result. */
+function defaultExpectedOutcome({ capabilityId, task, step }) {
+  const what = task || (step ? `${step.type} step "${step.id}"` : null) || capabilityId;
+  return { description: `A completed ${what} result`, minLength: 1 };
+}
+
+function latestUserText(messages) {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m && m.role === 'user' && typeof m.content === 'string' && m.content.trim()) return m.content;
+  }
+  return null;
+}
+
+/**
+ * Builds the generic CapabilityRequest for one execution. Objective and
+ * instruction come from the Decision (Logos); the assembled messages and
+ * the selected skill ride along as neutral context for the adapter.
+ */
+function buildCapabilityRequest({ capabilityId, task, input, messages, skill, conversationId, expectedOutcome }) {
+  const userInput = input && typeof input.userInput === 'string' && input.userInput.trim() ? input.userInput : null;
+  const query = input && typeof input.query === 'string' && input.query.trim() ? input.query : null;
+  const instruction = userInput || query || latestUserText(messages) || task || `execute ${capabilityId}`;
+  return {
+    capabilityId,
+    objective: task || `execute ${capabilityId}`,
+    instruction,
+    expected_outcome: expectedOutcome,
+    context: {
+      messages: Array.isArray(messages) ? messages : [],
+      task,
+      input: input && typeof input === 'object' ? input : {},
+      conversationId: conversationId || null,
+      ...(typeof skill === 'string' && skill ? { skill } : {}),
+    },
+  };
+}
+
+/** Unwraps a loop result: structured payloads (`data`) win over evaluation text. */
+function unwrapLoopOutput(lastResult) {
+  if (!lastResult || typeof lastResult !== 'object') return null;
+  if (lastResult.data !== undefined) return lastResult.data;
+  return lastResult.output;
+}
+
+function outcomeSummary(loop) {
+  return {
+    verdict: loop.verdict,
+    attempts: loop.attempts,
+    maxAttempts: loop.maxAttempts,
+    reason: loop.lastEvaluation && loop.lastEvaluation.reason ? loop.lastEvaluation.reason : null,
+  };
+}
 
 /**
  * @param {import('../decision/decisionSchema').Decision} decision
@@ -95,8 +180,8 @@ async function execute(decision, {
 
     case 'capability':
     case 'tool': {
-      const capability = capabilities[decision.capability];
-      if (!capability || typeof capability.invoke !== 'function') {
+      const adapter = resolveAdapter(capabilities, decision.capability);
+      if (!adapter) {
         return {
           action: decision.action,
           capability: decision.capability,
@@ -104,11 +189,45 @@ async function execute(decision, {
           error: `capability "${decision.capability}" is not available`,
         };
       }
-      // conversationId rides along for capabilities that need to identify
-      // the current conversation (e.g. conversation_search) — pure context
-      // forwarding; the Orchestrator makes no judgment with it.
-      const output = await capability.invoke(messages, { onDelta, task: decision.task, input: decision.input, conversationId });
-      return { action: decision.action, capability: decision.capability, output };
+      // P0: Logos stated what must be achieved (or the neutral default
+      // applies); the loop evaluates every attempt against it.
+      const expectedOutcome = normalizeExpectedOutcome(decision.expected_outcome)
+        || defaultExpectedOutcome({ capabilityId: decision.capability, task: decision.task });
+      const request = buildCapabilityRequest({
+        capabilityId: decision.capability,
+        task: decision.task,
+        input: decision.input,
+        messages,
+        skill: undefined,
+        conversationId,
+        expectedOutcome,
+      });
+      const loop = await runCapabilityLoop({
+        request,
+        adapter,
+        max_attempts: decision.max_attempts,
+        adapterOptions: { onDelta, conversationId },
+      });
+      const outcome = outcomeSummary(loop);
+      if (loop.verdict === 'success') {
+        return { action: decision.action, capability: decision.capability, output: unwrapLoopOutput(loop.lastResult), outcome };
+      }
+      if (loop.verdict === 'ask_user') {
+        // The execution stops here; Gaia asks the user for what is missing.
+        // Mapped onto the existing clarify shape the Response Engine speaks.
+        const missing = loop.lastEvaluation && loop.lastEvaluation.missingInfo
+          ? loop.lastEvaluation.missingInfo
+          : (loop.lastEvaluation && loop.lastEvaluation.reason) || 'missing information';
+        return { action: 'clarify', output: null, reason: `capability needs more information: ${missing}`, outcome, question: missing };
+      }
+      return {
+        action: decision.action,
+        capability: decision.capability,
+        output: null,
+        error: (loop.lastEvaluation && loop.lastEvaluation.reason) || 'capability execution failed',
+        reason: decision.reason,
+        outcome,
+      };
     }
 
     case 'clarify':
@@ -207,27 +326,55 @@ async function executePlan(decision, ctx = {}) {
       ];
     }
 
+    // P0: every capability-backed step runs through the outcome loop —
+    // the step's own expected_outcome when Logos stated one, else the
+    // neutral per-type default. Native generation stays direct (not a
+    // capability execution).
+    const runStepThroughLoop = async ({ stepMessages, stepInput }) => {
+      const adapter = resolveAdapter(capabilities, step.capability);
+      if (!adapter) {
+        throw new Error(`capability "${step.capability}" is not available`);
+      }
+      const expectedOutcome = normalizeExpectedOutcome(step.expected_outcome)
+        || defaultExpectedOutcome({ capabilityId: step.capability, task: decision.task, step });
+      const request = buildCapabilityRequest({
+        capabilityId: step.capability,
+        task: decision.task,
+        input: stepInput,
+        messages: stepMessages,
+        skill: step.skill,
+        conversationId,
+        expectedOutcome,
+      });
+      const loop = await runCapabilityLoop({
+        request,
+        adapter,
+        max_attempts: decision.max_attempts,
+        adapterOptions: { onDelta, conversationId },
+      });
+      if (loop.verdict === 'success') return unwrapLoopOutput(loop.lastResult);
+      if (loop.verdict === 'ask_user') {
+        const missing = loop.lastEvaluation && loop.lastEvaluation.missingInfo
+          ? loop.lastEvaluation.missingInfo
+          : (loop.lastEvaluation && loop.lastEvaluation.reason) || 'missing information';
+        throw new Error(`capability needs more information: ${missing}`);
+      }
+      throw new Error((loop.lastEvaluation && loop.lastEvaluation.reason) || 'capability execution failed');
+    };
+
     try {
       let output;
       switch (step.type) {
         case 'retrieval':
         case 'capability': {
-          const capability = capabilities[step.capability];
-          if (!capability || typeof capability.invoke !== 'function') {
-            throw new Error(`capability "${step.capability}" is not available`);
-          }
           const stepInput = Object.keys(resolvedSources).length > 0
             ? { ...(step.input || {}), sources: resolvedSources }
             : (step.input || {});
-          output = await capability.invoke(messages, { onDelta, task: decision.task, input: stepInput, conversationId, skill: step.skill });
+          output = await runStepThroughLoop({ stepMessages: messages, stepInput });
           break;
         }
         case 'reasoning': {
-          const capability = capabilities[step.capability];
-          if (!capability || typeof capability.invoke !== 'function') {
-            throw new Error(`reasoning capability "${step.capability}" is not available`);
-          }
-          output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId, skill: step.skill });
+          output = await runStepThroughLoop({ stepMessages: invokeMessages, stepInput: step.input });
           break;
         }
         case 'generation': {
@@ -239,11 +386,7 @@ async function executePlan(decision, ctx = {}) {
               ? await nativeGenerator.stream(invokeMessages, { onDelta })
               : await nativeGenerator.generate(invokeMessages);
           } else {
-            const capability = capabilities[step.capability];
-            if (!capability || typeof capability.invoke !== 'function') {
-              throw new Error(`generation capability "${step.capability}" is not available`);
-            }
-            output = await capability.invoke(invokeMessages, { onDelta, task: decision.task, input: step.input, conversationId, skill: step.skill });
+            output = await runStepThroughLoop({ stepMessages: invokeMessages, stepInput: step.input });
           }
           break;
         }

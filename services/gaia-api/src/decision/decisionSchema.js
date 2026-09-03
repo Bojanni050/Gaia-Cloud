@@ -137,6 +137,23 @@ const GENERATION_POLICY_MODES = Object.freeze(['native', 'hermes', 'plan']);
 // capability/skill combination is rejected BEFORE execution ever starts.
 const { validateCapabilitySkill } = require('../capabilityRegistry');
 
+// P0 Logos ↔ Capability contract: a Decision may carry the expected outcome
+// Logos demands, validated with the same normalizer the outcome evaluator
+// uses — a malformed expectation is rejected before execution ever starts.
+const { normalizeExpectedOutcome } = require('../logos/capabilityContract');
+
+/**
+ * Validates an expected_outcome value (string shorthand or object shape).
+ * Returns a problem string or null. Exported for plan-step validation reuse.
+ */
+function validateExpectedOutcome(value) {
+  if (value === undefined) return null;
+  if (!normalizeExpectedOutcome(value)) {
+    return 'decision.expected_outcome must be a non-empty string or { description, mustContain?, mustNotContain?, minLength? }';
+  }
+  return null;
+}
+
 /**
  * Validates one plan step. Returns a problem string or null.
  * @param {object} step
@@ -211,6 +228,12 @@ function validatePlanStep(step, seenIds) {
   if (step.input !== undefined && (typeof step.input !== 'object' || step.input === null || Array.isArray(step.input))) {
     return `plan step "${step.id}": input must be an object when present`;
   }
+
+  // P0: a plan step may carry its own expected outcome; the Orchestrator
+  // evaluates the step result against it (falls back to a per-type default).
+  if (step.expected_outcome !== undefined && !normalizeExpectedOutcome(step.expected_outcome)) {
+    return `plan step "${step.id}": expected_outcome must be a non-empty string or { description, mustContain?, mustNotContain?, minLength? }`;
+  }
   return null;
 }
 
@@ -278,6 +301,14 @@ function validateDecision(decision) {
   if (decision.capability_execute !== undefined && typeof decision.capability_execute !== 'boolean') {
     return 'decision.capability_execute must be a boolean when present';
   }
+  // P0: Logos may state what the capability execution must achieve; the
+  // Orchestrator evaluates every capability result against it.
+  const outcomeProblem = validateExpectedOutcome(decision.expected_outcome);
+  if (outcomeProblem) return outcomeProblem;
+  if (decision.max_attempts !== undefined
+    && (typeof decision.max_attempts !== 'number' || !Number.isFinite(decision.max_attempts))) {
+    return 'decision.max_attempts must be a finite number when present (clamped to 1..10 at execution)';
+  }
   if (decision.generationMode !== undefined && !GENERATION_POLICY_MODES.includes(decision.generationMode)) {
     return `decision.generationMode must be one of: ${GENERATION_POLICY_MODES.join(', ')}`;
   }
@@ -335,4 +366,5 @@ module.exports = {
   MAX_PLAN_STEPS,
   validatePlanSteps,
   validateDecision,
+  validateExpectedOutcome,
 };
