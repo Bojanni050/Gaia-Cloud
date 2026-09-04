@@ -26,6 +26,7 @@ This is the long-term foundation for Gaia. Every document reinforces the same pr
 | 6 | [coding-standards.md](./coding-standards.md) | Structure, contracts, state, testing, dependency governance, maintainability |
 | 7 | [ui-principles.md](./ui-principles.md) | Conversation-first, calm, silence, motion-as-meaning, legible growth |
 | 8 | [split-plan.md](./split-plan.md) | Boundaries between Gaia Cloud / Web / Desktop in the current monorepo and the phased plan to split them into three independent repositories |
+| 9 | [operations.md](./operations.md) | *(not a foundation document — a living reference)* Where things actually run: the admin interface, deployment addresses, how to reach each service |
 
 ## Gaia's Structure
 
