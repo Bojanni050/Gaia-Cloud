@@ -29,6 +29,10 @@
  *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model? }
  *   GET  /admin/api/tts/models        -> retrieve models from TTS provider
  *
+ *   IntentIQ:
+ *   GET  /admin/api/intentiq/config   -> current model override (+ env fallback + effective value)
+ *   PUT  /admin/api/intentiq/config   -> { model } — empty/blank clears the override
+ *
  *   Logos:
  *   GET  /admin/api/logos/decisions   -> durable IntentIQ/ReasonIQ decision log
  */
@@ -36,6 +40,8 @@ const express = require('express');
 const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels } = require('./modelDiscovery');
+const { readIntentModelConfig } = require('./logos/intentModelClient');
+const { resolveIntentModelConfig } = require('./logos/intentModelConfigResolver');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision'];
 
@@ -44,12 +50,13 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  *   store: ReturnType<import('./logos/reasoningModelStore').createReasoningModelStore>,
  *   providerStore?: ReturnType<import('./providerStore').createProviderStore>,
  *   decisionStore?: ReturnType<import('./logos/decisionStore').createDecisionStore>,
+ *   intentModelStore?: ReturnType<import('./logos/intentModelStore').createIntentModelStore>,
  *   auth: import('express').RequestHandler,
  *   createOpenRouterClientFn?: typeof createOpenRouterClient,
  *   retrieveModelsFn?: typeof retrieveModels,
  * }} deps
  */
-function createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn = createOpenRouterClient, retrieveModelsFn = retrieveModels }) {
+function createAdminRouter({ store, providerStore, decisionStore, intentModelStore, auth, createOpenRouterClientFn = createOpenRouterClient, retrieveModelsFn = retrieveModels }) {
   const router = express.Router();
 
   router.get('/', (req, res) => {
@@ -102,6 +109,42 @@ function createAdminRouter({ store, providerStore, decisionStore, auth, createOp
       }
       res.status(502).json({ error: 'could not fetch models from provider' });
     }
+  });
+
+  // --- IntentIQ routes ---
+
+  router.get('/api/intentiq/config', auth, (req, res) => {
+    const envConfig = readIntentModelConfig();
+    const stored = intentModelStore ? intentModelStore.getMaskedConfig() : { model: null, updatedAt: null };
+    const effective = resolveIntentModelConfig({ store: intentModelStore });
+    res.json({
+      envModel: envConfig.model || null,
+      configured: Boolean(envConfig.baseUrl),
+      overrideModel: stored.model,
+      updatedAt: stored.updatedAt,
+      effectiveModel: effective.model || null,
+    });
+  });
+
+  router.put('/api/intentiq/config', auth, (req, res) => {
+    if (!intentModelStore) {
+      return res.status(400).json({ error: 'intent model store not available' });
+    }
+    const body = req.body || {};
+    if (typeof body.model !== 'string') {
+      return res.status(400).json({ error: 'model is required (empty string clears the override)' });
+    }
+    intentModelStore.saveConfig({ model: body.model });
+    const envConfig = readIntentModelConfig();
+    const stored = intentModelStore.getMaskedConfig();
+    const effective = resolveIntentModelConfig({ store: intentModelStore });
+    res.json({
+      envModel: envConfig.model || null,
+      configured: Boolean(envConfig.baseUrl),
+      overrideModel: stored.model,
+      updatedAt: stored.updatedAt,
+      effectiveModel: effective.model || null,
+    });
   });
 
   router.get('/api/logos/decisions', auth, (req, res) => {
