@@ -283,6 +283,8 @@
         <input id="decisionsLimit" type="number" value="50" min="1" max="500">
       </div>
       <button id="refreshDecisionsBtn" class="secondary">Refresh</button>
+      <button id="exportDecisionsJsonBtn" class="secondary">Export JSON</button>
+      <button id="exportDecisionsCsvBtn" class="secondary">Export CSV</button>
     </div>
     <div class="status" id="decisionsStatus"></div>
     <div class="decisions-list" id="decisionsList"></div>
@@ -733,6 +735,48 @@
   // --- Logos decision log ---
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
   const refreshDecisionsBtn = $('refreshDecisionsBtn'), decisionsStatusEl = $('decisionsStatus'), decisionsListEl = $('decisionsList');
+  const exportDecisionsJsonBtn = $('exportDecisionsJsonBtn'), exportDecisionsCsvBtn = $('exportDecisionsCsvBtn');
+  let lastDecisions = [];
+
+  function downloadFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function csvEscape(value) {
+    const s = value === null || value === undefined ? '' : String(value);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function decisionsToCsv(decisions) {
+    const columns = ['timestamp', 'kind', 'system', 'contextId', 'summary', 'input'];
+    const header = columns.join(',');
+    const rows = decisions.map((d) => columns.map((c) => {
+      if (c === 'summary') return csvEscape(summarizeDecision(d));
+      return csvEscape(d[c]);
+    }).join(','));
+    return [header, ...rows].join('\n');
+  }
+
+  function exportDecisions(format) {
+    if (!lastDecisions.length) {
+      setStatus(decisionsStatusEl, 'Nothing to export — refresh first.', false);
+      return;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    if (format === 'csv') {
+      downloadFile('decision-log-' + stamp + '.csv', decisionsToCsv(lastDecisions), 'text/csv');
+    } else {
+      downloadFile('decision-log-' + stamp + '.json', JSON.stringify(lastDecisions, null, 2), 'application/json');
+    }
+  }
 
   function formatTime(iso) {
     try { return new Date(iso).toLocaleString(); } catch (_) { return iso || ''; }
@@ -815,8 +859,9 @@
       const res = await fetch('/admin/api/logos/decisions?' + params.toString(), { headers: authHeaders() });
       if (!res.ok) throw new Error('request failed (' + res.status + ')');
       const body = await res.json();
-      renderDecisions(body.decisions || []);
-      setStatus(decisionsStatusEl, (body.decisions || []).length + ' shown.', true);
+      lastDecisions = body.decisions || [];
+      renderDecisions(lastDecisions);
+      setStatus(decisionsStatusEl, lastDecisions.length + ' shown.', true);
     } catch (err) {
       setStatus(decisionsStatusEl, 'Could not load decisions: ' + err.message, false);
     } finally {
@@ -826,6 +871,8 @@
 
   refreshDecisionsBtn.addEventListener('click', loadDecisions);
   decisionsKindEl.addEventListener('change', loadDecisions);
+  exportDecisionsJsonBtn.addEventListener('click', () => exportDecisions('json'));
+  exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
 
   // --- Init ---
   if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadDecisions(); }
