@@ -49,6 +49,10 @@ const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
+const { createIntentModelStore } = require('./logos/intentModelStore');
+const { resolveIntentModelConfig } = require('./logos/intentModelConfigResolver');
+const { createIntentModelClient, isConfigured: isIntentModelConfigured } = require('./logos/intentModelClient');
+const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { getUserIdentity } = require('./identity');
 const { createVersionRouter } = require('./versionRoutes');
 
@@ -177,7 +181,25 @@ function createApp(env = process.env) {
   const providerStore = createProviderStore(
     env.GAIA_PROVIDER_CONFIG_PATH !== undefined ? { storePath: env.GAIA_PROVIDER_CONFIG_PATH } : {}
   );
-  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, auth }));
+  const intentModelStore = createIntentModelStore(
+    env.INTENTIQ_CONFIG_PATH !== undefined ? { storePath: env.INTENTIQ_CONFIG_PATH } : {}
+  );
+  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, intentModelStore, auth }));
+
+  // IntentIQ's semantic-classification model client, re-resolved on every
+  // call (not once at startup) — same reasoning as getEffectiveNativeGenerator
+  // below: an admin-saved model override must take effect on the very next
+  // turn, not after a restart. Falls back to undefined (heuristic-only
+  // classification) exactly when intentModelClient.js's own createFromEnv
+  // would, i.e. no base URL configured at all.
+  function getEffectiveIntentModel() {
+    const resolved = resolveIntentModelConfig({ store: intentModelStore, env });
+    return isIntentModelConfigured(resolved) ? createIntentModelClient(resolved) : undefined;
+  }
+
+  function intentIQWithEffectiveModel(messages, options = {}) {
+    return classifyIntent(messages, { ...options, model: getEffectiveIntentModel() });
+  }
 
   // Provider store role overrides — when a role has a model selected via
   // the admin surface, it takes precedence over env vars. This is
@@ -297,6 +319,7 @@ function createApp(env = process.env) {
         res,
         conversationId,
         nativeGenerator: getEffectiveNativeGenerator(),
+        intentIQ: intentIQWithEffectiveModel,
         webSearch,
         historyStore,
         decisionStore,
@@ -347,6 +370,7 @@ function createApp(env = process.env) {
       hypothesisRuntime,
       attachments,
       nativeGenerator: getEffectiveNativeGenerator(),
+      intentIQ: intentIQWithEffectiveModel,
       webSearch,
       traceId,
       conversationId,

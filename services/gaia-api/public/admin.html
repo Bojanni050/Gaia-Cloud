@@ -264,6 +264,23 @@
     <div class="status" id="riqVisionModelStatus"></div>
   </section>
 
+  <hr class="separator">
+
+  <!-- IntentIQ (semantic classification model) -->
+  <section>
+    <h2>IntentIQ — semantic model</h2>
+    <p class="hint" style="margin-top:0;">Model used for IntentIQ's semantic classification tier. The endpoint (base URL / auth token) is fixed via GAIA_INTENT_BASE_URL / GAIA_INTENT_AUTH_TOKEN and not editable here — only which model is called at that endpoint.</p>
+    <p class="hint" id="iiqEndpointHint">Loading…</p>
+
+    <label for="iiqModel">Model</label>
+    <input id="iiqModel" type="text" placeholder="e.g. gpt-4o-mini" autocomplete="off">
+    <p class="hint" id="iiqEnvHint"></p>
+
+    <button id="iiqSaveModelBtn">Save model</button>
+    <button id="iiqClearModelBtn" class="secondary">Clear override (use env default)</button>
+    <div class="status" id="iiqStatus"></div>
+  </section>
+
   <!-- Decision Log -->
   <section>
     <h2>Logos — decision log</h2>
@@ -732,6 +749,52 @@
     riqSaveVisionModelBtn.click();
   });
 
+  // --- IntentIQ semantic model ---
+  const iiqModelEl = $('iiqModel');
+  const iiqSaveModelBtn = $('iiqSaveModelBtn'), iiqClearModelBtn = $('iiqClearModelBtn');
+  const iiqStatusEl = $('iiqStatus'), iiqEndpointHintEl = $('iiqEndpointHint'), iiqEnvHintEl = $('iiqEnvHint');
+
+  function renderIntentIqConfig(cfg) {
+    iiqEndpointHintEl.textContent = cfg.configured
+      ? 'Endpoint configured (GAIA_INTENT_BASE_URL set).'
+      : 'No endpoint configured — GAIA_INTENT_BASE_URL is unset, so IntentIQ runs heuristic-only regardless of the model set here.';
+    iiqEnvHintEl.textContent = cfg.envModel
+      ? 'Env default (GAIA_INTENT_MODEL): ' + cfg.envModel + (cfg.overrideModel ? ' — currently overridden below.' : ' — currently in effect.')
+      : 'No env default (GAIA_INTENT_MODEL) set.';
+    iiqModelEl.value = cfg.overrideModel || '';
+    iiqModelEl.placeholder = cfg.envModel || 'e.g. gpt-4o-mini';
+  }
+
+  async function loadIntentIqConfig() {
+    try {
+      const res = await fetch('/admin/api/intentiq/config', { headers: authHeaders() });
+      if (!res.ok) throw new Error('request failed (' + res.status + ')');
+      renderIntentIqConfig(await res.json());
+    } catch (err) {
+      setStatus(iiqStatusEl, 'Could not load IntentIQ config: ' + err.message, false);
+    }
+  }
+
+  async function saveIntentIqModel(model) {
+    setStatus(iiqStatusEl, 'Saving…', true);
+    try {
+      const res = await fetch('/admin/api/intentiq/config', {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!res.ok) throw new Error('request failed (' + res.status + ')');
+      const body = await res.json();
+      renderIntentIqConfig(body);
+      setStatus(iiqStatusEl, body.overrideModel ? 'Saved — using ' + body.overrideModel + '.' : 'Override cleared — using env default.', true);
+    } catch (err) {
+      setStatus(iiqStatusEl, 'Could not save: ' + err.message, false);
+    }
+  }
+
+  iiqSaveModelBtn.addEventListener('click', () => saveIntentIqModel(iiqModelEl.value.trim()));
+  iiqClearModelBtn.addEventListener('click', () => saveIntentIqModel(''));
+
   // --- Logos decision log ---
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
   const refreshDecisionsBtn = $('refreshDecisionsBtn'), decisionsStatusEl = $('decisionsStatus'), decisionsListEl = $('decisionsList');
@@ -875,8 +938,8 @@
   exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
 
   // --- Init ---
-  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadDecisions(); }
-  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadDecisions(); });
+  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); });
 })();
 </script>
 </body>
