@@ -6,8 +6,10 @@ const {
   retrieveModels,
   retrieveEdenAiModels,
   retrieveOpenAiCompatibleModels,
+  retrieveMistralModels,
   normalizeEdenAiModel,
   normalizeOpenAiModel,
+  normalizeMistralModel,
 } = require('../src/modelDiscovery');
 
 // --- normalizeEdenAiModel ---
@@ -187,6 +189,86 @@ test('retrieveOpenAiCompatibleModels: throws on network error', async () => {
   );
 });
 
+// --- normalizeMistralModel ---
+
+test('normalizeMistralModel: extracts capabilities from Mistral\'s flat booleans', () => {
+  const m = {
+    id: 'pixtral-large-latest',
+    name: 'pixtral-large-latest',
+    capabilities: {
+      completion_chat: true,
+      completion_fim: false,
+      function_calling: true,
+      fine_tuning: false,
+      vision: true,
+    },
+  };
+  const result = normalizeMistralModel(m);
+  assert.equal(result.id, 'pixtral-large-latest');
+  assert.equal(result.name, 'pixtral-large-latest');
+  assert.ok(result.capabilities.includes('vision'));
+  assert.ok(result.capabilities.includes('function_calling'));
+  assert.ok(!result.capabilities.includes('fim'));
+  assert.ok(!result.capabilities.includes('fine_tuning'));
+});
+
+test('normalizeMistralModel: handles missing capabilities gracefully', () => {
+  const m = { id: 'mistral-small-latest', name: 'mistral-small-latest' };
+  const result = normalizeMistralModel(m);
+  assert.equal(result.id, 'mistral-small-latest');
+  assert.deepEqual(result.capabilities, []);
+});
+
+test('normalizeMistralModel: falls back to id when name is absent', () => {
+  assert.equal(normalizeMistralModel({ id: 'codestral-latest' }).name, 'codestral-latest');
+});
+
+// --- retrieveMistralModels (mocked fetch) ---
+
+test('retrieveMistralModels: fetches and normalizes models', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({
+      object: 'list',
+      data: [
+        { id: 'mistral-large-latest', name: 'mistral-large-latest', capabilities: { function_calling: true, vision: false } },
+        { id: 'pixtral-large-latest', name: 'pixtral-large-latest', capabilities: { vision: true } },
+      ],
+    }),
+  };
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => { capturedUrl = url; capturedHeaders = init.headers; return fakeResponse; };
+  const models = await retrieveMistralModels({ baseUrl: 'https://api.mistral.ai/v1', apiKey: 'test-key', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.mistral.ai/v1/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer test-key');
+  assert.equal(models.length, 2);
+  assert.ok(models.find((m) => m.id === 'pixtral-large-latest').capabilities.includes('vision'));
+});
+
+test('retrieveMistralModels: defaults to api.mistral.ai when no baseUrl is configured', async () => {
+  const fakeResponse = { ok: true, json: async () => ({ data: [] }) };
+  let capturedUrl;
+  const fetchImpl = async (url) => { capturedUrl = url; return fakeResponse; };
+  await retrieveMistralModels({ baseUrl: '', apiKey: '', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.mistral.ai/v1/models');
+});
+
+test('retrieveMistralModels: throws on network error', async () => {
+  const fetchImpl = async () => { throw new Error('network fail'); };
+  await assert.rejects(
+    () => retrieveMistralModels({ baseUrl: 'https://api.mistral.ai/v1', fetchImpl, timeoutMs: 5000 }),
+    { message: 'mistral unreachable' }
+  );
+});
+
+test('retrieveMistralModels: throws on 401', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 401 });
+  await assert.rejects(
+    () => retrieveMistralModels({ baseUrl: 'https://api.mistral.ai/v1', fetchImpl, timeoutMs: 5000 }),
+    { message: 'authentication failed' }
+  );
+});
+
 // --- retrieveModels (router) ---
 
 test('retrieveModels: routes to EdenAI adapter for edenai provider', async () => {
@@ -198,6 +280,18 @@ test('retrieveModels: routes to EdenAI adapter for edenai provider', async () =>
   const models = await retrieveModels({ provider: 'edenai', baseUrl: '', apiKey: '', fetchImpl, timeoutMs: 5000 });
   assert.equal(models.length, 1);
   assert.equal(models[0].id, 'test/model');
+});
+
+test('retrieveModels: routes to Mistral adapter for mistral provider', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({ data: [{ id: 'mistral-medium-latest', name: 'mistral-medium-latest', capabilities: { vision: true } }] }),
+  };
+  const fetchImpl = async () => fakeResponse;
+  const models = await retrieveModels({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: '', fetchImpl, timeoutMs: 5000 });
+  assert.equal(models.length, 1);
+  assert.equal(models[0].id, 'mistral-medium-latest');
+  assert.ok(models[0].capabilities.includes('vision'));
 });
 
 test('retrieveModels: routes to OpenAI-compatible adapter for unknown provider', async () => {

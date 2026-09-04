@@ -12,6 +12,12 @@
  * Supported discovery patterns:
  *   - OpenAI-compatible: GET {baseUrl}/models (default)
  *   - EdenAI:            GET https://api.edenai.run/v3/models (or eu variant)
+ *   - Mistral:           GET {baseUrl}/models (default https://api.mistral.ai/v1)
+ *                        — OpenAI-shaped, but capabilities come back as a flat
+ *                        object (vision, function_calling, ...) instead of the
+ *                        input_modalities/supports_* shape other providers use,
+ *                        so it gets its own normalizer. See
+ *                        https://docs.mistral.ai/getting-started/platform-overview
  *
  * The provider string determines which adapter is used. Unknown providers
  * fall back to the OpenAI-compatible pattern, which covers OpenRouter,
@@ -40,8 +46,75 @@ async function retrieveModels({ provider, baseUrl, apiKey, fetchImpl, timeoutMs 
     return retrieveEdenAiModels({ apiKey, fetchImpl: fetchFn, timeoutMs: ms });
   }
 
+  if (normalizedProvider === 'mistral') {
+    return retrieveMistralModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
+  }
+
   // Default: OpenAI-compatible /models endpoint
   return retrieveOpenAiCompatibleModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
+}
+
+const MISTRAL_DEFAULT_BASE_URL = 'https://api.mistral.ai/v1';
+
+/**
+ * Mistral model discovery — GET {baseUrl}/models (defaults to Mistral's
+ * own endpoint if no baseUrl is configured). Bearer-authenticated, same
+ * shape as OpenAI's /models list, but each entry's `capabilities` is a
+ * flat object of booleans (completion_chat, completion_fim,
+ * function_calling, fine_tuning, vision) rather than the
+ * input_modalities/supports_* shape used elsewhere — normalized
+ * separately so those flags are read correctly instead of silently
+ * dropped by the generic OpenAI-compatible normalizer.
+ */
+async function retrieveMistralModels({ baseUrl, apiKey, fetchImpl, timeoutMs }) {
+  const url = `${String(baseUrl || MISTRAL_DEFAULT_BASE_URL).replace(/\/+$/, '')}/models`;
+  const headers = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  let response;
+  try {
+    response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    throw new Error('mistral unreachable');
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('authentication failed');
+    throw new Error('provider responded with an error');
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new Error('provider returned an unreadable response');
+  }
+
+  const models = Array.isArray(data?.data) ? data.data : [];
+  return models
+    .map((m) => normalizeMistralModel(m))
+    .filter((m) => Boolean(m.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Normalize a single Mistral model entry. Capabilities come straight from
+ * Mistral's own flat booleans — never invented.
+ */
+function normalizeMistralModel(m) {
+  const caps = [];
+  const c = m.capabilities;
+  if (c) {
+    if (c.vision) caps.push('vision');
+    if (c.function_calling) caps.push('function_calling');
+    if (c.completion_fim) caps.push('fim');
+    if (c.fine_tuning) caps.push('fine_tuning');
+  }
+  return {
+    id: m.id || '',
+    name: m.name || m.id || '',
+    capabilities: caps,
+  };
 }
 
 /**
@@ -172,6 +245,8 @@ module.exports = {
   retrieveModels,
   retrieveEdenAiModels,
   retrieveOpenAiCompatibleModels,
+  retrieveMistralModels,
   normalizeEdenAiModel,
   normalizeOpenAiModel,
+  normalizeMistralModel,
 };

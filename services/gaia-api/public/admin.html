@@ -79,7 +79,7 @@
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.1</small></h1>
+  <h1>Model Provider Settings <small>v1.2</small></h1>
   <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
@@ -99,11 +99,12 @@
       <option value="openrouter">OpenRouter</option>
       <option value="openai">OpenAI</option>
       <option value="anthropic">Anthropic</option>
+      <option value="mistral">Mistral</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 
     <label for="baseUrl">Base URL</label>
-    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1" autocomplete="off">
+    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1 (Mistral: https://api.mistral.ai/v1)" autocomplete="off">
 
     <label for="apiKey">API Key</label>
     <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
@@ -226,7 +227,7 @@
   <!-- ReasonIQ (provider-agnostic) -->
   <section>
     <h2>ReasonIQ — reasoning model</h2>
-    <p class="hint" style="margin-top:0;">Cognitive reasoning layer. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, etc.).</p>
+    <p class="hint" style="margin-top:0;">Cognitive reasoning layer. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, Mistral, etc.).</p>
 
     <label for="riqProviderSelect">Provider</label>
     <select id="riqProviderSelect">
@@ -234,6 +235,7 @@
       <option value="openrouter">OpenRouter</option>
       <option value="edenai">EdenAI</option>
       <option value="openai">OpenAI</option>
+      <option value="mistral">Mistral</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 
