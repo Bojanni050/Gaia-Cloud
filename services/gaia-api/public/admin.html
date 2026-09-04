@@ -122,10 +122,13 @@
     <p class="hint" style="margin-top:0.5rem;">Derived from configured models. No credentials exposed.</p>
   </section>
 
-  <!-- Role Selectors (Generation, Reasoning, Vision) -->
+  <!-- Role Selectors (Generation only — Reasoning/Vision are configured
+       in the ReasonIQ section below, which is where they actually take
+       effect; keeping a second, unwired copy of those two here was
+       confusing, so this panel now only covers what it actually drives.) -->
   <section id="rolesSection" style="display:none;">
     <h2>Model Roles</h2>
-    <p class="hint" style="margin-top:0; margin-bottom:1rem;">Each role selects a model from the provider's catalog, or a manual model ID.</p>
+    <p class="hint" style="margin-top:0; margin-bottom:1rem;">Selects a model from the provider's catalog, or a manual model ID.</p>
 
     <!-- Generation -->
     <div class="role-section" id="roleGeneration">
@@ -133,6 +136,7 @@
         <span class="role-label">Generation</span>
         <span class="role-badge unconfigured" id="genBadge">unconfigured</span>
       </div>
+      <p class="hint" style="margin-top:0;">Used for Gaia's native responses — the model that actually writes her replies when a turn doesn't route through Hermes. Independent from ReasonIQ's reasoning model and IntentIQ's classifier below, each of which keeps its own provider/key.</p>
       <div class="mode-toggle">
         <label><input type="radio" name="genMode" value="catalog" checked> Catalog</label>
         <label><input type="radio" name="genMode" value="manual"> Manual</label>
@@ -147,50 +151,6 @@
       </div>
       <button class="save-role-btn" data-role="generation">Save</button>
       <div class="status" id="genStatus"></div>
-    </div>
-
-    <!-- Reasoning -->
-    <div class="role-section" id="roleReasoning">
-      <div class="role-header">
-        <span class="role-label">Reasoning</span>
-        <span class="role-badge unconfigured" id="reasonBadge">unconfigured</span>
-      </div>
-      <div class="mode-toggle">
-        <label><input type="radio" name="reasonMode" value="catalog" checked> Catalog</label>
-        <label><input type="radio" name="reasonMode" value="manual"> Manual</label>
-      </div>
-      <div id="reasonCatalog">
-        <select id="reasonSelect"><option value="">— retrieve models first —</option></select>
-        <div class="model-meta" id="reasonMeta"></div>
-      </div>
-      <div id="reasonManual" class="manual-input" style="display:none;">
-        <label for="reasonManualId">Model ID</label>
-        <input id="reasonManualId" type="text" placeholder="e.g. anthropic/claude-sonnet-4-6" autocomplete="off">
-      </div>
-      <button class="save-role-btn" data-role="reasoning">Save</button>
-      <div class="status" id="reasonStatus"></div>
-    </div>
-
-    <!-- Vision -->
-    <div class="role-section" id="roleVision">
-      <div class="role-header">
-        <span class="role-label">Vision / Multimodal</span>
-        <span class="role-badge unconfigured" id="visionBadge">unconfigured</span>
-      </div>
-      <div class="mode-toggle">
-        <label><input type="radio" name="visionMode" value="catalog" checked> Catalog</label>
-        <label><input type="radio" name="visionMode" value="manual"> Manual</label>
-      </div>
-      <div id="visionCatalog">
-        <select id="visionSelect"><option value="">— retrieve models first —</option></select>
-        <div class="model-meta" id="visionMeta"></div>
-      </div>
-      <div id="visionManual" class="manual-input" style="display:none;">
-        <label for="visionManualId">Model ID</label>
-        <input id="visionManualId" type="text" placeholder="e.g. google/gemini-2.5-flash" autocomplete="off">
-      </div>
-      <button class="save-role-btn" data-role="vision">Save</button>
-      <div class="status" id="visionStatus"></div>
     </div>
   </section>
 
@@ -227,7 +187,7 @@
   <!-- ReasonIQ (provider-agnostic) -->
   <section>
     <h2>ReasonIQ — reasoning model</h2>
-    <p class="hint" style="margin-top:0;">Cognitive reasoning layer. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, Mistral, etc.).</p>
+    <p class="hint" style="margin-top:0;">Used for Gaia's cognitive reasoning layer — evaluates hypotheses/contradictions before a reply is written, and (via the vision model below) reads image attachments. Not Gaia's voice: that's Generation above. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, Mistral, etc.), independent of Generation's provider.</p>
 
     <label for="riqProviderSelect">Provider</label>
     <select id="riqProviderSelect">
@@ -269,7 +229,7 @@
   <!-- IntentIQ (semantic classification model, provider-agnostic) -->
   <section>
     <h2>IntentIQ — semantic model</h2>
-    <p class="hint" style="margin-top:0;">Model used for IntentIQ's semantic classification tier. Same setup flow as ReasonIQ: pick a provider, save a key, fetch its models, choose one. Leave unset (or use GAIA_INTENT_* env vars) to run heuristic-only classification.</p>
+    <p class="hint" style="margin-top:0;">Used to classify what the user is asking for before Gaia responds (intent behind the message), not to write the reply itself. Same setup flow as ReasonIQ: pick a provider, save a key, fetch its models, choose one — independent of Generation's and ReasonIQ's own providers. Leave unset (or use GAIA_INTENT_* env vars) to run heuristic-only classification.</p>
 
     <label for="iiqProviderSelect">Provider</label>
     <select id="iiqProviderSelect">
@@ -339,8 +299,6 @@
 
   const ROLE_CONFIG = {
     generation: { selectEl: $('genSelect'), metaEl: $('genMeta'), badgeEl: $('genBadge'), statusEl: $('genStatus'), modeName: 'genMode', catalogId: 'genCatalog', manualId: 'genManual', manualInputId: 'genManualId' },
-    reasoning:  { selectEl: $('reasonSelect'), metaEl: $('reasonMeta'), badgeEl: $('reasonBadge'), statusEl: $('reasonStatus'), modeName: 'reasonMode', catalogId: 'reasonCatalog', manualId: 'reasonManual', manualInputId: 'reasonManualId' },
-    vision:     { selectEl: $('visionSelect'), metaEl: $('visionMeta'), badgeEl: $('visionBadge'), statusEl: $('visionStatus'), modeName: 'visionMode', catalogId: 'visionCatalog', manualId: 'visionManual', manualInputId: 'visionManualId' },
   };
 
   let catalog = [];
@@ -470,8 +428,7 @@
   // --- Mode toggle ---
   document.querySelectorAll('input[type="radio"][name$="Mode"]').forEach((radio) => {
     radio.addEventListener('change', () => {
-      const roleName = radio.name.replace('Mode', '');
-      const roleKey = roleName === 'gen' ? 'generation' : roleName === 'reason' ? 'reasoning' : 'vision';
+      const roleKey = radio.name === 'genMode' ? 'generation' : null;
       const cfg = ROLE_CONFIG[roleKey];
       if (!cfg) return;
       const isManual = radio.value === 'manual';
