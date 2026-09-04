@@ -266,19 +266,38 @@
 
   <hr class="separator">
 
-  <!-- IntentIQ (semantic classification model) -->
+  <!-- IntentIQ (semantic classification model, provider-agnostic) -->
   <section>
     <h2>IntentIQ — semantic model</h2>
-    <p class="hint" style="margin-top:0;">Model used for IntentIQ's semantic classification tier. The endpoint (base URL / auth token) is fixed via GAIA_INTENT_BASE_URL / GAIA_INTENT_AUTH_TOKEN and not editable here — only which model is called at that endpoint.</p>
-    <p class="hint" id="iiqEndpointHint">Loading…</p>
+    <p class="hint" style="margin-top:0;">Model used for IntentIQ's semantic classification tier. Same setup flow as ReasonIQ: pick a provider, save a key, fetch its models, choose one. Leave unset (or use GAIA_INTENT_* env vars) to run heuristic-only classification.</p>
 
-    <label for="iiqModel">Model</label>
-    <input id="iiqModel" type="text" placeholder="e.g. gpt-4o-mini" autocomplete="off">
+    <label for="iiqProviderSelect">Provider</label>
+    <select id="iiqProviderSelect">
+      <option value="">— select provider —</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="edenai">EdenAI</option>
+      <option value="openai">OpenAI</option>
+      <option value="mistral">Mistral</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+
+    <label for="iiqBaseUrl">Base URL</label>
+    <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+
+    <label for="iiqApiKey">API key</label>
+    <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+    <p class="hint" id="iiqKeyHint">No key saved yet.</p>
+
+    <button id="iiqSaveConfigBtn">Save config</button>
+    <div class="status" id="iiqConfigStatus"></div>
+
+    <button id="iiqFetchModelsBtn" class="secondary">Fetch available models</button>
+    <label for="iiqModelSelect">Model for IntentIQ</label>
+    <select id="iiqModelSelect"><option value="">— save config and fetch models —</option></select>
+    <div class="model-meta" id="iiqModelMeta"></div>
+    <button id="iiqSaveModelBtn" disabled>Save selection</button>
+    <div class="status" id="iiqModelStatus"></div>
     <p class="hint" id="iiqEnvHint"></p>
-
-    <button id="iiqSaveModelBtn">Save model</button>
-    <button id="iiqClearModelBtn" class="secondary">Clear override (use env default)</button>
-    <div class="status" id="iiqStatus"></div>
   </section>
 
   <!-- Decision Log -->
@@ -749,51 +768,127 @@
     riqSaveVisionModelBtn.click();
   });
 
-  // --- IntentIQ semantic model ---
-  const iiqModelEl = $('iiqModel');
-  const iiqSaveModelBtn = $('iiqSaveModelBtn'), iiqClearModelBtn = $('iiqClearModelBtn');
-  const iiqStatusEl = $('iiqStatus'), iiqEndpointHintEl = $('iiqEndpointHint'), iiqEnvHintEl = $('iiqEnvHint');
+  // --- IntentIQ (provider-agnostic, same flow as ReasonIQ) ---
+  const iiqProviderEl = $('iiqProviderSelect'), iiqBaseUrlEl = $('iiqBaseUrl'), iiqApiKeyEl = $('iiqApiKey');
+  const iiqKeyHintEl = $('iiqKeyHint'), iiqConfigStatusEl = $('iiqConfigStatus'), iiqEnvHintEl = $('iiqEnvHint');
+  const iiqSaveConfigBtn = $('iiqSaveConfigBtn'), iiqFetchModelsBtn = $('iiqFetchModelsBtn');
+  const iiqModelSelectEl = $('iiqModelSelect'), iiqModelMetaEl = $('iiqModelMeta'), iiqModelStatusEl = $('iiqModelStatus');
+  const iiqSaveModelBtn = $('iiqSaveModelBtn');
 
-  function renderIntentIqConfig(cfg) {
-    iiqEndpointHintEl.textContent = cfg.configured
-      ? 'Endpoint configured (GAIA_INTENT_BASE_URL set).'
-      : 'No endpoint configured — GAIA_INTENT_BASE_URL is unset, so IntentIQ runs heuristic-only regardless of the model set here.';
-    iiqEnvHintEl.textContent = cfg.envModel
-      ? 'Env default (GAIA_INTENT_MODEL): ' + cfg.envModel + (cfg.overrideModel ? ' — currently overridden below.' : ' — currently in effect.')
-      : 'No env default (GAIA_INTENT_MODEL) set.';
-    iiqModelEl.value = cfg.overrideModel || '';
-    iiqModelEl.placeholder = cfg.envModel || 'e.g. gpt-4o-mini';
+  let iiqModels = [];
+  let iiqCurrentModel = null;
+
+  function renderIntentIqEnvHint(cfg) {
+    iiqEnvHintEl.textContent = cfg.envConfigured
+      ? 'GAIA_INTENT_* env vars are also set (env model: ' + (cfg.envModel || '—') + ') — used only when no config is saved here.'
+      : 'No GAIA_INTENT_* env vars set — IntentIQ runs heuristic-only until a config is saved here.';
   }
 
   async function loadIntentIqConfig() {
     try {
       const res = await fetch('/admin/api/intentiq/config', { headers: authHeaders() });
-      if (!res.ok) throw new Error('request failed (' + res.status + ')');
-      renderIntentIqConfig(await res.json());
-    } catch (err) {
-      setStatus(iiqStatusEl, 'Could not load IntentIQ config: ' + err.message, false);
-    }
+      if (!res.ok) return;
+      const cfg = await res.json();
+      iiqCurrentModel = cfg.model;
+      if (cfg.provider) iiqProviderEl.value = cfg.provider;
+      if (cfg.baseUrl) iiqBaseUrlEl.value = cfg.baseUrl;
+      iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      if (cfg.model) {
+        iiqModelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
+        iiqModelSelectEl.value = cfg.model;
+      }
+      renderIntentIqEnvHint(cfg);
+    } catch (_) { /* ignore */ }
   }
 
-  async function saveIntentIqModel(model) {
-    setStatus(iiqStatusEl, 'Saving…', true);
+  iiqSaveConfigBtn.addEventListener('click', async () => {
+    const provider = iiqProviderEl.value;
+    if (!provider) { setStatus(iiqConfigStatusEl, 'Select a provider first.', false); return; }
+    const baseUrl = iiqBaseUrlEl.value.trim();
+    if (!baseUrl) { setStatus(iiqConfigStatusEl, 'Enter a base URL.', false); return; }
+    const body = { provider, baseUrl };
+    if (iiqApiKeyEl.value.trim()) body.apiKey = iiqApiKeyEl.value.trim();
+    iiqSaveConfigBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/intentiq/config', {
-        method: 'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model }),
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('request failed (' + res.status + ')');
-      const body = await res.json();
-      renderIntentIqConfig(body);
-      setStatus(iiqStatusEl, body.overrideModel ? 'Saved — using ' + body.overrideModel + '.' : 'Override cleared — using env default.', true);
+      if (!res.ok) throw new Error(await res.text());
+      const cfg = await res.json();
+      iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      iiqApiKeyEl.value = '';
+      renderIntentIqEnvHint(cfg);
+      setStatus(iiqConfigStatusEl, 'Config saved.', true);
     } catch (err) {
-      setStatus(iiqStatusEl, 'Could not save: ' + err.message, false);
+      setStatus(iiqConfigStatusEl, 'Could not save config.', false);
+    } finally {
+      iiqSaveConfigBtn.disabled = false;
     }
+  });
+
+  iiqFetchModelsBtn.addEventListener('click', async () => {
+    iiqFetchModelsBtn.disabled = true;
+    setStatus(iiqModelStatusEl, 'Fetching…', true);
+    try {
+      const res = await fetch('/admin/api/intentiq/models', { headers: authHeaders() });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'request failed');
+      }
+      const body = await res.json();
+      iiqModels = body.models || [];
+      iiqPopulateSelect();
+      iiqSaveModelBtn.disabled = iiqModels.length === 0;
+      setStatus(iiqModelStatusEl, iiqModels.length + ' models available.', true);
+      iiqUpdateModelMeta();
+    } catch (err) {
+      setStatus(iiqModelStatusEl, 'Could not fetch models: ' + err.message, false);
+    } finally {
+      iiqFetchModelsBtn.disabled = false;
+    }
+  });
+
+  function iiqPopulateSelect() {
+    iiqModelSelectEl.innerHTML = '';
+    for (const m of iiqModels) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name + ' (' + m.id + ')';
+      iiqModelSelectEl.appendChild(opt);
+    }
+    if (iiqCurrentModel && iiqModels.some((m) => m.id === iiqCurrentModel)) iiqModelSelectEl.value = iiqCurrentModel;
   }
 
-  iiqSaveModelBtn.addEventListener('click', () => saveIntentIqModel(iiqModelEl.value.trim()));
-  iiqClearModelBtn.addEventListener('click', () => saveIntentIqModel(''));
+  function iiqUpdateModelMeta() {
+    const m = iiqModels.find((x) => x.id === iiqModelSelectEl.value);
+    if (!m) { iiqModelMetaEl.textContent = ''; return; }
+    if (m.capabilities && m.capabilities.length > 0) {
+      iiqModelMetaEl.textContent = 'capabilities: ' + m.capabilities.join(', ');
+    } else if (m.contextLength || m.pricing) {
+      iiqModelMetaEl.textContent = 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—');
+    } else {
+      iiqModelMetaEl.textContent = '';
+    }
+  }
+  iiqModelSelectEl.addEventListener('change', iiqUpdateModelMeta);
+
+  iiqSaveModelBtn.addEventListener('click', async () => {
+    if (!iiqModelSelectEl.value) return;
+    iiqSaveModelBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/intentiq/config', {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ model: iiqModelSelectEl.value }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      iiqCurrentModel = iiqModelSelectEl.value;
+      setStatus(iiqModelStatusEl, 'IntentIQ will use ' + iiqCurrentModel + '.', true);
+    } catch (err) {
+      setStatus(iiqModelStatusEl, 'Could not save the selection.', false);
+    } finally {
+      iiqSaveModelBtn.disabled = false;
+    }
+  });
 
   // --- Logos decision log ---
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');

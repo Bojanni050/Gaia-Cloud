@@ -1,23 +1,22 @@
 'use strict';
 
 /**
- * Persisted runtime override for IntentIQ's semantic-classification model
- * id — the admin-surface counterpart to intentModelClient.js's
- * GAIA_INTENT_MODEL env var (see intentModelConfigResolver.js for how the
- * two combine). Mirrors reasoningModelStore.js's shape and reasoning for
- * why this is runtime-writable state: a chosen model id is operational
- * configuration someone picks through the admin panel, not something that
- * should require a redeploy.
+ * Persisted configuration for IntentIQ's semantic-classification model —
+ * the runtime-writable, admin-surface counterpart to intentModelClient.js's
+ * GAIA_INTENT_* env vars (see intentModelConfigResolver.js for how the two
+ * combine). Mirrors reasoningModelStore.js's shape and reasoning
+ * deliberately, so the admin panel's "pick a provider, save a key, fetch
+ * models, choose one" flow works identically for both — see admin.html's
+ * IntentIQ section.
  *
- * Deliberately narrower than reasoningModelStore.js: only the model id is
- * admin-editable here. GAIA_INTENT_BASE_URL/GAIA_INTENT_AUTH_TOKEN stay
- * env-only — they identify which endpoint/account IntentIQ talks to at
- * all, which is still ops-level configuration, not a day-to-day choice
- * the way swapping models is.
+ * Stored as a single JSON file, same convention as reasoningModelStore.js/
+ * providerStore.js. The API key is never logged and never returned
+ * verbatim by getMaskedConfig().
  */
 
 const fs = require('fs');
 const path = require('path');
+const { maskKey } = require('./reasoningModelStore');
 
 function resolveStorePath(env = process.env) {
   if (env.INTENTIQ_CONFIG_PATH) return env.INTENTIQ_CONFIG_PATH;
@@ -46,31 +45,45 @@ function createIntentModelStore(options = {}) {
     fs.writeFileSync(storePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
-  /** @returns {{ model: string, updatedAt: string }|null} */
+  /** @returns {{ provider: string, baseUrl: string, model: string, apiKey: string, updatedAt: string }|null} */
   function getConfig() {
     return readRaw();
   }
 
   /**
-   * @param {{ model: string }} partial `model` empty/blank clears the
-   *   override (falls back to GAIA_INTENT_MODEL) rather than persisting
-   *   an empty string, so the resolver's "stored wins when non-empty"
-   *   check stays simple.
+   * Merges and persists a partial update. `apiKey` is optional on update —
+   * omitting it (vs. passing an empty string) keeps the previously stored
+   * key, so re-saving a model choice never requires re-entering the key
+   * (same convention as reasoningModelStore.js's saveConfig).
+   * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string }} partial
    */
   function saveConfig(partial) {
-    const model = typeof partial.model === 'string' ? partial.model.trim() : '';
-    if (!model) {
-      clear();
-      return { model: '', updatedAt: new Date().toISOString() };
-    }
-    const next = { model, updatedAt: new Date().toISOString() };
+    const current = readRaw() || { provider: '', baseUrl: '', model: '', apiKey: '' };
+    const next = {
+      provider: partial.provider !== undefined ? partial.provider : current.provider,
+      baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : current.baseUrl,
+      model: partial.model !== undefined ? partial.model : current.model,
+      apiKey: partial.apiKey !== undefined ? partial.apiKey : current.apiKey,
+      updatedAt: new Date().toISOString(),
+    };
     writeRaw(next);
     return next;
   }
 
+  /** Safe to return to a client — the raw key never leaves this module. */
   function getMaskedConfig() {
     const config = readRaw();
-    return { model: (config && config.model) || null, updatedAt: (config && config.updatedAt) || null };
+    if (!config) {
+      return { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, updatedAt: null };
+    }
+    return {
+      provider: config.provider || null,
+      baseUrl: config.baseUrl || null,
+      model: config.model || null,
+      hasApiKey: Boolean(config.apiKey),
+      maskedApiKey: maskKey(config.apiKey),
+      updatedAt: config.updatedAt || null,
+    };
   }
 
   function clear() {
