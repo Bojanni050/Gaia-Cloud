@@ -29,9 +29,10 @@
  *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model? }
  *   GET  /admin/api/tts/models        -> retrieve models from TTS provider
  *
- *   IntentIQ:
- *   GET  /admin/api/intentiq/config   -> current model override (+ env fallback + effective value)
- *   PUT  /admin/api/intentiq/config   -> { model } — empty/blank clears the override
+ *   IntentIQ (semantic classification model — same shape as ReasonIQ's):
+ *   GET  /admin/api/intentiq/config   -> masked current config + env fallback
+ *   PUT  /admin/api/intentiq/config   -> { provider?, baseUrl?, model?, apiKey? }
+ *   GET  /admin/api/intentiq/models   -> fetch models from configured provider
  *
  *   Logos:
  *   GET  /admin/api/logos/decisions   -> durable IntentIQ/ReasonIQ decision log
@@ -41,7 +42,6 @@ const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels } = require('./modelDiscovery');
 const { readIntentModelConfig } = require('./logos/intentModelClient');
-const { resolveIntentModelConfig } = require('./logos/intentModelConfigResolver');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision'];
 
@@ -111,18 +111,18 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
     }
   });
 
-  // --- IntentIQ routes ---
+  // --- IntentIQ routes (same shape as ReasonIQ's: save provider/key,
+  // fetch the live model catalog, pick one) ---
 
   router.get('/api/intentiq/config', auth, (req, res) => {
     const envConfig = readIntentModelConfig();
-    const stored = intentModelStore ? intentModelStore.getMaskedConfig() : { model: null, updatedAt: null };
-    const effective = resolveIntentModelConfig({ store: intentModelStore });
+    const masked = intentModelStore
+      ? intentModelStore.getMaskedConfig()
+      : { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, updatedAt: null };
     res.json({
+      ...masked,
       envModel: envConfig.model || null,
-      configured: Boolean(envConfig.baseUrl),
-      overrideModel: stored.model,
-      updatedAt: stored.updatedAt,
-      effectiveModel: effective.model || null,
+      envConfigured: Boolean(envConfig.baseUrl),
     });
   });
 
@@ -131,20 +131,48 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
       return res.status(400).json({ error: 'intent model store not available' });
     }
     const body = req.body || {};
-    if (typeof body.model !== 'string') {
-      return res.status(400).json({ error: 'model is required (empty string clears the override)' });
+    const allowed = {};
+    if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
+    if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
+    if (typeof body.model === 'string') allowed.model = body.model.trim();
+    if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+
+    if (Object.keys(allowed).length === 0) {
+      return res.status(400).json({ error: 'no valid fields supplied' });
     }
-    intentModelStore.saveConfig({ model: body.model });
+
+    intentModelStore.saveConfig(allowed);
     const envConfig = readIntentModelConfig();
-    const stored = intentModelStore.getMaskedConfig();
-    const effective = resolveIntentModelConfig({ store: intentModelStore });
     res.json({
+      ...intentModelStore.getMaskedConfig(),
       envModel: envConfig.model || null,
-      configured: Boolean(envConfig.baseUrl),
-      overrideModel: stored.model,
-      updatedAt: stored.updatedAt,
-      effectiveModel: effective.model || null,
+      envConfigured: Boolean(envConfig.baseUrl),
     });
+  });
+
+  router.get('/api/intentiq/models', auth, async (req, res) => {
+    const config = intentModelStore ? intentModelStore.getConfig() : null;
+    if (!config || !config.apiKey) {
+      return res.status(400).json({ error: 'save an API key first' });
+    }
+    if (!config.baseUrl) {
+      return res.status(400).json({ error: 'set a base URL for the provider' });
+    }
+
+    try {
+      const models = await retrieveModelsFn({
+        provider: config.provider || 'openrouter',
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+      });
+      res.json({ models });
+    } catch (err) {
+      const message = err && err.message ? err.message : 'unknown error';
+      if (message.includes('authentication failed')) {
+        return res.status(401).json({ error: 'authentication failed — check your API key' });
+      }
+      res.status(502).json({ error: 'could not fetch models from provider' });
+    }
   });
 
   router.get('/api/logos/decisions', auth, (req, res) => {
