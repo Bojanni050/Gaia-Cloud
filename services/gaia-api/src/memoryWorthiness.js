@@ -439,6 +439,55 @@ function shouldRetainToHindsight(memoryDecision) {
 }
 
 /**
+ * Whether a capability's outcome is, on its own, notable enough to force
+ * retention — independent of evaluateMemoryWorthiness's score.
+ *
+ * evaluateMemoryWorthiness runs BEFORE the capability executes (turn.js
+ * calls it right after recall, well before orchestrate()), so it judges
+ * only the user's INPUT text and can never see whether the capability
+ * needed a retry, failed outright, or escalated to ask_user. Since P0's
+ * runtime integration routes every capability — including ordinary
+ * conversational replies via the "hermes" capability — through the same
+ * contract loop with at least a trivial default expected_outcome, a
+ * routine single-attempt success is the common case and must NOT force
+ * retention on its own (that would defeat Memoryworthiness entirely).
+ * Only a non-routine outcome does: a retry, a failure, or an ask_user
+ * escalation. Losing a PASS/FAIL verdict on a capability contract because
+ * the request that triggered it read as lexically mundane ("voer de tests
+ * uit") is exactly the false-discard this closes.
+ *
+ * @param {object|null|undefined} executionResult
+ * @returns {boolean}
+ */
+function isNotableCapabilityOutcome(executionResult) {
+  const outcome = executionResult && executionResult.outcome;
+  if (!outcome || !outcome.verdict) return false;
+  if (outcome.verdict !== 'success') return true;
+  return Number(outcome.attempts) > 1;
+}
+
+/**
+ * Applies the capability-outcome override (see isNotableCapabilityOutcome)
+ * to an existing memory decision, upgrading a would-be discard to retain.
+ * A null/low-priority/retain decision that is already not a discard is
+ * returned unchanged. Never downgrades.
+ *
+ * @param {object|null} memoryDecision
+ * @param {object|null|undefined} executionResult
+ * @returns {object|null}
+ */
+function applyCapabilityOutcomeOverride(memoryDecision, executionResult) {
+  if (!isNotableCapabilityOutcome(executionResult)) return memoryDecision;
+  if (memoryDecision && memoryDecision.action !== 'discard') return memoryDecision;
+  return {
+    action: 'retain',
+    score: memoryDecision ? memoryDecision.score : 1,
+    reasons: [...(memoryDecision ? memoryDecision.reasons : []), 'notable_capability_outcome'],
+    dimensions: memoryDecision ? memoryDecision.dimensions : {},
+  };
+}
+
+/**
  * Hindsight metadata describing the ingest decision (§13/§14) — same gaia_
  * namespace as hypotheses/patterns, string→string per Hindsight's API.
  * @param {object} memoryDecision
@@ -484,6 +533,8 @@ module.exports = {
   ACK_VOCABULARY,
   evaluateMemoryWorthiness,
   shouldRetainToHindsight,
+  isNotableCapabilityOutcome,
+  applyCapabilityOutcomeOverride,
   metadataForMemoryDecision,
   logMemoryWorthiness,
   isPureAcknowledgement,

@@ -1639,6 +1639,59 @@ test("0.1 memory: low-priority turns are still retained but tagged priority=low"
   }
 });
 
+test("0.1 memory: a lexically mundane capability request that needed a retry is retained anyway (capability-outcome override)", async () => {
+  const { reflectCalls, hindsight } = memoryHindsight();
+  let calls = 0;
+  const testTool = {
+    invokeCapability: async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, error: 'transient glitch, try again' };
+      return { ok: true, output: 'GAIA P0 TEST bestand aangemaakt.' };
+    },
+  };
+
+  await performStreamingTurn({
+    // Lexically mundane on its own — no preference, fact, correction or
+    // explicit "onthoud dit" — so Memoryworthiness alone would discard it.
+    messages: [{ role: "user", content: "Test P0 nu in de echte Gaia-runtime." }],
+    documents: DOCUMENTS,
+    hermes: { stream: async (m, { onDelta }) => { onDelta("x", false); return "x"; } },
+    hindsight,
+    res: fakeRes(),
+    tools: { testtool: testTool },
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    reasonIQ: async () => ({}),
+    decisionEngine: () => ({ action: "capability", capability: "testtool", task: "run P0 test", input: {}, reason: "test" }),
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 2, "sanity check: the capability actually needed a retry");
+  assert.equal(reflectCalls.length, 1, "a retried capability outcome must not be silently discarded");
+  const meta = reflectCalls[0].metadata;
+  assert.equal(meta.gaia_memory_decision, "retain");
+  assert.match(meta.gaia_memory_reason, /notable_capability_outcome/);
+});
+
+test("0.1 memory: a routine one-shot successful capability call is still discarded on a mundane request", async () => {
+  const { reflectCalls, hindsight } = memoryHindsight();
+  const testTool = { invokeCapability: async () => ({ ok: true, output: "gedaan" }) };
+
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Hoi Gaia" }],
+    documents: DOCUMENTS,
+    hermes: { stream: async (m, { onDelta }) => { onDelta("x", false); return "x"; } },
+    hindsight,
+    res: fakeRes(),
+    tools: { testtool: testTool },
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    reasonIQ: async () => ({}),
+    decisionEngine: () => ({ action: "capability", capability: "testtool", task: "greet", input: {}, reason: "test" }),
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reflectCalls.length, 0, "a routine first-try success must not force retention of every capability turn");
+});
+
 test("0.1 memory §15: a discarded turn closes memory AND the pattern trigger — but never hijacks hypothesis policy", async () => {
   let appliedReasoning = 0;
   let formedPatterns = 0;

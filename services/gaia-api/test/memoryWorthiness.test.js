@@ -17,6 +17,8 @@ const path = require('path');
 const {
   evaluateMemoryWorthiness,
   shouldRetainToHindsight,
+  isNotableCapabilityOutcome,
+  applyCapabilityOutcomeOverride,
   metadataForMemoryDecision,
   logMemoryWorthiness,
   ACTIONS,
@@ -226,4 +228,61 @@ test('evaluation latency is negligible (deterministic, sub-millisecond scale)', 
   for (let i = 0; i < 1000; i += 1) evaluate('Ik wil voortaan korte antwoorden.');
   const ms = Number(process.hrtime.bigint() - start) / 1e6;
   assert.ok(ms < 500, `1000 evaluations took ${ms}ms`);
+});
+
+// --- capability-outcome override --------------------------------------------
+//
+// evaluateMemoryWorthiness runs BEFORE the capability executes, so it can
+// never see a retry/failure/ask_user — exactly the false-discard case that
+// mattered on 2026-09-06: a P0 runtime-validation PASS/FAIL verdict was
+// nearly lost because the triggering prompt ("Test P0 nu in de echte
+// Gaia-runtime...") scored low lexically.
+
+test('isNotableCapabilityOutcome: no outcome at all is not notable', () => {
+  assert.equal(isNotableCapabilityOutcome(null), false);
+  assert.equal(isNotableCapabilityOutcome({}), false);
+  assert.equal(isNotableCapabilityOutcome({ outcome: null }), false);
+  assert.equal(isNotableCapabilityOutcome({ outcome: {} }), false);
+});
+
+test('isNotableCapabilityOutcome: a routine single-attempt success is NOT notable', () => {
+  // This is the common case since P0 routes every capability — including
+  // ordinary "hermes" chat replies — through the contract loop.
+  assert.equal(isNotableCapabilityOutcome({ outcome: { verdict: 'success', attempts: 1 } }), false);
+});
+
+test('isNotableCapabilityOutcome: a success reached only after a retry IS notable', () => {
+  assert.equal(isNotableCapabilityOutcome({ outcome: { verdict: 'success', attempts: 2 } }), true);
+});
+
+test('isNotableCapabilityOutcome: failure and ask_user verdicts are notable regardless of attempts', () => {
+  assert.equal(isNotableCapabilityOutcome({ outcome: { verdict: 'failure', attempts: 1 } }), true);
+  assert.equal(isNotableCapabilityOutcome({ outcome: { verdict: 'ask_user', attempts: 1 } }), true);
+});
+
+test('applyCapabilityOutcomeOverride: upgrades a discard to retain on a notable outcome', () => {
+  const discarded = evaluate('Test P0 nu in de echte Gaia-runtime.');
+  assert.equal(discarded.action, 'discard', 'sanity check: this prompt reads as lexically mundane');
+  const overridden = applyCapabilityOutcomeOverride(discarded, { outcome: { verdict: 'failure', attempts: 3 } });
+  assert.equal(overridden.action, 'retain');
+  assert.ok(overridden.reasons.includes('notable_capability_outcome'));
+});
+
+test('applyCapabilityOutcomeOverride: leaves a routine success alone (no forced retain on every capability turn)', () => {
+  const discarded = evaluate('Hoi Gaia');
+  const result = applyCapabilityOutcomeOverride(discarded, { outcome: { verdict: 'success', attempts: 1 } });
+  assert.equal(result, discarded);
+});
+
+test('applyCapabilityOutcomeOverride: never downgrades an existing retain/retain_low_priority decision', () => {
+  const retained = evaluate('Onthoud dat ik voortaan kortere antwoorden wil.');
+  assert.equal(retained.action, 'retain');
+  const result = applyCapabilityOutcomeOverride(retained, { outcome: { verdict: 'success', attempts: 1 } });
+  assert.equal(result, retained);
+});
+
+test('applyCapabilityOutcomeOverride: a null memoryDecision (module failure) still gets the outcome floor', () => {
+  const result = applyCapabilityOutcomeOverride(null, { outcome: { verdict: 'ask_user', attempts: 1 } });
+  assert.equal(result.action, 'retain');
+  assert.deepEqual(result.reasons, ['notable_capability_outcome']);
 });

@@ -35,7 +35,8 @@ const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalMo
 const { searchRelevantKnowledgePages, renderKnowledgePageContext } = require('./knowledgePages');
 const { assembleEvidence } = require('./reasoning/evidenceAssembler');
 const {
-  evaluateMemoryWorthiness, shouldRetainToHindsight, metadataForMemoryDecision, logMemoryWorthiness,
+  evaluateMemoryWorthiness, shouldRetainToHindsight, applyCapabilityOutcomeOverride,
+  metadataForMemoryDecision, logMemoryWorthiness,
 } = require('./memoryWorthiness');
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
@@ -736,6 +737,15 @@ async function runTurnCore({
   if (typeof replyText !== 'string' || replyText.length === 0) {
     return { decision, executionResult, replyText: null };
   }
+
+  // Capability-outcome override: Memoryworthiness 0.1 scores the user's
+  // INPUT text before the capability runs, so it can never see a retry, a
+  // failure, or an ask_user escalation — exactly the non-routine outcomes
+  // whose PASS/FAIL verdict must not be lost just because the request that
+  // triggered them read as lexically mundane (see
+  // memoryWorthiness.isNotableCapabilityOutcome for why a routine
+  // single-attempt success does NOT trigger this).
+  memoryDecision = applyCapabilityOutcomeOverride(memoryDecision, executionResult);
 
   // Post-turn Hindsight reflection — gated by Memoryworthiness 0.1: only
   // turns judged memory-worthy are retained, tagged with the gaia_memory_*
