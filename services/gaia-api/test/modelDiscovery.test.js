@@ -301,14 +301,16 @@ test('retrieveModels: routes Alibaba Cloud through the OpenAI-compatible adapter
   };
   let capturedUrl, capturedHeaders;
   const fetchImpl = async (url, init) => { capturedUrl = url; capturedHeaders = init.headers; return fakeResponse; };
+  // Workspace-scoped base URL, as issued from the Model Studio console —
+  // not the shared dashscope-intl.aliyuncs.com endpoint some docs lead with.
   const models = await retrieveModels({
     provider: 'alibaba',
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    baseUrl: 'https://ws-example12345.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
     apiKey: 'test-key',
     fetchImpl,
     timeoutMs: 5000,
   });
-  assert.equal(capturedUrl, 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models');
+  assert.equal(capturedUrl, 'https://ws-example12345.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/models');
   assert.equal(capturedHeaders.Authorization, 'Bearer test-key');
   assert.equal(models.length, 1);
   assert.equal(models[0].id, 'qwen-max');

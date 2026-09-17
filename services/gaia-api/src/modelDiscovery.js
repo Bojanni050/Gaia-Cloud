@@ -24,10 +24,13 @@
  * OpenAI, Alibaba Cloud Model Studio / DashScope, and most OpenAI-compatible
  * endpoints. Alibaba Cloud has no dedicated adapter — its /models response
  * is plain OpenAI-shaped with no extra capabilities metadata to normalize —
- * but its base URL is region-specific and must be set explicitly, e.g.
- * https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (international) or
- * https://dashscope.aliyuncs.com/compatible-mode/v1 (Beijing). See
- * https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope
+ * but its base URL is account/workspace-specific and must be copied from
+ * the Model Studio console rather than assumed. Observed shapes:
+ *   - workspace-scoped: https://{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1
+ *     (e.g. Singapore: https://{workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1)
+ *   - shared regional:  https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (international)
+ *                       https://dashscope.aliyuncs.com/compatible-mode/v1 (Beijing)
+ * See https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope
  */
 
 const DEFAULT_TIMEOUT_MS = 20000;
