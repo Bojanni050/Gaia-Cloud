@@ -294,6 +294,26 @@ test('retrieveModels: routes to Mistral adapter for mistral provider', async () 
   assert.ok(models[0].capabilities.includes('vision'));
 });
 
+test('retrieveModels: routes Alibaba Cloud through the OpenAI-compatible adapter against its own base URL', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({ data: [{ id: 'qwen-max', name: 'Qwen Max' }] }),
+  };
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => { capturedUrl = url; capturedHeaders = init.headers; return fakeResponse; };
+  const models = await retrieveModels({
+    provider: 'alibaba',
+    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    apiKey: 'test-key',
+    fetchImpl,
+    timeoutMs: 5000,
+  });
+  assert.equal(capturedUrl, 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer test-key');
+  assert.equal(models.length, 1);
+  assert.equal(models[0].id, 'qwen-max');
+});
+
 test('retrieveModels: routes to OpenAI-compatible adapter for unknown provider', async () => {
   const fakeResponse = {
     ok: true,

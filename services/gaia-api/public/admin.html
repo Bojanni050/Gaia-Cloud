@@ -79,7 +79,7 @@
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.2</small></h1>
+  <h1>Model Provider Settings <small>v1.3</small></h1>
   <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
@@ -100,11 +100,12 @@
       <option value="openai">OpenAI</option>
       <option value="anthropic">Anthropic</option>
       <option value="mistral">Mistral</option>
+      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 
     <label for="baseUrl">Base URL</label>
-    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1 (Mistral: https://api.mistral.ai/v1)" autocomplete="off">
+    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1 (Mistral: https://api.mistral.ai/v1 — Alibaba: https://dashscope-intl.aliyuncs.com/compatible-mode/v1)" autocomplete="off">
 
     <label for="apiKey">API Key</label>
     <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
@@ -196,6 +197,7 @@
       <option value="edenai">EdenAI</option>
       <option value="openai">OpenAI</option>
       <option value="mistral">Mistral</option>
+      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 
@@ -238,6 +240,7 @@
       <option value="edenai">EdenAI</option>
       <option value="openai">OpenAI</option>
       <option value="mistral">Mistral</option>
+      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 

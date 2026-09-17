@@ -21,7 +21,13 @@
  *
  * The provider string determines which adapter is used. Unknown providers
  * fall back to the OpenAI-compatible pattern, which covers OpenRouter,
- * OpenAI, and most OpenAI-compatible endpoints.
+ * OpenAI, Alibaba Cloud Model Studio / DashScope, and most OpenAI-compatible
+ * endpoints. Alibaba Cloud has no dedicated adapter — its /models response
+ * is plain OpenAI-shaped with no extra capabilities metadata to normalize —
+ * but its base URL is region-specific and must be set explicitly, e.g.
+ * https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (international) or
+ * https://dashscope.aliyuncs.com/compatible-mode/v1 (Beijing). See
+ * https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope
  */
 
 const DEFAULT_TIMEOUT_MS = 20000;
