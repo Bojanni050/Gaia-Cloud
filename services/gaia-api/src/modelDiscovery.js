@@ -21,16 +21,22 @@
  *
  * The provider string determines which adapter is used. Unknown providers
  * fall back to the OpenAI-compatible pattern, which covers OpenRouter,
- * OpenAI, Alibaba Cloud Model Studio / DashScope, and most OpenAI-compatible
- * endpoints. Alibaba Cloud has no dedicated adapter — its /models response
- * is plain OpenAI-shaped with no extra capabilities metadata to normalize —
- * but its base URL is account/workspace-specific and must be copied from
+ * OpenAI, Alibaba Cloud Model Studio / DashScope, NVIDIA NIM / API catalog,
+ * and most OpenAI-compatible endpoints. Alibaba Cloud has no dedicated
+ * adapter — its /models response is plain OpenAI-shaped with no extra
+ * capabilities metadata to normalize — but its base URL is
+ * account/workspace-specific and must be copied from
  * the Model Studio console rather than assumed. Observed shapes:
  *   - workspace-scoped: https://{workspaceId}.{region}.maas.aliyuncs.com/compatible-mode/v1
  *     (e.g. Singapore: https://{workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1)
  *   - shared regional:  https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (international)
  *                       https://dashscope.aliyuncs.com/compatible-mode/v1 (Beijing)
  * See https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope
+ *
+ * NVIDIA (hosted API catalog, https://integrate.api.nvidia.com/v1) also has
+ * no dedicated adapter — same reasoning: plain OpenAI-shaped /models, one
+ * universal base URL, nothing provider-specific to normalize. See
+ * https://docs.api.nvidia.com/nim/reference/llm-apis
  */
 
 const DEFAULT_TIMEOUT_MS = 20000;
