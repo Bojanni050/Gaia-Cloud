@@ -316,6 +316,26 @@ test('retrieveModels: routes Alibaba Cloud through the OpenAI-compatible adapter
   assert.equal(models[0].id, 'qwen-max');
 });
 
+test('retrieveModels: routes NVIDIA through the OpenAI-compatible adapter against integrate.api.nvidia.com', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({ data: [{ id: 'meta/llama-3.3-70b-instruct', name: 'Llama 3.3 70B Instruct' }] }),
+  };
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => { capturedUrl = url; capturedHeaders = init.headers; return fakeResponse; };
+  const models = await retrieveModels({
+    provider: 'nvidia',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    apiKey: 'test-key',
+    fetchImpl,
+    timeoutMs: 5000,
+  });
+  assert.equal(capturedUrl, 'https://integrate.api.nvidia.com/v1/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer test-key');
+  assert.equal(models.length, 1);
+  assert.equal(models[0].id, 'meta/llama-3.3-70b-instruct');
+});
+
 test('retrieveModels: routes to OpenAI-compatible adapter for unknown provider', async () => {
   const fakeResponse = {
     ok: true,
