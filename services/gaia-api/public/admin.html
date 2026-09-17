@@ -79,7 +79,7 @@
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.3</small></h1>
+  <h1>Model Provider Settings <small>v1.4</small></h1>
   <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
@@ -294,7 +294,29 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const tokenEl = $('token');
+
+  // Known base URLs per provider, for autofill when a provider is selected.
+  // Providers without one universal endpoint (Alibaba Cloud is workspace-
+  // scoped; "custom" is by definition unknown) are intentionally omitted —
+  // their field is left as-is so the operator's own value isn't clobbered.
+  const PROVIDER_BASE_URLS = {
+    edenai: 'https://api.edenai.run/v1',
+    openrouter: 'https://openrouter.ai/api/v1',
+    openai: 'https://api.openai.com/v1',
+    anthropic: 'https://api.anthropic.com/v1',
+    mistral: 'https://api.mistral.ai/v1',
+    xiaomi: 'https://api.xiaomimimo.com/v1',
+  };
+
+  function wireBaseUrlAutofill(providerEl, baseUrlEl) {
+    providerEl.addEventListener('change', () => {
+      const defaultUrl = PROVIDER_BASE_URLS[providerEl.value];
+      if (defaultUrl) baseUrlEl.value = defaultUrl;
+    });
+  }
+
   const providerSelectEl = $('providerSelect'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey');
+  wireBaseUrlAutofill(providerSelectEl, baseUrlEl);
   const keyHintEl = $('keyHint'), providerStatusEl = $('providerStatus');
   const saveProviderBtn = $('saveProviderBtn'), retrieveModelsBtn = $('retrieveModelsBtn');
   const capabilitiesSection = $('capabilitiesSection'), capabilitiesBar = $('capabilitiesBar');
@@ -524,6 +546,7 @@
 
   // --- TTS (independent) ---
   const ttsProviderEl = $('ttsProviderSelect'), ttsBaseUrlEl = $('ttsBaseUrl'), ttsApiKeyEl = $('ttsApiKey');
+  wireBaseUrlAutofill(ttsProviderEl, ttsBaseUrlEl);
   const ttsModelEl = $('ttsModel'), ttsKeyHintEl = $('ttsKeyHint'), ttsStatusEl = $('ttsStatus');
   const saveTtsBtn = $('saveTtsBtn');
 
@@ -572,6 +595,7 @@
 
   // --- ReasonIQ (provider-agnostic) ---
   const riqProviderEl = $('riqProviderSelect'), riqBaseUrlEl = $('riqBaseUrl'), riqApiKeyEl = $('riqApiKey');
+  wireBaseUrlAutofill(riqProviderEl, riqBaseUrlEl);
   const riqKeyHintEl = $('riqKeyHint'), riqConfigStatusEl = $('riqConfigStatus');
   const riqSaveConfigBtn = $('riqSaveConfigBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn');
   const riqModelSelectEl = $('riqModelSelect'), riqModelMetaEl = $('riqModelMeta'), riqModelStatusEl = $('riqModelStatus');
@@ -730,6 +754,7 @@
 
   // --- IntentIQ (provider-agnostic, same flow as ReasonIQ) ---
   const iiqProviderEl = $('iiqProviderSelect'), iiqBaseUrlEl = $('iiqBaseUrl'), iiqApiKeyEl = $('iiqApiKey');
+  wireBaseUrlAutofill(iiqProviderEl, iiqBaseUrlEl);
   const iiqKeyHintEl = $('iiqKeyHint'), iiqConfigStatusEl = $('iiqConfigStatus'), iiqEnvHintEl = $('iiqEnvHint');
   const iiqSaveConfigBtn = $('iiqSaveConfigBtn'), iiqFetchModelsBtn = $('iiqFetchModelsBtn');
   const iiqModelSelectEl = $('iiqModelSelect'), iiqModelMetaEl = $('iiqModelMeta'), iiqModelStatusEl = $('iiqModelStatus');
