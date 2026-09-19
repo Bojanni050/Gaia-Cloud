@@ -258,6 +258,68 @@ test('8c: plan with structured retrieval + native generation still works', async
   assert.ok(JSON.stringify(seenNative[0]).includes('passage one'));
 });
 
+async function runRetrievalPlan(searchOutput) {
+  const seenNative = [];
+  await execute(
+    {
+      action: 'plan',
+      reason: 'test plan',
+      steps: [
+        { id: 'step-1', type: 'retrieval', capability: 'conversation_search', input: { query: 'hey', scope: 'current' } },
+        { id: 'step-2', type: 'generation', mode: 'native', sources: ['step-1'] },
+      ],
+    },
+    {
+      capabilities: { conversation_search: { invoke: async () => searchOutput } },
+      nativeGenerator: {
+        generate: async (messages) => {
+          seenNative.push(messages);
+          return 'natively formulated';
+        },
+      },
+      messages: [{ role: 'user', content: 'hey' }],
+    }
+  );
+  return seenNative[0].filter((m) => m.role === 'system').map((m) => m.content).join('\n');
+}
+
+test('8c2: retrieval string output reaches native with a "background only, do not quote" instruction', async () => {
+  const context = await runRetrievalPlan(
+    'Gevonden passages (1):\n\n[dit gesprek · 1:1 · user]\n"hey"'
+  );
+  assert.ok(context.includes('[dit gesprek · 1:1 · user]'), 'passage itself is still supplied as context');
+  assert.match(context, /background only/);
+  assert.match(context, /never quote them verbatim/);
+});
+
+test('8c3: structured non-web retrieval output carries the same instruction', async () => {
+  const context = await runRetrievalPlan({ results: [{ text: 'passage one', relevance: 0.9 }], total: 1 });
+  assert.ok(context.includes('passage one'));
+  assert.match(context, /never quote them verbatim/);
+});
+
+test('8c4: non-retrieval steps (hermes reasoning) do not get the retrieval instruction', async () => {
+  const seenNative = [];
+  await execute(
+    {
+      action: 'plan',
+      reason: 'test plan',
+      steps: [
+        { id: 'step-1', type: 'reasoning', capability: 'hermes', input: {} },
+        { id: 'step-2', type: 'generation', mode: 'native', sources: ['step-1'] },
+      ],
+    },
+    {
+      capabilities: { hermes: createHermesCapability({ hermes: { chat: async () => 'reasoned answer' } }) },
+      nativeGenerator: { generate: async (messages) => { seenNative.push(messages); return 'ok'; } },
+      messages: [{ role: 'user', content: 'analyseer dit' }],
+    }
+  );
+  const context = JSON.stringify(seenNative[0]);
+  assert.ok(context.includes('reasoned answer'));
+  assert.ok(!context.includes('never quote them verbatim'));
+});
+
 test('8d: schema accepts expected_outcome and max_attempts on decisions and steps', () => {
   assert.equal(validateDecision(hermesDecision()), null);
   assert.match(

@@ -255,7 +255,14 @@ async function execute(decision, {
 function formatStepOutputForContext(step, output) {
   const header = `[${step.id} · ${step.capability || step.mode || step.type}]`;
   if (output == null) return `${header}\n(geen resultaat)`;
-  if (typeof output === 'string') return `${header}\n${output}`;
+  // Retrieved passages (conversation search, Hindsight) carry provenance
+  // labels and headers of their own; without this the generator tends to
+  // paste them into the reply instead of answering in Gaia's voice. Web has
+  // its own, source-specific guidance below.
+  const retrievalGuidance = step.type === 'retrieval' && step.capability !== 'web'
+    ? '\nUse these passages as background only — never quote them verbatim and never reproduce their [bracketed] source labels, headers or memory blocks; answer in your own words.'
+    : '';
+  if (typeof output === 'string') return `${header}\n${output}${retrievalGuidance}`;
   // Structured outputs ({results:[], total}) from retrieval capabilities:
   if (Array.isArray(output.results)) {
     if (output.results.length === 0) return `${header}\n(geen resultaten)`;
@@ -270,7 +277,7 @@ function formatStepOutputForContext(step, output) {
     });
     const guidance = isWeb
       ? '\nUse these sources as background only — answer in your own words; mention sources only where they genuinely support a claim.'
-      : '';
+      : retrievalGuidance;
     return [header, ...lines, guidance].join('\n');
   }
   return `${header}\n${JSON.stringify(output).slice(0, 600)}`;
