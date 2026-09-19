@@ -390,7 +390,10 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages] = await Promise.all([
+  const wantHypothesisRecall = Boolean(
+    hypothesisRuntime && typeof hypothesisRuntime.recallHypotheses === 'function',
+  );
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, recalledHypotheses] = await Promise.all([
     hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
@@ -406,6 +409,14 @@ async function runTurnCore({
     // (shouldSearchKnowledgeBase), never throws, never blocks the turn.
     hindsight
       ? searchRelevantKnowledgePages(hindsight, userText, { intentDecision })
+      : Promise.resolve([]),
+    // Hypothesis recall (Hypothesis Persistence 0.1) is independent of the
+    // manager's ensureLoaded, so it overlaps with the other recalls; the
+    // merge into existingHypotheses happens below. Failure is non-fatal.
+    wantHypothesisRecall
+      ? Promise.resolve()
+        .then(() => hypothesisRuntime.recallHypotheses(userText))
+        .catch(() => [])
       : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
@@ -471,9 +482,9 @@ async function runTurnCore({
         persistence: h.persistence,
       }));
     } catch (_) { /* seeding must never break the turn */ }
-    if (typeof hypothesisRuntime.recallHypotheses === 'function') {
+    if (wantHypothesisRecall) {
       try {
-        const recalled = await hypothesisRuntime.recallHypotheses(userText);
+        const recalled = recalledHypotheses;
         const known = new Set(existingHypotheses.map((h) => h.id));
         for (const rh of Array.isArray(recalled) ? recalled : []) {
           if (!rh || !rh.id || known.has(rh.id)) continue;
