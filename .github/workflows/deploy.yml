@@ -33,6 +33,15 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One deploy at a time: two pushes seconds apart used to run
+    # `docker compose up` on the VPS concurrently and collide ("container
+    # name already in use"). Queue instead of cancelling — a running deploy
+    # is never killed half-way through a rebuild. While one runs, GitHub
+    # keeps only the newest waiting run, which is enough because each deploy
+    # resets the checkout to origin/main anyway.
+    concurrency:
+      group: deploy-gaia-api
+      cancel-in-progress: false
     steps:
       # Public SSH on the VPS is closed — the runner joins the tailnet
       # first so it can reach the box on its Tailscale IP instead.
