@@ -63,30 +63,12 @@
 
 const { validateDecision, MAX_PLAN_STEPS } = require('./decisionSchema');
 const { evaluatePatternUsage } = require('../reasoning/patternAwareness');
-const { decideGenerationMode } = require('./generationPolicy');
+const { decideGenerationMode, isNativeEligible, NATIVE_INTENTS } = require('./generationPolicy');
 const { routingSkills } = require('../capabilityRegistry');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
 }
-
-/**
- * Intents whose source of truth is conversational and that do not require
- * deep generation — these are the turns Gaia can answer natively, without
- * Hermes. Kept deliberately conservative: only intents that are clearly
- * conversational in nature. Anything not covered here (directly or via
- * sourceOfTruth below) falls through to Hermes (the safe default).
- */
-const NATIVE_INTENTS = new Set([
-  'converse',
-  'meta.relational',
-  'meta.question',
-  'meta.correction',
-  'meta.capability_question',
-  'greet',
-  'farewell',
-  'acknowledge',
-]);
 
 /**
  * Conversation Search routing policy (v0.1 — deliberately NARROW).
@@ -403,48 +385,11 @@ const META_INTENT_TYPES = new Set([
 ]);
 
 /**
- * Returns true when the turn is simple/conversational — or personal/
- * memory-grounded — enough for native generation. Conservative by design:
- * unknown intents fall through to Hermes.
- *
- * sourceOfTruth "memory" is included alongside "conversation" on purpose
- * (not just the intents list): a turn like "what do you still remember
- * about me and Luca?" resolves to sourceOfTruth "memory" in IntentIQ (see
- * intentIQ.js's SOURCE_SIGNALS), but recalling context and *answering
- * with* it are different jobs — Hindsight only ever supplies context (see
- * decisionSchema.js's own note on this), it never generates Gaia's reply.
- * Once that context exists (already fetched before decide() runs — see
- * turn.js), a personal-memory question is exactly the kind of turn Gaia
- * can answer herself; treating "needs memory" as "needs Hermes" would be
- * the same "Hermes for everything" failure mode this engine exists to
- * avoid, just triggered by sourceOfTruth instead of intent.
+ * Native eligibility has ONE owner: generationPolicy.js (isNativeEligible /
+ * NATIVE_INTENTS). Re-exported here under the engine's historical name so
+ * existing callers keep working — never re-implement it in this file.
  */
-function isNativeTurn(intent, reasoning) {
-  // Deep reasoning always needs Hermes — native is for simple turns.
-  if (reasoning && reasoning.reasoningDepth === 'deep') return false;
-
-  // No intent at all: null intent means no IntentIQ ran at all (e.g.
-  // the performTurn Desktop path). When native is available, a simple
-  // greeting without intent is a good native candidate.
-  if (!intent) return true;
-
-  // IntentIQ returned an object but couldn't classify a strong intent —
-  // status: 'unknown' with null intent. This is a typical simple
-  // greeting or chat turn — suitable for native.
-  if (!intent.intent && intent.status === 'unknown') return true;
-
-  // Explicit conversational intents.
-  if (NATIVE_INTENTS.has(intent.intent)) return true;
-
-  // Conversational or personal-memory source of truth with a non-complex
-  // intent — see this function's own comment for why "memory" belongs
-  // here, not just "conversation".
-  if ((intent.sourceOfTruth === 'conversation' || intent.sourceOfTruth === 'memory') && !intent.needsClarification) {
-    return true;
-  }
-
-  return false;
-}
+const isNativeTurn = isNativeEligible;
 
 /**
  * Maps ReasonIQ's own output to the Decision plan's coarse reasoning

@@ -127,6 +127,13 @@ test('decide() routes deep reasoning to hermes even when native is available', (
   assert.equal(decision.capability, 'hermes');
 });
 
+test('native eligibility has a single owner: the engine re-exports the policy module, never its own copy', () => {
+  const engine = require('../src/decision/decisionEngine');
+  const policy = require('../src/decision/generationPolicy');
+  assert.equal(engine.isNativeTurn, policy.isNativeEligible);
+  assert.equal(engine.NATIVE_INTENTS, policy.NATIVE_INTENTS);
+});
+
 test('isNativeTurn returns true for conversational intents and false for complex ones', () => {
   assert.equal(isNativeTurn(null, null), true);
   assert.equal(isNativeTurn({ intent: 'converse' }, null), true);
