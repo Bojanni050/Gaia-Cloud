@@ -65,6 +65,7 @@ const { validateDecision, MAX_PLAN_STEPS } = require('./decisionSchema');
 const { evaluatePatternUsage } = require('../reasoning/patternAwareness');
 const { decideGenerationMode, isNativeEligible, NATIVE_INTENTS } = require('./generationPolicy');
 const { routingSkills } = require('../capabilityRegistry');
+const { SIGNAL_PATTERNS, matchesSignal } = require('../logos/intentSignals');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
@@ -94,21 +95,12 @@ const CONVERSATION_SEARCH_REASONS = Object.freeze([
 
 /**
  * Whether the user's wording asks to look something up (a question or an
- * explicit recall cue) rather than simply making a statement. IntentIQ's
- * anchoring fires on ANY shared content term with Gaia's previous reply —
- * "nu weer bezig met chronicle" anchors on "weer"/"bezig" — which is right
- * for opening memory recall but far too weak to justify a transcript
- * search, whose raw passages then end up in the reply.
+ * explicit recall cue) rather than merely making a statement. The vocabulary
+ * is IntentIQ's (logos/intentSignals.js, published as `intent.signals.lookup`);
+ * this engine only reads it.
  */
-const LOOKUP_SHAPE_PATTERNS = Object.freeze([
-  /\?/,
-  /^\s*(wat|waar|wanneer|wie|hoe|welke|waarom|what|where|when|who|how|which|why)\b/i,
-  /\b(ook alweer|weet je nog|herinner je|noemde je|zei je|zei ik|had je het over|hadden we het over|bedoelde je|remember|did you say|you mentioned)\b/i,
-]);
-
 function isLookupShaped(text) {
-  const s = String(text || '');
-  return LOOKUP_SHAPE_PATTERNS.some((p) => p.test(s));
+  return matchesSignal(text, 'lookup');
 }
 
 /**
@@ -135,37 +127,17 @@ function shouldUseConversationSearch(intent, userInput) {
 // had, and adds no LLM call. MAX_PLAN_STEPS bounds every plan; the schema
 // validator rejects anything malformed before the Orchestrator ever sees it.
 
-/** Planning signal vocabulary — routing-level cues, kept small and legible. */
+/**
+ * Planning signal vocabulary — owned by IntentIQ (logos/intentSignals.js),
+ * re-exposed here under the engine's historical group names so existing
+ * callers keep working. Never define patterns in this file: that would be a
+ * second interpretation layer next to IntentIQ.
+ */
 const PLANNING_SIGNALS = Object.freeze({
-  /** The user asks for what was LITERALLY said in past conversations. */
-  exactHistoryRequest: [
-    /\b(letterlijk|exact|precies)\b.{0,40}\b(zei|gezegd|gesproken|vertelde|stond)\b/i,
-    /\bzei ik\b/i,
-    /\bwat zei (je|ik|wij|we)\b/i,
-    /\bwhat did i say\b/i,
-  ],
-  /**
-   * The user points at a PAST CONVERSATION moment without quoting it yet —
-   * a lookup-shaped need ("wat we vorige maand over X besloten").
-   */
-  pastConversationLookup: [
-    /\bzo(eek|cht|ek)\b[\s\S]{0,60}\bwat we\b/i,
-    /\bwat we (vorige|laatste|eerder)\b/i,
-    /\b(besloten|afgesproken|gezegd|gebruikt)\b[\s\S]{0,40}\b(vorige|laatste)\b/i,
-    /\bvorige (maand|week)\b[\s\S]{0,50}\b(besloten|gezegd|afspraak|besproken)\b/i,
-  ],
-  /** The user wants remembered/selected knowledge (Hindsight-shaped). */
-  rememberedKnowledgeRequest: [
-    /\bwat weet je nog\b/i, /\bweet je nog\b/i, /\bwat ken je van mij\b/i,
-    /\bwhat do you remember\b/i, /\bremember about me\b/i,
-    /\bwat je (over|van)[\s\S]{0,40}\b(weet|kent)\b/i,
-  ],
-  /** The retrieved material must be ANALYSED, not just shown. */
-  analysisRequest: [
-    /\b(analyseer|beoordeel|vergelijk|evaluer)\w*\b/i,
-    /\banaly[sz]e\b/i, /\bassess\b/i, /\bcompare\b/i,
-    /\bcombineer\b/i, // merge retrieved knowledge with new input, then reason
-  ],
+  exactHistoryRequest: SIGNAL_PATTERNS.exactHistory,
+  pastConversationLookup: SIGNAL_PATTERNS.pastLookup,
+  rememberedKnowledgeRequest: SIGNAL_PATTERNS.rememberedKnowledge,
+  analysisRequest: SIGNAL_PATTERNS.analysis,
 });
 
 function hasPlanningSignal(text, group) {

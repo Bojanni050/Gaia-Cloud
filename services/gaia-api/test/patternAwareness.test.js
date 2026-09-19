@@ -308,8 +308,13 @@ test('boundary: the Decision Engine imports no Hindsight/PatternManager/Hermes/W
   // capability registry is pure frozen metadata (no I/O) and is the one
   // sanctioned source for skill-aware routing.
   const requiredModules = [...engineSource.matchAll(/require\((['"])([^'"]+)\1\)/g)].map((m) => m[2]);
-  assert.deepEqual(requiredModules, ['./decisionSchema', '../reasoning/patternAwareness', './generationPolicy', '../capabilityRegistry'],
-    'decisionEngine.js may only require its schema, the pure pattern policy, the generation policy and the capability registry');
+  assert.deepEqual(requiredModules, ['./decisionSchema', '../reasoning/patternAwareness', './generationPolicy', '../capabilityRegistry', '../logos/intentSignals'],
+    'decisionEngine.js may only require its schema, the pure pattern policy, the generation policy, the capability registry and the pure IntentIQ signal vocabulary');
+
+  // The signal vocabulary is equally pure: no requires at all.
+  const signalsSource = fs.readFileSync(path.resolve(__dirname, '../src/logos/intentSignals.js'), 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  assert.deepEqual([...signalsSource.matchAll(/require\(/g)], [], 'intentSignals.js must be pure: no dependencies');
 
   // The policy module it imports must be equally I/O-free.
   const awarenessSource = fs.readFileSync(path.resolve(__dirname, '../src/reasoning/patternAwareness.js'), 'utf-8')

@@ -74,6 +74,10 @@ function logIntentDecision(entry, sink = (line) => console.log(line)) {
         confidence: typeof (r && r.confidence) === 'number' ? r.confidence : null,
       }))
       : null,
+    // Routing signals (intentSignals.js) — booleans only, no text, so the
+    // offline analysis can measure how often each cue fires without
+    // storing more conversational content.
+    signals: entry.decision.signals || null,
     // Both tiers' own perspective, for calibration analysis — debug-only,
     // never the raw conversational text a second time (see `input` above).
     tiers: entry.tiers || null,

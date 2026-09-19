@@ -97,6 +97,7 @@
 const crypto = require('crypto');
 const { INTENT_IDS, isKnownIntent, TAXONOMY_VERSION } = require('./intentTaxonomy');
 const { logIntentDecision } = require('./intentLog');
+const { detectSignals } = require('./intentSignals');
 const { buildSemanticPrompt } = require('./intentSemanticPrompt');
 const { parseAndValidateSemanticOutput, MalformedSemanticOutputError } = require('./intentSemanticValidate');
 const { createFromEnv: createIntentModelFromEnv } = require('./intentModelClient');
@@ -1993,6 +1994,10 @@ async function interpret(messages, options = {}) {
   }
 
   const final = combineConsensus(heuristic, semantic.result);
+  // Routing-relevant turn signals (exact-history / past-lookup / lookup-shape
+  // / …) are IntentIQ's to publish, so the Decision Engine reads them rather
+  // than re-interpreting the raw text. Additive; tier-independent.
+  try { final.signals = detectSignals(text); } catch (_) { /* observability must never break a turn */ }
 
   if (!options.silent) {
     logIntentDecision(
