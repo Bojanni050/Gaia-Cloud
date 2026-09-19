@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { detectSignals, matchesSignal, SIGNAL_PATTERNS, SIGNAL_NAMES } = require('../src/logos/intentSignals');
+const { detectSignals, matchesSignal, SIGNAL_NAMES } = require('../src/logos/intentSignals');
 const { interpret } = require('../src/logos/intentIQ');
-const { PLANNING_SIGNALS, hasPlanningSignal, shouldUseConversationSearch } = require('../src/decision/decisionEngine');
+const { decide, buildPlan, shouldUseConversationSearch } = require('../src/decision/decisionEngine');
 const { logIntentDecision } = require('../src/logos/intentLog');
 
 const NO_MODEL = { chat: async () => { throw new Error('no semantic model in this test'); } };
@@ -42,27 +42,53 @@ test('matchesSignal: an unknown signal name is simply false', () => {
   assert.equal(matchesSignal('wat zei ik?', 'nope'), false);
 });
 
-test('single source of truth: the engine re-exposes IntentIQ\'s exact pattern arrays', () => {
-  assert.equal(PLANNING_SIGNALS.exactHistoryRequest, SIGNAL_PATTERNS.exactHistory);
-  assert.equal(PLANNING_SIGNALS.pastConversationLookup, SIGNAL_PATTERNS.pastLookup);
-  assert.equal(PLANNING_SIGNALS.rememberedKnowledgeRequest, SIGNAL_PATTERNS.rememberedKnowledge);
-  assert.equal(PLANNING_SIGNALS.analysisRequest, SIGNAL_PATTERNS.analysis);
+const CAPS = [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }, { id: 'hindsight' }];
+const ANCHORED = { meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' } };
+const stepCaps = (plan) => (plan ? plan.steps.map((st) => st.capability || st.mode) : []);
+
+test('the engine defines no wording patterns of its own any more', () => {
+  const engine = require('../src/decision/decisionEngine');
+  assert.equal(engine.PLANNING_SIGNALS, undefined);
+  assert.equal(engine.hasPlanningSignal, undefined);
 });
 
-test('parity: the engine\'s view of a turn equals IntentIQ\'s published signals', () => {
-  const anchored = { meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' } };
-  const turns = [
-    'wat zei ik daar precies over?', 'wat we vorige week besloten hebben', 'weet je nog wie anton is',
-    'analyseer deze aanpak', 'wat was er in juni ook alweer?', 'hoi Gaia', 'het is tijd dat ik eerst chronicle afmaak',
-  ];
-  for (const t of turns) {
-    const s = detectSignals(t);
-    assert.equal(hasPlanningSignal(t, 'exactHistoryRequest'), s.exactHistory, t);
-    assert.equal(hasPlanningSignal(t, 'pastConversationLookup'), s.pastLookup, t);
-    assert.equal(hasPlanningSignal(t, 'rememberedKnowledgeRequest'), s.rememberedKnowledge, t);
-    assert.equal(hasPlanningSignal(t, 'analysisRequest'), s.analysis, t);
-    assert.equal(shouldUseConversationSearch(anchored, t), s.lookup, t);
-  }
+test('engine follows intent.signals, not the raw text: a published signal plans a search the text alone would not', () => {
+  const text = 'graag even terug naar dat ding van toen'; // no regex cue in the wording
+  assert.equal(detectSignals(text).exactHistory, false);
+  const plan = buildPlan({ userInput: text, intent: { intent: null, status: 'unknown', signals: { exactHistory: true } } });
+  assert.ok(plan, 'a plan is built from the published signal');
+  assert.ok(stepCaps(plan).includes('conversation_search'));
+});
+
+test('engine follows intent.signals, not the raw text: a published "false" wins over wording that would match', () => {
+  const text = 'wat zei ik daar precies over?'; // the detector would say exactHistory
+  assert.equal(detectSignals(text).exactHistory, true);
+  const plan = buildPlan({ userInput: text, intent: { intent: null, status: 'unknown', signals: { exactHistory: false } } });
+  assert.equal(plan, null);
+});
+
+test('conversation search follows the published lookup signal for anchored turns', () => {
+  assert.equal(shouldUseConversationSearch({ ...ANCHORED, signals: { lookup: true } }, 'het is tijd dat ik eerst chronicle afmaak'), true);
+  assert.equal(shouldUseConversationSearch({ ...ANCHORED, signals: { lookup: false } }, 'wat was er in juni ook alweer?'), false);
+});
+
+test('without published signals (IntentIQ did not run) the engine asks the IntentIQ detector — same answers as before', () => {
+  assert.equal(shouldUseConversationSearch(ANCHORED, 'wat was er in juni ook alweer?'), true);
+  assert.equal(shouldUseConversationSearch(ANCHORED, 'nu weer bezig met de ontwikkeling van chronicle en jou'), false);
+  const plan = buildPlan({ userInput: 'wat zei ik daar precies over?', intent: null });
+  assert.ok(plan && stepCaps(plan).includes('conversation_search'));
+  assert.equal(decide({ userInput: 'hoi', intent: null, availableCapabilities: CAPS }).action, 'native');
+});
+
+test('end to end: interpret() then decide() — the engine consumes what IntentIQ published', async () => {
+  const intent = await interpret(
+    [{ role: 'user', content: 'wat zei ik daar precies over?' }],
+    { silent: true, model: NO_MODEL },
+  );
+  assert.equal(intent.signals.exactHistory, true);
+  const decision = decide({ userInput: 'wat zei ik daar precies over?', intent, availableCapabilities: CAPS });
+  assert.equal(decision.action, 'plan');
+  assert.ok(stepCaps(decision).includes('conversation_search'));
 });
 
 test('interpret() publishes signals on the final IntentDecision', async () => {

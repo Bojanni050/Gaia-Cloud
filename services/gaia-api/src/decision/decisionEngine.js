@@ -65,7 +65,7 @@ const { validateDecision, MAX_PLAN_STEPS } = require('./decisionSchema');
 const { evaluatePatternUsage } = require('../reasoning/patternAwareness');
 const { decideGenerationMode, isNativeEligible, NATIVE_INTENTS } = require('./generationPolicy');
 const { routingSkills } = require('../capabilityRegistry');
-const { SIGNAL_PATTERNS, matchesSignal } = require('../logos/intentSignals');
+const { detectSignals } = require('../logos/intentSignals');
 
 function findCapability(availableCapabilities, id) {
   return (availableCapabilities || []).find((c) => c && c.id === id) || null;
@@ -94,13 +94,19 @@ const CONVERSATION_SEARCH_REASONS = Object.freeze([
 ]);
 
 /**
- * Whether the user's wording asks to look something up (a question or an
- * explicit recall cue) rather than merely making a statement. The vocabulary
- * is IntentIQ's (logos/intentSignals.js, published as `intent.signals.lookup`);
- * this engine only reads it.
+ * The wording signals (exact-history, past-lookup, lookup shape, …) for this
+ * turn. They are IntentIQ's to produce: interpret() publishes them as
+ * `intent.signals` (logos/intentSignals.js) and this engine only READS them,
+ * so it never interprets raw text itself. Only when no IntentIQ decision
+ * carries signals (IntentIQ did not run, e.g. the Desktop path, or a
+ * hand-built intent) do we ask IntentIQ's own detector for the same answer.
+ * @param {object|null} intent
+ * @param {string} [userInput]
+ * @returns {Partial<import('../logos/intentSignals').TurnSignals>}
  */
-function isLookupShaped(text) {
-  return matchesSignal(text, 'lookup');
+function signalsFor(intent, userInput) {
+  if (intent && intent.signals && typeof intent.signals === 'object') return intent.signals;
+  return detectSignals(userInput);
 }
 
 /**
@@ -115,7 +121,7 @@ function shouldUseConversationSearch(intent, userInput) {
     && CONVERSATION_SEARCH_REASONS.includes(intent.meta.reason)
   );
   if (!anchored) return false;
-  return userInput === undefined ? true : isLookupShaped(userInput);
+  return userInput === undefined ? true : Boolean(signalsFor(intent, userInput).lookup);
 }
 
 // --- Decision Engine 3.0: planning & composition -----------------------------
@@ -126,23 +132,6 @@ function shouldUseConversationSearch(intent, userInput) {
 // this same deterministic cascade, consumes only signals this engine already
 // had, and adds no LLM call. MAX_PLAN_STEPS bounds every plan; the schema
 // validator rejects anything malformed before the Orchestrator ever sees it.
-
-/**
- * Planning signal vocabulary — owned by IntentIQ (logos/intentSignals.js),
- * re-exposed here under the engine's historical group names so existing
- * callers keep working. Never define patterns in this file: that would be a
- * second interpretation layer next to IntentIQ.
- */
-const PLANNING_SIGNALS = Object.freeze({
-  exactHistoryRequest: SIGNAL_PATTERNS.exactHistory,
-  pastConversationLookup: SIGNAL_PATTERNS.pastLookup,
-  rememberedKnowledgeRequest: SIGNAL_PATTERNS.rememberedKnowledge,
-  analysisRequest: SIGNAL_PATTERNS.analysis,
-});
-
-function hasPlanningSignal(text, group) {
-  return PLANNING_SIGNALS[group].some((p) => p.test(String(text || '')));
-}
 
 // --- Capability Registry 1.0: skill-aware planning ---------------------------
 //
@@ -231,11 +220,12 @@ function matchRequiredSkills({ task = '', intent = null, reasoning = null, avail
  * @returns {object|null} a full plan decision, or null
  */
 function buildPlan({ userInput = '', intent = null } = {}) {
-  const wantsExactHistory = hasPlanningSignal(userInput, 'exactHistoryRequest');
-  const wantsPastLookup = hasPlanningSignal(userInput, 'pastConversationLookup');
-  const wantsRemembered = hasPlanningSignal(userInput, 'rememberedKnowledgeRequest')
+  const signals = signalsFor(intent, userInput);
+  const wantsExactHistory = Boolean(signals.exactHistory);
+  const wantsPastLookup = Boolean(signals.pastLookup);
+  const wantsRemembered = Boolean(signals.rememberedKnowledge)
     || Boolean(intent && intent.intent === 'memory.inspect');
-  const wantsAnalysis = hasPlanningSignal(userInput, 'analysisRequest');
+  const wantsAnalysis = Boolean(signals.analysis);
   const wantsExternal = Boolean(intent && intent.sourceOfTruth === 'external_knowledge');
   const isAnchoredFollowUp = shouldUseConversationSearch(intent, userInput);
   // Capability Registry 1.0: a clear debugging/test-strategy/code-review
@@ -660,11 +650,9 @@ module.exports = {
   usedContextSources,
   shouldUseConversationSearch,
   buildPlan,
-  hasPlanningSignal,
   matchSkillTask,
   matchRequiredSkills,
   NATIVE_INTENTS,
   META_INTENT_TYPES,
-  PLANNING_SIGNALS,
   SKILL_TASK_SIGNALS,
 };

@@ -20,7 +20,7 @@ const {
   STEP_TYPES,
   GENERATION_MODES,
 } = require('../src/decision/decisionSchema');
-const { decide, buildPlan, hasPlanningSignal } = require('../src/decision/decisionEngine');
+const { decide, buildPlan } = require('../src/decision/decisionEngine');
 const { execute } = require('../src/orchestration/orchestrator');
 const { formatReply } = require('../src/responseEngine');
 
