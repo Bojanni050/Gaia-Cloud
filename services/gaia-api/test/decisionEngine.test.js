@@ -480,6 +480,35 @@ test('conversation_search policy fires only on assistant-anchored follow-up reas
   assert.equal(shouldUseConversationSearch(null), false);
 });
 
+test('conversation_search needs a lookup-shaped turn on top of the anchoring reason', () => {
+  // Statements that merely share generic words with Gaia's previous reply
+  // (real turns from the decision log) never trigger a transcript search.
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'nu weer bezig met de ontwikkeling van chronicle en jou'), false);
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'het is tijd dat ik eerst chronicle afmaak'), false);
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'weet niet zo goed waar te beginnen'), false);
+  // Questions and explicit recall cues still do.
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'wat was er in juni ook alweer?'), true);
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'Waar ging dat over'), true);
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'weet je nog wat je over juni zei'), true);
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT, 'you mentioned june earlier'), true);
+  // Without user text only the anchoring reason is judged (back-compat).
+  assert.equal(shouldUseConversationSearch(ANCHORED_INTENT), true);
+});
+
+test('decide() does not plan a conversation_search for an anchored statement', () => {
+  const decision = decide({
+    userInput: 'nu weer bezig met de ontwikkeling van chronicle en jou',
+    intent: ANCHORED_INTENT,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }],
+  });
+  const caps = (decision.steps || []).map((s) => s.capability);
+  assert.ok(!caps.includes('conversation_search'));
+  assert.notEqual(decision.capability, 'conversation_search');
+  assert.equal(validateDecision(decision), null);
+});
+
 test('Decision Engine 3.1 exposes requiredSkills separately from capabilities', () => {
   const decision = decide({
     userInput: 'Zoek uit waarom deze race condition optreedt.',

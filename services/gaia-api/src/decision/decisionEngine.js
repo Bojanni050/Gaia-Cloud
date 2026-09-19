@@ -110,12 +110,38 @@ const CONVERSATION_SEARCH_REASONS = Object.freeze([
   'assistant_anchored_follow_up_unresolved_intent',
 ]);
 
-function shouldUseConversationSearch(intent) {
-  return Boolean(
+/**
+ * Whether the user's wording asks to look something up (a question or an
+ * explicit recall cue) rather than simply making a statement. IntentIQ's
+ * anchoring fires on ANY shared content term with Gaia's previous reply —
+ * "nu weer bezig met chronicle" anchors on "weer"/"bezig" — which is right
+ * for opening memory recall but far too weak to justify a transcript
+ * search, whose raw passages then end up in the reply.
+ */
+const LOOKUP_SHAPE_PATTERNS = Object.freeze([
+  /\?/,
+  /^\s*(wat|waar|wanneer|wie|hoe|welke|waarom|what|where|when|who|how|which|why)\b/i,
+  /\b(ook alweer|weet je nog|herinner je|noemde je|zei je|zei ik|had je het over|hadden we het over|bedoelde je|remember|did you say|you mentioned)\b/i,
+]);
+
+function isLookupShaped(text) {
+  const s = String(text || '');
+  return LOOKUP_SHAPE_PATTERNS.some((p) => p.test(s));
+}
+
+/**
+ * @param {object|null} intent
+ * @param {string} [userInput] when given, the turn must also be lookup-shaped;
+ *   omitted, only the IntentIQ anchoring reason is judged.
+ */
+function shouldUseConversationSearch(intent, userInput) {
+  const anchored = Boolean(
     intent
     && intent.meta
     && CONVERSATION_SEARCH_REASONS.includes(intent.meta.reason)
   );
+  if (!anchored) return false;
+  return userInput === undefined ? true : isLookupShaped(userInput);
 }
 
 // --- Decision Engine 3.0: planning & composition -----------------------------
@@ -257,7 +283,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
     || Boolean(intent && intent.intent === 'memory.inspect');
   const wantsAnalysis = hasPlanningSignal(userInput, 'analysisRequest');
   const wantsExternal = Boolean(intent && intent.sourceOfTruth === 'external_knowledge');
-  const isAnchoredFollowUp = shouldUseConversationSearch(intent);
+  const isAnchoredFollowUp = shouldUseConversationSearch(intent, userInput);
   // Capability Registry 1.0: a clear debugging/test-strategy/code-review
   // TASK SHAPE warrants a Hermes reasoning step carrying that skill — even
   // without any retrieval need (spec §14). Generic analysis never does.
@@ -553,7 +579,7 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
     // e.g. search + analysis — outranks the single-search route below.)
     decision = planDecision;
   } else if (
-    shouldUseConversationSearch(intent)
+    shouldUseConversationSearch(intent, userInput)
     && findCapability(capabilities, 'conversation_search')
   ) {
     // Assistant-anchored follow-up + capability available, with no wider
