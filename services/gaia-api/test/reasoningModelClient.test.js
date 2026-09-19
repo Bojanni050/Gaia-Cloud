@@ -7,6 +7,21 @@ const { createReasoningModelClient, readReasoningTimeoutMs } = require('../src/l
 
 const BASE = { baseUrl: 'http://x/v1', model: 'm' };
 
+/**
+ * AbortSignal.timeout()'s timer does not keep the event loop alive. A real
+ * server always has other handles; a test runner on CI (Node 22) may not,
+ * and would then abandon the test with "event loop has already resolved"
+ * while it waits for the timeout to fire. Hold the loop open meanwhile.
+ */
+async function withLoopHeldOpen(fn) {
+  const hold = setInterval(() => {}, 1000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(hold);
+  }
+}
+
 /** Collects the llm.call lines the client logs. */
 function collectLogs() {
   const lines = [];
@@ -28,7 +43,7 @@ test('chat: a call that never answers is cut off at timeoutMs and logged as time
   });
   const client = createReasoningModelClient({ ...BASE, fetchImpl, timeoutMs: 30 });
   const startedAt = Date.now();
-  await assert.rejects(() => client.chat([{ role: 'user', content: 'hi' }], { logger }), /unreachable/);
+  await withLoopHeldOpen(() => assert.rejects(() => client.chat([{ role: 'user', content: 'hi' }], { logger }), /unreachable/));
   assert.ok(Date.now() - startedAt < 2000, 'must not wait anywhere near the 60s client default');
   const call = lines.find((l) => l.kind === 'llm.call');
   assert.equal(call.ok, false);
@@ -44,7 +59,7 @@ test('chat: headers arrive but the body stalls → also logged as timeout, not "
     }),
   });
   const client = createReasoningModelClient({ ...BASE, fetchImpl, timeoutMs: 30 });
-  await assert.rejects(() => client.chat([{ role: 'user', content: 'hi' }], { logger }), /unreadable response/);
+  await withLoopHeldOpen(() => assert.rejects(() => client.chat([{ role: 'user', content: 'hi' }], { logger }), /unreadable response/));
   const call = lines.find((l) => l.kind === 'llm.call');
   assert.equal(call.errorMessage, 'timeout');
 });
