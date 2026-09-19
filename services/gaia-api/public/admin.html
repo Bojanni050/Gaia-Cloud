@@ -313,6 +313,7 @@
     mistral: 'https://api.mistral.ai/v1',
     xiaomi: 'https://api.xiaomimimo.com/v1',
     nvidia: 'https://integrate.api.nvidia.com/v1',
+    litellm: 'https://route.studiovanderheide.nl/v1',
   };
 
   function wireBaseUrlAutofill(providerEl, baseUrlEl) {
@@ -1023,16 +1024,6 @@
   decisionsKindEl.addEventListener('change', loadDecisions);
   exportDecisionsJsonBtn.addEventListener('click', () => exportDecisions('json'));
   exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
-
-  // --- Provider base-URL presets ---
-  const LITELLM_BASE_URL = 'https://route.studiovanderheide.nl/v1';
-  [['providerSelect', 'baseUrl'], ['riqProviderSelect', 'riqBaseUrl'], ['iiqProviderSelect', 'iiqBaseUrl']].forEach(([selId, urlId]) => {
-    const sel = document.getElementById(selId);
-    const url = document.getElementById(urlId);
-    sel.addEventListener('change', () => {
-      if (sel.value === 'litellm' && !url.value.trim()) url.value = LITELLM_BASE_URL;
-    });
-  });
 
   // --- Init ---
   if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); }
