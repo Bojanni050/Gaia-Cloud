@@ -66,7 +66,7 @@
 const crypto = require('crypto');
 const { buildReasoningPrompt } = require('./reasonPrompt');
 const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('./reasonValidate');
-const { createReasoningModelClient } = require('./reasoningModelClient');
+const { createReasoningModelClient, readReasoningTimeoutMs } = require('./reasoningModelClient');
 const { resolveReasoningModelConfig } = require('./reasoningModelConfigResolver');
 const { createReasoningModelStore } = require('./reasoningModelStore');
 const { SCHEMA_VERSION, REASONER_VERSION } = require('./reasonModels');
@@ -261,7 +261,10 @@ function degradedResult(reason, modelConfigured, evidence = []) {
  */
 async function evaluate(input, options = {}) {
   const correlationId = input.correlationId || crypto.randomUUID();
-  const model = options.reasoningModel || createReasoningModelClient(resolveReasoningModelConfig({ store: createReasoningModelStore() }));
+  const model = options.reasoningModel || createReasoningModelClient({
+    ...resolveReasoningModelConfig({ store: createReasoningModelStore() }),
+    timeoutMs: readReasoningTimeoutMs(),
+  });
   const modelConfigured = typeof model.isConfigured === 'function' ? model.isConfigured() : true;
 
   const depth = decideReasoningDepth(input);

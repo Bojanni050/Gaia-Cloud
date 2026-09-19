@@ -28,6 +28,23 @@ const { logLlmCall } = require('./llmCallLog');
 
 const DEFAULT_TIMEOUT_MS = 60000;
 
+// ReasonIQ's own budget for one reasoning call. A failed call degrades to a
+// shallow result, so waiting a full minute on a slow or queued model (seen
+// on free OpenRouter models) only delays the turn for nothing. The client
+// default above stays generous because the same client also serves OCR.
+const REASONING_TIMEOUT_MS = 20000;
+
+/**
+ * @param {NodeJS.ProcessEnv} env REASONIQ_MODEL_TIMEOUT_MS overrides the default
+ * @returns {number}
+ */
+function readReasoningTimeoutMs(env = process.env) {
+  const n = Number(env.REASONIQ_MODEL_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : REASONING_TIMEOUT_MS;
+}
+
+const isTimeout = (error) => Boolean(error) && (error.name === 'TimeoutError' || error.name === 'AbortError');
+
 /** @param {NodeJS.ProcessEnv} env */
 function readReasoningModelConfig(env = process.env) {
   return {
@@ -102,7 +119,7 @@ function createReasoningModelClient(options = {}) {
       });
     } catch (error) {
       console.error(`[reasonIQ:model] unreachable at ${config.baseUrl}: ${error.message}`);
-      logCall(false, 'unreachable');
+      logCall(false, isTimeout(error) ? 'timeout' : 'unreachable');
       throw new Error('reasoning model unreachable');
     }
 
@@ -115,9 +132,11 @@ function createReasoningModelClient(options = {}) {
     let data;
     try {
       data = await response.json();
-    } catch (_) {
+    } catch (error) {
+      // The timeout also covers reading the body: a model that sends headers
+      // and then stalls surfaces here, not in the fetch above.
       console.error(`[reasonIQ:model] unreadable response at ${config.baseUrl}`);
-      logCall(false, 'unreadable response');
+      logCall(false, isTimeout(error) ? 'timeout' : 'unreadable response');
       throw new Error('reasoning model returned an unreadable response');
     }
 
@@ -136,4 +155,4 @@ function createReasoningModelClient(options = {}) {
   return { chat, config, isConfigured: () => isConfigured(config) };
 }
 
-module.exports = { createReasoningModelClient, readReasoningModelConfig, isConfigured };
+module.exports = { createReasoningModelClient, readReasoningModelConfig, readReasoningTimeoutMs, isConfigured };
