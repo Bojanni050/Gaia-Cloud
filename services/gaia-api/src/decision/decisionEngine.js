@@ -142,46 +142,34 @@ function shouldUseConversationSearch(intent, userInput) {
 // skill's own NAME appearing in the prompt never selects it, and a turn
 // with no matching task shape simply gets Hermes without a skill (spec §13).
 
-const SKILL_TASK_SIGNALS = Object.freeze([
-  {
-    skill: 'systematic-debugging',
-    frames: Object.freeze([/\bwaarom\b[\s\S]{0,60}\b(faalt|falen|crasht|crash|fout gaat|misgaat|vastloopt|lekt|niet werkt)\b/i, /\bzoek uit\b[\s\S]{0,50}\b(waarom|oorzaak|root cause)\b/i, /\broot cause\b/i, /\bwaardoor\b[\s\S]{0,60}\b(fout|faalt|crash|probleem|breekt)\b/i, /\bfout opsporen\b/i, /\bdebug\b[\s\S]{0,40}\b(waarom|oorzaak)\b/i]),
-    reason: 'task requires structured debugging workflow',
-  },
-  {
-    skill: 'test-driven-development',
-    frames: Object.freeze([/\btest(strategie|strategieën|plan|suite|dekking|coverage)\b/i, /\bstrategie\b[\s\S]{0,40}\btests?\b/i, /\btdd\b/i]),
-    reason: 'task requires a test-first development strategy',
-  },
-  {
-    skill: 'requesting-code-review',
-    frames: Object.freeze([/\bcode review\b/i, /\b(beoordeel|review|nakijken)\b[\s\S]{0,40}\b(mijn code|deze code|mijn wijzigingen|de wijzigingen|pull request|mijn pr)\b/i, /\b(mijn code|deze code|mijn wijzigingen|de wijzigingen)\b[\s\S]{0,40}\b(reviewen|review|beoordelen|nakijken)\b/i]),
-    reason: 'task requires a structured code review workflow',
-  },
-]);
+// Why each routable skill is chosen — the engine's own decision rationale. The
+// task SHAPES themselves are IntentIQ's (published as `intent.signals.skillTasks`).
+const SKILL_TASK_REASONS = Object.freeze({
+  'systematic-debugging': 'task requires structured debugging workflow',
+  'test-driven-development': 'task requires a test-first development strategy',
+  'requesting-code-review': 'task requires a structured code review workflow'
+});
 
 /**
  * Returns the registry routing skill whose TASK SHAPE this turn matches, or
- * null. Only skills the registry flags routing:true for hermes can match.
+ * null. The shapes come from IntentIQ (intent.signals.skillTasks); this
+ * engine only decides which of them the registry lets it route to Hermes.
  * @param {string} userInput
+ * @param {object|null} [intent]
  * @returns {string|null}
  */
-function matchSkillTask(userInput) {
-  const text = String(userInput || '');
+function matchSkillTask(userInput, intent = null) {
+  const shapes = signalsFor(intent, userInput).skillTasks || [];
   const hermesRoutingSkills = new Set(routingSkills('hermes').map((s) => s.id));
-  for (const entry of SKILL_TASK_SIGNALS) {
-    if (hermesRoutingSkills.has(entry.skill) && entry.frames.some((frame) => frame.test(text))) return entry.skill;
-  }
-  return null;
+  return shapes.find((skill) => hermesRoutingSkills.has(skill)) || null;
 }
 
 function matchRequiredSkills({ task = '', intent = null, reasoning = null, availableCapabilities = [] } = {}) {
-  void intent;
   void reasoning;
-  const skill = matchSkillTask(task);
+  const skill = matchSkillTask(task, intent);
   if (!skill) return { requiredSkills: [], matches: [], confidence: 'none', reason: null };
   const available = new Set((availableCapabilities || []).map((c) => c && c.id));
-  const policy = SKILL_TASK_SIGNALS.find((entry) => entry.skill === skill);
+  const policy = { reason: SKILL_TASK_REASONS[skill] };
   const matches = available.has('hermes')
     ? [{ skill, capability: 'hermes', confidence: 1, reason: policy.reason }]
     : [];
@@ -654,5 +642,5 @@ module.exports = {
   matchRequiredSkills,
   NATIVE_INTENTS,
   META_INTENT_TYPES,
-  SKILL_TASK_SIGNALS,
+  SKILL_TASK_REASONS,
 };

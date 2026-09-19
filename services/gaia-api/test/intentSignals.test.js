@@ -13,8 +13,9 @@ const NO_MODEL = { chat: async () => { throw new Error('no semantic model in thi
 test('detectSignals returns every signal as a boolean, false for empty input', () => {
   for (const input of ['', null, undefined, '   ']) {
     const s = detectSignals(input);
-    assert.deepEqual(Object.keys(s), [...SIGNAL_NAMES]);
-    assert.ok(Object.values(s).every((v) => v === false), `expected all false for ${JSON.stringify(input)}`);
+    assert.deepEqual(Object.keys(s), [...SIGNAL_NAMES, 'skillTasks']);
+    assert.ok(SIGNAL_NAMES.every((n) => s[n] === false), `expected all false for ${JSON.stringify(input)}`);
+    assert.deepEqual(s.skillTasks, []);
   }
 });
 
@@ -111,6 +112,39 @@ test('the intentiq.decision log carries the signals as booleans only', () => {
   const decision = { schemaVersion: 'intentiq.v1', intent: null, status: 'unknown', confidence: 0, candidates: [], signals: detectSignals('wat zei ik?') };
   logIntentDecision({ decision, input: 'wat zei ik?', classifierVersion: 'test' }, (l) => lines.push(l));
   const rec = JSON.parse(lines[0]);
-  assert.deepEqual(Object.keys(rec.signals), [...SIGNAL_NAMES]);
-  assert.ok(Object.values(rec.signals).every((v) => typeof v === 'boolean'));
+  assert.deepEqual(Object.keys(rec.signals), [...SIGNAL_NAMES, 'skillTasks']);
+  assert.ok(SIGNAL_NAMES.every((n) => typeof rec.signals[n] === 'boolean'));
+  assert.ok(Array.isArray(rec.signals.skillTasks), 'skillTasks is a list of skill ids, never text');
+});
+
+test('detectSkillTasks: task shapes are reported as skill ids, in priority order', () => {
+  assert.deepEqual(detectSignals('Zoek uit waarom deze race condition optreedt.').skillTasks, ['systematic-debugging']);
+  assert.deepEqual(detectSignals('Maak een teststrategie voor deze wijziging.').skillTasks, ['test-driven-development']);
+  assert.deepEqual(detectSignals('doe een code review van mijn wijzigingen').skillTasks, ['requesting-code-review']);
+  // more than one shape: debugging outranks test strategy, as the engine always ordered them
+  assert.deepEqual(detectSignals('waarom crasht dit, en maak ook een teststrategie').skillTasks, ['systematic-debugging', 'test-driven-development']);
+});
+
+test('the name of a skill never selects it (spec §13)', () => {
+  assert.deepEqual(detectSignals('Wat betekent systematic-debugging?').skillTasks, []);
+  assert.deepEqual(detectSignals('wat houdt test-driven-development in?').skillTasks, []);
+});
+
+test('engine routes skills from the published task shapes, not the raw text', () => {
+  const { matchSkillTask, matchRequiredSkills } = require('../src/decision/decisionEngine');
+  // wording with no cue, but IntentIQ published a shape
+  assert.equal(matchSkillTask('gewoon een zin', { signals: { skillTasks: ['systematic-debugging'] } }), 'systematic-debugging');
+  // wording that WOULD match, but IntentIQ published none: the published answer wins
+  assert.equal(matchSkillTask('Zoek uit waarom deze race condition optreedt.', { signals: { skillTasks: [] } }), null);
+  const m = matchRequiredSkills({ task: 'x', intent: { signals: { skillTasks: ['requesting-code-review'] } }, availableCapabilities: [{ id: 'hermes' }] });
+  assert.deepEqual(m.requiredSkills, ['requesting-code-review']);
+  assert.equal(m.reason, 'task requires a structured code review workflow');
+  // no published signals at all: same answer as before via IntentIQ's detector
+  assert.equal(matchSkillTask('Zoek uit waarom deze race condition optreedt.'), 'systematic-debugging');
+});
+
+test('the engine no longer owns any skill-shape patterns', () => {
+  const engine = require('../src/decision/decisionEngine');
+  assert.equal(engine.SKILL_TASK_SIGNALS, undefined);
+  assert.ok(engine.SKILL_TASK_REASONS && Object.keys(engine.SKILL_TASK_REASONS).length === 3);
 });
