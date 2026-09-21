@@ -31,6 +31,7 @@ const { createHindsightClient } = require('./hindsightClient');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
 const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternAdapter');
+const { createHindsightCognitionAdapter } = require('./reasoning/hindsightCognitionAdapter');
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
@@ -95,6 +96,10 @@ function createApp(env = process.env) {
       // IntentIQ signals; the Decision Engine owns whatever happens next).
       recallPatterns: (query) => patternAdapter.recallPatterns(query),
       patternManager,
+      // Cognitive Analysis Model v1.0 — durable observations/open questions
+      // persist as ordinary Hindsight world facts (no second store; see
+      // reasoning/hindsightCognitionAdapter.js).
+      cognition: createHindsightCognitionAdapter({ client: hindsight }),
       ensureLoaded: () => {
         if (!loadedPromise) {
           loadedPromise = Promise.all([

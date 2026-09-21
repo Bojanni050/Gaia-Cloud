@@ -3125,3 +3125,191 @@ test('deferred cognition: a deep turn starts its deferred ReasonIQ only after th
   assert.ok(order.indexOf('hermes') < order.indexOf('reasonIQ'),
     'deep ReasonIQ may only start after the reply is produced');
 });
+
+
+// --- REASONIQ COGNITIVE ANALYSIS MODEL v1.0 ------------------------------------
+//
+// The background path now analyzes the COMPLETED conversation (user turn +
+// Gaia's delivered reply) and derives durable cognitive results: concrete
+// observations and open questions flow to Hindsight as ordinary world facts
+// through the existing runtime (no second store), while hypotheses/patterns
+// keep their existing managers and lifecycles. The reflection block stays
+// observability-only. None of it can touch the reply it analyzes.
+
+function v1ReasoningResult(overrides = {}) {
+  return {
+    interpretation: 'The user decided the reasoning layer stays in the background.',
+    hypotheses: [{
+      statement: 'The user prefers strict separation between agency and cognition.',
+      confidence: 0.6, evidenceFor: ['hindsight-1'], persistence: 'durable',
+    }],
+    hypothesisUpdates: [],
+    contradictions: [], uncertainties: [], informationGaps: [],
+    observations: [{
+      statement: 'The user explicitly decided that ReasonIQ must not participate in the conversation loop.',
+      evidence: [{ id: 'hindsight-1', source: 'hindsight' }],
+      relatedHypothesisId: null,
+    }],
+    openQuestions: ['Does the separation extend to synchronous reasoning for exceptional cases?'],
+    reflection: { goalAchieved: true, learned: 'The boundary is deliberate.', unresolved: null, hypothesisImpact: null },
+    conclusions: [], sufficientForConclusion: false, confidence: 0.7,
+    ...overrides,
+  };
+}
+
+function cognitionRuntimeFor() {
+  const { createHypothesisManager } = require('../src/reasoning/hypothesisManager');
+  const retained = [];
+  return {
+    manager: createHypothesisManager({}),
+    retained,
+    cognition: {
+      retainObservation: async (o) => { retained.push({ kind: 'observation', ...o }); return { factId: 'obs-fact-1' }; },
+      retainOpenQuestion: async (q) => { retained.push({ kind: 'open-question', statement: q }); return { factId: 'oq-fact-1' }; },
+    },
+  };
+}
+
+test('v1.0 background analysis: the reasoning input sees the completed conversation — the delivered reply is context, never edited', async () => {
+  const seenInputs = [];
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('Begrepen.', false); return 'Begrepen.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async (input) => { seenInputs.push(input); return v1ReasoningResult(); },
+    hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
+  });
+  await flushBackground();
+  assert.equal(seenInputs.length, 1);
+  assert.match(seenInputs[0].assistantReply, /Begrepen\./, 'the analysis sees Gaia\'s delivered reply');
+  assert.equal(seenInputs[0].text, 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.');
+});
+
+test('v1.0 background analysis: observations and open questions reach Hindsight through the existing runtime — no second store', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult(),
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  // The reply was delivered first (the stream is complete) — storage only
+  // ever happens in the deferred phase, never on the conversational path.
+  assert.match(res.written.at(-1), /data: \[DONE\]/);
+  assert.equal(runtime.manager.list().length, 1, 'hypotheses keep their own lifecycle');
+  const observations = runtime.retained.filter((r) => r.kind === 'observation');
+  const questions = runtime.retained.filter((r) => r.kind === 'open-question');
+  assert.equal(observations.length, 1, 'the derived observation was stored');
+  assert.match(observations[0].statement, /explicitly decided/);
+  assert.deepEqual(observations[0].evidence, [{ id: 'hindsight-1', source: 'hindsight' }]);
+  assert.equal(questions.length, 1, 'the open question was stored — identified, never asked');
+  assert.match(questions[0].statement, /synchronous reasoning/);
+});
+
+test('v1.0 background analysis: a memory-discarded turn still stores legitimate analysis products — the same §15 rule as hypotheses', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  // This exact input is memory-DISCARDED by Memoryworthiness (score 0.25,
+  // action discard) while still being a deep, evidence-bearing analysis
+  // turn — the case the §15 boundary exists for.
+  const { evaluateMemoryWorthiness, shouldRetainToHindsight } = require('../src/memoryWorthiness');
+  const memoryDecision = evaluateMemoryWorthiness({
+    userInput: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.',
+    intent: { intent: 'inform.explain', status: 'accepted' },
+  });
+  assert.equal(shouldRetainToHindsight(memoryDecision), false, 'precondition: this turn IS memory-discarded');
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult(),
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  // Memoryworthiness discards this turn as conversational MEMORY, but the
+  // background analysis still derived legitimate Gaia-knowledge — stored
+  // exactly like hypotheses, which the same §15 boundary exempts.
+  assert.equal(runtime.retained.filter((r) => r.kind === 'observation').length, 1,
+    'a memory-unworthy turn still retains legitimate analysis products');
+  assert.equal(runtime.retained.filter((r) => r.kind === 'open-question').length, 1);
+  assert.equal(runtime.manager.list().length, 1, 'hypothesis policy is untouched by the memory gate');
+});
+
+test('v1.0 background analysis: retention failure is non-fatal — the conversation and hypotheses are untouched', async () => {
+  const runtime = cognitionRuntimeFor();
+  runtime.cognition.retainObservation = async () => { throw new Error('hindsight down'); };
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  const res = fakeRes();
+  let failed = false;
+  process.on('unhandledRejection', () => { failed = true; });
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult(),
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  process.off('unhandledRejection', () => { failed = true; });
+  assert.equal(failed, false, 'no unhandled rejection escapes the deferred phase');
+  assert.match(res.written.at(-1), /data: \[DONE\]/, 'the reply was delivered intact');
+  assert.equal(runtime.manager.list().length, 1, 'hypothesis application still ran');
+});
+
+test('v1.0 background analysis: an observation can carry its relationship to a tracked hypothesis — no relationship store', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult(),
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  const hypId = runtime.manager.list()[0].id;
+  assert.ok(hypId, 'the analysis produced a tracked hypothesis');
+  // The observation's relatedHypothesisId is metadata on the stored fact —
+  // relationships ride existing structures, never a separate store.
+  const obs = runtime.retained.find((r) => r.kind === 'observation');
+  assert.equal(obs.relatedHypothesisId, null, 'v1ReasoningResult\'s observation has no relation');
+  assert.equal(runtime.retained.filter((r) => r.kind === 'observation').length, 1);
+});
+
+test('v1.0 background analysis: non-streaming transport behaves identically — observations stored after the reply', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { chat: async () => 'A reply.' };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult(),
+    hypothesisRuntime: runtime,
+  });
+  assert.equal(result.status, 200);
+  await flushBackground();
+  assert.equal(runtime.retained.filter((r) => r.kind === 'observation').length, 1);
+  assert.equal(runtime.retained.filter((r) => r.kind === 'open-question').length, 1);
+});

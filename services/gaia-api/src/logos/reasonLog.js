@@ -31,6 +31,12 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
     hypothesisCount: entry.result.hypotheses.length,
     contradictionCount: entry.result.contradictions.length,
     sufficientForConclusion: entry.result.sufficientForConclusion,
+    // Cognitive Analysis Model v1.0 — additive background-cognition
+    // observability: what the analysis derived, and its self-assessment.
+    // Counts only, never content — same posture as the fields above.
+    observationCount: Array.isArray(entry.result.observations) ? entry.result.observations.length : 0,
+    openQuestionCount: Array.isArray(entry.result.openQuestions) ? entry.result.openQuestions.length : 0,
+    reflectionPresent: Boolean(entry.result.reflection),
     // ReasonIQ 0.2 — additive evidence observability (brief §18): how much
     // evidence this turn reasoned over and from where. Counts/sources come
     // from the assembled INPUT; no user content is logged here.

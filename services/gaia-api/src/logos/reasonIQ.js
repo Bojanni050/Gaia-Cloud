@@ -142,6 +142,11 @@ function baseResult(overrides = {}, evidence = []) {
     contradictions: [],
     uncertainties: [],
     informationGaps: [],
+    // v1.0 Cognitive Analysis Model — additive defaults; deep results fill
+    // them from the validated model output, shallow results stay empty.
+    observations: [],
+    openQuestions: [],
+    reflection: null,
     conclusions: [],
     sufficientForConclusion: false,
     confidence: 0,
@@ -246,6 +251,7 @@ function degradedResult(reason, modelConfigured, evidence = []) {
  * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT (§10), never mixed into evidence
  * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; ReasonIQ never fetches anything itself
  * @property {Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>} [existingHypotheses] - 0.3: hypotheses Gaia is already tracking (retrieved by the CALLER — never by ReasonIQ); context only (brief §16)
+ * @property {string} [assistantReply] - v1.0: Gaia's already-delivered reply for this turn — analysis context only, never edited
  * @property {string} [correlationId]
  * @property {string} [contextId]
  */

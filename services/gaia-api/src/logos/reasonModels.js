@@ -31,7 +31,13 @@ const SCHEMA_VERSION = 'reasoniq.v1';
 // hypotheses (existingId) and emit explicit per-evidence hypothesisUpdates;
 // actual state transitions belong to reasoning/hypothesisManager.js, never
 // to a raw model output.
-const REASONER_VERSION = 'reasoniq-v0.3';
+// v1.0 (Cognitive Analysis Model): the background analysis now explicitly
+// covers the completed conversation — observations (concrete derived
+// information, never hypotheses), openQuestions (unresolved questions that
+// are NEVER automatically asked of the user) and a reflection block
+// (background self-assessment, observability-only). Additive again;
+// nothing was removed.
+const REASONER_VERSION = 'reasoniq-v1.0';
 
 /** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions ReasonIQ must never collapse (§11). */
 const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unknown']);
@@ -116,6 +122,32 @@ function isValidHypothesisStatus(v) {
  */
 
 /**
+ * @typedef {Object} Observation
+ * v1.0 (Cognitive Analysis Model §2): a CONCRETE piece of information
+ * derived from the conversation or available context — e.g. "the user
+ * explicitly decided X". Deliberately NOT a hypothesis: an observation
+ * reports what was actually said/established, never an interpretation of
+ * it, and it must never be treated as an interpreted fact beyond its
+ * evidence. Durable observations persist to Hindsight (via the cognition
+ * adapter, tag gaia:observation) — there is no separate observation store.
+ * @property {string} statement
+ * @property {Array<{id: string, source: string}>} evidence - provenance: which assembled evidence this observation stands on — only ids that were actually supplied
+ * @property {string|null} relatedHypothesisId - 0.3-style relationship: the EXISTING hypothesis this observation is relevant to, when one does — validated against the supplied list, never invented. Relationships travel through existing structures (evidence links, hypothesisUpdates, pattern membership); there is no separate relationship store.
+ */
+
+/**
+ * @typedef {Object} Reflection
+ * v1.0 (Cognitive Analysis Model §7): background self-assessment of the
+ * completed conversation. Internal cognitive material — observability
+ * only, never persisted as a memory object, and it can never modify the
+ * already-delivered response (ReasonIQ runs after the reply exists).
+ * @property {boolean|null} goalAchieved - whether the conversation's apparent goal was achieved, when that is assessable
+ * @property {string|null} learned - what this turn established/taught
+ * @property {string|null} unresolved - what remained unresolved
+ * @property {string|null} hypothesisImpact - whether existing hypotheses were strengthened/weakened, and what new hypotheses emerged
+ */
+
+/**
  * @typedef {Object} Conclusion
  * @property {string} statement
  * @property {'fact'|'inference'|'hypothesis'} basis
@@ -134,6 +166,9 @@ function isValidHypothesisStatus(v) {
  * @property {Contradiction[]} contradictions
  * @property {string[]} uncertainties
  * @property {string[]} informationGaps
+ * @property {Observation[]} observations - v1.0: concrete derived information (fact-shaped, never hypotheses)
+ * @property {string[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; ReasonIQ NEVER asks the user about them
+ * @property {Reflection|null} reflection - v1.0: background self-assessment; observability-only, never persisted as memory
  * @property {Conclusion[]} conclusions
  * @property {boolean} sufficientForConclusion
  * @property {boolean} evidenceSufficient - named alias of sufficientForConclusion (0.2; brief §7's field name)

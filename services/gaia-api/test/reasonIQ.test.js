@@ -757,3 +757,128 @@ test('boundary: reasonIQ never requires Hindsight or any capability module', () 
     assert.ok(!new RegExp(`require\\([^)]*${forbidden}`).test(source), `reasonIQ requires ${forbidden}`);
   }
 });
+
+
+// === ReasonIQ v1.0 — Cognitive Analysis Model =============================
+
+const V1_OUTPUT = JSON.stringify({
+  interpretation: 'The user decided the reasoning layer must stay out of the conversation loop.',
+  evidence: [{ content: 'the user explicitly stated the decision', type: 'fact', origin: 'conversation' }],
+  hypotheses: [{ statement: 'The user prefers strict separation between agency and cognition.', confidence: 0.6, status: 'proposed' }],
+  hypothesisUpdates: [],
+  contradictions: [],
+  uncertainties: [],
+  informationGaps: [],
+  observations: [
+    {
+      statement: 'The user explicitly decided that ReasonIQ must not participate in the conversation loop.',
+      evidence: ['evidence-1'],
+      relatedHypothesisId: null,
+    },
+  ],
+  openQuestions: ['Does the separation extend to synchronous reasoning for exceptional cases?'],
+  reflection: {
+    goalAchieved: true,
+    learned: 'The architectural boundary is a deliberate user decision, not a temporary state.',
+    unresolved: null,
+    hypothesisImpact: 'The agency/cognition separation hypothesis gained support.',
+  },
+  conclusions: [],
+  sufficientForConclusion: false,
+  confidence: 0.7,
+});
+
+test('v1.0 validation: observations, openQuestions and reflection parse and keep provenance', () => {
+  const result = parseAndValidateReasoningOutput(
+    V1_OUTPUT,
+    [{ id: 'evidence-1', source: 'conversation' }],
+    []
+  );
+  assert.equal(result.observations.length, 1);
+  assert.match(result.observations[0].statement, /explicitly decided/);
+  assert.deepEqual(result.observations[0].evidence, [{ id: 'evidence-1', source: 'conversation' }]);
+  assert.equal(result.observations[0].relatedHypothesisId, null);
+  assert.deepEqual(result.openQuestions, ['Does the separation extend to synchronous reasoning for exceptional cases?']);
+  assert.equal(result.reflection.goalAchieved, true);
+  assert.match(result.reflection.learned, /deliberate user decision/);
+  assert.match(result.reflection.hypothesisImpact, /gained support/);
+});
+
+test('v1.0 validation: an observation citing invented evidence is stripped; an invented hypothesis relation is nulled', () => {
+  const output = JSON.parse(V1_OUTPUT);
+  output.observations = [
+    { statement: 'Real observation.', evidence: ['evidence-1'], relatedHypothesisId: 'hyp-123' },
+    { statement: 'Fabricated observation.', evidence: ['made-up-id'], relatedHypothesisId: 'hyp-invented' },
+  ];
+  const result = parseAndValidateReasoningOutput(
+    JSON.stringify(output),
+    [{ id: 'evidence-1', source: 'upload' }],
+    [{ id: 'hyp-123', statement: 'Tracked.' }]
+  );
+  assert.equal(result.observations[0].evidence.length, 1);
+  assert.equal(result.observations[0].relatedHypothesisId, 'hyp-123');
+  assert.equal(result.observations[1].evidence.length, 0, 'invented evidence ids are stripped');
+  assert.equal(result.observations[1].relatedHypothesisId, null, 'invented hypothesis relations are nulled');
+});
+
+test('v1.0 validation: an empty or absent reflection coerces to null; observations require statements', () => {
+  const minimal = JSON.stringify({ interpretation: 'x', observations: [{ evidence: [] }] });
+  assert.throws(() => parseAndValidateReasoningOutput(minimal), MalformedReasoningOutputError);
+  const emptyReflection = JSON.stringify({ interpretation: 'x', reflection: { goalAchieved: 'maybe' } });
+  const result = parseAndValidateReasoningOutput(emptyReflection);
+  assert.equal(result.reflection, null);
+});
+
+test('v1.0 evaluate: deep results carry the new fields; shallow results default them empty', async () => {
+  const deep = await evaluate(
+    {
+      text: 'We decided ReasonIQ stays in the background.',
+      evidence: [{ id: 'evidence-1', source: 'conversation', content: 'the decision' }],
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+      assistantReply: 'Begrepen — ReasonIQ blijft achtergrondcognitie.',
+    },
+    { reasoningModel: { chat: async () => V1_OUTPUT, isConfigured: () => true }, silent: true }
+  );
+  assert.equal(deep.observations.length, 1);
+  assert.equal(deep.openQuestions.length, 1);
+  assert.equal(deep.reflection.goalAchieved, true);
+
+  const shallow = await evaluate(
+    { text: 'Hoi Gaia', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 }, evidence: [] },
+    { reasoningModel: { chat: async () => { throw new Error('no calls'); }, isConfigured: () => true }, silent: true }
+  );
+  assert.deepEqual(shallow.observations, []);
+  assert.deepEqual(shallow.openQuestions, []);
+  assert.equal(shallow.reflection, null);
+});
+
+test('v1.0 prompt: the schema asks for observations/openQuestions/reflection and carries the delivered reply as context', () => {
+  const messages = buildReasoningPrompt({
+    text: 'We decided ReasonIQ stays in the background.',
+    intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+    evidence: [],
+    assistantReply: 'Begrepen — ReasonIQ blijft achtergrondcognitie.',
+  });
+  assert.match(messages[0].content, /observations/);
+  assert.match(messages[0].content, /openQuestions/);
+  assert.match(messages[0].content, /reflection/);
+  assert.match(messages[0].content, /NEVER ask the user/);
+  assert.match(messages[1].content, /assistantReply/);
+  assert.match(messages[1].content, /achtergrondcognitie/);
+});
+
+test('v1.0 logging: the result line counts observations/open questions and reports reflection presence', async () => {
+  const lines = [];
+  await evaluate(
+    {
+      text: 'We decided ReasonIQ stays in the background.',
+      evidence: [{ id: 'evidence-1', source: 'conversation', content: 'the decision' }],
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+    },
+    { reasoningModel: { chat: async () => V1_OUTPUT, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.observationCount, 1);
+  assert.equal(record.openQuestionCount, 1);
+  assert.equal(record.reflectionPresent, true);
+});

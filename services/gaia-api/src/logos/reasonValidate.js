@@ -136,6 +136,38 @@ function coerceContradiction(item) {
   };
 }
 
+/**
+ * v1.0 (Cognitive Analysis Model §2): a concrete derived observation.
+ * Provenance-checked like conclusions — an observation stands on ids that
+ * were actually supplied; invented ones are stripped, never guessed.
+ */
+function coerceObservation(item) {
+  if (!item || typeof item !== 'object' || !item.statement) {
+    throw new MalformedReasoningOutputError('observation missing a statement');
+  }
+  return {
+    statement: asString(item.statement),
+    evidenceIds: dedupeIds(asArray(item.evidence)),
+    relatedHypothesisId: typeof item.relatedHypothesisId === 'string' && item.relatedHypothesisId.trim() ? item.relatedHypothesisId.trim() : null,
+  };
+}
+
+/** v1.0 (§7): the reflection block — internal background self-assessment. */
+function coerceReflection(item) {
+  if (!item || typeof item !== 'object') return null;
+  const asNullableString = (v) => (typeof v === 'string' && v.trim() ? v : null);
+  const learned = asNullableString(item.learned);
+  const unresolved = asNullableString(item.unresolved);
+  const hypothesisImpact = asNullableString(item.hypothesisImpact);
+  if (learned == null && unresolved == null && hypothesisImpact == null) return null;
+  return {
+    goalAchieved: typeof item.goalAchieved === 'boolean' ? item.goalAchieved : null,
+    learned,
+    unresolved,
+    hypothesisImpact,
+  };
+}
+
 function coerceConclusion(item) {
   if (!item || typeof item !== 'object' || !item.statement) {
     throw new MalformedReasoningOutputError('conclusion missing a statement');
@@ -201,6 +233,15 @@ function resolveProvenance(body, knownEvidence, knownExisting) {
     if (u.evidenceId != null && known.size > 0 && !known.has(u.evidenceId)) u.evidenceId = null;
   }
 
+  // v1.0: an observation's hypothesis relationship must point at a
+  // hypothesis that actually exists this turn — same discipline as 0.3's
+  // existingId: an invented reference is nulled, never passed upstream.
+  for (const o of body.observations) {
+    if (o.relatedHypothesisId != null && knownHypIds.size > 0 && !knownHypIds.has(o.relatedHypothesisId)) {
+      o.relatedHypothesisId = null;
+    }
+  }
+
   for (const c of body.contradictions) {
     if (known.size) {
       if (c.evidenceA != null && !known.has(c.evidenceA)) c.evidenceA = null;
@@ -208,6 +249,17 @@ function resolveProvenance(body, knownEvidence, knownExisting) {
     }
   }
 
+  body.observations = body.observations.map((o) => {
+    const resolved = {
+      statement: o.statement,
+      evidence: o.evidenceIds
+        .filter((id) => (known.size ? known.has(id) : true))
+        .map((id) => ({ id, source: known.get(id) != null ? known.get(id) : null })),
+      relatedHypothesisId: o.relatedHypothesisId,
+    };
+    delete resolved.evidenceIds;
+    return resolved;
+  });
   body.conclusions = body.conclusions.map((c) => {
     const resolved = {
       statement: c.statement,
@@ -256,6 +308,9 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting) 
     contradictions: asArray(parsed.contradictions).map(coerceContradiction),
     uncertainties: asArray(parsed.uncertainties).map((u) => asString(u)).filter(Boolean),
     informationGaps: asArray(parsed.informationGaps).map((g) => asString(g)).filter(Boolean),
+    observations: asArray(parsed.observations).map(coerceObservation),
+    openQuestions: asArray(parsed.openQuestions).map((q) => asString(q)).filter(Boolean),
+    reflection: coerceReflection(parsed.reflection),
     conclusions: asArray(parsed.conclusions).map(coerceConclusion),
     sufficientForConclusion: Boolean(parsed.sufficientForConclusion),
     confidence: clampConfidence(parsed.confidence),

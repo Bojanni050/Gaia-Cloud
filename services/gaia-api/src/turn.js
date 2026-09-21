@@ -876,6 +876,10 @@ async function runDeferredCognition({
     conversationContext: messages,
     evidence: Array.isArray(evidence) ? evidence : [],
     contextId: conversationId,
+    // v1.0: the analysis sees the whole completed conversation — Gaia's
+    // delivered reply is CONTEXT for the analysis, never something it can
+    // edit (the reply was produced before this phase started).
+    assistantReply: typeof replyText === 'string' ? replyText : null,
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
   };
   let reasoningResult = null;
@@ -927,6 +931,45 @@ async function runDeferredCognition({
         }
       } catch (err) {
         console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
+      }
+    }
+    // Cognitive Analysis Model v1.0 — durable cognitive results that are
+    // NOT hypotheses/patterns: concrete observations and open questions
+    // flow to Hindsight through the cognition adapter as ordinary world
+    // facts (tags gaia:observation / gaia:open-question), where a FUTURE
+    // turn's normal recall can find them. The reflection block is
+    // observability-only and is deliberately NOT persisted. Best-effort:
+    // a storage failure is logged and never touches the reply. Like
+    // hypothesis application above (and unlike reflection/pattern
+    // formation), this deliberately IGNORES the Memoryworthiness gate:
+    // observations and open questions are Gaia-knowledge, not
+    // conversational memory — a memory-unworthy request can still yield
+    // legitimate analysis products (same §15 rule as hypotheses).
+    if (hypothesisRuntime.cognition && reasoningResult) {
+      const { retainObservation, retainOpenQuestion } = hypothesisRuntime.cognition;
+      const observations = Array.isArray(reasoningResult.observations) ? reasoningResult.observations : [];
+      const openQuestions = Array.isArray(reasoningResult.openQuestions) ? reasoningResult.openQuestions : [];
+      if (typeof retainObservation === 'function' && observations.length > 0) {
+        timing.start('deferred.cognition_observations');
+        try {
+          for (const o of observations) {
+            await retainObservation(o);
+          }
+        } catch (err) {
+          console.warn(`[gaia:cognition] observation retention failed (non-fatal): ${err.message}`);
+        }
+        timing.end('deferred.cognition_observations', { observationCount: observations.length });
+      }
+      if (typeof retainOpenQuestion === 'function' && openQuestions.length > 0) {
+        timing.start('deferred.cognition_open_questions');
+        try {
+          for (const q of openQuestions) {
+            await retainOpenQuestion(q);
+          }
+        } catch (err) {
+          console.warn(`[gaia:cognition] open question retention failed (non-fatal): ${err.message}`);
+        }
+        timing.end('deferred.cognition_open_questions', { openQuestionCount: openQuestions.length });
       }
     }
   }
