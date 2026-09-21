@@ -6,10 +6,9 @@
  *
  * COGNITIVE PARITY (this module's load-bearing rule): the non-streaming and
  * streaming paths share ONE cognitive pipeline — `runTurnCore` below — and
- * differ ONLY in delivery/transport. IntentIQ, Hindsight recall, Memory-
- * worthiness, evidence assembly, hypothesis persistence, ReasonIQ, gated
- * pattern formation, Pattern Awareness, the Decision Engine, the prompt
- * assembly and the post-turn Hindsight reflection are byte-for-byte the
+ * differ ONLY in delivery/transport. IntentIQ, Hindsight recall, evidence
+ * assembly, ReasonIQ's routing result, Pattern Awareness, the Decision
+ * Engine, the prompt assembly and the Response Engine are byte-for-byte the
  * same judgment calls whichever transport a client uses. What may differ:
  *
  *   - wire shape: SSE deltas (streaming) vs one JSON body (non-streaming)
@@ -28,6 +27,16 @@
  * effect AFTER a turn succeeds — deliberately not part of producing the
  * reply. Conversation history remembers everything; Hindsight receives
  * only what Memoryworthiness judged worth remembering.
+ *
+ * DEFERRED COGNITION (the conversational path stays short): everything that
+ * is learning/reflection rather than response production — Memoryworthiness,
+ * hypothesis recall and persistence, the deferred deep ReasonIQ call, gated
+ * pattern formation and the post-turn Hindsight reflection — lives in
+ * `runDeferredCognition` below. runTurnCore starts that promise once the
+ * reply is produced and NEVER awaits it: deferred work may not delay,
+ * determine or alter the already-produced response, never touches the
+ * client transport, and swallows its own failures. It is Gaia's internal
+ * knowledge/memory lifecycle, not a second response engine.
  */
 
 const { buildSystemPrompt } = require('./foundation');
@@ -313,10 +322,13 @@ function logDecisionPlan(decision, logger) {
  *   orchestrate?: Function,
  *   onDelta?: Function,
  * }} input
- * @returns {Promise<{ decision: object, executionResult: object|null, replyText: string|null }>}
+ * @returns {Promise<{ decision: object, executionResult: object|null, replyText: string|null, timing: object, startDeferredCognition: () => Promise<void> }>}
  *   replyText is null exactly when there is nothing to say (capability
  *   produced nothing usable, or execution failed) — the CALLER decides how
  *   its transport reports that (calm 502 body vs emitter.fail()).
+ *   startDeferredCognition hands the caller the deferred learning/
+ *   reflection lifecycle for the completed turn: it is STARTED by the
+ *   transport once the reply is delivered and NEVER awaited.
  */
 async function runTurnCore({
   messages,
@@ -383,6 +395,10 @@ async function runTurnCore({
   // IntentIQ-signal-driven) scoped Hindsight pattern recall through the
   // existing hypothesisRuntime's adapter seam — never a second search
   // engine, never an unconditional call ("Hoi Gaia" opens no gate).
+  //
+  // Hypothesis recall does NOT run here (deferred cognition): knowing which
+  // hypotheses Gaia is already tracking is learning context, not response
+  // context — see runDeferredCognition below.
   const wantPatterns = Boolean(
     hypothesisRuntime
     && typeof hypothesisRuntime.recallPatterns === 'function'
@@ -390,10 +406,7 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const wantHypothesisRecall = Boolean(
-    hypothesisRuntime && typeof hypothesisRuntime.recallHypotheses === 'function',
-  );
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, recalledHypotheses] = await Promise.all([
+  const [reflections, mentalModels, recalledPatterns, knowledgePages] = await Promise.all([
     hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
@@ -410,40 +423,8 @@ async function runTurnCore({
     hindsight
       ? searchRelevantKnowledgePages(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
-    // Hypothesis recall (Hypothesis Persistence 0.1) is independent of the
-    // manager's ensureLoaded, so it overlaps with the other recalls; the
-    // merge into existingHypotheses happens below. Failure is non-fatal.
-    wantHypothesisRecall
-      ? Promise.resolve()
-        .then(() => hypothesisRuntime.recallHypotheses(userText))
-        .catch(() => [])
-      : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
-
-  // Memoryworthiness 0.1 (memoryWorthiness.js): a cheap DETERMINISTIC
-  // judgment — no LLM, never user-facing — of whether this turn deserves a
-  // Hindsight memory at all. Runs after recall (the recalled reflections
-  // power duplicate/correction detection) and before ReasonIQ: on `discard`
-  // this turn produces no Hindsight memory and closes the pattern-formation
-  // trigger below; conversation history keeps the turn either way — only
-  // MEMORY is being judged here.
-  let memoryDecision = null;
-  timing.start('memory_worthiness');
-  try {
-    const mwStartMs = Date.now();
-    memoryDecision = evaluateMemoryWorthiness({
-      userInput: userText,
-      intent: intentDecision,
-      conversationContext: messages,
-      existingMemorySignals: { recalledReflections: reflections },
-    });
-    logMemoryWorthiness(memoryDecision, Date.now() - mwStartMs, decisionLogger);
-  } catch (_) {
-    // A classification failure degrades to null → pre-0.1 behavior (the
-    // legacy shouldReflect gate still guards the reflection).
-  }
-  timing.end('memory_worthiness');
 
   // Categorize attachments: text files become evidence/context, images are
   // model-native input handled at assembly time.
@@ -463,118 +444,37 @@ async function runTurnCore({
   }
   timing.end('evidence_assembly');
 
-  // Hypothesis Persistence 0.1 (optional runtime, wired by server.js): seed
-  // ReasonIQ with Gaia's tracked hypotheses — manager state first, then a
-  // best-effort native recall scoped to gaia:hypothesis for anything not
-  // loaded yet. Every failure here is non-fatal; without a runtime this is
-  // exactly the pre-0.1 behavior.
-  let existingHypotheses = [];
-  if (hypothesisRuntime) {
-    try {
-      if (typeof hypothesisRuntime.ensureLoaded === 'function') await hypothesisRuntime.ensureLoaded();
-      existingHypotheses = hypothesisRuntime.manager.list().map((h) => ({
-        id: h.id,
-        statement: h.statement,
-        status: h.status,
-        confidence: h.confidence,
-        evidenceFor: h.evidenceFor,
-        evidenceAgainst: h.evidenceAgainst,
-        persistence: h.persistence,
-      }));
-    } catch (_) { /* seeding must never break the turn */ }
-    if (wantHypothesisRecall) {
-      try {
-        const recalled = recalledHypotheses;
-        const known = new Set(existingHypotheses.map((h) => h.id));
-        for (const rh of Array.isArray(recalled) ? recalled : []) {
-          if (!rh || !rh.id || known.has(rh.id)) continue;
-          existingHypotheses.push({
-            id: rh.id,
-            statement: rh.statement,
-            status: rh.status || undefined,
-            confidence: rh.confidence != null ? rh.confidence : undefined,
-            evidenceFor: rh.evidenceFor || [],
-            evidenceAgainst: rh.evidenceAgainst || [],
-            persistence: rh.persistence,
-          });
-        }
-      } catch (_) { /* same posture */ }
-    }
-  }
-
   // Logos: ReasonIQ consumes the IntentDecision plus the assembled evidence.
   //
   // The Decision Engine reads exactly one thing from ReasonIQ before the
   // reply: `reasoningDepth` (deep → Hermes; the decision.reasoning label).
   // That depth comes from a free heuristic, so when it says 'deep' the
   // expensive model call is DEFERRED: the turn routes on a routing-only
-  // result (pendingDeepResult) and the real call runs after the reply
-  // (backgroundReasoning below), feeding the hypothesis lifecycle exactly
-  // as before — just no longer inside the user's wait. A shallow turn still
-  // resolves inline (it makes no model call). A reasoning failure degrades
-  // to `reasoningResult: null`, same posture as intentDecision above.
+  // result (pendingDeepResult) and the real call runs inside
+  // runDeferredCognition after the reply, feeding the hypothesis lifecycle
+  // exactly as before — just no longer inside the user's wait. A shallow
+  // turn still resolves inline (it makes no model call). A reasoning
+  // failure degrades to `reasoningResult: null`, same posture as
+  // intentDecision above.
+  //
+  // Hypothesis seeding is part of that deferred lifecycle, not of the
+  // routing judgment: existingHypotheses flows into the deferred call only
+  // (see runDeferredCognition below).
   const reasoningInput = {
     text: userText,
     intentDecision,
     conversationContext: messages,
     evidence,
-    ...(hypothesisRuntime ? { existingHypotheses } : {}),
     contextId: conversationId,
   };
   const deferDeepReasoning = decideReasoningDepth(reasoningInput) === 'deep';
 
   // The structured result flows into the manager (lifecycle/policy/promotion
-  // via its injected sink → Hindsight adapter). Best-effort: persistence or
-  // policy failures are logged and never affect the already-produced reply.
-  //
-  // Memoryworthiness §15 boundary: a DISCARDED turn closes the PATTERN
-  // FORMATION trigger below — memory-unworthy conversation must not push
-  // pattern analysis. Hypothesis APPLICATION deliberately still runs: its
-  // lifecycle belongs to HypothesisManager policy (which already ignores
-  // empty/shallow results via its own gates), and Memoryworthiness may not
-  // judge hypothesis matters — a memory-unworthy REQUEST can still yield
-  // legitimate analysis products, which are Gaia-knowledge, not
-  // conversational memory.
-  const patternGateOpen = !memoryDecision || shouldRetainToHindsight(memoryDecision);
-  const applyReasoning = (result) => {
-    if (!hypothesisRuntime || !result) return;
-    let durableSignaturesBefore = null;
-    try {
-      // Pattern-formation gate input (0.4): which durable hypotheses existed
-      // BEFORE applying this turn's updates — a plain conversational turn
-      // with no durable change must never trigger pattern analysis.
-      durableSignaturesBefore = new Set(
-        hypothesisRuntime.manager.list()
-          .filter((h) => h.persistence === 'durable')
-          .map((h) => `${h.id}:${h.updatedAt}`)
-      );
-    } catch (_) {}
-    try {
-      hypothesisRuntime.manager.applyReasoningResult(result);
-    } catch (err) {
-      console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
-    }
-    // Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15): needs
-    // ≥1 DURABLE hypothesis created/changed by THIS turn AND a turn that
-    // was not discarded as memory-unworthy. PatternManager owns the rest
-    // of the gate (≥2 durable members etc.) and stays conservative.
-    if (hypothesisRuntime.patternManager && durableSignaturesBefore && patternGateOpen) {
-      try {
-        const changedIds = hypothesisRuntime.manager.list()
-          .filter((h) => h.persistence === 'durable' && !durableSignaturesBefore.has(`${h.id}:${h.updatedAt}`))
-          .map((h) => h.id);
-        if (changedIds.length > 0) {
-          hypothesisRuntime.patternManager.maybeFormPatterns({
-            hypotheses: hypothesisRuntime.manager.list(),
-            changedHypothesisIds: changedIds,
-          });
-        }
-      } catch (err) {
-        console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
-      }
-    }
-  };
-
+  // via its injected sink → Hindsight adapter) inside runDeferredCognition —
+  // best-effort, after the reply. Persistence or policy failures are logged
+  // and never affect the already-produced reply. The shallow result resolved
+  // here is handed to that deferred phase; a deep result's real model call
+  // runs there too (see runDeferredCognition).
   let reasoningResult = null;
   timing.start('reasoniq');
   if (deferDeepReasoning) {
@@ -588,7 +488,6 @@ async function runTurnCore({
     }
   }
   timing.end('reasoniq');
-  if (!deferDeepReasoning) applyReasoning(reasoningResult);
 
   // Gaia decides (decision/decisionEngine.js); the Orchestrator executes
   // exactly that decision (orchestration/orchestrator.js) — the Orchestrator
@@ -753,65 +652,20 @@ async function runTurnCore({
   }
   timing.end('capability');
 
-  // Deferred deep reasoning: the reply is fully produced by now (streamed
-  // deltas included), so the model call and hypothesis application run
-  // outside the user's wait. Never rejects; callers may ignore the promise
-  // (tests await it). It runs even when the capability produced no reply —
-  // the analysis is Gaia-knowledge, not part of the reply.
-  const backgroundReasoning = deferDeepReasoning
-    ? (async () => {
-      timing.start('reasoning_background');
-      try {
-        const result = await reasonIQ(reasoningInput, { logger: decisionLogger });
-        timing.end('reasoning_background', { reasoningDepth: result && result.reasoningDepth });
-        applyReasoning(result);
-      } catch (err) {
-        timing.fail('reasoning_background', (err && err.constructor && err.constructor.name) || 'Error');
-      }
-    })()
-    : Promise.resolve();
-
   // Response Engine seam: both transports share resolveReplyText's judgment
   // of what the ExecutionResult means as text. Null ⇒ the caller's transport
-  // reports the calm failure (502 body / emitter.fail()) and NO reflection
-  // or history side effects run — identical memory semantics on failure.
+  // reports the calm failure (502 body / emitter.fail()) and no Hindsight
+  // reflection runs — identical memory semantics on failure. Deferred
+  // hypothesis work still runs below: the analysis is Gaia-knowledge, not
+  // part of the reply.
   const replyText = resolveReplyText(executionResult);
-  if (typeof replyText !== 'string' || replyText.length === 0) {
-    return { decision, executionResult, replyText: null, backgroundReasoning };
-  }
-
-  // Capability-outcome override: Memoryworthiness 0.1 scores the user's
-  // INPUT text before the capability runs, so it can never see a retry, a
-  // failure, or an ask_user escalation — exactly the non-routine outcomes
-  // whose PASS/FAIL verdict must not be lost just because the request that
-  // triggered them read as lexically mundane (see
-  // memoryWorthiness.isNotableCapabilityOutcome for why a routine
-  // single-attempt success does NOT trigger this).
-  memoryDecision = applyCapabilityOutcomeOverride(memoryDecision, executionResult);
-
-  // Post-turn Hindsight reflection — gated by Memoryworthiness 0.1: only
-  // turns judged memory-worthy are retained, tagged with the gaia_memory_*
-  // ingest-decision metadata (retain_low_priority keeps priority 'low').
-  // Conversation history saves EVERY turn regardless (below / in the route)
-  // — history is everything; Hindsight is what Gaia chooses to remember.
-  // Fire-and-forget on both transports; a null decision (module failure)
-  // degrades to the legacy shouldReflect-only gate.
-  if (hindsight && (!memoryDecision || shouldRetainToHindsight(memoryDecision))) {
-    const capabilityExecutor = decision && decision.capability ? decision.capability : null;
-    reflectOnTurn(hindsight, {
-      conversationId,
-      userText,
-      assistantText: replyText,
-      metadata: metadataForMemoryDecision(memoryDecision),
-      userDisplayName,
-      capabilityExecutor,
-    });
-  }
 
   // Pipeline latency breakdown — log turn.done with aggregated timings.
   // Capability durations are extracted from individual capability.X events
   // and summarized. No double-counting: each stage measures only its own
-  // wall-clock time, not nested stages.
+  // wall-clock time, not nested stages. The deferred phase emits its own
+  // timing events (deferred.*) after turn.done; the conversational
+  // breakdown stays byte-identical for both transports.
   timing.end('turn');
   const capabilityEvents = timing.getEvents().filter((e) => e.stage && e.stage.startsWith('capability.') && e.stage !== 'capability');
   const capabilitiesSummary = capabilityEvents.map((e) => ({
@@ -827,7 +681,288 @@ async function runTurnCore({
     capabilities: capabilitiesSummary.length > 0 ? capabilitiesSummary : undefined,
   });
 
-  return { decision, executionResult, replyText, timing, backgroundReasoning };
+  // DEFERRED COGNITION — the architectural boundary. Everything learning/
+  // reflection (Memoryworthiness, hypothesis lifecycle, deferred deep
+  // ReasonIQ, gated pattern formation, Hindsight reflection) is captured in
+  // this starter, handed to the CALLER, and started only AFTER the transport
+  // has delivered the reply — never awaited on the conversational path. The
+  // defensive .catch is the last-resort guard — runDeferredCognition already
+  // swallows its own failures, so this only prevents an unhandled rejection
+  // if a future edit breaks that contract. Deferred failures must never
+  // affect the already-produced reply.
+  const startDeferredCognition = () => runDeferredCognition({
+    hypothesisRuntime,
+    hindsight,
+    reasonIQ,
+    reasoningInput,
+    deferDeepReasoning,
+    shallowReasoningResult: deferDeepReasoning ? null : reasoningResult,
+    intentDecision,
+    recalledReflections: reflections,
+    executionResult,
+    decision,
+    messages,
+    userText,
+    replyText: typeof replyText === 'string' && replyText.length > 0 ? replyText : null,
+    conversationId,
+    userDisplayName,
+    decisionLogger,
+    timing,
+  }).catch((err) => {
+    try {
+      console.warn(`[gaia:deferred] cognition failed (non-fatal): ${err && err.message}`);
+    } catch (_) { /* never rethrow */ }
+  });
+
+  return {
+    decision,
+    executionResult,
+    replyText: typeof replyText === 'string' && replyText.length > 0 ? replyText : null,
+    timing,
+    startDeferredCognition,
+  };
+}
+
+/**
+ * THE DEFERRED COGNITION PHASE — Gaia's internal learning/reflection
+ * lifecycle for one COMPLETED turn, started by runTurnCore after the reply
+ * exists and never awaited on the conversational path.
+ *
+ * Hard boundary (see the module comment): this phase only processes the
+ * completed turn and updates Gaia's internal knowledge/memory state. It
+ * must never decide, alter or re-render what Gaia already said, never call
+ * the client transport (no SSE, no HTTP response writes), and never reject
+ * — every failure is caught and logged here so the already-delivered reply
+ * is untouched and no unhandled promise rejection can escape.
+ *
+ * What runs here, in order:
+ *   1. Memoryworthiness evaluation (cheap, deterministic, never
+  *     user-facing) — including the capability-outcome override, which
+  *      needs the finished ExecutionResult and therefore cannot run before
+  *      the reply.
+ *   2. Hypothesis lifecycle preparation: ensureLoaded() + existing
+ *      hypothesis preparation (manager state + best-effort recall), which
+ *      only ever fed ReasonIQ's analysis products.
+ *   3. Deferred ReasonIQ: the real deep model call when the turn routed on
+ *      pendingDeepResult, or the already-resolved shallow result handed
+ *      over from the conversational path.
+ *   4. hypothesisRuntime.manager.applyReasoningResult() — the one place
+ *      reasoning products enter the manager.
+ *   5. Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15).
+ *   6. Post-turn Hindsight reflection, gated by Memoryworthiness.
+ *
+ * @param {{
+ *   hypothesisRuntime?: object|null,
+ *   hindsight?: object|null,
+ *   reasonIQ?: Function,
+ *   reasoningInput: object,
+ *   deferDeepReasoning: boolean,
+ *   shallowReasoningResult?: object|null,
+ *   intentDecision?: object|null,
+ *   recalledReflections?: Array,
+ *   executionResult: object|null,
+ *   decision: object,
+ *   messages: Array<{role: string, content: string}>,
+ *   userText: string,
+ *   replyText: string,
+ *   conversationId?: string,
+ *   userDisplayName?: string,
+ *   decisionLogger?: Function,
+ *   timing: object,
+ * }} input
+ * @returns {Promise<void>} never rejects
+ */
+async function runDeferredCognition({
+  hypothesisRuntime,
+  hindsight,
+  reasonIQ = evaluateReasoning,
+  reasoningInput,
+  deferDeepReasoning,
+  shallowReasoningResult,
+  intentDecision,
+  recalledReflections,
+  executionResult,
+  decision,
+  messages,
+  userText,
+  replyText,
+  conversationId,
+  userDisplayName,
+  decisionLogger,
+  timing,
+}) {
+  // Memoryworthiness 0.1 (memoryWorthiness.js): a cheap DETERMINISTIC
+  // judgment — no LLM, never user-facing — of whether this turn deserves a
+  // Hindsight memory at all. It runs in the deferred phase: on `discard`
+  // this turn produces no Hindsight memory and closes the pattern-formation
+  // trigger below; conversation history keeps the turn either way — only
+  // MEMORY is being judged here.
+  //
+  // Capability-outcome override: Memoryworthiness 0.1 scores the user's
+  // INPUT text before the capability runs, so it can never see a retry, a
+  // failure, or an ask_user escalation — exactly the non-routine outcomes
+  // whose PASS/FAIL verdict must not be lost just because the request that
+  // triggered them read as lexically mundane (see
+  // memoryWorthiness.isNotableCapabilityOutcome for why a routine
+  // single-attempt success does NOT trigger this). The override needs the
+  // finished ExecutionResult, which only exists after the reply.
+  let memoryDecision = null;
+  timing.start('deferred.memory_worthiness');
+  try {
+    const mwStartMs = Date.now();
+    memoryDecision = evaluateMemoryWorthiness({
+      userInput: userText,
+      intent: intentDecision,
+      conversationContext: messages,
+      existingMemorySignals: { recalledReflections: recalledReflections || [] },
+    });
+    memoryDecision = applyCapabilityOutcomeOverride(memoryDecision, executionResult);
+    logMemoryWorthiness(memoryDecision, Date.now() - mwStartMs, decisionLogger);
+  } catch (_) {
+    // A classification failure degrades to null → pre-0.1 behavior (the
+    // legacy shouldReflect gate still guards the reflection).
+  }
+  timing.end('deferred.memory_worthiness');
+
+  // Memoryworthiness §15 boundary: a DISCARDED turn closes the PATTERN
+  // FORMATION trigger below — memory-unworthy conversation must not push
+  // pattern analysis. Hypothesis APPLICATION deliberately still runs: its
+  // lifecycle belongs to HypothesisManager policy (which already ignores
+  // empty/shallow results via its own gates), and Memoryworthiness may not
+  // judge hypothesis matters — a memory-unworthy REQUEST can still yield
+  // legitimate analysis products, which are Gaia-knowledge, not
+  // conversational memory.
+  const patternGateOpen = !memoryDecision || shouldRetainToHindsight(memoryDecision);
+
+  // Hypothesis Persistence 0.1 (optional runtime, wired by server.js): seed
+  // the deferred ReasonIQ call with Gaia's tracked hypotheses — manager
+  // state first, then a best-effort native recall scoped to gaia:hypothesis
+  // for anything not loaded yet. Every failure here is non-fatal; without a
+  // runtime this is exactly the pre-0.1 behavior.
+  let existingHypotheses = [];
+  if (hypothesisRuntime) {
+    timing.start('deferred.hypothesis_prep');
+    try {
+      if (typeof hypothesisRuntime.ensureLoaded === 'function') await hypothesisRuntime.ensureLoaded();
+      existingHypotheses = hypothesisRuntime.manager.list().map((h) => ({
+        id: h.id,
+        statement: h.statement,
+        status: h.status,
+        confidence: h.confidence,
+        evidenceFor: h.evidenceFor,
+        evidenceAgainst: h.evidenceAgainst,
+        persistence: h.persistence,
+      }));
+    } catch (_) { /* seeding must never break the deferred phase */ }
+    if (typeof hypothesisRuntime.recallHypotheses === 'function') {
+      try {
+        const recalled = await hypothesisRuntime.recallHypotheses(userText).catch(() => []);
+        const known = new Set(existingHypotheses.map((h) => h.id));
+        for (const rh of Array.isArray(recalled) ? recalled : []) {
+          if (!rh || !rh.id || known.has(rh.id)) continue;
+          existingHypotheses.push({
+            id: rh.id,
+            statement: rh.statement,
+            status: rh.status || undefined,
+            confidence: rh.confidence != null ? rh.confidence : undefined,
+            evidenceFor: rh.evidenceFor || [],
+            evidenceAgainst: rh.evidenceAgainst || [],
+            persistence: rh.persistence,
+          });
+        }
+      } catch (_) { /* same posture */ }
+    }
+    timing.end('deferred.hypothesis_prep');
+  }
+
+  // Deferred ReasonIQ — ONE clear background path. A deep turn routed on
+  // pendingDeepResult makes its real model call here; a shallow turn already
+  // resolved inline on the conversational path (no model call) and only its
+  // analysis products are handed over. Nothing ReasonIQ produces here can
+  // reach the user: the reply was produced before this phase started.
+  const deferredReasoningInput = {
+    ...reasoningInput,
+    ...(hypothesisRuntime ? { existingHypotheses } : {}),
+  };
+  let reasoningResult = null;
+  if (deferDeepReasoning) {
+    timing.start('reasoning_background');
+    try {
+      reasoningResult = await reasonIQ(deferredReasoningInput, { logger: decisionLogger });
+      timing.end('reasoning_background', { reasoningDepth: reasoningResult && reasoningResult.reasoningDepth });
+    } catch (err) {
+      reasoningResult = null;
+      timing.fail('reasoning_background', (err && err.constructor && err.constructor.name) || 'Error');
+    }
+  } else {
+    reasoningResult = shallowReasoningResult;
+  }
+
+  // The structured result flows into the manager (lifecycle/policy/promotion
+  // via its injected sink → Hindsight adapter). Best-effort: persistence or
+  // policy failures are logged and never affect the already-produced reply.
+  if (hypothesisRuntime && reasoningResult) {
+    let durableSignaturesBefore = null;
+    try {
+      // Pattern-formation gate input (0.4): which durable hypotheses existed
+      // BEFORE applying this turn's updates — a plain conversational turn
+      // with no durable change must never trigger pattern analysis.
+      durableSignaturesBefore = new Set(
+        hypothesisRuntime.manager.list()
+          .filter((h) => h.persistence === 'durable')
+          .map((h) => `${h.id}:${h.updatedAt}`)
+      );
+    } catch (_) {}
+    try {
+      hypothesisRuntime.manager.applyReasoningResult(reasoningResult);
+    } catch (err) {
+      console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
+    }
+    // Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15): needs
+    // ≥1 DURABLE hypothesis created/changed by THIS turn AND a turn that
+    // was not discarded as memory-unworthy. PatternManager owns the rest
+    // of the gate (≥2 durable members etc.) and stays conservative.
+    if (hypothesisRuntime.patternManager && durableSignaturesBefore && patternGateOpen) {
+      try {
+        const changedIds = hypothesisRuntime.manager.list()
+          .filter((h) => h.persistence === 'durable' && !durableSignaturesBefore.has(`${h.id}:${h.updatedAt}`))
+          .map((h) => h.id);
+        if (changedIds.length > 0) {
+          hypothesisRuntime.patternManager.maybeFormPatterns({
+            hypotheses: hypothesisRuntime.manager.list(),
+            changedHypothesisIds: changedIds,
+          });
+        }
+      } catch (err) {
+        console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
+      }
+    }
+  }
+
+  // Post-turn Hindsight reflection — gated by Memoryworthiness 0.1: only
+  // turns judged memory-worthy are retained, tagged with the gaia_memory_*
+  // ingest-decision metadata (retain_low_priority keeps priority 'low').
+  // A turn that produced no reply is never reflected (nothing was said);
+  // conversation history saves EVERY turn regardless (in the route /
+  // performStreamingTurn) — history is everything; Hindsight is what Gaia
+  // chooses to remember. Fire-and-forget; a null decision (module failure)
+  // degrades to the legacy shouldReflect-only gate.
+  if (hindsight && replyText && (!memoryDecision || shouldRetainToHindsight(memoryDecision))) {
+    const capabilityExecutor = decision && decision.capability ? decision.capability : null;
+    try {
+      reflectOnTurn(hindsight, {
+        conversationId,
+        userText,
+        assistantText: replyText,
+        metadata: metadataForMemoryDecision(memoryDecision),
+        userDisplayName,
+        capabilityExecutor,
+      });
+    } catch (_) {
+      // reflectOnTurn already never lets a Hindsight failure escape; this
+      // guards the call itself, which must never reject the deferred phase.
+    }
+  }
 }
 
 /**
@@ -882,7 +1017,10 @@ async function performTurn({
     return { status: 400, body: { error: problem } };
   }
 
-  const { replyText, timing } = await runTurnCore({
+  // deferred cognition is deliberately NOT awaited here — Gaia's learning/
+  // reflection runs in the background once the response is on its way (see
+  // runDeferredCognition). It never rejects; failures are logged inside.
+  const { replyText, timing, startDeferredCognition } = await runTurnCore({
     messages,
     documents,
     hermes,
@@ -901,6 +1039,8 @@ async function performTurn({
     orchestrate,
     userDisplayName,
   });
+  const deferredCognition = startDeferredCognition();
+  void deferredCognition;
 
   // Non-streaming generation timing: log generation.start/done
   // (streaming timing is handled by first_token tracking above)
@@ -1023,7 +1163,11 @@ async function performStreamingTurn({
     return;
   }
 
-  const { decision, executionResult, replyText, timing } = coreResult;
+  // Deferred cognition is STARTED below, after the stream is finished —
+  // never awaited. Gaia's learning/reflection runs in the background once
+  // the conversational response is delivered (see runDeferredCognition).
+  // It never rejects and never touches `res`.
+  const { executionResult, replyText, timing, startDeferredCognition } = coreResult;
 
   // Log first_token for streaming generation
   if (timeToFirstTokenMs !== null) {
@@ -1039,9 +1183,14 @@ async function performStreamingTurn({
 
   // Nothing usable was said (execution failed / empty output): report the
   // calm failure through the emitter — before any content shipped this is
-  // a normal JSON error, after content it simply ends the stream.
+  // a normal JSON error, after content it simply ends the stream. Deferred
+  // cognition still runs: a deep turn's analysis is Gaia-knowledge, not
+  // part of the reply — but no Hindsight reflection (nothing was said, see
+  // runDeferredCognition's replyText gate).
   if (typeof replyText !== 'string' || replyText.length === 0) {
     emitter.fail();
+    const deferredCognition = startDeferredCognition();
+    void deferredCognition;
     return;
   }
 
@@ -1053,6 +1202,12 @@ async function performStreamingTurn({
     emitter.delta(replyText);
   }
   emitter.finish();
+
+  // The conversational response path is complete — start the deferred
+  // cognition lifecycle now (not before), and never await it: the client
+  // already has the full reply.
+  const deferredCognition = startDeferredCognition();
+  void deferredCognition;
 
   // Chat history — the raw transcript, never Hindsight's job (see the
   // module comment). Never allowed to affect the already-sent response; a

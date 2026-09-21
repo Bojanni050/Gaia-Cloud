@@ -253,11 +253,19 @@ test('timing: stages appear in correct order', async () => {
 
     const timingEvents = logs.map((l) => JSON.parse(l));
     const stageOrder = timingEvents.map((e) => e.stage);
-    // turn.done should be last
-    assert.equal(stageOrder[stageOrder.length - 1], 'turn.done');
+    // turn.done ends the CONVERSATIONAL pipeline; deferred cognition stages
+    // (deferred.*, reasoning_background) may only ever appear AFTER it —
+    // they run outside the user's wait (turn.js's runDeferredCognition).
+    const conversational = stageOrder.filter((s) => !s.startsWith('deferred.') && s !== 'reasoning_background');
+    assert.equal(conversational[conversational.length - 1], 'turn.done',
+      'turn.done should end the conversational pipeline');
+    const deferredIdx = stageOrder.findIndex((s) => s.startsWith('deferred.'));
+    const turnIdx = stageOrder.indexOf('turn.done');
+    if (deferredIdx >= 0) {
+      assert.ok(turnIdx < deferredIdx, 'deferred cognition must start after turn.done');
+    }
     // capability should come before turn.done
     const capIdx = stageOrder.findIndex((s) => s === 'capability');
-    const turnIdx = stageOrder.findIndex((s) => s === 'turn.done');
     if (capIdx >= 0) assert.ok(capIdx < turnIdx);
   } finally {
     console.log = originalLog;

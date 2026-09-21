@@ -635,11 +635,15 @@ test('performStreamingTurn persists both the IntentIQ decision and the ReasonIQ 
   });
   await flush();
 
-  assert.equal(appended.length, 4);
+  // Deferred cognition boundary (turn.js runDeferredCognition): the memory
+  // judgment is part of the DEFERRED learning lifecycle, so it is appended
+  // after the conversational records instead of between intent and
+  // reasoning. The conversational records keep their order; the
+  // memory.worthiness record may no longer precede decision.plan.
   assert.equal(appended[0].kind, 'intentiq.decision');
-  assert.equal(appended[1].kind, 'memory.worthiness'); // 0.1: every turn gets a memory judgment record
-  assert.equal(appended[2].kind, 'reasoniq.result');
-  assert.equal(appended[3].kind, 'decision.plan');
+  assert.equal(appended[1].kind, 'reasoniq.result');
+  assert.equal(appended[2].kind, 'decision.plan');
+  assert.equal(appended[3].kind, 'memory.worthiness'); // 0.1: every turn gets a memory judgment record
 });
 
 test('performStreamingTurn never calls decisionStore.append when no decisionStore is given (backward compatible)', async () => {
@@ -1331,10 +1335,13 @@ test("0.1 turn: a hypothesisRuntime seeds existing hypotheses into ReasonIQ and 
     hypothesisRuntime: { manager },
   });
 
-  assert.equal(reasonIQCalls.length, 1);
-  const seeded = reasonIQCalls[0].existingHypotheses;
-  assert.equal(seeded.length, 1);
-  assert.equal(seeded[0].id, "hyp-seed");
+  assert.equal(reasonIQCalls.length, 1, "ReasonIQ runs exactly once (shallow, conversational)");
+  // Deferred cognition boundary: hypothesis preparation no longer runs on the
+  // conversational path, so the inline routing call carries no hypothesis
+  // context — the analysis products it returns are applied in the deferred
+  // phase below, exactly as before, just after the reply.
+  assert.equal(reasonIQCalls[0].existingHypotheses, undefined);
+  await flushBackground();
   assert.equal(manager.get("hyp-seed").confidence, 0.65); // update applied post-reasoning
 });
 
@@ -2592,4 +2599,264 @@ test('deferred reasoning: a shallow turn still resolves ReasonIQ inline, before 
     reasonIQ: async () => { order.push('reasonIQ'); return { reasoningDepth: 'shallow' }; },
   });
   assert.deepEqual(order.slice(0, 1), ['reasonIQ']);
+});
+
+// --- PHASE 1: deferred cognition boundary -----------------------------------
+//
+// The conversational path is minimal turn analysis → required context →
+// Decision Engine → Orchestrator → Response Engine. Everything that is
+// learning/reflection (Memoryworthiness, hypothesis recall/persistence,
+// deferred ReasonIQ, pattern formation, Hindsight reflection) runs in
+// runDeferredCognition AFTER the reply exists and is never awaited by the
+// transports. These tests pin that boundary in both directions.
+
+test('deferred cognition: a normal streaming reply completes without awaiting deferred cognition', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const order = [];
+  let reflectCalled = false;
+  const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Onthoud dat ik mijn VPS heel belangrijk vind.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: { recall: async () => [], reflect: async () => { reflectCalled = true; await gate; } },
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
+    reasonIQ: async () => ({}),
+    hypothesisRuntime: {
+      manager: { list: () => [], applyReasoningResult: () => {} },
+      ensureLoaded: async () => { order.push('ensureLoaded'); },
+      recallHypotheses: async () => { order.push('recallHypotheses'); return []; },
+    },
+  });
+  // The reply is fully delivered while Hindsight reflection is still pending —
+  // the turn NEVER waits for deferred cognition.
+  assert.match(res.written.at(-1), /data: \[DONE\]/);
+  assert.equal(order[0], 'hermes', 'the reply is produced before any deferred work');
+  assert.ok(order.indexOf('hermes') < order.indexOf('ensureLoaded'), 'hypothesis loading runs only after the reply');
+  assert.ok(order.indexOf('hermes') < order.indexOf('recallHypotheses'), 'hypothesis recall runs only after the reply');
+  release();
+  await flushBackground();
+  assert.equal(reflectCalled, true, 'deferred reflection runs after the reply');
+});
+
+test('deferred cognition: a normal non-streaming reply returns without awaiting deferred cognition', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let reflectCalled = false;
+  let recallHypothesesCalled = false;
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Onthoud dat ik mijn VPS heel belangrijk vind.' }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => 'Een antwoord.' },
+    hindsight: { recall: async () => [], reflect: async () => { reflectCalled = true; await gate; } },
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
+    reasonIQ: async () => ({}),
+    hypothesisRuntime: {
+      manager: { list: () => [], applyReasoningResult: () => {} },
+      ensureLoaded: async () => {},
+      recallHypotheses: async () => { recallHypothesesCalled = true; await gate; return []; },
+    },
+  });
+  // The HTTP-shaped result is returned while reflection AND hypothesis recall
+  // are still pending — the endpoint never waits for deferred cognition.
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'Een antwoord.');
+  assert.equal(reflectCalled, false, 'the reply is returned before reflection completes');
+  assert.equal(recallHypothesesCalled, true, 'hypothesis recall started (after the reply, deferred)');
+  release();
+  await flushBackground();
+  assert.equal(reflectCalled, true, 'deferred reflection runs after the reply');
+});
+
+test('deferred cognition: hypothesis recall and ensureLoaded run only after the conversational reply', async () => {
+  const order = [];
+  const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Waarom crasht mijn website?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => ({}),
+    hypothesisRuntime: {
+      manager: { list: () => [], applyReasoningResult: () => {} },
+      ensureLoaded: async () => { order.push('ensureLoaded'); },
+      recallHypotheses: async () => { order.push('recallHypotheses'); return []; },
+    },
+  });
+  // The reply was fully delivered (S deferred work ran.
+  assert.match(res.written.at(-1), /data: \[DONE\]/);
+  assert.equal(order[0], 'hermes', 'the reply is produced before any hypothesis work');
+  await flushBackground();
+  assert.ok(order.includes('ensureLoaded') && order.includes('recallHypotheses'),
+    'hypothesis lifecycle work runs in the deferred phase');
+  assert.ok(order.indexOf('hermes') < order.indexOf('ensureLoaded'),
+    'ensureLoaded runs only after the reply');
+  assert.ok(order.indexOf('hermes') < order.indexOf('recallHypotheses'),
+    'recallHypotheses runs only after the reply');
+});
+
+test('deferred cognition: Memoryworthiness and pattern formation never precede the reply', async () => {
+  const order = [];
+  const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'A Reply.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de architectuur van de streaming pipeline.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => ({
+      interpretation: 'x',
+      hypotheses: [{ statement: 'Hypothesis from an analysis turn.', confidence: 0.7, evidenceFor: ['e1'], persistence: 'durable' }],
+      hypothesisUpdates: [],
+      contradictions: [], uncertainties: [], informationGaps: [],
+      conclusions: [], sufficientForConclusion: false, confidence: 0.6,
+    }),
+    hypothesisRuntime: {
+      manager: { list: () => [], applyReasoningResult: () => {} },
+      patternManager: { maybeFormPatterns: () => { order.push('patternFormation'); } },
+    },
+    decisionStore: { append: () => {} },
+  });
+  assert.deepEqual(order, ['hermes'], 'no pattern formation may precede the reply');
+});
+
+test('deferred cognition: a failure inside the deferred phase never fails the turn (streaming)', async () => {
+  const res = fakeRes();
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('still fine', false); return 'still fine'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Waarom crasht mijn website?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { throw new Error('deferred boom'); },
+    hypothesisRuntime: {
+      manager: { list: () => { throw new Error('list boom'); }, applyReasoningResult: () => { throw new Error('apply boom'); } },
+      ensureLoaded: async () => { throw new Error('load boom'); },
+      recallHypotheses: async () => { throw new Error('recall boom'); },
+      patternManager: { maybeFormPatterns: () => { throw new Error('pattern boom'); } },
+    },
+  });
+  await flushBackground();
+  assert.match(res.written.join(''), /still fine/);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('deferred cognition: no unhandled promise rejection when the deferred phase fails', async () => {
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'ok'; } };
+    await performStreamingTurn({
+      messages: [{ role: 'user', content: 'Onthoud dat mijn VPS kritiek is.' }],
+      documents: DOCUMENTS,
+      hermes,
+      hindsight: { recall: async () => [], reflect: async () => { throw new Error('reflect boom'); } },
+      res: fakeRes(),
+      intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
+      reasonIQ: async () => ({}),
+      hypothesisRuntime: {
+        manager: { list: () => [], applyReasoningResult: () => { throw new Error('apply boom'); } },
+        ensureLoaded: async () => { throw new Error('load boom'); },
+      },
+    });
+    await flushBackground();
+    assert.deepEqual(unhandled, [], 'deferred failures must never leak as unhandled rejections');
+    // The conversation itself was unaffected.
+    const hermes2 = { stream: async (messages, { onDelta }) => { onDelta('ok2', false); return 'ok2'; } };
+    const res2 = fakeRes();
+    await performStreamingTurn({
+      messages: [{ role: 'user', content: 'Hoi Gaia' }],
+      documents: DOCUMENTS,
+      hermes: hermes2,
+      hindsight: SILENT_HINDSIGHT,
+      res: res2,
+    });
+    await flushBackground();
+    assert.match(res2.written.join(''), /ok2/);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('deferred cognition: streaming and non-streaming produce the same reply and both defer reflection', async () => {
+  const makeSeams = () => {
+    const seams = { reflectCalls: [], recallHypothesesCalls: 0 };
+    seams.hindsight = { recall: async () => [], reflect: async (item) => { seams.reflectCalls.push(item); } };
+    seams.hypothesisRuntime = {
+      manager: { list: () => [], applyReasoningResult: () => {} },
+      ensureLoaded: async () => {},
+      recallHypotheses: async () => { seams.recallHypothesesCalls += 1; return []; },
+    };
+    return seams;
+  };
+  const messages = [{ role: 'user', content: 'Onthoud dat ik altijd via de VPS deploy.' }];
+  const intent = () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' });
+  const reasoning = async () => ({});
+
+  const a = makeSeams();
+  const nonStreaming = await performTurn({
+    messages, documents: DOCUMENTS,
+    hermes: { chat: async () => 'Genoteerd.' },
+    hindsight: a.hindsight, intentIQ: intent, reasonIQ: reasoning,
+    hypothesisRuntime: a.hypothesisRuntime,
+  });
+  assert.equal(nonStreaming.status, 200);
+  assert.equal(nonStreaming.body.reply, 'Genoteerd.');
+  await flushBackground();
+  assert.equal(a.recallHypothesesCalls, 1, 'non-streaming defers (but still runs) hypothesis recall');
+  assert.equal(a.reflectCalls.length, 1);
+
+  const b = makeSeams();
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages, documents: DOCUMENTS,
+    hermes: { stream: async (m, { onDelta }) => { onDelta('Genoteerd.', false); return 'Genoteerd.'; } },
+    hindsight: b.hindsight, res, intentIQ: intent, reasonIQ: reasoning,
+    hypothesisRuntime: b.hypothesisRuntime,
+  });
+  await flushBackground();
+  assert.equal(b.recallHypothesesCalls, 1, 'streaming defers (but still runs) hypothesis recall');
+  assert.equal(b.reflectCalls.length, 1);
+  // Identical memory semantics on both transports.
+  assert.equal(
+    a.reflectCalls[0].metadata.gaia_memory_decision,
+    b.reflectCalls[0].metadata.gaia_memory_decision
+  );
+});
+
+test('deferred cognition: a deep turn starts its deferred ReasonIQ only after the reply is produced', async () => {
+  const order = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { order.push('reasonIQ'); await gate; return deepReasoningResult(); },
+    hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
+  });
+  // Reply fully delivered while deep ReasonIQ is still pending — the turn
+  // completed without it. Deep ReasonIQ may only have STARTED after hermes.
+  assert.match(res.written.at(-1), /data: \[DONE\]/);
+  assert.equal(order[0], 'hermes', 'the reply is produced before deep reasoning');
+  release();
+  await flushBackground();
+  assert.ok(order.includes('reasonIQ'), 'the deferred deep call runs after the reply');
+  assert.ok(order.indexOf('hermes') < order.indexOf('reasonIQ'),
+    'deep ReasonIQ may only start after the reply is produced');
 });
