@@ -129,9 +129,11 @@ function normalizeMistralModel(m) {
     id: m.id || '',
     name: m.name || m.id || '',
     capabilities: caps,
-    // Mistral's /models response reports context length but not pricing.
+    // Mistral's /models response reports context length but not pricing
+    // or a description.
     contextLength: typeof m.max_context_length === 'number' ? m.max_context_length : null,
     pricing: { prompt: null, completion: null },
+    description: null,
   };
 }
 
@@ -191,9 +193,12 @@ function normalizeEdenAiModel(m) {
     id: m.id || '',
     name: m.model_name || m.name || m.id || '',
     capabilities: caps,
-    // EdenAI's public /v3/models catalog doesn't report context length or pricing.
+    // EdenAI's public /v3/models catalog doesn't report context length,
+    // pricing, or a description — it's capability metadata only. Cost is
+    // known only per actual call, in that call's own response.
     contextLength: null,
     pricing: { prompt: null, completion: null },
+    description: null,
   };
 }
 
@@ -269,6 +274,9 @@ function normalizeOpenAiModel(m) {
       prompt: m.pricing?.prompt ?? null,
       completion: m.pricing?.completion ?? null,
     },
+    // OpenRouter's /models response includes a free-text description per
+    // model; other OpenAI-compatible providers generally don't.
+    description: typeof m.description === 'string' && m.description.trim() ? m.description.trim() : null,
   };
 }
 
