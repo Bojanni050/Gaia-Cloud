@@ -103,3 +103,6 @@ agents.md
 src-tauri/target/
 src-tauri/gen/schemas/
 src-tauri/WixTools/
+
+# Claude Code: machine-specific approved commands (paths, ssh hosts)
+.claude/settings.local.json
