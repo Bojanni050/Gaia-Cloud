@@ -2,287 +2,432 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Gaia Cloud — Provider Settings</title>
+<title>Gaia Cloud — AI Configuration</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #020617;
+    --card: #0f172a;
+    --card-2: #0b1220;
+    --input: #1e293b;
+    --border: #334155;
+    --border-soft: #1e293b;
+    --text: #f1f5f9;
+    --text-dim: #94a3b8;
+    --text-faint: #64748b;
+    --teal: #14b8a6;
+    --teal-text: #5eead4;
+    --amber-text: #fcd34d;
+    --cyan-text: #67e8f9;
+    --violet-text: #c4b5fd;
+    --blue-text: #93c5fd;
+    --rose-text: #fda4af;
+    --fuchsia-text: #f0abfc;
+  }
+  * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 2.5rem 1.5rem 4rem; min-height: 100vh;
-    background: #0f0e0c; color: #ece7dc;
+    margin: 0; padding: 2rem 1.5rem 4rem;
+    background: var(--bg); color: var(--text);
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
-    display: flex; justify-content: center;
   }
-  main { width: 100%; max-width: 600px; }
-  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 0.25rem; }
-  h1 small { font-weight: 400; color: #9b9484; font-size: 0.85rem; }
-  p.lede { color: #9b9484; margin: 0 0 2rem; font-size: 0.9rem; }
-  section {
-    background: #17150f; border: 1px solid #2a2620; border-radius: 10px;
-    padding: 1.25rem 1.4rem; margin-bottom: 1.25rem;
-  }
-  h2 { font-size: 0.95rem; margin: 0 0 1rem; color: #d2a24c; font-weight: 600; }
-  label { display: block; font-size: 0.8rem; color: #9b9484; margin: 0.9rem 0 0.3rem; }
+  main { width: 100%; max-width: 1200px; margin: 0 auto; }
+
+  h1 { font-size: 1.9rem; font-weight: 700; margin: 0 0 0.2rem; letter-spacing: -0.01em; }
+  h1 small { font-weight: 400; color: var(--text-faint); font-size: 0.9rem; margin-left: 0.5rem; }
+  p.lede { color: var(--text-dim); margin: 0 0 2rem; font-size: 0.9rem; }
+
+  h2 { font-size: 1.15rem; margin: 0 0 0.15rem; font-weight: 600; color: var(--text); }
+  p.section-sub { color: var(--text-dim); margin: 0 0 1.25rem; font-size: 0.85rem; }
+
+  label { display: block; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin: 0.85rem 0 0.4rem; }
   label:first-of-type { margin-top: 0; }
   input, select {
-    width: 100%; box-sizing: border-box; background: #0f0e0c; color: #ece7dc;
-    border: 1px solid #332d24; border-radius: 6px; padding: 0.55rem 0.7rem;
-    font-size: 0.9rem; font-family: inherit;
+    width: 100%; background: var(--input); color: var(--text);
+    border: 1px solid var(--border); border-radius: 1rem; padding: 0.6rem 0.8rem;
+    font-size: 0.88rem; font-family: inherit;
   }
-  input:focus, select:focus { outline: none; border-color: #d2a24c; }
+  input::placeholder { color: var(--text-faint); }
+  input:focus, select:focus { outline: none; border-color: #22d3ee88; }
+
   button {
-    background: #d2a24c; color: #17150f; border: none; border-radius: 6px;
-    padding: 0.55rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    margin-top: 1rem; margin-right: 0.5rem;
+    background: var(--teal); color: #022c26; border: none; border-radius: 0.85rem;
+    padding: 0.55rem 1.1rem; font-size: 0.8rem; font-weight: 700; cursor: pointer;
+    margin-top: 0.7rem; margin-right: 0.5rem;
   }
-  button.secondary { background: transparent; color: #d2a24c; border: 1px solid #4a4030; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  .status { font-size: 0.82rem; margin-top: 0.75rem; min-height: 1.1em; }
-  .status.ok { color: #7fbf8f; }
-  .status.err { color: #d98a8a; }
-  .hint { font-size: 0.76rem; color: #6b6459; margin-top: 0.4rem; }
-  .role-section {
-    background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px;
-    padding: 1rem 1.1rem; margin-bottom: 0.8rem;
+  button.secondary { background: #1e293bdd; color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: 0.45; cursor: default; }
+
+  .status { font-size: 0.78rem; margin-top: 0.6rem; min-height: 1.1em; }
+  .status.ok { color: #7fd8a3; }
+  .status.err { color: #f0a3a3; }
+  .hint { font-size: 0.74rem; color: var(--text-faint); margin-top: 0.4rem; line-height: 1.4; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border-soft); border-radius: 1.25rem;
+    padding: 1.4rem 1.5rem; margin-bottom: 1.5rem;
   }
-  .role-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
-  .role-label { font-size: 0.88rem; font-weight: 600; color: #ece7dc; }
-  .role-badge {
-    font-size: 0.68rem; font-weight: 600; padding: 0.15rem 0.5rem;
-    border-radius: 999px; letter-spacing: 0.02em;
+
+  hr.separator { border: none; border-top: 1px solid var(--border-soft); margin: 2rem 0; }
+
+  /* --- Role card grid --- */
+  .role-grid { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
+  @media (min-width: 860px) { .role-grid { grid-template-columns: 1fr 1fr; } }
+
+  .role-card { border-radius: 1.25rem; border: 1px solid; padding: 1.25rem 1.35rem 1.4rem; display: flex; flex-direction: column; }
+  .role-actions-row.push-bottom { margin-top: auto; padding-top: 1.4rem; }
+  .role-card.amber   { border-color: #f59e0b40; background: #f59e0b0d; }
+  .role-card.cyan    { border-color: #06b6d440; background: #06b6d40d; }
+  .role-card.violet  { border-color: #8b5cf640; background: #8b5cf60d; }
+  .role-card.blue    { border-color: #3b82f640; background: #3b82f60d; }
+  .role-card.rose    { border-color: #f43f5e40; background: #f43f5e0d; }
+
+  .role-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.1rem; }
+  .role-icon { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; display: flex; align-items: center; justify-content: center; }
+  .role-icon svg { width: 1.2rem; height: 1.2rem; }
+  .role-icon.amber  { background: #f59e0b26; color: var(--amber-text); }
+  .role-icon.cyan   { background: #06b6d426; color: var(--cyan-text); }
+  .role-icon.violet { background: #8b5cf626; color: var(--violet-text); }
+  .role-icon.blue   { background: #3b82f626; color: var(--blue-text); }
+  .role-icon.rose   { background: #f43f5e26; color: var(--rose-text); }
+
+  .role-status { text-align: right; }
+  .role-status-badge {
+    display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
+    padding: 0.2rem 0.55rem; border-radius: 0.5rem; text-transform: uppercase; border: 1px solid;
   }
-  .role-badge.configured { background: #1a2e1a; color: #7fbf8f; }
-  .role-badge.unconfigured { background: #2e1a1a; color: #d98a8a; }
-  .mode-toggle { display: flex; gap: 0.5rem; margin-bottom: 0.6rem; }
-  .mode-toggle label { margin: 0; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; }
-  .mode-toggle input[type="radio"] { width: auto; accent-color: #d2a24c; }
-  .manual-input { margin-top: 0.5rem; }
-  .decisions-list { margin-top: 1rem; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-  .decision-row { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
-  .decision-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
-  .decision-badge { font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px; letter-spacing: 0.02em; }
-  .decision-badge.intentiq { background: #2a2410; color: #d2a24c; }
-  .decision-badge.reasoniq { background: #10241f; color: #7fbf8f; }
-  .decision-badge.llm-call { background: #24191c; color: #d98a9b; }
-  .decision-time { color: #6b6459; font-size: 0.72rem; }
-  .decision-summary { color: #ece7dc; }
-  .decision-input { color: #9b9484; margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
-  .decisions-empty { color: #6b6459; font-size: 0.82rem; }
-  .separator { border: none; border-top: 1px solid #2a2620; margin: 1.5rem 0; }
+  .role-status-badge.active { border-color: #2dd4bf60; background: #2dd4bf1a; color: var(--teal-text); }
+  .role-status-badge.inactive { border-color: var(--border); background: #1e293b80; color: var(--text-dim); }
+  .role-status-note { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.3rem; }
+
+  .role-title { font-size: 1.35rem; font-weight: 700; color: var(--text); margin: 0 0 0.2rem; }
+  .role-desc { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 1.1rem; line-height: 1.45; }
+
+  .role-actions-row { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.7rem; }
+
+  .footer-cta { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding-top: 0.5rem; }
+  .footer-cta button {
+    background: #f1f5f9; color: #0f172a; border-radius: 0.85rem;
+    padding: 0.7rem 1.4rem; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .footer-cta button:hover { background: #ffffff; }
+  .footer-cta p { font-size: 0.76rem; color: var(--text-faint); margin: 0; }
+
+  /* --- Capabilities bar --- */
   .capabilities-bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
   .cap-chip {
-    font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 999px;
-    border: 1px solid #332d24; color: #9b9484;
+    font-size: 0.72rem; padding: 0.2rem 0.6rem; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-dim);
   }
-  .cap-chip.active { background: #1a2e1a; color: #7fbf8f; border-color: #2a4a2a; }
-  .model-card {
-    display: none; margin-top: 0.5rem; background: #0f0e0c; border: 1px solid #2a2620;
-    border-radius: 8px; padding: 0.65rem 0.8rem;
+  .cap-chip.active { background: #2dd4bf1a; color: var(--teal-text); border-color: #2dd4bf40; }
+
+  /* --- Model dropdown (searchable, priced) --- */
+  .model-dd { position: relative; }
+  .model-dd-trigger {
+    all: unset; display: flex; align-items: center; gap: 0.6rem; width: 100%;
+    background: var(--input); border: 1px solid var(--border); border-radius: 1rem;
+    padding: 0.6rem 0.8rem; cursor: pointer; box-sizing: border-box;
   }
-  .model-card.visible { display: block; }
-  .model-card-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: 0.78rem; padding: 0.15rem 0; }
-  .model-card-row .k { color: #6b6459; }
-  .model-card-row .v { color: #ece7dc; text-align: right; font-variant-numeric: tabular-nums; }
-  .model-card-row .v.free { color: #7fbf8f; }
-  .model-card-caps { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.4rem; }
-  .model-card-empty { font-size: 0.78rem; color: #6b6459; font-style: italic; }
+  .model-dd-trigger:hover { border-color: #22d3ee55; }
+  .model-dd-trigger .price {
+    width: 4.4rem; flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--teal-text); text-align: right;
+  }
+  .model-dd-trigger .info { flex: 1; min-width: 0; }
+  .model-dd-trigger .name { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-dd-trigger .provider { display: block; font-size: 0.7rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-dd-trigger .placeholder { font-size: 0.85rem; color: var(--text-faint); }
+  .model-dd-trigger .chev { flex-shrink: 0; width: 0.85rem; height: 0.85rem; color: var(--text-faint); transition: transform 0.15s; }
+  .model-dd.open .model-dd-trigger .chev { transform: rotate(180deg); }
+
+  .model-dd-panel {
+    position: absolute; z-index: 40; margin-top: 0.5rem; width: 100%;
+    background: var(--card); border: 1px solid var(--border); border-radius: 1.25rem;
+    box-shadow: 0 20px 40px -12px #000a; display: none; flex-direction: column;
+    max-height: 24rem; padding: 0.65rem;
+  }
+  .model-dd-panel:not([hidden]) { display: flex; }
+  .model-dd-search {
+    width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 0.8rem;
+    padding: 0.5rem 0.7rem; font-size: 0.82rem; color: var(--text); margin-bottom: 0.5rem;
+  }
+  .model-dd-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }
+  .model-dd-empty { padding: 0.5rem 0.6rem; font-size: 0.82rem; color: var(--text-faint); }
+
+  .model-dd-opt {
+    display: flex; gap: 0.65rem; border-radius: 1rem; border: 1px solid var(--border-soft);
+    background: var(--card-2); padding: 0.55rem 0.65rem; cursor: pointer;
+  }
+  .model-dd-opt:hover, .model-dd-opt.hi { border-color: #22d3ee55; background: #1e293b80; }
+  .model-dd-opt.sel { box-shadow: inset 0 0 0 1px #2dd4bf55; }
+  .model-dd-opt .prices { width: 3.6rem; flex-shrink: 0; font-size: 0.66rem; color: var(--text-faint); line-height: 1.35; padding-top: 0.1rem; }
+  .model-dd-opt .prices b { color: var(--cyan-text); font-weight: 600; }
+  .model-dd-opt .body { min-width: 0; flex: 1; border-left: 1px solid var(--border-soft); padding-left: 0.65rem; }
+  .model-dd-opt .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+  .model-dd-opt .mname { font-size: 0.82rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-dd-opt .free-tag { font-size: 0.68rem; color: var(--teal-text); flex-shrink: 0; }
+  .model-dd-opt .tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+  .tag { font-size: 0.62rem; padding: 0.1rem 0.45rem; border-radius: 0.5rem; border: 1px solid; line-height: 1.5; white-space: nowrap; }
+  .tag.provider { background: #8b5cf626; color: var(--violet-text); border-color: #8b5cf640; }
+  .tag.vision { background: #14b8a626; color: var(--teal-text); border-color: #14b8a640; }
+  .tag.reasoning { background: #d946ef26; color: var(--fuchsia-text); border-color: #d946ef40; }
+  .tag.function_calling { background: #f59e0b26; color: var(--amber-text); border-color: #f59e0b40; }
+  .tag.audio { background: #06b6d426; color: var(--cyan-text); border-color: #06b6d440; }
+  .tag.video { background: #f43f5e26; color: var(--rose-text); border-color: #f43f5e40; }
+  .tag.web_search { background: #3b82f626; color: var(--blue-text); border-color: #3b82f640; }
+  .tag.fim, .tag.fine_tuning { background: #64748b26; color: var(--text-dim); border-color: #64748b40; }
+  .model-dd-opt .context { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.25rem; }
+
+  /* --- Decision log (kept mostly as-is, restyled) --- */
+  .decisions-list { margin-top: 1rem; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
+  .decision-row { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 0.9rem; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
+  .decision-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+  .decision-badge { font-size: 0.65rem; font-weight: 700; padding: 0.12rem 0.5rem; border-radius: 999px; letter-spacing: 0.02em; }
+  .decision-badge.intentiq { background: #3b82f626; color: var(--blue-text); }
+  .decision-badge.reasoniq { background: #06b6d426; color: var(--cyan-text); }
+  .decision-badge.llm-call { background: #f43f5e26; color: var(--rose-text); }
+  .decision-time { color: var(--text-faint); font-size: 0.72rem; }
+  .decision-summary { color: var(--text); }
+  .decision-input { color: var(--text-dim); margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
+  .decisions-empty { color: var(--text-faint); font-size: 0.82rem; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.6</small></h1>
-  <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
+  <h1>AI Configuration <small>v2.0</small></h1>
+  <p class="lede">Choose which AI model handles each task. Operator-only — never surfaced to clients.</p>
 
-  <section>
+  <div class="panel">
     <h2>Gaia API access</h2>
     <label for="token">Bearer token</label>
     <input id="token" type="password" placeholder="one of GAIA_API_TOKEN's values" autocomplete="off">
     <p class="hint">Stored only in this browser's local storage, sent as an Authorization header.</p>
-  </section>
-
-  <!-- Provider Configuration -->
-  <section>
-    <h2>Provider</h2>
-    <label for="providerSelect">Provider</label>
-    <select id="providerSelect">
-      <option value="">— select provider —</option>
-      <option value="edenai">EdenAI</option>
-      <option value="openrouter">OpenRouter</option>
-      <option value="openai">OpenAI</option>
-      <option value="anthropic">Anthropic</option>
-      <option value="mistral">Mistral</option>
-      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-      <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-      <option value="litellm">LiteLLM</option>
-      <option value="custom">Custom (OpenAI-compatible)</option>
-    </select>
-
-    <label for="baseUrl">Base URL</label>
-    <input id="baseUrl" type="url" placeholder="https://api.edenai.run/v1 (Mistral: https://api.mistral.ai/v1 — Alibaba: copy from Model Studio console, e.g. https://{workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1)" autocomplete="off">
-
-    <label for="apiKey">API Key</label>
-    <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-    <p class="hint" id="keyHint">No key saved yet.</p>
-
-    <button id="saveProviderBtn">Save provider</button>
-    <button id="retrieveModelsBtn" class="secondary">Retrieve Models</button>
-    <div class="status" id="providerStatus"></div>
-  </section>
+  </div>
 
   <!-- Capabilities Overview -->
-  <section id="capabilitiesSection" style="display:none;">
+  <div class="panel" id="capabilitiesSection" style="display:none;">
     <h2>Capability Availability</h2>
     <div class="capabilities-bar" id="capabilitiesBar"></div>
     <p class="hint" style="margin-top:0.5rem;">Derived from configured models. No credentials exposed.</p>
-  </section>
+  </div>
 
-  <!-- Role Selectors (Generation only — Reasoning/Vision are configured
-       in the ReasonIQ section below, which is where they actually take
-       effect; keeping a second, unwired copy of those two here was
-       confusing, so this panel now only covers what it actually drives.) -->
-  <section id="rolesSection" style="display:none;">
-    <h2>Model Roles</h2>
-    <p class="hint" style="margin-top:0; margin-bottom:1rem;">Selects a model from the provider's catalog, or a manual model ID.</p>
+  <!-- Role cards -->
+  <div class="role-grid">
 
     <!-- Generation -->
-    <div class="role-section" id="roleGeneration">
-      <div class="role-header">
-        <span class="role-label">Generation</span>
-        <span class="role-badge unconfigured" id="genBadge">unconfigured</span>
+    <section class="role-card amber">
+      <div class="role-card-head">
+        <div class="role-icon amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M5 5l2.5 2.5M16.5 16.5L19 19M3 12h4M17 12h4M5 19l2.5-2.5M16.5 7.5L19 5"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="genBadge">Inactive</span>
+        </div>
       </div>
-      <p class="hint" style="margin-top:0;">Used for Gaia's native responses — the model that actually writes her replies when a turn doesn't route through Hermes. Independent from ReasonIQ's reasoning model and IntentIQ's classifier below, each of which keeps its own provider/key.</p>
-      <div class="mode-toggle">
-        <label><input type="radio" name="genMode" value="catalog" checked> Catalog</label>
-        <label><input type="radio" name="genMode" value="manual"> Manual</label>
+      <p class="role-title">Generation</p>
+      <p class="role-desc">Gaia's native voice — the model that writes her replies when a turn doesn't route through Hermes.</p>
+
+      <label for="providerSelect">Provider</label>
+      <select id="providerSelect">
+        <option value="">— select provider —</option>
+        <option value="edenai">EdenAI</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="mistral">Mistral</option>
+        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
+        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
+        <option value="litellm">LiteLLM</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+
+      <label for="baseUrl">Base URL</label>
+      <input id="baseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+
+      <label for="apiKey">API Key</label>
+      <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+      <p class="hint" id="keyHint">No key saved yet.</p>
+
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="saveProviderBtn">Save provider</button>
+        <button id="retrieveModelsBtn" class="secondary">Retrieve models</button>
       </div>
-      <div id="genCatalog">
-        <select id="genSelect"><option value="">— retrieve models first —</option></select>
-        <div class="model-card" id="genMeta"></div>
+      <div class="status" id="providerStatus"></div>
+
+      <label>Model</label>
+      <div id="genDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="genSaveBtn" disabled>Save selection</button>
       </div>
-      <div id="genManual" class="manual-input" style="display:none;">
-        <label for="genManualId">Model ID</label>
-        <input id="genManualId" type="text" placeholder="e.g. google/gemini-2.5-flash" autocomplete="off">
-      </div>
-      <button class="save-role-btn" data-role="generation">Save</button>
       <div class="status" id="genStatus"></div>
-    </div>
-  </section>
+    </section>
 
-  <!-- TTS (independent) -->
-  <section>
-    <h2>TTS — Text-to-Speech</h2>
-    <p class="hint" style="margin-top:0;">Fully independent from the main provider. Can be a different provider with its own API key.</p>
+    <!-- ReasonIQ — Reasoning -->
+    <section class="role-card cyan">
+      <div class="role-card-head">
+        <div class="role-icon cyan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4c0 .74.2 1.43.55 2.03A4 4 0 0 0 6 12a4 4 0 0 0 1 2.65A4 4 0 0 0 6.5 17a4 4 0 0 0 4 4h1M12 2a4 4 0 0 1 4 4c0 .74-.2 1.43-.55 2.03A4 4 0 0 1 18 12a4 4 0 0 1-1 2.65A4 4 0 0 1 17.5 17a4 4 0 0 1-4 4h-1M12 2v19"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="riqBadge">Inactive</span>
+        </div>
+      </div>
+      <p class="role-title">Reasoning</p>
+      <p class="role-desc">Gaia's cognitive layer — evaluates hypotheses and contradictions before a reply is written. Independent provider from Generation.</p>
 
-    <label for="ttsProviderSelect">Provider</label>
-    <select id="ttsProviderSelect">
-      <option value="">— select provider —</option>
-      <option value="xiaomi">Xiaomi MiMo</option>
-      <option value="openai">OpenAI</option>
-      <option value="edenai">EdenAI</option>
-      <option value="custom">Custom (OpenAI-compatible)</option>
-    </select>
+      <label for="riqProviderSelect">Provider</label>
+      <select id="riqProviderSelect">
+        <option value="">— select provider —</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="edenai">EdenAI</option>
+        <option value="openai">OpenAI</option>
+        <option value="mistral">Mistral</option>
+        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
+        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
+        <option value="litellm">LiteLLM</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
 
-    <label for="ttsBaseUrl">Base URL</label>
-    <input id="ttsBaseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="off">
+      <label for="riqBaseUrl">Base URL</label>
+      <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
 
-    <label for="ttsApiKey">API Key</label>
-    <input id="ttsApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-    <p class="hint" id="ttsKeyHint">No key saved yet.</p>
+      <label for="riqApiKey">API key</label>
+      <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+      <p class="hint" id="riqKeyHint">No key saved yet.</p>
 
-    <label for="ttsModel">Model</label>
-    <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="riqSaveConfigBtn">Save config</button>
+        <button id="riqFetchModelsBtn" class="secondary">Fetch models</button>
+      </div>
+      <div class="status" id="riqConfigStatus"></div>
 
-    <button id="saveTtsBtn">Save TTS</button>
-    <div class="status" id="ttsStatus"></div>
-  </section>
+      <label>Model for ReasonIQ</label>
+      <div id="riqDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="riqSaveModelBtn" disabled>Save selection</button>
+      </div>
+      <div class="status" id="riqModelStatus"></div>
+    </section>
+
+    <!-- Vision (ReasonIQ's vision model) -->
+    <section class="role-card violet">
+      <div class="role-card-head">
+        <div class="role-icon violet">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="riqVisionBadge">Reusing ReasonIQ</span>
+        </div>
+      </div>
+      <p class="role-title">Vision</p>
+      <p class="role-desc">Reads image attachments (OCR). Uses ReasonIQ's provider and key above — pick a different model here, or leave unset to reuse ReasonIQ's own model.</p>
+
+      <label>Vision model</label>
+      <div id="riqVisionDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="riqClearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
+        <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
+      </div>
+      <div class="status" id="riqVisionModelStatus"></div>
+    </section>
+
+    <!-- IntentIQ — Classification -->
+    <section class="role-card blue">
+      <div class="role-card-head">
+        <div class="role-icon blue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="iiqBadge">Inactive</span>
+        </div>
+      </div>
+      <p class="role-title">Classification</p>
+      <p class="role-desc">IntentIQ — classifies what the user is asking for before Gaia responds. Leave unset to run heuristic-only classification.</p>
+
+      <label for="iiqProviderSelect">Provider</label>
+      <select id="iiqProviderSelect">
+        <option value="">— select provider —</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="edenai">EdenAI</option>
+        <option value="openai">OpenAI</option>
+        <option value="mistral">Mistral</option>
+        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
+        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
+        <option value="litellm">LiteLLM</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+
+      <label for="iiqBaseUrl">Base URL</label>
+      <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+
+      <label for="iiqApiKey">API key</label>
+      <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+      <p class="hint" id="iiqKeyHint">No key saved yet.</p>
+
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="iiqSaveConfigBtn">Save config</button>
+        <button id="iiqFetchModelsBtn" class="secondary">Fetch models</button>
+      </div>
+      <div class="status" id="iiqConfigStatus"></div>
+
+      <label>Model for IntentIQ</label>
+      <div id="iiqDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="iiqSaveModelBtn" disabled>Save selection</button>
+      </div>
+      <div class="status" id="iiqModelStatus"></div>
+      <p class="hint" id="iiqEnvHint"></p>
+    </section>
+
+    <!-- TTS (independent) -->
+    <section class="role-card rose">
+      <div class="role-card-head">
+        <div class="role-icon rose">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="ttsBadge">Inactive</span>
+        </div>
+      </div>
+      <p class="role-title">Voice</p>
+      <p class="role-desc">Text-to-speech for Gaia's spoken replies. Fully independent — can run on a different provider with its own API key.</p>
+
+      <label for="ttsProviderSelect">Provider</label>
+      <select id="ttsProviderSelect">
+        <option value="">— select provider —</option>
+        <option value="xiaomi">Xiaomi MiMo</option>
+        <option value="openai">OpenAI</option>
+        <option value="edenai">EdenAI</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+
+      <label for="ttsBaseUrl">Base URL</label>
+      <input id="ttsBaseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="off">
+
+      <label for="ttsApiKey">API Key</label>
+      <input id="ttsApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+      <p class="hint" id="ttsKeyHint">No key saved yet.</p>
+
+      <label for="ttsModel">Model</label>
+      <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="saveTtsBtn">Save voice</button>
+      </div>
+      <div class="status" id="ttsStatus"></div>
+    </section>
+
+  </div>
 
   <hr class="separator">
-
-  <!-- ReasonIQ (provider-agnostic) -->
-  <section>
-    <h2>ReasonIQ — reasoning model</h2>
-    <p class="hint" style="margin-top:0;">Used for Gaia's cognitive reasoning layer — evaluates hypotheses/contradictions before a reply is written, and (via the vision model below) reads image attachments. Not Gaia's voice: that's Generation above. Supports any OpenAI-compatible provider (OpenRouter, EdenAI, Mistral, etc.), independent of Generation's provider.</p>
-
-    <label for="riqProviderSelect">Provider</label>
-    <select id="riqProviderSelect">
-      <option value="">— select provider —</option>
-      <option value="openrouter">OpenRouter</option>
-      <option value="edenai">EdenAI</option>
-      <option value="openai">OpenAI</option>
-      <option value="mistral">Mistral</option>
-      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-      <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-      <option value="litellm">LiteLLM</option>
-      <option value="custom">Custom (OpenAI-compatible)</option>
-    </select>
-
-    <label for="riqBaseUrl">Base URL</label>
-    <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
-
-    <label for="riqApiKey">API key</label>
-    <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-    <p class="hint" id="riqKeyHint">No key saved yet.</p>
-
-    <button id="riqSaveConfigBtn">Save config</button>
-    <div class="status" id="riqConfigStatus"></div>
-
-    <button id="riqFetchModelsBtn" class="secondary">Fetch available models</button>
-    <label for="riqModelSelect">Model for ReasonIQ</label>
-    <select id="riqModelSelect"><option value="">— save config and fetch models —</option></select>
-    <div class="model-card" id="riqModelMeta"></div>
-    <button id="riqSaveModelBtn" disabled>Save selection</button>
-    <div class="status" id="riqModelStatus"></div>
-
-    <label for="riqVisionModelSelect">Vision model (image OCR)</label>
-    <select id="riqVisionModelSelect"><option value="">— reuse ReasonIQ's model —</option></select>
-    <div class="model-card" id="riqVisionModelMeta"></div>
-    <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
-    <button id="riqClearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
-    <div class="status" id="riqVisionModelStatus"></div>
-  </section>
-
-  <hr class="separator">
-
-  <!-- IntentIQ (semantic classification model, provider-agnostic) -->
-  <section>
-    <h2>IntentIQ — semantic model</h2>
-    <p class="hint" style="margin-top:0;">Used to classify what the user is asking for before Gaia responds (intent behind the message), not to write the reply itself. Same setup flow as ReasonIQ: pick a provider, save a key, fetch its models, choose one — independent of Generation's and ReasonIQ's own providers. Leave unset (or use GAIA_INTENT_* env vars) to run heuristic-only classification.</p>
-
-    <label for="iiqProviderSelect">Provider</label>
-    <select id="iiqProviderSelect">
-      <option value="">— select provider —</option>
-      <option value="openrouter">OpenRouter</option>
-      <option value="edenai">EdenAI</option>
-      <option value="openai">OpenAI</option>
-      <option value="mistral">Mistral</option>
-      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-      <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-      <option value="litellm">LiteLLM</option>
-      <option value="custom">Custom (OpenAI-compatible)</option>
-    </select>
-
-    <label for="iiqBaseUrl">Base URL</label>
-    <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
-
-    <label for="iiqApiKey">API key</label>
-    <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-    <p class="hint" id="iiqKeyHint">No key saved yet.</p>
-
-    <button id="iiqSaveConfigBtn">Save config</button>
-    <div class="status" id="iiqConfigStatus"></div>
-
-    <button id="iiqFetchModelsBtn" class="secondary">Fetch available models</button>
-    <label for="iiqModelSelect">Model for IntentIQ</label>
-    <select id="iiqModelSelect"><option value="">— save config and fetch models —</option></select>
-    <div class="model-card" id="iiqModelMeta"></div>
-    <button id="iiqSaveModelBtn" disabled>Save selection</button>
-    <div class="status" id="iiqModelStatus"></div>
-    <p class="hint" id="iiqEnvHint"></p>
-  </section>
 
   <!-- Decision Log -->
-  <section>
+  <div class="panel">
     <h2>Logos — decision log</h2>
-    <p class="hint" style="margin-top:0;">Durable copy of IntentIQ/ReasonIQ decisions.</p>
+    <p class="section-sub">Durable copy of every IntentIQ/ReasonIQ decision and LLM call.</p>
     <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
       <div style="flex:1; min-width:130px;">
         <label for="decisionsKind">Kind</label>
@@ -303,7 +448,7 @@
     </div>
     <div class="status" id="decisionsStatus"></div>
     <div class="decisions-list" id="decisionsList"></div>
-  </section>
+  </div>
 </main>
 
 <script>
@@ -312,9 +457,6 @@
   const tokenEl = $('token');
 
   // Known base URLs per provider, for autofill when a provider is selected.
-  // Providers without one universal endpoint (Alibaba Cloud is workspace-
-  // scoped; "custom" is by definition unknown) are intentionally omitted —
-  // their field is left as-is so the operator's own value isn't clobbered.
   const PROVIDER_BASE_URLS = {
     edenai: 'https://api.edenai.run/v1',
     openrouter: 'https://openrouter.ai/api/v1',
@@ -333,28 +475,6 @@
     });
   }
 
-  const providerSelectEl = $('providerSelect'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey');
-  wireBaseUrlAutofill(providerSelectEl, baseUrlEl);
-  const keyHintEl = $('keyHint'), providerStatusEl = $('providerStatus');
-  const saveProviderBtn = $('saveProviderBtn'), retrieveModelsBtn = $('retrieveModelsBtn');
-  const capabilitiesSection = $('capabilitiesSection'), capabilitiesBar = $('capabilitiesBar');
-  const rolesSection = $('rolesSection');
-
-  const ROLE_CONFIG = {
-    generation: { selectEl: $('genSelect'), metaEl: $('genMeta'), badgeEl: $('genBadge'), statusEl: $('genStatus'), modeName: 'genMode', catalogId: 'genCatalog', manualId: 'genManual', manualInputId: 'genManualId' },
-  };
-
-  let catalog = [];
-  let currentConfig = null;
-
-  // --- Auth ---
-  tokenEl.value = localStorage.getItem('gaia_admin_token') || '';
-  tokenEl.addEventListener('change', () => localStorage.setItem('gaia_admin_token', tokenEl.value));
-
-  function authHeaders() {
-    return { 'Authorization': 'Bearer ' + tokenEl.value, 'Content-Type': 'application/json' };
-  }
-
   function setStatus(el, text, ok) {
     el.textContent = text;
     el.className = 'status ' + (ok ? 'ok' : 'err');
@@ -362,6 +482,11 @@
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function setBadge(el, active, activeLabel, inactiveLabel) {
+    el.textContent = active ? (activeLabel || 'Active') : (inactiveLabel || 'Inactive');
+    el.className = 'role-status-badge ' + (active ? 'active' : 'inactive');
   }
 
   // --- Shared model cost/capability formatting ---
@@ -372,57 +497,217 @@
     if (perToken === null || perToken === undefined || perToken === '') return null;
     const n = Number(perToken);
     if (!Number.isFinite(n)) return null;
-    if (n === 0) return 'free';
+    if (n === 0) return '$0.00';
     const perMillion = n * 1e6;
-    const decimals = perMillion < 1 ? 4 : perMillion < 10 ? 3 : 2;
-    return '$' + perMillion.toFixed(decimals) + ' / 1M tokens';
+    if (perMillion > 0 && perMillion < 0.01) return '<$0.01';
+    return '$' + perMillion.toFixed(2);
   }
 
   function formatContextLength(len) {
     if (typeof len !== 'number' || !Number.isFinite(len)) return null;
-    if (len >= 1000) return (len / 1000).toFixed(len % 1000 === 0 ? 0 : 1) + 'K tokens';
-    return len + ' tokens';
+    if (len >= 1000) return (len / 1000).toFixed(len % 1000 === 0 ? 0 : 1) + 'K tokens context';
+    return len + ' tokens context';
   }
 
-  function optionCostSuffix(m) {
-    const promptPrice = m.pricing ? formatPricePerMillion(m.pricing.prompt) : null;
-    if (!promptPrice) return '';
-    return ' — ' + promptPrice + ' in';
+  function isFreeModel(m) {
+    const p = m.pricing || {};
+    return formatPricePerMillion(p.prompt) === '$0.00' && formatPricePerMillion(p.completion) === '$0.00';
   }
 
-  // Renders a small card of cost + context + capabilities for the given
-  // model into cardEl. Only shows what the provider actually reported —
-  // nothing here is invented when metadata is missing.
-  function renderModelCard(m, cardEl) {
-    if (!m) { cardEl.className = 'model-card'; cardEl.innerHTML = ''; return; }
-
-    const rows = [];
-    const promptPrice = m.pricing ? formatPricePerMillion(m.pricing.prompt) : null;
-    const completionPrice = m.pricing ? formatPricePerMillion(m.pricing.completion) : null;
-    if (promptPrice) {
-      rows.push('<div class="model-card-row"><span class="k">Input cost</span><span class="v' + (promptPrice === 'free' ? ' free' : '') + '">' + escapeHtml(promptPrice) + '</span></div>');
-    }
-    if (completionPrice) {
-      rows.push('<div class="model-card-row"><span class="k">Output cost</span><span class="v' + (completionPrice === 'free' ? ' free' : '') + '">' + escapeHtml(completionPrice) + '</span></div>');
-    }
-    const contextStr = formatContextLength(m.contextLength);
-    if (contextStr) {
-      rows.push('<div class="model-card-row"><span class="k">Context window</span><span class="v">' + escapeHtml(contextStr) + '</span></div>');
-    }
-
-    const caps = m.capabilities && m.capabilities.length > 0
-      ? '<div class="model-card-caps">' + m.capabilities.map((c) => '<span class="cap-chip active">' + escapeHtml(c) + '</span>').join('') + '</div>'
-      : '';
-
-    if (rows.length === 0 && !caps) {
-      cardEl.innerHTML = '<div class="model-card-empty">No cost or capability metadata reported for this model.</div>';
-    } else {
-      cardEl.innerHTML = rows.join('') + caps;
-    }
-    cardEl.className = 'model-card visible';
+  function getCombinedPrice(m) {
+    const p = m.pricing || {};
+    const prompt = Number(p.prompt);
+    const completion = Number(p.completion);
+    if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return Number.POSITIVE_INFINITY;
+    return prompt + completion;
   }
 
-  // --- Provider config ---
+  function getModelTitle(m) { return m.name || m.id; }
+
+  const CAP_LABELS = {
+    vision: 'Vision', reasoning: 'Reasoning', function_calling: 'Function calling',
+    audio: 'Audio', video: 'Video', web_search: 'Web search', fim: 'FIM', fine_tuning: 'Fine-tuning',
+  };
+
+  function capabilityTagsHtml(caps) {
+    if (!caps || caps.length === 0) return '';
+    return caps.map((c) => '<span class="tag ' + escapeHtml(c) + '">' + escapeHtml(CAP_LABELS[c] || c) + '</span>').join('');
+  }
+
+  function providerLabelFor(providerId) {
+    const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral' };
+    if (!providerId) return '';
+    return MAP[providerId.toLowerCase()] || (providerId.charAt(0).toUpperCase() + providerId.slice(1));
+  }
+
+  // --- Searchable, priced model dropdown (mounts into a container div) ---
+  function createModelDropdown(mountEl, opts) {
+    opts = opts || {};
+    const state = { models: [], value: '', open: false, query: '', providerLabel: opts.providerLabel || '', emptyOptionLabel: opts.emptyOptionLabel || null };
+
+    const root = document.createElement('div');
+    root.className = 'model-dd';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'model-dd-trigger';
+
+    const panel = document.createElement('div');
+    panel.className = 'model-dd-panel';
+    panel.hidden = true;
+    panel.innerHTML = '<input class="model-dd-search" placeholder="Search models…"><div class="model-dd-list" role="listbox"></div>';
+    const searchEl = panel.querySelector('.model-dd-search');
+    const listEl = panel.querySelector('.model-dd-list');
+
+    root.appendChild(trigger);
+    root.appendChild(panel);
+    mountEl.innerHTML = '';
+    mountEl.appendChild(root);
+
+    function sortedModels() {
+      return state.models.slice().sort((a, b) => {
+        const pa = getCombinedPrice(a), pb = getCombinedPrice(b);
+        if (pa !== pb) return pa - pb;
+        return getModelTitle(a).localeCompare(getModelTitle(b));
+      });
+    }
+
+    function filteredModels() {
+      const needle = state.query.trim().toLowerCase();
+      const list = sortedModels();
+      if (!needle) return list;
+      return list.filter((m) => getModelTitle(m).toLowerCase().includes(needle) || m.id.toLowerCase().includes(needle));
+    }
+
+    function renderTrigger() {
+      const m = state.models.find((x) => x.id === state.value);
+      if (!m) {
+        const label = state.value ? state.value : (opts.placeholder || 'Select a model…');
+        trigger.innerHTML = '<span class="price"></span><span class="info"><span class="placeholder">' + escapeHtml(label) + '</span></span>' +
+          '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
+        return;
+      }
+      const free = isFreeModel(m);
+      const promptPrice = free ? 'Free' : (formatPricePerMillion(m.pricing && m.pricing.prompt) || '—');
+      trigger.innerHTML =
+        '<span class="price">' + escapeHtml(promptPrice) + (free ? '' : '/1M') + '</span>' +
+        '<span class="info">' +
+          '<span class="name">' + escapeHtml(getModelTitle(m)) + '</span>' +
+          (state.providerLabel ? '<span class="provider">• ' + escapeHtml(state.providerLabel.toLowerCase()) + '</span>' : '') +
+        '</span>' +
+        '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
+    }
+
+    function renderList() {
+      const list = filteredModels();
+      const parts = [];
+      if (state.emptyOptionLabel) {
+        parts.push(
+          '<div class="model-dd-opt" data-empty="1" style="align-items:center;">' +
+            '<div class="body" style="border-left:none; padding-left:0;"><span class="mname">' + escapeHtml(state.emptyOptionLabel) + '</span></div>' +
+          '</div>'
+        );
+      }
+      if (list.length === 0 && !state.emptyOptionLabel) {
+        listEl.innerHTML = '<div class="model-dd-empty">No models found — retrieve or fetch models first.</div>';
+        return;
+      }
+      for (const m of list) {
+        const free = isFreeModel(m);
+        const promptPrice = formatPricePerMillion(m.pricing && m.pricing.prompt);
+        const completionPrice = formatPricePerMillion(m.pricing && m.pricing.completion);
+        const contextStr = formatContextLength(m.contextLength);
+        const isSelected = m.id === state.value;
+        parts.push(
+          '<div class="model-dd-opt' + (isSelected ? ' sel' : '') + '" data-id="' + escapeHtml(m.id) + '" role="option">' +
+            '<div class="prices">' +
+              '<div>In: <b>' + (free ? 'Free' : escapeHtml(promptPrice || '—')) + '</b></div>' +
+              '<div>Out: <b>' + (free ? 'Free' : escapeHtml(completionPrice || '—')) + '</b></div>' +
+            '</div>' +
+            '<div class="body">' +
+              '<div class="row1"><span class="mname">' + escapeHtml(getModelTitle(m)) + '</span>' + (free ? '<span class="free-tag">Free</span>' : '') + '</div>' +
+              '<div class="tags">' +
+                (state.providerLabel ? '<span class="tag provider">● ' + escapeHtml(state.providerLabel.toLowerCase()) + '</span>' : '') +
+                capabilityTagsHtml(m.capabilities) +
+              '</div>' +
+              (contextStr ? '<div class="context">' + escapeHtml(contextStr) + '</div>' : '') +
+            '</div>' +
+          '</div>'
+        );
+      }
+      listEl.innerHTML = parts.join('');
+    }
+
+    function open() {
+      state.open = true;
+      state.query = '';
+      root.classList.add('open');
+      panel.hidden = false;
+      searchEl.value = '';
+      renderList();
+      setTimeout(() => searchEl.focus(), 0);
+    }
+
+    function close() {
+      state.open = false;
+      root.classList.remove('open');
+      panel.hidden = true;
+    }
+
+    trigger.addEventListener('click', () => (state.open ? close() : open()));
+    searchEl.addEventListener('input', () => { state.query = searchEl.value; renderList(); });
+    listEl.addEventListener('mousedown', (event) => {
+      const optEl = event.target.closest('.model-dd-opt');
+      if (!optEl) return;
+      event.preventDefault();
+      const id = optEl.dataset.empty ? '' : optEl.dataset.id;
+      state.value = id;
+      renderTrigger();
+      close();
+      if (opts.onChange) opts.onChange(id);
+    });
+    document.addEventListener('mousedown', (event) => {
+      if (!root.contains(event.target)) close();
+    });
+
+    renderTrigger();
+
+    return {
+      setModels(models) { state.models = models || []; renderTrigger(); if (state.open) renderList(); },
+      setValue(id) { state.value = id || ''; renderTrigger(); },
+      getValue() { return state.value; },
+      setProviderLabel(label) { state.providerLabel = label || ''; renderTrigger(); },
+      getModel() { return state.models.find((m) => m.id === state.value) || null; },
+    };
+  }
+
+  // --- Auth ---
+  tokenEl.value = localStorage.getItem('gaia_admin_token') || '';
+  tokenEl.addEventListener('change', () => localStorage.setItem('gaia_admin_token', tokenEl.value));
+
+  function authHeaders() {
+    return { 'Authorization': 'Bearer ' + tokenEl.value, 'Content-Type': 'application/json' };
+  }
+
+  // ============================================================
+  // Generation (shared Provider config + provider/roles endpoint)
+  // ============================================================
+  const providerSelectEl = $('providerSelect'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey');
+  wireBaseUrlAutofill(providerSelectEl, baseUrlEl);
+  const keyHintEl = $('keyHint'), providerStatusEl = $('providerStatus');
+  const saveProviderBtn = $('saveProviderBtn'), retrieveModelsBtn = $('retrieveModelsBtn');
+  const capabilitiesSection = $('capabilitiesSection'), capabilitiesBar = $('capabilitiesBar');
+  const genBadgeEl = $('genBadge'), genStatusEl = $('genStatus'), genSaveBtn = $('genSaveBtn');
+
+  let catalog = [];
+  let currentConfig = null;
+  let currentGenModel = null;
+
+  const genDropdown = createModelDropdown($('genDropdown'), {
+    placeholder: '— retrieve models first —',
+    onChange: () => { genSaveBtn.disabled = !genDropdown.getValue(); },
+  });
+
   async function loadProviderConfig() {
     try {
       const res = await fetch('/admin/api/provider/config', { headers: authHeaders() });
@@ -431,13 +716,17 @@
       currentConfig = cfg;
       if (cfg.provider) providerSelectEl.value = cfg.provider;
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
+      genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       catalog = cfg.catalog || [];
-      if (catalog.length > 0) {
-        rolesSection.style.display = '';
-        populateAllDropdowns();
+      genDropdown.setModels(catalog);
+      const savedModel = cfg.roles && cfg.roles.generation && cfg.roles.generation.model;
+      if (savedModel) {
+        currentGenModel = savedModel;
+        genDropdown.setValue(savedModel);
+        genSaveBtn.disabled = false;
       }
-      if (cfg.roles) restoreRoles(cfg.roles);
+      setBadge(genBadgeEl, Boolean(currentGenModel));
       updateCapabilities(cfg.roles || {}, cfg.tts || {});
     } catch (_) { /* ignore on initial load */ }
   }
@@ -457,6 +746,7 @@
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
       currentConfig = cfg;
+      genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       apiKeyEl.value = '';
       setStatus(providerStatusEl, 'Provider saved.', true);
@@ -478,13 +768,8 @@
       }
       const body = await res.json();
       catalog = body.catalog || [];
-      rolesSection.style.display = catalog.length === 0 ? 'none' : '';
-      if (catalog.length > 0) {
-        populateAllDropdowns();
-        setStatus(providerStatusEl, catalog.length + ' models retrieved.', true);
-      } else {
-        setStatus(providerStatusEl, 'No models returned. Use Manual mode.', true);
-      }
+      genDropdown.setModels(catalog);
+      setStatus(providerStatusEl, catalog.length > 0 ? (catalog.length + ' models retrieved.') : 'No models returned.', true);
     } catch (err) {
       setStatus(providerStatusEl, 'Could not retrieve models: ' + err.message, false);
     } finally {
@@ -492,118 +777,28 @@
     }
   });
 
-  // --- Catalog dropdown population ---
-  function populateAllDropdowns() {
-    for (const [role, cfg] of Object.entries(ROLE_CONFIG)) {
-      populateSelect(cfg.selectEl, catalog, currentConfig?.roles?.[role]?.model);
+  genSaveBtn.addEventListener('click', async () => {
+    const model = genDropdown.getValue();
+    if (!model) { setStatus(genStatusEl, 'Select a model first.', false); return; }
+    genSaveBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/provider/roles', {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ role: 'generation', mode: 'catalog', model }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      currentConfig = updated;
+      currentGenModel = model;
+      setBadge(genBadgeEl, true);
+      setStatus(genStatusEl, 'Generation set to ' + model, true);
+      updateCapabilities(updated.roles || {}, updated.tts || {});
+    } catch (err) {
+      setStatus(genStatusEl, 'Could not save: ' + err.message, false);
+    } finally {
+      genSaveBtn.disabled = false;
     }
-  }
-
-  function populateSelect(selectEl, models, selectedId) {
-    selectEl.innerHTML = '<option value="">— select model —</option>';
-    for (const m of models) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.name + ' (' + m.id + ')';
-      if (m.capabilities && m.capabilities.length > 0) {
-        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
-      }
-      opt.textContent += optionCostSuffix(m);
-      selectEl.appendChild(opt);
-    }
-    if (selectedId && models.some((m) => m.id === selectedId)) {
-      selectEl.value = selectedId;
-    }
-  }
-
-  function updateModelMeta(selectEl, metaEl) {
-    const m = catalog.find((x) => x.id === selectEl.value);
-    renderModelCard(m, metaEl);
-  }
-
-  for (const cfg of Object.values(ROLE_CONFIG)) {
-    cfg.selectEl.addEventListener('change', () => updateModelMeta(cfg.selectEl, cfg.metaEl));
-  }
-
-  // --- Mode toggle ---
-  document.querySelectorAll('input[type="radio"][name$="Mode"]').forEach((radio) => {
-    radio.addEventListener('change', () => {
-      const roleKey = radio.name === 'genMode' ? 'generation' : null;
-      const cfg = ROLE_CONFIG[roleKey];
-      if (!cfg) return;
-      const isManual = radio.value === 'manual';
-      $(cfg.catalogId).style.display = isManual ? 'none' : '';
-      $(cfg.manualId).style.display = isManual ? '' : 'none';
-    });
   });
-
-  // --- Save role selections ---
-  document.querySelectorAll('.save-role-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const role = btn.dataset.role;
-      const cfg = ROLE_CONFIG[role];
-      if (!cfg) return;
-      const mode = document.querySelector(`input[name="${cfg.modeName}"]:checked`).value;
-      let model = '';
-      if (mode === 'catalog') {
-        model = cfg.selectEl.value;
-      } else {
-        model = $(cfg.manualInputId).value.trim();
-      }
-      if (!model) {
-        setStatus(cfg.statusEl, 'Select or enter a model first.', false);
-        return;
-      }
-      btn.disabled = true;
-      try {
-        const res = await fetch('/admin/api/provider/roles', {
-          method: 'PUT', headers: authHeaders(),
-          body: JSON.stringify({ role, mode, model }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const updated = await res.json();
-        currentConfig = updated;
-        updateBadge(cfg.badgeEl, model);
-        setStatus(cfg.statusEl, role + ' set to ' + model, true);
-        updateCapabilities(updated.roles || {}, updated.tts || {});
-      } catch (err) {
-        setStatus(cfg.statusEl, 'Could not save: ' + err.message, false);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  });
-
-  function updateBadge(badgeEl, model) {
-    if (model) {
-      badgeEl.textContent = 'configured';
-      badgeEl.className = 'role-badge configured';
-    } else {
-      badgeEl.textContent = 'unconfigured';
-      badgeEl.className = 'role-badge unconfigured';
-    }
-  }
-
-  // --- Restore roles from saved config ---
-  function restoreRoles(roles) {
-    for (const [role, selection] of Object.entries(roles)) {
-      const cfg = ROLE_CONFIG[role];
-      if (!cfg) continue;
-      const mode = selection.mode || 'catalog';
-      const model = selection.model || '';
-      const radio = document.querySelector(`input[name="${cfg.modeName}"][value="${mode}"]`);
-      if (radio) radio.checked = true;
-      $(cfg.catalogId).style.display = mode === 'manual' ? 'none' : '';
-      $(cfg.manualId).style.display = mode === 'manual' ? '' : 'none';
-      if (mode === 'catalog' && model) {
-        cfg.selectEl.value = model;
-        updateModelMeta(cfg.selectEl, cfg.metaEl);
-      } else if (mode === 'manual' && model) {
-        $(cfg.manualInputId).value = model;
-      }
-      updateBadge(cfg.badgeEl, model);
-    }
-  }
 
   // --- Capabilities ---
   function updateCapabilities(roles, tts) {
@@ -619,11 +814,13 @@
     ).join('');
   }
 
-  // --- TTS (independent) ---
+  // ============================================================
+  // TTS (independent)
+  // ============================================================
   const ttsProviderEl = $('ttsProviderSelect'), ttsBaseUrlEl = $('ttsBaseUrl'), ttsApiKeyEl = $('ttsApiKey');
   wireBaseUrlAutofill(ttsProviderEl, ttsBaseUrlEl);
   const ttsModelEl = $('ttsModel'), ttsKeyHintEl = $('ttsKeyHint'), ttsStatusEl = $('ttsStatus');
-  const saveTtsBtn = $('saveTtsBtn');
+  const saveTtsBtn = $('saveTtsBtn'), ttsBadgeEl = $('ttsBadge');
 
   async function loadTtsConfig() {
     try {
@@ -634,6 +831,7 @@
       if (cfg.baseUrl) ttsBaseUrlEl.value = cfg.baseUrl;
       if (cfg.model) ttsModelEl.value = cfg.model;
       ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      setBadge(ttsBadgeEl, Boolean(cfg.model));
     } catch (_) { /* ignore */ }
   }
 
@@ -655,33 +853,44 @@
       const cfg = await res.json();
       ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       ttsApiKeyEl.value = '';
-      setStatus(ttsStatusEl, 'TTS saved.', true);
-      // Update capabilities
+      setStatus(ttsStatusEl, 'Voice saved.', true);
+      setBadge(ttsBadgeEl, Boolean(cfg.model));
       if (currentConfig) {
         currentConfig.tts = cfg;
         updateCapabilities(currentConfig.roles || {}, cfg);
       }
     } catch (err) {
-      setStatus(ttsStatusEl, 'Could not save TTS — check the bearer token.', false);
+      setStatus(ttsStatusEl, 'Could not save voice — check the bearer token.', false);
     } finally {
       saveTtsBtn.disabled = false;
     }
   });
 
-  // --- ReasonIQ (provider-agnostic) ---
+  // ============================================================
+  // ReasonIQ — Reasoning + Vision (provider-agnostic, own key)
+  // ============================================================
   const riqProviderEl = $('riqProviderSelect'), riqBaseUrlEl = $('riqBaseUrl'), riqApiKeyEl = $('riqApiKey');
   wireBaseUrlAutofill(riqProviderEl, riqBaseUrlEl);
   const riqKeyHintEl = $('riqKeyHint'), riqConfigStatusEl = $('riqConfigStatus');
   const riqSaveConfigBtn = $('riqSaveConfigBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn');
-  const riqModelSelectEl = $('riqModelSelect'), riqModelMetaEl = $('riqModelMeta'), riqModelStatusEl = $('riqModelStatus');
-  const riqSaveModelBtn = $('riqSaveModelBtn');
-  const riqVisionModelSelectEl = $('riqVisionModelSelect'), riqVisionModelMetaEl = $('riqVisionModelMeta');
+  const riqModelStatusEl = $('riqModelStatus'), riqSaveModelBtn = $('riqSaveModelBtn');
   const riqVisionModelStatusEl = $('riqVisionModelStatus');
   const riqSaveVisionModelBtn = $('riqSaveVisionModelBtn'), riqClearVisionModelBtn = $('riqClearVisionModelBtn');
+  const riqBadgeEl = $('riqBadge'), riqVisionBadgeEl = $('riqVisionBadge');
 
   let riqModels = [];
   let riqCurrentModel = null;
   let riqCurrentVisionModel = null;
+
+  const riqDropdown = createModelDropdown($('riqDropdown'), {
+    placeholder: '— save config and fetch models —',
+    onChange: () => { riqSaveModelBtn.disabled = !riqDropdown.getValue(); },
+  });
+  const riqVisionDropdown = createModelDropdown($('riqVisionDropdown'), {
+    placeholder: '— save config and fetch models —',
+    emptyOptionLabel: "— reuse ReasonIQ's model —",
+    onChange: () => { riqSaveVisionModelBtn.disabled = false; },
+  });
 
   async function loadRiqConfig() {
     try {
@@ -692,16 +901,20 @@
       riqCurrentVisionModel = cfg.visionModel;
       if (cfg.provider) riqProviderEl.value = cfg.provider;
       if (cfg.baseUrl) riqBaseUrlEl.value = cfg.baseUrl;
+      riqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      riqVisionDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.model) {
-        riqModelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
-        riqModelSelectEl.value = cfg.model;
+        riqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
+        riqDropdown.setValue(cfg.model);
       }
       if (cfg.visionModel) {
-        riqVisionModelSelectEl.innerHTML = '<option value="' + cfg.visionModel + '">' + cfg.visionModel + ' (saved)</option>';
-        riqVisionModelSelectEl.value = cfg.visionModel;
+        riqVisionDropdown.setModels([{ id: cfg.visionModel, name: cfg.visionModel }]);
+        riqVisionDropdown.setValue(cfg.visionModel);
         riqSaveVisionModelBtn.disabled = false;
       }
+      setBadge(riqBadgeEl, Boolean(riqCurrentModel));
+      setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Reusing ReasonIQ');
     } catch (_) { /* ignore */ }
   }
 
@@ -720,6 +933,8 @@
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      riqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      riqVisionDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       riqApiKeyEl.value = '';
       setStatus(riqConfigStatusEl, 'Config saved.', true);
     } catch (err) {
@@ -740,13 +955,12 @@
       }
       const body = await res.json();
       riqModels = body.models || [];
-      riqPopulateSelect(riqModelSelectEl, riqCurrentModel);
-      riqPopulateSelect(riqVisionModelSelectEl, riqCurrentVisionModel, true);
+      riqDropdown.setModels(riqModels);
+      riqVisionDropdown.setModels(riqModels);
+      if (riqCurrentModel) riqDropdown.setValue(riqCurrentModel);
+      if (riqCurrentVisionModel) riqVisionDropdown.setValue(riqCurrentVisionModel);
       riqSaveModelBtn.disabled = riqModels.length === 0;
-      riqSaveVisionModelBtn.disabled = riqModels.length === 0;
       setStatus(riqModelStatusEl, riqModels.length + ' models available.', true);
-      riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl);
-      riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl);
     } catch (err) {
       setStatus(riqModelStatusEl, 'Could not fetch models: ' + err.message, false);
     } finally {
@@ -754,44 +968,18 @@
     }
   });
 
-  function riqPopulateSelect(selectEl, selectedId, withEmptyOption) {
-    selectEl.innerHTML = '';
-    if (withEmptyOption) {
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = '— reuse ReasonIQ\'s model —';
-      selectEl.appendChild(empty);
-    }
-    for (const m of riqModels) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.name + ' (' + m.id + ')';
-      if (m.capabilities && m.capabilities.length > 0) {
-        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
-      }
-      opt.textContent += optionCostSuffix(m);
-      selectEl.appendChild(opt);
-    }
-    if (selectedId && riqModels.some((m) => m.id === selectedId)) selectEl.value = selectedId;
-  }
-
-  function riqUpdateModelMeta(selectEl, metaEl) {
-    const m = riqModels.find((x) => x.id === selectEl.value);
-    renderModelCard(m, metaEl);
-  }
-  riqModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl));
-  riqVisionModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl));
-
   riqSaveModelBtn.addEventListener('click', async () => {
-    if (!riqModelSelectEl.value) return;
+    const model = riqDropdown.getValue();
+    if (!model) return;
     riqSaveModelBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ model: riqModelSelectEl.value }),
+        body: JSON.stringify({ model }),
       });
       if (!res.ok) throw new Error(await res.text());
-      riqCurrentModel = riqModelSelectEl.value;
+      riqCurrentModel = model;
+      setBadge(riqBadgeEl, true);
       setStatus(riqModelStatusEl, 'ReasonIQ will use ' + riqCurrentModel + '.', true);
     } catch (err) {
       setStatus(riqModelStatusEl, 'Could not save the selection.', false);
@@ -801,15 +989,17 @@
   });
 
   riqSaveVisionModelBtn.addEventListener('click', async () => {
+    const model = riqVisionDropdown.getValue();
     riqSaveVisionModelBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ visionModel: riqVisionModelSelectEl.value }),
+        body: JSON.stringify({ visionModel: model }),
       });
       if (!res.ok) throw new Error(await res.text());
-      riqCurrentVisionModel = riqVisionModelSelectEl.value;
-      setStatus(riqVisionModelStatusEl, riqCurrentVisionModel ? ('Image OCR will use ' + riqCurrentVisionModel + '.') : 'Image OCR will reuse ReasonIQ\'s model.', true);
+      riqCurrentVisionModel = model;
+      setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Reusing ReasonIQ');
+      setStatus(riqVisionModelStatusEl, riqCurrentVisionModel ? ('Image OCR will use ' + riqCurrentVisionModel + '.') : "Image OCR will reuse ReasonIQ's model.", true);
     } catch (err) {
       setStatus(riqVisionModelStatusEl, 'Could not save the selection.', false);
     } finally {
@@ -818,21 +1008,26 @@
   });
 
   riqClearVisionModelBtn.addEventListener('click', () => {
-    riqVisionModelSelectEl.value = '';
-    riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl);
+    riqVisionDropdown.setValue('');
     riqSaveVisionModelBtn.click();
   });
 
-  // --- IntentIQ (provider-agnostic, same flow as ReasonIQ) ---
+  // ============================================================
+  // IntentIQ — Classification (provider-agnostic, own key)
+  // ============================================================
   const iiqProviderEl = $('iiqProviderSelect'), iiqBaseUrlEl = $('iiqBaseUrl'), iiqApiKeyEl = $('iiqApiKey');
   wireBaseUrlAutofill(iiqProviderEl, iiqBaseUrlEl);
   const iiqKeyHintEl = $('iiqKeyHint'), iiqConfigStatusEl = $('iiqConfigStatus'), iiqEnvHintEl = $('iiqEnvHint');
   const iiqSaveConfigBtn = $('iiqSaveConfigBtn'), iiqFetchModelsBtn = $('iiqFetchModelsBtn');
-  const iiqModelSelectEl = $('iiqModelSelect'), iiqModelMetaEl = $('iiqModelMeta'), iiqModelStatusEl = $('iiqModelStatus');
-  const iiqSaveModelBtn = $('iiqSaveModelBtn');
+  const iiqModelStatusEl = $('iiqModelStatus'), iiqSaveModelBtn = $('iiqSaveModelBtn'), iiqBadgeEl = $('iiqBadge');
 
   let iiqModels = [];
   let iiqCurrentModel = null;
+
+  const iiqDropdown = createModelDropdown($('iiqDropdown'), {
+    placeholder: '— save config and fetch models —',
+    onChange: () => { iiqSaveModelBtn.disabled = !iiqDropdown.getValue(); },
+  });
 
   function renderIntentIqEnvHint(cfg) {
     iiqEnvHintEl.textContent = cfg.envConfigured
@@ -848,11 +1043,13 @@
       iiqCurrentModel = cfg.model;
       if (cfg.provider) iiqProviderEl.value = cfg.provider;
       if (cfg.baseUrl) iiqBaseUrlEl.value = cfg.baseUrl;
+      iiqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.model) {
-        iiqModelSelectEl.innerHTML = '<option value="' + cfg.model + '">' + cfg.model + ' (saved)</option>';
-        iiqModelSelectEl.value = cfg.model;
+        iiqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
+        iiqDropdown.setValue(cfg.model);
       }
+      setBadge(iiqBadgeEl, Boolean(iiqCurrentModel));
       renderIntentIqEnvHint(cfg);
     } catch (_) { /* ignore */ }
   }
@@ -872,6 +1069,7 @@
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      iiqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       iiqApiKeyEl.value = '';
       renderIntentIqEnvHint(cfg);
       setStatus(iiqConfigStatusEl, 'Config saved.', true);
@@ -893,10 +1091,10 @@
       }
       const body = await res.json();
       iiqModels = body.models || [];
-      iiqPopulateSelect();
+      iiqDropdown.setModels(iiqModels);
+      if (iiqCurrentModel) iiqDropdown.setValue(iiqCurrentModel);
       iiqSaveModelBtn.disabled = iiqModels.length === 0;
       setStatus(iiqModelStatusEl, iiqModels.length + ' models available.', true);
-      iiqUpdateModelMeta();
     } catch (err) {
       setStatus(iiqModelStatusEl, 'Could not fetch models: ' + err.message, false);
     } finally {
@@ -904,37 +1102,18 @@
     }
   });
 
-  function iiqPopulateSelect() {
-    iiqModelSelectEl.innerHTML = '';
-    for (const m of iiqModels) {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.name + ' (' + m.id + ')';
-      if (m.capabilities && m.capabilities.length > 0) {
-        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
-      }
-      opt.textContent += optionCostSuffix(m);
-      iiqModelSelectEl.appendChild(opt);
-    }
-    if (iiqCurrentModel && iiqModels.some((m) => m.id === iiqCurrentModel)) iiqModelSelectEl.value = iiqCurrentModel;
-  }
-
-  function iiqUpdateModelMeta() {
-    const m = iiqModels.find((x) => x.id === iiqModelSelectEl.value);
-    renderModelCard(m, iiqModelMetaEl);
-  }
-  iiqModelSelectEl.addEventListener('change', iiqUpdateModelMeta);
-
   iiqSaveModelBtn.addEventListener('click', async () => {
-    if (!iiqModelSelectEl.value) return;
+    const model = iiqDropdown.getValue();
+    if (!model) return;
     iiqSaveModelBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/intentiq/config', {
         method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ model: iiqModelSelectEl.value }),
+        body: JSON.stringify({ model }),
       });
       if (!res.ok) throw new Error(await res.text());
-      iiqCurrentModel = iiqModelSelectEl.value;
+      iiqCurrentModel = model;
+      setBadge(iiqBadgeEl, true);
       setStatus(iiqModelStatusEl, 'IntentIQ will use ' + iiqCurrentModel + '.', true);
     } catch (err) {
       setStatus(iiqModelStatusEl, 'Could not save the selection.', false);
@@ -943,7 +1122,9 @@
     }
   });
 
-  // --- Logos decision log ---
+  // ============================================================
+  // Logos decision log
+  // ============================================================
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
   const refreshDecisionsBtn = $('refreshDecisionsBtn'), decisionsStatusEl = $('decisionsStatus'), decisionsListEl = $('decisionsList');
   const exportDecisionsJsonBtn = $('exportDecisionsJsonBtn'), exportDecisionsCsvBtn = $('exportDecisionsCsvBtn');
