@@ -22,6 +22,13 @@ function fakeRes() {
 const DOCUMENTS = { 'soul.md': 'SOUL', 'principles.md': 'PRINCIPLES', 'lexicon.md': 'LEXICON' };
 const SILENT_HINDSIGHT = { recall: async () => [], reflect: async () => {} };
 
+const flushBackground = async () => { for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); };
+
+const DEEP_EVIDENCE_HINDSIGHT = {
+  recall: async () => [{ text: 'The team decided on a single stream emitter in March', scores: { final: 0.9 } }],
+  reflect: async () => {},
+};
+
 test('validateMessages accepts a plain user/assistant history', () => {
   assert.equal(
     validateMessages([
@@ -183,6 +190,7 @@ test('performTurn routes through the real Decision Engine by default, choosing t
 
 test('performTurn feeds real IntentIQ output into the Decision Engine, exactly like streaming', async () => {
   let hermesCalls = 0;
+  let reasonIQCalls = 0;
   const hermes = { chat: async () => { hermesCalls += 1; return 'hi there'; } };
   const decisionEngineCalls = [];
 
@@ -192,7 +200,7 @@ test('performTurn feeds real IntentIQ output into the Decision Engine, exactly l
     documents: DOCUMENTS,
     hermes,
     intentIQ: async () => intentDecision,
-    reasonIQ: async () => ({ reasoningDepth: 'shallow' }),
+    reasonIQ: async () => { reasonIQCalls += 1; return { reasoningDepth: 'shallow' }; },
     decisionEngine: (input) => {
       decisionEngineCalls.push(input);
       return { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' };
@@ -201,10 +209,14 @@ test('performTurn feeds real IntentIQ output into the Decision Engine, exactly l
 
   assert.equal(hermesCalls, 1);
   assert.equal(decisionEngineCalls.length, 1);
-  // COGNITIVE PARITY: the Decision Engine consumed the same IntentIQ/ReasonIQ
-  // products the streaming path would have produced for the same turn.
+  // COGNITIVE PARITY: the Decision Engine consumed the same IntentIQ product
+  // the streaming path would have produced for the same turn. ReasonIQ is
+  // optional (Phase 2): a normal turn is decided without any reasoning
+  // result (null — the Decision Engine maps that to level 'none') and the
+  // injected reasonIQ seam is never called.
   assert.deepEqual(decisionEngineCalls[0].intent, intentDecision);
-  assert.deepEqual(decisionEngineCalls[0].reasoning, { reasoningDepth: 'shallow' });
+  assert.equal(decisionEngineCalls[0].reasoning, null);
+  assert.equal(reasonIQCalls, 0);
   assert.equal(decisionEngineCalls[0].userInput, 'hello');
   assert.equal(result.status, 200);
   assert.equal(result.body.reply, 'hi there');
@@ -453,29 +465,56 @@ async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-test('performStreamingTurn hands IntentIQ\'s real decision to ReasonIQ, and awaits it before invoking a capability', async () => {
+// PHASE 2: ReasonIQ is optional, not mandatory. A normal turn (no evidence
+// to weigh) must complete end-to-end without calling ReasonIQ at all.
+test('a normal turn does NOT call ReasonIQ — the Decision Engine decides without it', async () => {
   const reasonIQCalls = [];
   const callOrder = [];
+  const decisionInputs = [];
   const hermes = { stream: async (messages, { onDelta }) => { callOrder.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
+  const { decide } = require('../src/decision/decisionEngine');
 
+  const res = fakeRes();
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
     documents: DOCUMENTS,
     hermes,
     hindsight: SILENT_HINDSIGHT,
-    res: fakeRes(),
+    res,
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async (input) => { callOrder.push('reasonIQ'); reasonIQCalls.push(input); return {}; },
+    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
   });
+  await flush();
 
-  assert.equal(reasonIQCalls.length, 1);
-  assert.equal(reasonIQCalls[0].text, 'Why is my website crashing?');
-  assert.equal(reasonIQCalls[0].intentDecision.intent, 'inform.explain');
-  assert.deepEqual(reasonIQCalls[0].evidence, []);
-  assert.deepEqual(callOrder, ['reasonIQ', 'hermes']); // ReasonIQ resolves before the capability call
+  assert.equal(reasonIQCalls.length, 0, 'ReasonIQ must not run for a normal turn');
+  assert.equal(callOrder.includes('reasonIQ'), false);
+  assert.deepEqual(callOrder, ['hermes']);
+  assert.equal(decisionInputs.length, 1, 'exactly one decision for the turn');
+  assert.equal(decisionInputs[0].reasoning, null, 'no reasoning result is consumed');
+  assert.match(res.written.at(-1), /data: \[DONE\]/);
 });
 
-test('performStreamingTurn awaits ReasonIQ before completing the response', async () => {
+test('a non-streaming normal turn also completes without calling ReasonIQ', async () => {
+  let reasonIQCalls = 0;
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Why is my website crashing?' }],
+    documents: DOCUMENTS,
+    hermes: { chat: async () => 'A reply.' },
+    hindsight: SILENT_HINDSIGHT,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { reasonIQCalls += 1; return {}; },
+  });
+  await flush();
+  assert.equal(reasonIQCalls, 0, 'ReasonIQ must not run for a normal non-streaming turn either');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'A reply.');
+});
+
+// PHASE 2: ReasonIQ is no longer on the conversational path, so a turn can
+// never be blocked by it — the reply is delivered without waiting on any
+// reasoning call.
+test('performStreamingTurn completes the response without waiting on ReasonIQ', async () => {
   let resolveReasonIQ;
   const delayedReasonIQ = () => new Promise((resolve) => { resolveReasonIQ = resolve; setImmediate(() => resolveReasonIQ({})); });
   const res = fakeRes();
@@ -612,10 +651,11 @@ test('performStreamingTurn completes normally even if historyStore.saveConversat
 
 // --- decisionStore (durable IntentIQ/ReasonIQ log) --------------------
 
-test('performStreamingTurn persists both the IntentIQ decision and the ReasonIQ result when a decisionStore is given', async () => {
+test('performStreamingTurn persists the IntentIQ decision and the decision plan when a decisionStore is given (a normal turn writes no reasoniq.record)', async () => {
   const appended = [];
   const decisionStore = { append: (record) => { appended.push(record); return true; } };
   const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+  let reasonIQCalls = 0;
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
@@ -628,6 +668,7 @@ test('performStreamingTurn persists both the IntentIQ decision and the ReasonIQ 
       return { schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' };
     },
     reasonIQ: async (input, options) => {
+      reasonIQCalls += 1;
       options.logger(JSON.stringify({ kind: 'reasoniq.result', reasoningDepth: 'shallow' }));
       return {};
     },
@@ -635,15 +676,14 @@ test('performStreamingTurn persists both the IntentIQ decision and the ReasonIQ 
   });
   await flush();
 
-  // Deferred cognition boundary (turn.js runDeferredCognition): the memory
-  // judgment is part of the DEFERRED learning lifecycle, so it is appended
-  // after the conversational records instead of between intent and
-  // reasoning. The conversational records keep their order; the
-  // memory.worthiness record may no longer precede decision.plan.
+  // PHASE 2: ReasonIQ is optional. A normal turn produces NO reasoniq.result
+  // record at all — only the intent decision, the plan and the deferred
+  // memory judgment are persisted, in that order.
+  assert.equal(reasonIQCalls, 0);
   assert.equal(appended[0].kind, 'intentiq.decision');
-  assert.equal(appended[1].kind, 'reasoniq.result');
-  assert.equal(appended[2].kind, 'decision.plan');
-  assert.equal(appended[3].kind, 'memory.worthiness'); // 0.1: every turn gets a memory judgment record
+  assert.equal(appended[1].kind, 'decision.plan');
+  assert.equal(appended[2].kind, 'memory.worthiness'); // 0.1: every turn gets a memory judgment record
+  assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0);
 });
 
 test('performStreamingTurn never calls decisionStore.append when no decisionStore is given (backward compatible)', async () => {
@@ -1265,7 +1305,10 @@ test('0.2: performStreamingTurn assembles Hindsight + upload evidence and hands 
   assert.equal(evidence[1].relevance, 0.9);
 });
 
-test('0.2: with no recall results and no attachments, ReasonIQ still receives an empty evidence list', async () => {
+// PHASE 2: no evidence to weigh means no ReasonIQ call at all — an empty
+// evidence list no longer "flows to ReasonIQ"; there is nothing to reason
+// over, so the turn is decided without it.
+test('0.2: with no recall results and no attachments, ReasonIQ is not called at all', async () => {
   const reasonIQCalls = [];
   const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
 
@@ -1278,11 +1321,16 @@ test('0.2: with no recall results and no attachments, ReasonIQ still receives an
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
   });
+  await flush();
 
-  assert.deepEqual(reasonIQCalls[0].evidence, []);
+  assert.equal(reasonIQCalls.length, 0);
 });
 
-test('0.2: image attachments are model-native input, never text evidence', async () => {
+// Images are model-native input, never text evidence — and an image-only
+// turn has no evidence to weigh, so ReasonIQ stays out of it entirely; the
+// native generator answers. (The evidence assembler's own skip-images rule
+// stays covered by evidenceAssembler.test.js.)
+test('0.2: image attachments are model-native input — no ReasonIQ call, native answers', async () => {
   const reasonIQCalls = [];
   const hindsight = { recall: async () => [], reflect: async () => {} };
   const nativeGenerator = {
@@ -1302,25 +1350,30 @@ test('0.2: image attachments are model-native input, never text evidence', async
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: null, status: 'unknown' }),
     reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
   });
+  await flush();
 
-  assert.deepEqual(reasonIQCalls[0].evidence, []);
+  assert.equal(reasonIQCalls.length, 0);
 });
 
 // --- Hypothesis Persistence 0.1: optional hypothesisRuntime wiring -----------
 
-test("0.1 turn: a hypothesisRuntime seeds existing hypotheses into ReasonIQ and applies its updates", async () => {
+// PHASE 2: a reasoning turn (evidence + analysis intent) still reaches
+// ReasonIQ — exactly once, deferred after the reply — and its analysis
+// products still feed the hypothesis lifecycle.
+test("0.1 turn: a hypothesisRuntime seeds existing hypotheses into the deferred ReasonIQ call and applies its updates", async () => {
   const reasonIQCalls = [];
   const manager = (require('../src/reasoning/hypothesisManager')).createHypothesisManager({
     hypotheses: [{ id: "hyp-seed", statement: "Cancellation races teardown.", status: "testing", confidence: 0.6, evidenceFor: ["e1"] }],
   });
   const hermes = { stream: async (messages, { onDelta }) => { onDelta("ok", false); return "A reply."; } };
+  const res = fakeRes();
 
   await performStreamingTurn({
-    messages: [{ role: "user", content: "Analyseer de streaming architecture op race conditions." }],
+    messages: [{ role: "user", content: "Analyseer de streaming architecture op race conditions, zoals we eerder bespraken." }],
     documents: DOCUMENTS,
     hermes,
-    hindsight: SILENT_HINDSIGHT,
-    res: fakeRes(),
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
     intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
     reasonIQ: async (input) => {
       reasonIQCalls.push(input);
@@ -1335,13 +1388,11 @@ test("0.1 turn: a hypothesisRuntime seeds existing hypotheses into ReasonIQ and 
     hypothesisRuntime: { manager },
   });
 
-  assert.equal(reasonIQCalls.length, 1, "ReasonIQ runs exactly once (shallow, conversational)");
-  // Deferred cognition boundary: hypothesis preparation no longer runs on the
-  // conversational path, so the inline routing call carries no hypothesis
-  // context — the analysis products it returns are applied in the deferred
-  // phase below, exactly as before, just after the reply.
-  assert.equal(reasonIQCalls[0].existingHypotheses, undefined);
+  assert.match(res.written.at(-1), /data: \[DONE\]/, "the reply is delivered without waiting for ReasonIQ");
   await flushBackground();
+  assert.equal(reasonIQCalls.length, 1, "ReasonIQ runs exactly once for a reasoning turn");
+  // The deferred call carries the seeded hypothesis context.
+  assert.equal(reasonIQCalls[0].existingHypotheses[0].id, "hyp-seed");
   assert.equal(manager.get("hyp-seed").confidence, 0.65); // update applied post-reasoning
 });
 
@@ -1381,12 +1432,13 @@ test("0.4 turn: a durable hypothesis change opens the gate; a plain conversation
   const reasonIQCalls = [];
   const hermes = { stream: async (messages, { onDelta }) => { onDelta("ok", false); return "A reply."; } };
 
-  // Turn A: durable analysis -> forms a tracked durable hypothesis.
+  // Turn A: reasoning turn with evidence (durable analysis) -> forms a
+  // tracked durable hypothesis via the deferred ReasonIQ call.
   await performStreamingTurn({
-    messages: [{ role: "user", content: "Analyseer waarom deze flow vastloopt bij annulering." }],
+    messages: [{ role: "user", content: "Analyseer waarom deze flow vastloopt bij annulering, zoals we eerder bespraken." }],
     documents: DOCUMENTS,
     hermes,
-    hindsight: SILENT_HINDSIGHT,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res: fakeRes(),
     intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
     reasonIQ: async (input) => {
@@ -1400,11 +1452,15 @@ test("0.4 turn: a durable hypothesis change opens the gate; a plain conversation
     },
     hypothesisRuntime: { manager: runtime.manager, patternManager: runtime.patternManager },
   });
+  await flushBackground();
+  assert.equal(reasonIQCalls.length, 1, "turn A is a reasoning turn: ReasonIQ ran once");
   assert.equal(runtime.manager.list().length, 1);
   assert.equal(runtime.patternManager.list().length, 0); // single durable member: no pattern yet
 
-  // Turn B: plain conversational turn — the pattern gate must stay closed
-  // even though a durable hypothesis exists.
+  // Turn B: plain conversational turn — NO ReasonIQ call at all (Phase 2),
+  // and the pattern gate must stay closed even though a durable hypothesis
+  // exists.
+  const reasonIQCallsB = [];
   await performStreamingTurn({
     messages: [{ role: "user", content: "Hoi Gaia" }],
     documents: DOCUMENTS,
@@ -1412,9 +1468,11 @@ test("0.4 turn: a durable hypothesis change opens the gate; a plain conversation
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
     intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
-    reasonIQ: async () => ({ interpretation: "hi", hypotheses: [], hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [], conclusions: [], sufficientForConclusion: true, confidence: 0.9 }),
+    reasonIQ: async () => { reasonIQCallsB.push(1); return { interpretation: "hi", hypotheses: [], hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [], conclusions: [], sufficientForConclusion: true, confidence: 0.9 }; },
     hypothesisRuntime: { manager: runtime.manager, patternManager: runtime.patternManager },
   });
+  await flushBackground();
+  assert.equal(reasonIQCallsB.length, 0, "no ReasonIQ call for a plain conversational turn");
   assert.equal(runtime.patternManager.list().length, 0); // no pattern from "Hoi Gaia"
 });
 
@@ -1702,7 +1760,15 @@ test("0.1 memory: a routine one-shot successful capability call is still discard
 test("0.1 memory §15: a discarded turn closes memory AND the pattern trigger — but never hijacks hypothesis policy", async () => {
   let appliedReasoning = 0;
   let formedPatterns = 0;
-  const { reflectCalls, hindsight } = memoryHindsight();
+  let reasonIQCalls = 0;
+  const reflectCalls = [];
+  // Evidence-bearing recall so the turn is a REASONING turn (Phase 2:
+  // ReasonIQ runs only when the depth heuristic says deep) — the memory
+  // verdict below must still discard this pure acknowledgement.
+  const hindsight = {
+    recall: async () => [{ text: 'The team decided on a single stream emitter in March', scores: { final: 0.9 } }],
+    reflect: async (item) => { reflectCalls.push(item); },
+  };
   const hermes = { stream: async (m, { onDelta }) => { onDelta("Hoi!", false); return "Hoi!"; } };
 
   await performStreamingTurn({
@@ -1711,14 +1777,20 @@ test("0.1 memory §15: a discarded turn closes memory AND the pattern trigger �
     hermes,
     hindsight,
     res: fakeRes(),
+    // A text attachment is evidence regardless of the recall gate, so the
+    // depth heuristic opens the reasoning path for this turn.
+    attachments: [{ filename: 'analysis.md', content: 'Design doc: cancellation may interrupt the stream.' }],
     intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "acknowledge", status: "accepted" }),
-    reasonIQ: async () => ({
-      interpretation: "x",
-      hypotheses: [{ statement: "Durable-looking hypothesis from an ack turn.", confidence: 0.9, evidenceFor: ["e"], persistence: "durable" }],
-      hypothesisUpdates: [],
-      contradictions: [], uncertainties: [], informationGaps: [],
-      conclusions: [], sufficientForConclusion: true, confidence: 0.9,
-    }),
+    reasonIQ: async () => {
+      reasonIQCalls += 1;
+      return {
+        interpretation: "x",
+        hypotheses: [{ statement: "Durable-looking hypothesis from an ack turn.", confidence: 0.9, evidenceFor: ["e"], persistence: "durable" }],
+        hypothesisUpdates: [],
+        contradictions: [], uncertainties: [], informationGaps: [],
+        conclusions: [], sufficientForConclusion: true, confidence: 0.9,
+      };
+    },
     hypothesisRuntime: {
       manager: { list: () => [], applyReasoningResult: () => { appliedReasoning += 1; } },
       patternManager: { maybeFormPatterns: () => { formedPatterns += 1; } },
@@ -1726,11 +1798,12 @@ test("0.1 memory §15: a discarded turn closes memory AND the pattern trigger �
     },
   });
 
-  await new Promise((resolve) => setImmediate(resolve));
+  await flushBackground();
+  assert.equal(reasonIQCalls, 1, "a reasoning turn still reaches ReasonIQ exactly once (deferred)");
   assert.equal(reflectCalls.length, 0, "discard → no Hindsight memory (spec §15)");
   assert.equal(formedPatterns, 0, "discard closes the pattern formation trigger (spec §15)");
   // Hypothesis lifecycle is HypothesisManager's domain (its own gates judge
-  // whether this shallow result means anything) — Memoryworthiness must not
+  // whether this reasoning result means anything) — Memoryworthiness must not
   // veto reasoning products, only memory.
   assert.equal(appliedReasoning, 1);
 });
@@ -1740,13 +1813,17 @@ test("0.1 memory: retained turns keep the hypothesis/pattern pipeline fully oper
   let patternGateReached = false;
   const hermes = { stream: async (m, { onDelta }) => { onDelta("Noted.", false); return "Noted."; } };
 
+  // Phase 2: evidence present so the depth heuristic opens the reasoning
+  // path — a retained reasoning turn keeps the whole lifecycle intact.
+  // (converse is a context-only intent and never warrants reasoning; an
+  // analysis intent with evidence does.)
   await performStreamingTurn({
-    messages: [{ role: "user", content: "Onthoud dat mijn deploy altijd via de VPS loopt." }],
+    messages: [{ role: "user", content: "Onthoud dat mijn deploy altijd via de VPS loopt, zoals we eerder bespraken." }],
     documents: DOCUMENTS,
     hermes,
-    hindsight: SILENT_HINDSIGHT,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
     reasonIQ: async () => ({
       hypotheses: [{ statement: "Deploys run through the VPS.", confidence: 0.7, evidenceFor: [], persistence: "durable" }],
       hypothesisUpdates: [],
@@ -1756,6 +1833,7 @@ test("0.1 memory: retained turns keep the hypothesis/pattern pipeline fully oper
       patternManager: { maybeFormPatterns: () => { patternGateReached = true; } },
     },
   });
+  await flushBackground();
 
   assert.equal(appliedReasoning, 1, "retain keeps downstream reasoning intact");
   // The 0.4 gate needs at least 1 changed durable hypothesis in
@@ -2503,14 +2581,9 @@ test("web→native streaming/non-streaming parity: same plan, same web query, sa
 //
 // ReasonIQ's depth is a free heuristic; when it says 'deep' the turn routes on
 // a routing-only result and runs the expensive call after the reply, feeding
-// the hypothesis lifecycle from there.
-
-const flushBackground = async () => { for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); };
-
-const DEEP_EVIDENCE_HINDSIGHT = {
-  recall: async () => [{ text: 'The team decided on a single stream emitter in March', scores: { final: 0.9 } }],
-  reflect: async () => {},
-};
+// the hypothesis lifecycle from there. (flushBackground /
+// DEEP_EVIDENCE_HINDSIGHT are defined at the top of this file — they are
+// shared with the Phase 2 ReasonIQ-optional tests above.)
 
 function deepReasoningResult() {
   return {
@@ -2586,7 +2659,9 @@ test('deferred reasoning: a failing background call never breaks the turn or lea
   }
 });
 
-test('deferred reasoning: a shallow turn still resolves ReasonIQ inline, before the capability', async () => {
+// PHASE 2: a shallow (normal) turn makes NO ReasonIQ call at all — ReasonIQ
+// is optional, not mandatory.
+test('deferred reasoning: a shallow turn makes no ReasonIQ call and never waits on one', async () => {
   const order = [];
   const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'ok'; } };
   await performStreamingTurn({
@@ -2598,7 +2673,50 @@ test('deferred reasoning: a shallow turn still resolves ReasonIQ inline, before 
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'greet', status: 'accepted' }),
     reasonIQ: async () => { order.push('reasonIQ'); return { reasoningDepth: 'shallow' }; },
   });
-  assert.deepEqual(order.slice(0, 1), ['reasonIQ']);
+  await flushBackground();
+  assert.deepEqual(order, ['hermes'], 'no ReasonIQ call anywhere — inline or deferred');
+});
+
+// PHASE 2: ReasonIQ cannot trigger another Decision Engine cycle — its result
+// feeds the hypothesis lifecycle only, and a failing ReasonIQ can never loop
+// back into a second decision for the same turn.
+test('deferred reasoning: a deep turn makes exactly one decision and at most one ReasonIQ call — no decision loop', async () => {
+  const decisionInputs = [];
+  let reasonIQCalls = 0;
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+  const { decide } = require('../src/decision/decisionEngine');
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { reasonIQCalls += 1; return deepReasoningResult(); },
+    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
+    hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
+  });
+  await flushBackground();
+  assert.equal(decisionInputs.length, 1, 'exactly ONE Decision Engine call for the turn');
+  assert.equal(reasonIQCalls, 1, 'ReasonIQ runs at most once');
+});
+
+test('deferred reasoning: a failing deferred ReasonIQ call never triggers a second decision', async () => {
+  const decisionInputs = [];
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('still fine', false); return 'still fine'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { throw new Error('reasoning model down'); },
+    decisionEngine: (input) => { decisionInputs.push(input); return { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' }; },
+    hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
+  });
+  await flushBackground();
+  assert.equal(decisionInputs.length, 1, 'a ReasonIQ failure cannot cause another decision cycle');
 });
 
 // --- PHASE 1: deferred cognition boundary -----------------------------------
