@@ -212,6 +212,15 @@
   .model-modal-stats .row { display: flex; justify-content: space-between; gap: 0.5rem; }
   .model-modal-stats .row .k { color: var(--text-faint); }
   .model-modal-desc { margin-top: 1rem; font-size: 0.85rem; color: var(--text-dim); line-height: 1.55; white-space: pre-wrap; }
+  #modelModalProviders h4 { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin: 1.1rem 0 0.5rem; }
+  .provider-endpoint-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.5rem 0.7rem; border: 1px solid var(--border-soft); border-radius: 0.85rem;
+    background: var(--card-2); margin-bottom: 0.4rem; font-size: 0.8rem;
+  }
+  .provider-endpoint-row .pname { font-weight: 600; color: var(--text); }
+  .provider-endpoint-row .pprice { font-size: 0.72rem; color: var(--text-dim); }
+  .provider-endpoint-row .pprice b { color: var(--text-faint); font-weight: 400; }
 
   /* --- Decision log (kept mostly as-is, restyled) --- */
   .decisions-list { margin-top: 1rem; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -627,6 +636,7 @@
           '<div class="tags" id="modelModalCaps" style="margin-bottom:0.9rem;"></div>' +
           '<div class="model-modal-stats" id="modelModalStats"></div>' +
           '<div class="model-modal-desc" id="modelModalDesc"></div>' +
+          '<div id="modelModalProviders"></div>' +
         '</div>' +
       '</div>';
     document.body.appendChild(modal);
@@ -637,7 +647,33 @@
     return modal;
   }
 
-  function showModelDetails(model, providerLabel) {
+  // OpenRouter-only: a model id can be served by several underlying
+  // providers at different prices — fetched on demand (not part of the
+  // bulk catalog) via the admin route that passes through to OpenRouter's
+  // own public per-model endpoints listing.
+  async function loadModelProviderEndpoints(modelId, containerEl) {
+    containerEl.innerHTML = '<p class="hint" style="margin:1rem 0 0;">Loading providers…</p>';
+    try {
+      const res = await fetch('/admin/api/openrouter/model-endpoints?modelId=' + encodeURIComponent(modelId), { headers: authHeaders() });
+      if (!res.ok) { containerEl.innerHTML = ''; return; }
+      const body = await res.json();
+      const endpoints = body.endpoints || [];
+      if (endpoints.length === 0) { containerEl.innerHTML = ''; return; }
+      containerEl.innerHTML = '<h4>Providers (' + endpoints.length + ')</h4>' + endpoints.map((e) => {
+        const free = formatPricePerMillion(e.pricing.prompt) === '$0.00' && formatPricePerMillion(e.pricing.completion) === '$0.00';
+        const inPrice = free ? 'Free' : (formatPricePerMillion(e.pricing.prompt) || '—');
+        const outPrice = free ? 'Free' : (formatPricePerMillion(e.pricing.completion) || '—');
+        return '<div class="provider-endpoint-row">' +
+          '<span class="pname">' + escapeHtml(e.providerName) + '</span>' +
+          '<span class="pprice">' + escapeHtml(inPrice) + ' in <b>/</b> ' + escapeHtml(outPrice) + ' out</span>' +
+        '</div>';
+      }).join('');
+    } catch (_) {
+      containerEl.innerHTML = '';
+    }
+  }
+
+  function showModelDetails(model, providerLabel, providerId) {
     const modal = ensureModelDetailsModal();
     modal.querySelector('#modelModalTitle').textContent = getModelTitle(model);
     modal.querySelector('#modelModalSub').textContent = providerLabel ? ('● ' + providerLabel.toLowerCase()) : model.id;
@@ -653,13 +689,19 @@
       '<div class="row"><span class="k">Output cost /1M</span><span>' + escapeHtml(completionPrice) + '</span></div>' +
       '<div class="row"><span class="k">Context window</span><span>' + escapeHtml(contextStr) + '</span></div>';
     modal.querySelector('#modelModalDesc').textContent = model.description || 'No description reported by the provider.';
+    const providersEl = modal.querySelector('#modelModalProviders');
+    if (providerId === 'openrouter' && model.id && model.id.includes('/')) {
+      loadModelProviderEndpoints(model.id, providersEl);
+    } else {
+      providersEl.innerHTML = '';
+    }
     modal.hidden = false;
   }
 
   // --- Searchable, priced model dropdown (mounts into a container div) ---
   function createModelDropdown(mountEl, opts) {
     opts = opts || {};
-    const state = { models: [], value: '', open: false, query: '', providerLabel: opts.providerLabel || '', emptyOptionLabel: opts.emptyOptionLabel || null };
+    const state = { models: [], value: '', open: false, query: '', providerLabel: opts.providerLabel || '', providerId: opts.providerId || '', emptyOptionLabel: opts.emptyOptionLabel || null };
 
     const root = document.createElement('div');
     root.className = 'model-dd';
@@ -780,7 +822,7 @@
         event.preventDefault();
         event.stopPropagation();
         const m = state.models.find((x) => x.id === readMoreEl.dataset.id);
-        if (m) showModelDetails(m, state.providerLabel);
+        if (m) showModelDetails(m, state.providerLabel, state.providerId);
         return;
       }
       const optEl = event.target.closest('.model-dd-opt');
@@ -803,6 +845,7 @@
       setValue(id) { state.value = id || ''; renderTrigger(); },
       getValue() { return state.value; },
       setProviderLabel(label) { state.providerLabel = label || ''; renderTrigger(); },
+      setProviderId(id) { state.providerId = (id || '').toLowerCase(); },
       getModel() { return state.models.find((m) => m.id === state.value) || null; },
     };
   }
@@ -843,6 +886,7 @@
       if (cfg.provider) providerSelectEl.value = cfg.provider;
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      genDropdown.setProviderId(cfg.provider);
       keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       catalog = cfg.catalog || [];
       genDropdown.setModels(catalog);
@@ -873,6 +917,7 @@
       const cfg = await res.json();
       currentConfig = cfg;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      genDropdown.setProviderId(cfg.provider);
       keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       apiKeyEl.value = '';
       setStatus(providerStatusEl, 'Provider saved.', true);
@@ -1040,8 +1085,11 @@
       riqProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) riqBaseUrlEl.value = cfg.baseUrl;
       const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
+      const effectiveProviderId = cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider;
       riqDropdown.setProviderLabel(effectiveProviderLabel);
+      riqDropdown.setProviderId(effectiveProviderId);
       riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
+      riqVisionDropdown.setProviderId(effectiveProviderId);
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
         setStatus(riqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
@@ -1081,8 +1129,11 @@
       const cfg = await res.json();
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
+      const effectiveProviderId = cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider;
       riqDropdown.setProviderLabel(effectiveProviderLabel);
+      riqDropdown.setProviderId(effectiveProviderId);
       riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
+      riqVisionDropdown.setProviderId(effectiveProviderId);
       riqApiKeyEl.value = '';
       setStatus(riqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);
     } catch (err) {
@@ -1194,6 +1245,7 @@
       iiqProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) iiqBaseUrlEl.value = cfg.baseUrl;
       iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
+      iiqDropdown.setProviderId(cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider);
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
         setStatus(iiqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
@@ -1228,6 +1280,7 @@
       const cfg = await res.json();
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
+      iiqDropdown.setProviderId(cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider);
       iiqApiKeyEl.value = '';
       renderIntentIqEnvHint(cfg);
       setStatus(iiqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);

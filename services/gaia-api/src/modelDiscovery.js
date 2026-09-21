@@ -280,11 +280,70 @@ function normalizeOpenAiModel(m) {
   };
 }
 
+const OPENROUTER_ENDPOINTS_BASE_URL = 'https://openrouter.ai/api/v1';
+
+/**
+ * OpenRouter-specific: a single model id (e.g. "deepseek/deepseek-v4.1-flash")
+ * is often served by several underlying inference providers (Qwen,
+ * DeepInfra, Fireworks, ...), each with its own price and context length.
+ * The bulk /models list (retrieveOpenAiCompatibleModels above) only
+ * reports one aggregate price per model — this is OpenRouter's separate,
+ * public, unauthenticated endpoint that lists the actual per-provider
+ * breakdown: GET {baseUrl}/models/{author}/{slug}/endpoints. No API key
+ * needed, and none of the other providers in this file have an
+ * equivalent concept, so this stays OpenRouter-only.
+ * @param {{ modelId: string, baseUrl?: string, fetchImpl?: Function, timeoutMs?: number }} options
+ * @returns {Promise<Array<{ providerName: string, contextLength: number|null, pricing: { prompt: string|null, completion: string|null } }>>}
+ */
+async function retrieveOpenRouterModelEndpoints({ modelId, baseUrl, fetchImpl, timeoutMs }) {
+  const fetchFn = fetchImpl || fetch;
+  const ms = timeoutMs || DEFAULT_TIMEOUT_MS;
+  const base = String(baseUrl || OPENROUTER_ENDPOINTS_BASE_URL).replace(/\/+$/, '');
+  const url = `${base}/models/${modelId}/endpoints`;
+
+  let response;
+  try {
+    response = await fetchFn(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(ms) });
+  } catch (error) {
+    throw new Error('openrouter unreachable');
+  }
+
+  if (!response.ok) {
+    if (response.status === 404) throw new Error('model not found');
+    throw new Error('provider responded with an error');
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new Error('provider returned an unreadable response');
+  }
+
+  const endpoints = Array.isArray(data?.data?.endpoints) ? data.data.endpoints : [];
+  return endpoints
+    .map((e) => ({
+      providerName: e.provider_name || e.name || '',
+      contextLength: typeof e.context_length === 'number' ? e.context_length : null,
+      pricing: {
+        prompt: e.pricing?.prompt ?? null,
+        completion: e.pricing?.completion ?? null,
+      },
+    }))
+    .filter((e) => Boolean(e.providerName))
+    .sort((a, b) => {
+      const priceA = (Number(a.pricing.prompt) || 0) + (Number(a.pricing.completion) || 0);
+      const priceB = (Number(b.pricing.prompt) || 0) + (Number(b.pricing.completion) || 0);
+      return priceA - priceB;
+    });
+}
+
 module.exports = {
   retrieveModels,
   retrieveEdenAiModels,
   retrieveOpenAiCompatibleModels,
   retrieveMistralModels,
+  retrieveOpenRouterModelEndpoints,
   normalizeEdenAiModel,
   normalizeOpenAiModel,
   normalizeMistralModel,

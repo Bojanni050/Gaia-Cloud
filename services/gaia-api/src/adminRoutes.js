@@ -40,7 +40,7 @@
 const express = require('express');
 const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
-const { retrieveModels } = require('./modelDiscovery');
+const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { readIntentModelConfig } = require('./logos/intentModelClient');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision'];
@@ -54,13 +54,41 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  *   auth: import('express').RequestHandler,
  *   createOpenRouterClientFn?: typeof createOpenRouterClient,
  *   retrieveModelsFn?: typeof retrieveModels,
+ *   retrieveOpenRouterModelEndpointsFn?: typeof retrieveOpenRouterModelEndpoints,
  * }} deps
  */
-function createAdminRouter({ store, providerStore, decisionStore, intentModelStore, auth, createOpenRouterClientFn = createOpenRouterClient, retrieveModelsFn = retrieveModels }) {
+function createAdminRouter({
+  store, providerStore, decisionStore, intentModelStore, auth,
+  createOpenRouterClientFn = createOpenRouterClient,
+  retrieveModelsFn = retrieveModels,
+  retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
+}) {
   const router = express.Router();
 
   router.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/admin.html'));
+  });
+
+  // OpenRouter-only: a model id can be served by several underlying
+  // providers, each with its own price. This is a plain passthrough to
+  // OpenRouter's own public, unauthenticated endpoints listing — nothing
+  // stored, nothing provider-store-specific, just a CORS-safe proxy so
+  // admin.html doesn't have to call openrouter.ai directly from the browser.
+  router.get('/api/openrouter/model-endpoints', auth, async (req, res) => {
+    const modelId = typeof req.query.modelId === 'string' ? req.query.modelId.trim() : '';
+    if (!modelId || !modelId.includes('/')) {
+      return res.status(400).json({ error: 'modelId must be in "author/slug" form' });
+    }
+    try {
+      const endpoints = await retrieveOpenRouterModelEndpointsFn({ modelId });
+      res.json({ endpoints });
+    } catch (err) {
+      const message = err && err.message ? err.message : 'unknown error';
+      if (message === 'model not found') {
+        return res.status(404).json({ error: message });
+      }
+      res.status(502).json({ error: 'could not fetch provider endpoints from OpenRouter' });
+    }
   });
 
   // --- ReasonIQ routes (provider-agnostic) ---

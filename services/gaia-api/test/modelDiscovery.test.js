@@ -7,6 +7,7 @@ const {
   retrieveEdenAiModels,
   retrieveOpenAiCompatibleModels,
   retrieveMistralModels,
+  retrieveOpenRouterModelEndpoints,
   normalizeEdenAiModel,
   normalizeOpenAiModel,
   normalizeMistralModel,
@@ -355,4 +356,54 @@ test('retrieveModels: filters out models without id', async () => {
   const models = await retrieveModels({ provider: 'edenai', fetchImpl, timeoutMs: 5000 });
   assert.equal(models.length, 1);
   assert.equal(models[0].id, 'valid');
+});
+
+// --- retrieveOpenRouterModelEndpoints (mocked fetch) ---
+
+test('retrieveOpenRouterModelEndpoints: fetches, normalizes, and sorts by combined price', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({
+      data: {
+        endpoints: [
+          { provider_name: 'DeepInfra', context_length: 128000, pricing: { prompt: '0.0000002', completion: '0.0000006' } },
+          { provider_name: 'Qwen', context_length: 128000, pricing: { prompt: '0.0000001', completion: '0.00000039' } },
+        ],
+      },
+    }),
+  };
+  let capturedUrl;
+  const fetchImpl = async (url) => { capturedUrl = url; return fakeResponse; };
+  const endpoints = await retrieveOpenRouterModelEndpoints({ modelId: 'deepseek/deepseek-v4.1-flash', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints');
+  assert.equal(endpoints.length, 2);
+  assert.equal(endpoints[0].providerName, 'Qwen');
+  assert.equal(endpoints[1].providerName, 'DeepInfra');
+});
+
+test('retrieveOpenRouterModelEndpoints: filters out entries without a provider name', async () => {
+  const fakeResponse = {
+    ok: true,
+    json: async () => ({ data: { endpoints: [{ pricing: {} }, { provider_name: 'Together AI', pricing: {} }] } }),
+  };
+  const fetchImpl = async () => fakeResponse;
+  const endpoints = await retrieveOpenRouterModelEndpoints({ modelId: 'a/b', fetchImpl, timeoutMs: 5000 });
+  assert.equal(endpoints.length, 1);
+  assert.equal(endpoints[0].providerName, 'Together AI');
+});
+
+test('retrieveOpenRouterModelEndpoints: throws on network error', async () => {
+  const fetchImpl = async () => { throw new Error('network fail'); };
+  await assert.rejects(
+    () => retrieveOpenRouterModelEndpoints({ modelId: 'a/b', fetchImpl, timeoutMs: 5000 }),
+    { message: 'openrouter unreachable' }
+  );
+});
+
+test('retrieveOpenRouterModelEndpoints: throws "model not found" on 404', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 404 });
+  await assert.rejects(
+    () => retrieveOpenRouterModelEndpoints({ modelId: 'a/b', fetchImpl, timeoutMs: 5000 }),
+    { message: 'model not found' }
+  );
 });
