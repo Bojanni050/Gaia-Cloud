@@ -129,6 +129,9 @@ function normalizeMistralModel(m) {
     id: m.id || '',
     name: m.name || m.id || '',
     capabilities: caps,
+    // Mistral's /models response reports context length but not pricing.
+    contextLength: typeof m.max_context_length === 'number' ? m.max_context_length : null,
+    pricing: { prompt: null, completion: null },
   };
 }
 
@@ -188,6 +191,9 @@ function normalizeEdenAiModel(m) {
     id: m.id || '',
     name: m.model_name || m.name || m.id || '',
     capabilities: caps,
+    // EdenAI's public /v3/models catalog doesn't report context length or pricing.
+    contextLength: null,
+    pricing: { prompt: null, completion: null },
   };
 }
 
@@ -231,6 +237,11 @@ async function retrieveOpenAiCompatibleModels({ baseUrl, apiKey, fetchImpl, time
  * Attempts to infer capabilities from known provider metadata fields.
  * When capability metadata is absent, the model is still included —
  * the user can use Manual mode for it.
+ *
+ * Also carries context length and per-token pricing when the provider's
+ * /models response includes them (OpenRouter does: context_length,
+ * pricing.prompt / pricing.completion, both USD-per-token strings). Never
+ * invented for providers that don't report it — those fields come back null.
  */
 function normalizeOpenAiModel(m) {
   const caps = [];
@@ -253,6 +264,11 @@ function normalizeOpenAiModel(m) {
     id: m.id || '',
     name: m.name || m.id || '',
     capabilities: caps,
+    contextLength: typeof m.context_length === 'number' ? m.context_length : null,
+    pricing: {
+      prompt: m.pricing?.prompt ?? null,
+      completion: m.pricing?.completion ?? null,
+    },
   };
 }
 

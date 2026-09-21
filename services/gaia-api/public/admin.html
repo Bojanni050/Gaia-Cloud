@@ -40,7 +40,6 @@
   .status.ok { color: #7fbf8f; }
   .status.err { color: #d98a8a; }
   .hint { font-size: 0.76rem; color: #6b6459; margin-top: 0.4rem; }
-  .model-meta { font-size: 0.76rem; color: #9b9484; margin-top: 0.3rem; }
   .role-section {
     background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px;
     padding: 1rem 1.1rem; margin-bottom: 0.8rem;
@@ -75,11 +74,22 @@
     border: 1px solid #332d24; color: #9b9484;
   }
   .cap-chip.active { background: #1a2e1a; color: #7fbf8f; border-color: #2a4a2a; }
+  .model-card {
+    display: none; margin-top: 0.5rem; background: #0f0e0c; border: 1px solid #2a2620;
+    border-radius: 8px; padding: 0.65rem 0.8rem;
+  }
+  .model-card.visible { display: block; }
+  .model-card-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; font-size: 0.78rem; padding: 0.15rem 0; }
+  .model-card-row .k { color: #6b6459; }
+  .model-card-row .v { color: #ece7dc; text-align: right; font-variant-numeric: tabular-nums; }
+  .model-card-row .v.free { color: #7fbf8f; }
+  .model-card-caps { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.4rem; }
+  .model-card-empty { font-size: 0.78rem; color: #6b6459; font-style: italic; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Model Provider Settings <small>v1.5</small></h1>
+  <h1>Model Provider Settings <small>v1.6</small></h1>
   <p class="lede">Configure model providers and assign models to Gaia roles. Operator-only — never surfaced to clients.</p>
 
   <section>
@@ -146,7 +156,7 @@
       </div>
       <div id="genCatalog">
         <select id="genSelect"><option value="">— retrieve models first —</option></select>
-        <div class="model-meta" id="genMeta"></div>
+        <div class="model-card" id="genMeta"></div>
       </div>
       <div id="genManual" class="manual-input" style="display:none;">
         <label for="genManualId">Model ID</label>
@@ -218,13 +228,13 @@
     <button id="riqFetchModelsBtn" class="secondary">Fetch available models</button>
     <label for="riqModelSelect">Model for ReasonIQ</label>
     <select id="riqModelSelect"><option value="">— save config and fetch models —</option></select>
-    <div class="model-meta" id="riqModelMeta"></div>
+    <div class="model-card" id="riqModelMeta"></div>
     <button id="riqSaveModelBtn" disabled>Save selection</button>
     <div class="status" id="riqModelStatus"></div>
 
     <label for="riqVisionModelSelect">Vision model (image OCR)</label>
     <select id="riqVisionModelSelect"><option value="">— reuse ReasonIQ's model —</option></select>
-    <div class="model-meta" id="riqVisionModelMeta"></div>
+    <div class="model-card" id="riqVisionModelMeta"></div>
     <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
     <button id="riqClearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
     <div class="status" id="riqVisionModelStatus"></div>
@@ -263,7 +273,7 @@
     <button id="iiqFetchModelsBtn" class="secondary">Fetch available models</button>
     <label for="iiqModelSelect">Model for IntentIQ</label>
     <select id="iiqModelSelect"><option value="">— save config and fetch models —</option></select>
-    <div class="model-meta" id="iiqModelMeta"></div>
+    <div class="model-card" id="iiqModelMeta"></div>
     <button id="iiqSaveModelBtn" disabled>Save selection</button>
     <div class="status" id="iiqModelStatus"></div>
     <p class="hint" id="iiqEnvHint"></p>
@@ -354,6 +364,64 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // --- Shared model cost/capability formatting ---
+  // OpenRouter (and OpenAI-compatible providers that mirror it) report
+  // pricing as a USD-per-token string, e.g. "0.0000025". Shown per 1M
+  // tokens, which is how every provider actually prices things.
+  function formatPricePerMillion(perToken) {
+    if (perToken === null || perToken === undefined || perToken === '') return null;
+    const n = Number(perToken);
+    if (!Number.isFinite(n)) return null;
+    if (n === 0) return 'free';
+    const perMillion = n * 1e6;
+    const decimals = perMillion < 1 ? 4 : perMillion < 10 ? 3 : 2;
+    return '$' + perMillion.toFixed(decimals) + ' / 1M tokens';
+  }
+
+  function formatContextLength(len) {
+    if (typeof len !== 'number' || !Number.isFinite(len)) return null;
+    if (len >= 1000) return (len / 1000).toFixed(len % 1000 === 0 ? 0 : 1) + 'K tokens';
+    return len + ' tokens';
+  }
+
+  function optionCostSuffix(m) {
+    const promptPrice = m.pricing ? formatPricePerMillion(m.pricing.prompt) : null;
+    if (!promptPrice) return '';
+    return ' — ' + promptPrice + ' in';
+  }
+
+  // Renders a small card of cost + context + capabilities for the given
+  // model into cardEl. Only shows what the provider actually reported —
+  // nothing here is invented when metadata is missing.
+  function renderModelCard(m, cardEl) {
+    if (!m) { cardEl.className = 'model-card'; cardEl.innerHTML = ''; return; }
+
+    const rows = [];
+    const promptPrice = m.pricing ? formatPricePerMillion(m.pricing.prompt) : null;
+    const completionPrice = m.pricing ? formatPricePerMillion(m.pricing.completion) : null;
+    if (promptPrice) {
+      rows.push('<div class="model-card-row"><span class="k">Input cost</span><span class="v' + (promptPrice === 'free' ? ' free' : '') + '">' + escapeHtml(promptPrice) + '</span></div>');
+    }
+    if (completionPrice) {
+      rows.push('<div class="model-card-row"><span class="k">Output cost</span><span class="v' + (completionPrice === 'free' ? ' free' : '') + '">' + escapeHtml(completionPrice) + '</span></div>');
+    }
+    const contextStr = formatContextLength(m.contextLength);
+    if (contextStr) {
+      rows.push('<div class="model-card-row"><span class="k">Context window</span><span class="v">' + escapeHtml(contextStr) + '</span></div>');
+    }
+
+    const caps = m.capabilities && m.capabilities.length > 0
+      ? '<div class="model-card-caps">' + m.capabilities.map((c) => '<span class="cap-chip active">' + escapeHtml(c) + '</span>').join('') + '</div>'
+      : '';
+
+    if (rows.length === 0 && !caps) {
+      cardEl.innerHTML = '<div class="model-card-empty">No cost or capability metadata reported for this model.</div>';
+    } else {
+      cardEl.innerHTML = rows.join('') + caps;
+    }
+    cardEl.className = 'model-card visible';
+  }
+
   // --- Provider config ---
   async function loadProviderConfig() {
     try {
@@ -440,6 +508,7 @@
       if (m.capabilities && m.capabilities.length > 0) {
         opt.textContent += ' [' + m.capabilities.join(', ') + ']';
       }
+      opt.textContent += optionCostSuffix(m);
       selectEl.appendChild(opt);
     }
     if (selectedId && models.some((m) => m.id === selectedId)) {
@@ -449,9 +518,7 @@
 
   function updateModelMeta(selectEl, metaEl) {
     const m = catalog.find((x) => x.id === selectEl.value);
-    metaEl.textContent = m
-      ? (m.capabilities && m.capabilities.length > 0 ? 'capabilities: ' + m.capabilities.join(', ') : 'no capability metadata')
-      : '';
+    renderModelCard(m, metaEl);
   }
 
   for (const cfg of Object.values(ROLE_CONFIG)) {
@@ -699,6 +766,10 @@
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.name + ' (' + m.id + ')';
+      if (m.capabilities && m.capabilities.length > 0) {
+        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
+      }
+      opt.textContent += optionCostSuffix(m);
       selectEl.appendChild(opt);
     }
     if (selectedId && riqModels.some((m) => m.id === selectedId)) selectEl.value = selectedId;
@@ -706,15 +777,7 @@
 
   function riqUpdateModelMeta(selectEl, metaEl) {
     const m = riqModels.find((x) => x.id === selectEl.value);
-    if (!m) { metaEl.textContent = ''; return; }
-    // Show capabilities if available (EdenAI), else show context/pricing (OpenRouter)
-    if (m.capabilities && m.capabilities.length > 0) {
-      metaEl.textContent = 'capabilities: ' + m.capabilities.join(', ');
-    } else if (m.contextLength || m.pricing) {
-      metaEl.textContent = 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—');
-    } else {
-      metaEl.textContent = '';
-    }
+    renderModelCard(m, metaEl);
   }
   riqModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqModelSelectEl, riqModelMetaEl));
   riqVisionModelSelectEl.addEventListener('change', () => riqUpdateModelMeta(riqVisionModelSelectEl, riqVisionModelMetaEl));
@@ -847,6 +910,10 @@
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.name + ' (' + m.id + ')';
+      if (m.capabilities && m.capabilities.length > 0) {
+        opt.textContent += ' [' + m.capabilities.join(', ') + ']';
+      }
+      opt.textContent += optionCostSuffix(m);
       iiqModelSelectEl.appendChild(opt);
     }
     if (iiqCurrentModel && iiqModels.some((m) => m.id === iiqCurrentModel)) iiqModelSelectEl.value = iiqCurrentModel;
@@ -854,14 +921,7 @@
 
   function iiqUpdateModelMeta() {
     const m = iiqModels.find((x) => x.id === iiqModelSelectEl.value);
-    if (!m) { iiqModelMetaEl.textContent = ''; return; }
-    if (m.capabilities && m.capabilities.length > 0) {
-      iiqModelMetaEl.textContent = 'capabilities: ' + m.capabilities.join(', ');
-    } else if (m.contextLength || m.pricing) {
-      iiqModelMetaEl.textContent = 'context: ' + (m.contextLength || '—') + ' tokens · prompt: ' + (m.pricing.prompt ?? '—') + ' · completion: ' + (m.pricing.completion ?? '—');
-    } else {
-      iiqModelMetaEl.textContent = '';
-    }
+    renderModelCard(m, iiqModelMetaEl);
   }
   iiqModelSelectEl.addEventListener('change', iiqUpdateModelMeta);
 
