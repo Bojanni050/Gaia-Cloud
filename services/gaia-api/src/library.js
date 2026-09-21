@@ -132,9 +132,36 @@ const TEXT_MIME_EXACT = new Set([
 ]);
 const MAX_ATTACHMENT_CHARS = 8000;
 
-function isTextMime(mimeType) {
-  const mt = String(mimeType || '').toLowerCase();
-  return TEXT_MIME_PREFIXES.some((prefix) => mt.startsWith(prefix)) || TEXT_MIME_EXACT.has(mt);
+// Clients often report a useless mime type for plain-text formats: "" or
+// application/octet-stream (Windows has no registered type for .md/.log/.yml),
+// "application/json; charset=utf-8", or a spreadsheet type for .csv. So the
+// declared type is only trusted when it is specific; otherwise the extension,
+// and finally the bytes themselves, decide.
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'json', 'jsonl', 'ndjson', 'csv', 'tsv', 'log', 'xml',
+  'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env', 'html', 'htm', 'css',
+  'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'py', 'rs', 'go', 'java', 'c', 'h',
+  'cpp', 'cs', 'sh', 'ps1', 'bat', 'sql', 'rtf', 'srt', 'vtt',
+]);
+const GENERIC_MIMES = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
+
+function looksLikeText(buffer) {
+  if (!buffer || buffer.length === 0) return false;
+  const sample = buffer.subarray(0, 4096);
+  if (sample.includes(0)) return false;
+  return !sample.toString('utf-8').includes('�');
+}
+
+function isTextMime(mimeType, filename, buffer) {
+  const mt = String(mimeType || '').toLowerCase().split(';')[0].trim();
+  if (TEXT_MIME_PREFIXES.some((prefix) => mt.startsWith(prefix))
+    || TEXT_MIME_EXACT.has(mt) || mt.endsWith('+json') || mt.endsWith('+xml')) {
+    return true;
+  }
+  if (isImageMime(mt) || mt === 'application/pdf') return false;
+  const ext = String(filename || '').toLowerCase().split('.').pop();
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+  return GENERIC_MIMES.has(mt) && looksLikeText(buffer);
 }
 
 function truncate(content) {
@@ -197,12 +224,12 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
       filename: meta.filename,
       mimeType: meta.mimeType,
       bufferSize: buffer.length,
-      isText: isTextMime(meta.mimeType),
+      isText: isTextMime(meta.mimeType, meta.filename, buffer),
       isImage: isImageMime(meta.mimeType),
       modelSupportsVision: options.modelSupportsVision,
     }));
 
-    if (isTextMime(meta.mimeType)) {
+    if (isTextMime(meta.mimeType, meta.filename, buffer)) {
       results.push({ filename: meta.filename, content: truncate(buffer.toString('utf-8')) });
     } else if (isImageMime(meta.mimeType)) {
       // PATCH: Native vision path — return raw bytes for multimodal input

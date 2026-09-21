@@ -1930,3 +1930,12 @@ test('fast-path: "dat voelt goed" skips semantic', async () => {
   assert.equal(called, false);
   assert.equal(d.status, 'unknown');
 });
+
+test('combineConsensus: a weak-cue heuristic hit overruled by the semantic tier is accepted, not ambiguous', () => {
+  const heuristic = { intent: 'inform.explain', status: 'accepted', confidence: 0.7, candidates: [{ intent: 'inform.explain', score: 1 }], sourceOfTruth: 'external_knowledge', meta: {} };
+  const semantic = { intent: 'converse', confidence: 0.8, candidates: [{ intent: 'converse', confidence: 0.8 }], sourceOfTruth: 'conversation', speechAct: 'statement', referents: [], ambiguous: false, reason: 'sharing a thought' };
+  const combined = combineConsensus(heuristic, semantic);
+  assert.equal(combined.intent, 'converse');
+  assert.equal(combined.status, 'accepted');
+  assert.equal(combined.needsClarification, false);
+});

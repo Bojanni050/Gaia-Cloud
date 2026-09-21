@@ -1829,8 +1829,17 @@ function combineConsensus(heuristic, semantic) {
     const semanticWins = semantic.confidence >= heuristicTopConfidence;
     intent = semanticWins ? semantic.intent : heuristicTop;
     confidence = capConfidence(semanticWins ? semantic.confidence : heuristicTopConfidence);
-    status = 'ambiguous';
-    ambiguous = true;
+    // A bare weak-cue heuristic hit ("analyseren" -> inform.explain, capped at
+    // WEAK_SIGNAL_CONFIDENCE_CAP) that the semantic tier — which reads the
+    // whole utterance — overrules is not real uncertainty: semantic
+    // verification is exactly the designed path for such hits. A conflict
+    // with a stronger heuristic result stays honestly ambiguous.
+    const semanticDecisive = semanticWins
+      && heuristicTopConfidence <= WEAK_SIGNAL_CONFIDENCE_CAP
+      && (semantic.confidence - heuristicTopConfidence) > AMBIGUITY_CONFIDENCE_MARGIN
+      && !semanticIsAmbiguous(semantic);
+    ambiguous = !semanticDecisive;
+    status = ambiguous ? 'ambiguous' : 'accepted';
     // Whichever tier's opinion won is the one whose raw signal explains
     // the result — the semantic model's own self-reported confidence
     // stands in for a "raw" number on that side (it has no hit count).

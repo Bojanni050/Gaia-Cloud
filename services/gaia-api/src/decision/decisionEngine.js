@@ -458,14 +458,38 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
       capability_execute: false,
       reason: `meta-intent (${intent.intent}) — Gaia answers about her own behavior`,
     };
+  } else if (intent && intent.needsClarification && findCapability(capabilities, 'native')) {
+    // An unresolved interpretation is no reason to interrupt the user with a
+    // canned question: Gaia just keeps talking. Deliberately no tool, plan or
+    // search here — acting on an uncertain reading is the risky part.
+    decision = {
+      action: 'native',
+      capability_candidate: null,
+      capability_execute: false,
+      reason: intent.status === 'ambiguous'
+        ? 'interpretation ambiguous — continuing the conversation instead of asking'
+        : 'interpretation unresolved — continuing the conversation instead of asking',
+    };
+  } else if (intent && intent.needsClarification && findCapability(capabilities, 'hermes')) {
+    decision = {
+      action: 'capability',
+      capability: 'hermes',
+      capability_candidate: 'hermes',
+      capability_execute: true,
+      task: 'respond',
+      input: { userInput, context: context || null, reasoning: reasoning || null },
+      expected_outcome: {
+        description: 'A completed Hermes response addressing the turn',
+        minLength: 1,
+      },
+      reason: 'interpretation unresolved and no native generator — continuing the conversation via Hermes',
+    };
   } else if (intent && intent.needsClarification) {
     decision = {
       action: 'clarify',
       capability_candidate: null,
       capability_execute: false,
-      reason: intent.status === 'ambiguous'
-        ? 'multiple interpretations of this turn are plausible and were not resolved'
-        : 'this turn needs clarification before Gaia can act on it',
+      reason: 'this turn needs clarification and no capability is available to continue',
     };
   } else if (planDecision) {
     // Decision Engine 3.0: a bounded multi-step plan was warranted AND every

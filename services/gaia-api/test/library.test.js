@@ -228,3 +228,15 @@ test('categorizeAttachments separates text and multimodal attachments', async ()
   assert.equal(multimodalAttachments[0].filename, 'photo.png');
   assert.equal(multimodalAttachments[1].filename, 'image.jpg');
 });
+
+test('isTextMime: json/text files with generic, empty or parameterised mime types are still read as text', () => {
+  const { isTextMime } = require('../src/library');
+  assert.equal(isTextMime('application/json; charset=utf-8', 'a.json', Buffer.from('{}')), true);
+  assert.equal(isTextMime('', 'notes.md', Buffer.from('# hi')), true);
+  assert.equal(isTextMime('application/octet-stream', 'data.json', Buffer.from('{"a":1}')), true);
+  assert.equal(isTextMime('application/vnd.ms-excel', 'data.csv', Buffer.from('a,b')), true);
+  assert.equal(isTextMime('application/octet-stream', 'noext', Buffer.from('plain words')), true);
+  assert.equal(isTextMime('application/octet-stream', 'x.bin', Buffer.from([0, 1, 2, 3])), false);
+  assert.equal(isTextMime('application/pdf', 'x.pdf', Buffer.from('%PDF')), false);
+  assert.equal(isTextMime('image/png', 'x.png', Buffer.from('abc')), false);
+});

@@ -26,15 +26,26 @@ test('validateDecision accepts native/clarify/refuse with no capability field', 
   assert.equal(validateDecision({ action: 'refuse' }), null);
 });
 
-test('decide() routes to clarify when IntentIQ flagged the turn as needing clarification', () => {
+test('decide() keeps talking via Hermes (no clarify) when IntentIQ flagged the turn and there is no native generator', () => {
   const decision = decide({
     userInput: 'draft it and send it',
     intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true, sourceOfTruth: 'conversation' },
     reasoning: null,
     availableCapabilities: [{ id: 'hermes' }],
   });
-  assert.equal(decision.action, 'clarify');
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
   assert.equal(validateDecision(decision), null);
+});
+
+test('decide() only clarifies a flagged turn when no capability can continue the conversation', () => {
+  const decision = decide({
+    userInput: 'draft it and send it',
+    intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true, sourceOfTruth: 'conversation' },
+    reasoning: null,
+    availableCapabilities: [],
+  });
+  assert.equal(decision.action, 'clarify');
 });
 
 test('decide() routes to the tool capability when IntentIQ resolved sourceOfTruth to "tool" and one is available', () => {
@@ -280,7 +291,7 @@ test('decide() falls back to native for external-knowledge turns when no web too
   assert.equal(decision.generationMode, 'native');
 });
 
-test('decide() still clarifies ambiguous turns regardless of context/reasoning (test #5)', () => {
+test('decide() answers ambiguous turns natively instead of clarifying, regardless of context/reasoning (test #5)', () => {
   const decision = decide({
     userInput: 'draft it and send it',
     intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true, sourceOfTruth: 'conversation' },
@@ -288,7 +299,7 @@ test('decide() still clarifies ambiguous turns regardless of context/reasoning (
     reasoning: { reasoningDepth: 'shallow' },
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
   });
-  assert.equal(decision.action, 'clarify');
+  assert.equal(decision.action, 'native');
 });
 
 test('validateDecision accepts a full plan and rejects malformed context/reasoning/capabilities', () => {
@@ -460,7 +471,7 @@ test('decide() sets capability_execute=false for native/clarify actions', () => 
   const clarifyDecision = decide({
     userInput: 'draft it and send it',
     intent: { intent: 'create.generate', status: 'ambiguous', needsClarification: true },
-    availableCapabilities: [{ id: 'hermes' }],
+    availableCapabilities: [],
   });
   assert.equal(clarifyDecision.capability_execute, false);
   assert.equal(clarifyDecision.capability_candidate, null);
