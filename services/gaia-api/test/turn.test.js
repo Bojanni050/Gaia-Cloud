@@ -2491,3 +2491,105 @@ test("web→native streaming/non-streaming parity: same plan, same web query, sa
     assert.deepEqual(stepsA[i].input, stepsB[i].input, `step ${i} input must match`);
   }
 });
+
+// --- Deferred deep reasoning: the model call runs AFTER the reply ------------
+//
+// ReasonIQ's depth is a free heuristic; when it says 'deep' the turn routes on
+// a routing-only result and runs the expensive call after the reply, feeding
+// the hypothesis lifecycle from there.
+
+const flushBackground = async () => { for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); };
+
+const DEEP_EVIDENCE_HINDSIGHT = {
+  recall: async () => [{ text: 'The team decided on a single stream emitter in March', scores: { final: 0.9 } }],
+  reflect: async () => {},
+};
+
+function deepReasoningResult() {
+  return {
+    interpretation: 'weighing',
+    hypotheses: [{ statement: 'Cancellation races teardown.', existingId: 'hyp-seed', confidence: 0.7, evidenceFor: [], evidenceAgainst: [] }],
+    hypothesisUpdates: [{ hypothesisId: 'hyp-seed', relation: 'supports', confidenceDelta: 0.05, rationale: 'new analysis', evidenceId: null }],
+    contradictions: [], uncertainties: [], informationGaps: [],
+    conclusions: [], sufficientForConclusion: false, confidence: 0.65,
+  };
+}
+
+test('deferred reasoning: a deep turn replies without waiting for ReasonIQ, routes to Hermes, and applies hypotheses afterwards', async () => {
+  const { decide } = require('../src/decision/decisionEngine');
+  const manager = (require('../src/reasoning/hypothesisManager')).createHypothesisManager({
+    hypotheses: [{ id: 'hyp-seed', statement: 'Cancellation races teardown.', status: 'testing', confidence: 0.6, evidenceFor: ['e1'] }],
+  });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const reasonIQCalls = [];
+  const decisionInputs = [];
+  const res = fakeRes();
+  let hermesCalls = 0;
+  const hermes = { stream: async (messages, { onDelta }) => { hermesCalls += 1; onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async (input) => { reasonIQCalls.push(input); await gate; return deepReasoningResult(); },
+    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
+    hypothesisRuntime: { manager },
+  });
+
+  // The turn is finished while the reasoning call is still pending.
+  assert.equal(hermesCalls, 1, 'deep routes to Hermes exactly as before');
+  assert.equal(decisionInputs.length, 1);
+  assert.equal(decisionInputs[0].reasoning.reasoningDepth, 'deep');
+  assert.equal(decisionInputs[0].reasoning.meta.fallbackReason, 'deferred');
+  assert.equal(reasonIQCalls.length, 1);
+  assert.equal(manager.get('hyp-seed').confidence, 0.6, 'not applied before the deferred call resolves');
+
+  release();
+  await flushBackground();
+  assert.equal(manager.get('hyp-seed').confidence, 0.65, 'update applied once the deferred call resolved');
+  assert.equal(reasonIQCalls.length, 1, 'ReasonIQ runs exactly once per turn');
+  assert.equal(reasonIQCalls[0].existingHypotheses[0].id, 'hyp-seed');
+});
+
+test('deferred reasoning: a failing background call never breaks the turn or leaks a rejection', async () => {
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const res = fakeRes();
+    const hermes = { stream: async (messages, { onDelta }) => { onDelta('still fine', false); return 'still fine'; } };
+    await performStreamingTurn({
+      messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+      documents: DOCUMENTS,
+      hermes,
+      hindsight: DEEP_EVIDENCE_HINDSIGHT,
+      res,
+      intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+      reasonIQ: async () => { throw new Error('boom'); },
+    });
+    await flushBackground();
+    assert.deepEqual(unhandled, []);
+    assert.match(res.written.join(''), /still fine/);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+test('deferred reasoning: a shallow turn still resolves ReasonIQ inline, before the capability', async () => {
+  const order = [];
+  const hermes = { stream: async (messages, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'ok'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Hoi Gaia' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'greet', status: 'accepted' }),
+    reasonIQ: async () => { order.push('reasonIQ'); return { reasoningDepth: 'shallow' }; },
+  });
+  assert.deepEqual(order.slice(0, 1), ['reasonIQ']);
+});

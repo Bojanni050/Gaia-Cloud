@@ -12,6 +12,9 @@
  * may carry a prefix (timestamps, container names); the first `{` onwards is
  * parsed and anything that is not a turn.done event is ignored.
  *
+ * A `reasoning_background` event (deferred deep reasoning, logged after the
+ * reply) is summarized on a separate line, since it is outside turn.done.
+ *
  * Output: per-stage count / mean / p50 / p95 / max plus each stage's share of
  * the mean total, so it is clear whether the time sits in Logos (intent,
  * retrieval, reasoning, decision) or in the final generator (capability).
@@ -35,6 +38,21 @@ function parseTurnDone(text) {
     try {
       const e = JSON.parse(line.slice(start));
       if (e && e.kind === 'gaia.timing' && e.stage === 'turn.done') events.push(e);
+    } catch (_) { /* not a JSON line */ }
+  }
+  return events;
+}
+
+// Deferred deep reasoning runs AFTER the reply (turn.js), so it is not part of
+// any turn.done total; it is reported on its own line.
+function parseBackgroundReasoning(text) {
+  const events = [];
+  for (const line of text.split(/\r?\n/)) {
+    const start = line.indexOf('{');
+    if (start === -1 || !line.includes('reasoning_background')) continue;
+    try {
+      const e = JSON.parse(line.slice(start));
+      if (e && e.kind === 'gaia.timing' && e.stage === 'reasoning_background') events.push(e);
     } catch (_) { /* not a JSON line */ }
   }
   return events;
@@ -90,7 +108,7 @@ function summarize(events) {
 const fmt = (n) => (n === null || n === undefined ? '-' : Math.round(n).toString());
 const pct = (n) => (n === null || n === undefined ? '-' : `${Math.round(n * 100)}%`);
 
-function render(summary) {
+function render(summary, background = null) {
   const out = [];
   out.push(`Turns: ${summary.turns}`);
   const header = ['stage', 'n', 'mean', 'p50', 'p95', 'max', 'share'];
@@ -107,6 +125,10 @@ function render(summary) {
     if (ri === 0) out.push(widths.map((w) => '-'.repeat(w)).join('  '));
   }
   out.push('(ms; share = stage time / total time over all turns; mean/p50/p95 only cover turns where the stage ran)');
+
+  if (background) {
+    out.push('', `Deep reasoning in background, after the reply (not in TOTAL): n=${background.count} mean=${fmt(background.mean)} p95=${fmt(background.p95)} max=${fmt(background.max)} ms`);
+  }
 
   if (summary.capabilities.length > 0) {
     out.push('', 'Capabilities (ms):');
@@ -144,9 +166,10 @@ function main(argv) {
     console.error('No turn.done events found.');
     process.exit(1);
   }
-  console.log(render(summarize(events)));
+  const background = stats(parseBackgroundReasoning(text).map((e) => e.durationMs));
+  console.log(render(summarize(events), background));
 }
 
 if (require.main === module) main(process.argv);
 
-module.exports = { parseTurnDone, summarize, render };
+module.exports = { parseTurnDone, parseBackgroundReasoning, summarize, render };

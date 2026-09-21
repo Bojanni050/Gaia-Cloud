@@ -41,7 +41,7 @@ const {
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
-const { evaluate: evaluateReasoning } = require('./logos/reasonIQ');
+const { evaluate: evaluateReasoning, decideReasoningDepth, pendingDeepResult } = require('./logos/reasonIQ');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -503,28 +503,25 @@ async function runTurnCore({
   }
 
   // Logos: ReasonIQ consumes the IntentDecision plus the assembled evidence.
-  // Awaited: the Decision Engine needs its output (reasoningDepth,
-  // sufficiency, gaps) to route the turn. A reasoning failure degrades to
-  // `reasoningResult: null`, same posture as intentDecision above.
-  let reasoningResult = null;
-  timing.start('reasoniq');
-  try {
-    reasoningResult = await reasonIQ(
-      {
-        text: userText,
-        intentDecision,
-        conversationContext: messages,
-        evidence,
-        ...(hypothesisRuntime ? { existingHypotheses } : {}),
-        contextId: conversationId,
-      },
-      { logger: decisionLogger }
-    );
-  } catch (_) {
-    // A reasoning failure degrades to `reasoningResult: null`, never
-    // allowed to take down the turn.
-  }
-  timing.end('reasoniq');
+  //
+  // The Decision Engine reads exactly one thing from ReasonIQ before the
+  // reply: `reasoningDepth` (deep → Hermes; the decision.reasoning label).
+  // That depth comes from a free heuristic, so when it says 'deep' the
+  // expensive model call is DEFERRED: the turn routes on a routing-only
+  // result (pendingDeepResult) and the real call runs after the reply
+  // (backgroundReasoning below), feeding the hypothesis lifecycle exactly
+  // as before — just no longer inside the user's wait. A shallow turn still
+  // resolves inline (it makes no model call). A reasoning failure degrades
+  // to `reasoningResult: null`, same posture as intentDecision above.
+  const reasoningInput = {
+    text: userText,
+    intentDecision,
+    conversationContext: messages,
+    evidence,
+    ...(hypothesisRuntime ? { existingHypotheses } : {}),
+    contextId: conversationId,
+  };
+  const deferDeepReasoning = decideReasoningDepth(reasoningInput) === 'deep';
 
   // The structured result flows into the manager (lifecycle/policy/promotion
   // via its injected sink → Hindsight adapter). Best-effort: persistence or
@@ -538,9 +535,10 @@ async function runTurnCore({
   // judge hypothesis matters — a memory-unworthy REQUEST can still yield
   // legitimate analysis products, which are Gaia-knowledge, not
   // conversational memory.
-  let durableSignaturesBefore = null;
   const patternGateOpen = !memoryDecision || shouldRetainToHindsight(memoryDecision);
-  if (hypothesisRuntime && reasoningResult) {
+  const applyReasoning = (result) => {
+    if (!hypothesisRuntime || !result) return;
+    let durableSignaturesBefore = null;
     try {
       // Pattern-formation gate input (0.4): which durable hypotheses existed
       // BEFORE applying this turn's updates — a plain conversational turn
@@ -552,7 +550,7 @@ async function runTurnCore({
       );
     } catch (_) {}
     try {
-      hypothesisRuntime.manager.applyReasoningResult(reasoningResult);
+      hypothesisRuntime.manager.applyReasoningResult(result);
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
     }
@@ -575,7 +573,22 @@ async function runTurnCore({
         console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
       }
     }
+  };
+
+  let reasoningResult = null;
+  timing.start('reasoniq');
+  if (deferDeepReasoning) {
+    reasoningResult = pendingDeepResult(evidence);
+  } else {
+    try {
+      reasoningResult = await reasonIQ(reasoningInput, { logger: decisionLogger });
+    } catch (_) {
+      // A reasoning failure degrades to `reasoningResult: null`, never
+      // allowed to take down the turn.
+    }
   }
+  timing.end('reasoniq');
+  if (!deferDeepReasoning) applyReasoning(reasoningResult);
 
   // Gaia decides (decision/decisionEngine.js); the Orchestrator executes
   // exactly that decision (orchestration/orchestrator.js) — the Orchestrator
@@ -740,13 +753,31 @@ async function runTurnCore({
   }
   timing.end('capability');
 
+  // Deferred deep reasoning: the reply is fully produced by now (streamed
+  // deltas included), so the model call and hypothesis application run
+  // outside the user's wait. Never rejects; callers may ignore the promise
+  // (tests await it). It runs even when the capability produced no reply —
+  // the analysis is Gaia-knowledge, not part of the reply.
+  const backgroundReasoning = deferDeepReasoning
+    ? (async () => {
+      timing.start('reasoning_background');
+      try {
+        const result = await reasonIQ(reasoningInput, { logger: decisionLogger });
+        timing.end('reasoning_background', { reasoningDepth: result && result.reasoningDepth });
+        applyReasoning(result);
+      } catch (err) {
+        timing.fail('reasoning_background', (err && err.constructor && err.constructor.name) || 'Error');
+      }
+    })()
+    : Promise.resolve();
+
   // Response Engine seam: both transports share resolveReplyText's judgment
   // of what the ExecutionResult means as text. Null ⇒ the caller's transport
   // reports the calm failure (502 body / emitter.fail()) and NO reflection
   // or history side effects run — identical memory semantics on failure.
   const replyText = resolveReplyText(executionResult);
   if (typeof replyText !== 'string' || replyText.length === 0) {
-    return { decision, executionResult, replyText: null };
+    return { decision, executionResult, replyText: null, backgroundReasoning };
   }
 
   // Capability-outcome override: Memoryworthiness 0.1 scores the user's
@@ -796,7 +827,7 @@ async function runTurnCore({
     capabilities: capabilitiesSummary.length > 0 ? capabilitiesSummary : undefined,
   });
 
-  return { decision, executionResult, replyText, timing };
+  return { decision, executionResult, replyText, timing, backgroundReasoning };
 }
 
 /**
