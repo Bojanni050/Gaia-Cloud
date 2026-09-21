@@ -7,23 +7,30 @@
 <style>
   :root {
     color-scheme: dark;
-    --bg: #020617;
-    --card: #0f172a;
-    --card-2: #0b1220;
-    --input: #1e293b;
-    --border: #334155;
-    --border-soft: #1e293b;
-    --text: #f1f5f9;
-    --text-dim: #94a3b8;
-    --text-faint: #64748b;
-    --teal: #14b8a6;
-    --teal-text: #5eead4;
-    --amber-text: #fcd34d;
-    --cyan-text: #67e8f9;
-    --violet-text: #c4b5fd;
-    --blue-text: #93c5fd;
-    --rose-text: #fda4af;
-    --fuchsia-text: #f0abfc;
+    /* Gaia's own palette (ported from gaia-desktop's styles.css :root) —
+       warm near-black brown, cream text, gold accent. */
+    --bg: #16130e;
+    --card: #1c1811;
+    --card-2: #221d15;
+    --input: #221d15;
+    --border: rgba(236, 230, 218, 0.13);
+    --border-soft: rgba(236, 230, 218, 0.07);
+    --text: #ece6da;
+    --text-dim: #a79e8e;
+    --text-faint: #6f675a;
+    --accent: #cba36a;
+    --accent-soft: rgba(203, 163, 106, 0.14);
+    --accent-line: rgba(203, 163, 106, 0.3);
+    --accent-ink: #1c1811;
+    /* Role accents — a warm, low-saturation earth-tone family instead of
+       cool neon, so each role card reads as distinct but still "Gaia". */
+    --gold: #cba36a;     /* Generation */
+    --rust: #c2794f;     /* Reasoning */
+    --sage: #9cae7c;     /* Vision */
+    --clay: #c08a85;     /* Classification */
+    --bronze: #a9765a;   /* Voice */
+    --ok: #7fbf8f;
+    --err: #d98a8a;
   }
   * { box-sizing: border-box; }
   body {
@@ -48,19 +55,19 @@
     font-size: 0.88rem; font-family: inherit;
   }
   input::placeholder { color: var(--text-faint); }
-  input:focus, select:focus { outline: none; border-color: #22d3ee88; }
+  input:focus, select:focus { outline: none; border-color: var(--accent-line); }
 
   button {
-    background: var(--teal); color: #022c26; border: none; border-radius: 0.85rem;
+    background: var(--accent); color: var(--accent-ink); border: none; border-radius: 0.85rem;
     padding: 0.55rem 1.1rem; font-size: 0.8rem; font-weight: 700; cursor: pointer;
     margin-top: 0.7rem; margin-right: 0.5rem;
   }
-  button.secondary { background: #1e293bdd; color: var(--text); border: 1px solid var(--border); }
+  button.secondary { background: var(--card-2); color: var(--text); border: 1px solid var(--border); }
   button:disabled { opacity: 0.45; cursor: default; }
 
   .status { font-size: 0.78rem; margin-top: 0.6rem; min-height: 1.1em; }
-  .status.ok { color: #7fd8a3; }
-  .status.err { color: #f0a3a3; }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
   .hint { font-size: 0.74rem; color: var(--text-faint); margin-top: 0.4rem; line-height: 1.4; }
 
   .panel {
@@ -76,28 +83,28 @@
 
   .role-card { border-radius: 1.25rem; border: 1px solid; padding: 1.25rem 1.35rem 1.4rem; display: flex; flex-direction: column; }
   .role-actions-row.push-bottom { margin-top: auto; padding-top: 1.4rem; }
-  .role-card.amber   { border-color: #f59e0b40; background: #f59e0b0d; }
-  .role-card.cyan    { border-color: #06b6d440; background: #06b6d40d; }
-  .role-card.violet  { border-color: #8b5cf640; background: #8b5cf60d; }
-  .role-card.blue    { border-color: #3b82f640; background: #3b82f60d; }
-  .role-card.rose    { border-color: #f43f5e40; background: #f43f5e0d; }
+  .role-card.amber   { border-color: color-mix(in srgb, var(--gold) 40%, transparent);   background: color-mix(in srgb, var(--gold) 6%, transparent); }
+  .role-card.cyan    { border-color: color-mix(in srgb, var(--rust) 40%, transparent);   background: color-mix(in srgb, var(--rust) 6%, transparent); }
+  .role-card.violet  { border-color: color-mix(in srgb, var(--sage) 40%, transparent);   background: color-mix(in srgb, var(--sage) 6%, transparent); }
+  .role-card.blue    { border-color: color-mix(in srgb, var(--clay) 40%, transparent);   background: color-mix(in srgb, var(--clay) 6%, transparent); }
+  .role-card.rose    { border-color: color-mix(in srgb, var(--bronze) 40%, transparent); background: color-mix(in srgb, var(--bronze) 6%, transparent); }
 
   .role-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.1rem; }
   .role-icon { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; display: flex; align-items: center; justify-content: center; }
   .role-icon svg { width: 1.2rem; height: 1.2rem; }
-  .role-icon.amber  { background: #f59e0b26; color: var(--amber-text); }
-  .role-icon.cyan   { background: #06b6d426; color: var(--cyan-text); }
-  .role-icon.violet { background: #8b5cf626; color: var(--violet-text); }
-  .role-icon.blue   { background: #3b82f626; color: var(--blue-text); }
-  .role-icon.rose   { background: #f43f5e26; color: var(--rose-text); }
+  .role-icon.amber  { background: color-mix(in srgb, var(--gold) 18%, transparent);   color: var(--gold); }
+  .role-icon.cyan   { background: color-mix(in srgb, var(--rust) 18%, transparent);   color: var(--rust); }
+  .role-icon.violet { background: color-mix(in srgb, var(--sage) 18%, transparent);   color: var(--sage); }
+  .role-icon.blue   { background: color-mix(in srgb, var(--clay) 18%, transparent);   color: var(--clay); }
+  .role-icon.rose   { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
 
   .role-status { text-align: right; }
   .role-status-badge {
     display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em;
     padding: 0.2rem 0.55rem; border-radius: 0.5rem; text-transform: uppercase; border: 1px solid;
   }
-  .role-status-badge.active { border-color: #2dd4bf60; background: #2dd4bf1a; color: var(--teal-text); }
-  .role-status-badge.inactive { border-color: var(--border); background: #1e293b80; color: var(--text-dim); }
+  .role-status-badge.active { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+  .role-status-badge.inactive { border-color: var(--border); background: var(--card-2); color: var(--text-dim); }
   .role-status-note { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.3rem; }
 
   .role-title { font-size: 1.35rem; font-weight: 700; color: var(--text); margin: 0 0 0.2rem; }
@@ -107,7 +114,7 @@
 
   .footer-cta { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding-top: 0.5rem; }
   .footer-cta button {
-    background: #f1f5f9; color: #0f172a; border-radius: 0.85rem;
+    background: var(--text); color: var(--bg); border-radius: 0.85rem;
     padding: 0.7rem 1.4rem; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.5rem;
   }
   .footer-cta button:hover { background: #ffffff; }
@@ -119,7 +126,7 @@
     font-size: 0.72rem; padding: 0.2rem 0.6rem; border-radius: 999px;
     border: 1px solid var(--border); color: var(--text-dim);
   }
-  .cap-chip.active { background: #2dd4bf1a; color: var(--teal-text); border-color: #2dd4bf40; }
+  .cap-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 
   /* --- Model dropdown (searchable, priced) --- */
   .model-dd { position: relative; }
@@ -128,9 +135,9 @@
     background: var(--input); border: 1px solid var(--border); border-radius: 1rem;
     padding: 0.6rem 0.8rem; cursor: pointer; box-sizing: border-box;
   }
-  .model-dd-trigger:hover { border-color: #22d3ee55; }
+  .model-dd-trigger:hover { border-color: var(--accent-line); }
   .model-dd-trigger .price {
-    width: 4.4rem; flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--teal-text); text-align: right;
+    width: 4.4rem; flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--accent); text-align: right;
   }
   .model-dd-trigger .info { flex: 1; min-width: 0; }
   .model-dd-trigger .name { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -142,7 +149,7 @@
   .model-dd-panel {
     position: absolute; z-index: 40; margin-top: 0.5rem; width: 100%;
     background: var(--card); border: 1px solid var(--border); border-radius: 1.25rem;
-    box-shadow: 0 20px 40px -12px #000a; display: none; flex-direction: column;
+    box-shadow: 0 20px 40px -12px rgba(0,0,0,0.6); display: none; flex-direction: column;
     max-height: 24rem; padding: 0.65rem;
   }
   .model-dd-panel:not([hidden]) { display: flex; }
@@ -157,44 +164,44 @@
     display: flex; gap: 0.65rem; border-radius: 1rem; border: 1px solid var(--border-soft);
     background: var(--card-2); padding: 0.55rem 0.65rem; cursor: pointer;
   }
-  .model-dd-opt:hover, .model-dd-opt.hi { border-color: #22d3ee55; background: #1e293b80; }
-  .model-dd-opt.sel { box-shadow: inset 0 0 0 1px #2dd4bf55; }
+  .model-dd-opt:hover, .model-dd-opt.hi { border-color: var(--accent-line); background: var(--card); }
+  .model-dd-opt.sel { box-shadow: inset 0 0 0 1px var(--accent-line); }
   .model-dd-opt .prices { width: 3.6rem; flex-shrink: 0; font-size: 0.66rem; color: var(--text-faint); line-height: 1.35; padding-top: 0.1rem; }
-  .model-dd-opt .prices b { color: var(--cyan-text); font-weight: 600; }
+  .model-dd-opt .prices b { color: var(--accent); font-weight: 600; }
   .model-dd-opt .body { min-width: 0; flex: 1; border-left: 1px solid var(--border-soft); padding-left: 0.65rem; }
   .model-dd-opt .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
   .model-dd-opt .mname { font-size: 0.82rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .model-dd-opt .free-tag { font-size: 0.68rem; color: var(--teal-text); flex-shrink: 0; }
+  .model-dd-opt .free-tag { font-size: 0.68rem; color: var(--accent); flex-shrink: 0; }
   .model-dd-opt .tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
   .tag { font-size: 0.62rem; padding: 0.1rem 0.45rem; border-radius: 0.5rem; border: 1px solid; line-height: 1.5; white-space: nowrap; }
-  .tag.provider { background: #8b5cf626; color: var(--violet-text); border-color: #8b5cf640; }
-  .tag.vision { background: #14b8a626; color: var(--teal-text); border-color: #14b8a640; }
-  .tag.reasoning { background: #d946ef26; color: var(--fuchsia-text); border-color: #d946ef40; }
-  .tag.function_calling { background: #f59e0b26; color: var(--amber-text); border-color: #f59e0b40; }
-  .tag.audio { background: #06b6d426; color: var(--cyan-text); border-color: #06b6d440; }
-  .tag.video { background: #f43f5e26; color: var(--rose-text); border-color: #f43f5e40; }
-  .tag.web_search { background: #3b82f626; color: var(--blue-text); border-color: #3b82f640; }
-  .tag.fim, .tag.fine_tuning { background: #64748b26; color: var(--text-dim); border-color: #64748b40; }
+  .tag.provider { background: color-mix(in srgb, var(--text-dim) 16%, transparent); color: var(--text-dim); border-color: color-mix(in srgb, var(--text-dim) 35%, transparent); }
+  .tag.vision { background: color-mix(in srgb, var(--sage) 18%, transparent); color: var(--sage); border-color: color-mix(in srgb, var(--sage) 40%, transparent); }
+  .tag.reasoning { background: color-mix(in srgb, var(--rust) 18%, transparent); color: var(--rust); border-color: color-mix(in srgb, var(--rust) 40%, transparent); }
+  .tag.function_calling { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+  .tag.audio { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); border-color: color-mix(in srgb, var(--bronze) 40%, transparent); }
+  .tag.video { background: color-mix(in srgb, var(--clay) 18%, transparent); color: var(--clay); border-color: color-mix(in srgb, var(--clay) 40%, transparent); }
+  .tag.web_search { background: color-mix(in srgb, var(--gold) 12%, var(--sage) 12%); color: var(--text-dim); border-color: var(--border); }
+  .tag.fim, .tag.fine_tuning { background: var(--card-2); color: var(--text-faint); border-color: var(--border); }
   .model-dd-opt .context { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.25rem; }
   .model-dd-opt .desc {
     font-size: 0.72rem; color: var(--text-dim); margin-top: 0.35rem; line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   .model-dd-read-more {
-    all: unset; font-size: 0.68rem; color: var(--cyan-text); text-decoration: underline;
+    all: unset; font-size: 0.68rem; color: var(--accent); text-decoration: underline;
     text-underline-offset: 2px; cursor: pointer; margin-top: 0.2rem; display: inline-block;
   }
 
   /* --- Model details modal --- */
   .model-modal-backdrop {
-    position: fixed; inset: 0; z-index: 9999; background: #020617cc; backdrop-filter: blur(6px);
+    position: fixed; inset: 0; z-index: 9999; background: rgba(22, 19, 14, 0.8); backdrop-filter: blur(6px);
     display: flex; align-items: center; justify-content: center; padding: 1rem;
   }
   .model-modal-backdrop[hidden] { display: none; }
   .model-modal {
     width: 100%; max-width: 34rem; max-height: 90vh; overflow-y: auto;
     background: var(--card); border: 1px solid var(--border); border-radius: 1.5rem;
-    box-shadow: 0 20px 60px -10px #000c;
+    box-shadow: 0 20px 60px -10px rgba(0,0,0,0.75);
   }
   .model-modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1.1rem 1.3rem; border-bottom: 1px solid var(--border-soft); }
   .model-modal-title { font-size: 1rem; font-weight: 700; color: var(--text); }
@@ -211,9 +218,9 @@
   .decision-row { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 0.9rem; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
   .decision-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
   .decision-badge { font-size: 0.65rem; font-weight: 700; padding: 0.12rem 0.5rem; border-radius: 999px; letter-spacing: 0.02em; }
-  .decision-badge.intentiq { background: #3b82f626; color: var(--blue-text); }
-  .decision-badge.reasoniq { background: #06b6d426; color: var(--cyan-text); }
-  .decision-badge.llm-call { background: #f43f5e26; color: var(--rose-text); }
+  .decision-badge.intentiq { background: color-mix(in srgb, var(--clay) 18%, transparent); color: var(--clay); }
+  .decision-badge.reasoniq { background: color-mix(in srgb, var(--rust) 18%, transparent); color: var(--rust); }
+  .decision-badge.llm-call { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
   .decision-time { color: var(--text-faint); font-size: 0.72rem; }
   .decision-summary { color: var(--text); }
   .decision-input { color: var(--text-dim); margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
