@@ -55,15 +55,19 @@ function createIntentModelStore(options = {}) {
    * omitting it (vs. passing an empty string) keeps the previously stored
    * key, so re-saving a model choice never requires re-entering the key
    * (same convention as reasoningModelStore.js's saveConfig).
-   * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string }} partial
+   * `useMainProvider` borrows providerStore.js's shared provider/baseUrl/
+   * apiKey instead of requiring a second copy of the same credentials —
+   * see intentModelConfigResolver.js for how the two combine.
+   * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string, useMainProvider?: boolean }} partial
    */
   function saveConfig(partial) {
-    const current = readRaw() || { provider: '', baseUrl: '', model: '', apiKey: '' };
+    const current = readRaw() || { provider: '', baseUrl: '', model: '', apiKey: '', useMainProvider: false };
     const next = {
       provider: partial.provider !== undefined ? partial.provider : current.provider,
       baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : current.baseUrl,
       model: partial.model !== undefined ? partial.model : current.model,
       apiKey: partial.apiKey !== undefined ? partial.apiKey : current.apiKey,
+      useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(current.useMainProvider),
       updatedAt: new Date().toISOString(),
     };
     writeRaw(next);
@@ -74,7 +78,7 @@ function createIntentModelStore(options = {}) {
   function getMaskedConfig() {
     const config = readRaw();
     if (!config) {
-      return { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, updatedAt: null };
+      return { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, useMainProvider: false, updatedAt: null };
     }
     return {
       provider: config.provider || null,
@@ -82,6 +86,7 @@ function createIntentModelStore(options = {}) {
       model: config.model || null,
       hasApiKey: Boolean(config.apiKey),
       maskedApiKey: maskKey(config.apiKey),
+      useMainProvider: Boolean(config.useMainProvider),
       updatedAt: config.updatedAt || null,
     };
   }

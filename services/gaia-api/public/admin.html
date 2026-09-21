@@ -246,6 +246,39 @@
     <p class="hint" style="margin-top:0.5rem;">Derived from configured models. No credentials exposed.</p>
   </div>
 
+  <!-- Main Provider — shared credentials the other cards can reuse -->
+  <div class="panel">
+    <h2>Main Provider</h2>
+    <p class="section-sub">Configure one provider here, then pick "Use Main Provider" in Reasoning, Classification or Voice below instead of re-entering the same base URL and API key on every card.</p>
+
+    <label for="providerSelect">Provider</label>
+    <select id="providerSelect">
+      <option value="">— select provider —</option>
+      <option value="edenai">EdenAI</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="mistral">Mistral</option>
+      <option value="alibaba">Alibaba Cloud (Model Studio)</option>
+      <option value="nvidia">NVIDIA (NIM / API catalog)</option>
+      <option value="litellm">LiteLLM</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+
+    <label for="baseUrl">Base URL</label>
+    <input id="baseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+
+    <label for="apiKey">API Key</label>
+    <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+    <p class="hint" id="keyHint">No key saved yet.</p>
+
+    <div class="role-actions-row" style="justify-content:flex-start;">
+      <button id="saveProviderBtn">Save provider</button>
+      <button id="retrieveModelsBtn" class="secondary">Retrieve models</button>
+    </div>
+    <div class="status" id="providerStatus"></div>
+  </div>
+
   <!-- Role cards -->
   <div class="role-grid">
 
@@ -260,34 +293,7 @@
         </div>
       </div>
       <p class="role-title">Generation</p>
-      <p class="role-desc">Gaia's native voice — the model that writes her replies when a turn doesn't route through Hermes.</p>
-
-      <label for="providerSelect">Provider</label>
-      <select id="providerSelect">
-        <option value="">— select provider —</option>
-        <option value="edenai">EdenAI</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="openai">OpenAI</option>
-        <option value="anthropic">Anthropic</option>
-        <option value="mistral">Mistral</option>
-        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-        <option value="litellm">LiteLLM</option>
-        <option value="custom">Custom (OpenAI-compatible)</option>
-      </select>
-
-      <label for="baseUrl">Base URL</label>
-      <input id="baseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
-
-      <label for="apiKey">API Key</label>
-      <input id="apiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-      <p class="hint" id="keyHint">No key saved yet.</p>
-
-      <div class="role-actions-row" style="justify-content:flex-start;">
-        <button id="saveProviderBtn">Save provider</button>
-        <button id="retrieveModelsBtn" class="secondary">Retrieve models</button>
-      </div>
-      <div class="status" id="providerStatus"></div>
+      <p class="role-desc">Gaia's native voice — the model that writes her replies when a turn doesn't route through Hermes. Always uses the Main Provider above.</p>
 
       <label>Model</label>
       <div id="genDropdown"></div>
@@ -314,6 +320,7 @@
       <label for="riqProviderSelect">Provider</label>
       <select id="riqProviderSelect">
         <option value="">— select provider —</option>
+        <option value="__main__">— Use Main Provider —</option>
         <option value="openrouter">OpenRouter</option>
         <option value="edenai">EdenAI</option>
         <option value="openai">OpenAI</option>
@@ -324,12 +331,15 @@
         <option value="custom">Custom (OpenAI-compatible)</option>
       </select>
 
-      <label for="riqBaseUrl">Base URL</label>
-      <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+      <div id="riqCredentialFields">
+        <label for="riqBaseUrl">Base URL</label>
+        <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
 
-      <label for="riqApiKey">API key</label>
-      <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-      <p class="hint" id="riqKeyHint">No key saved yet.</p>
+        <label for="riqApiKey">API key</label>
+        <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+        <p class="hint" id="riqKeyHint">No key saved yet.</p>
+      </div>
+      <p class="hint" id="riqMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
 
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="riqSaveConfigBtn">Save config</button>
@@ -385,6 +395,7 @@
       <label for="iiqProviderSelect">Provider</label>
       <select id="iiqProviderSelect">
         <option value="">— select provider —</option>
+        <option value="__main__">— Use Main Provider —</option>
         <option value="openrouter">OpenRouter</option>
         <option value="edenai">EdenAI</option>
         <option value="openai">OpenAI</option>
@@ -395,12 +406,15 @@
         <option value="custom">Custom (OpenAI-compatible)</option>
       </select>
 
-      <label for="iiqBaseUrl">Base URL</label>
-      <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
+      <div id="iiqCredentialFields">
+        <label for="iiqBaseUrl">Base URL</label>
+        <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
 
-      <label for="iiqApiKey">API key</label>
-      <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-      <p class="hint" id="iiqKeyHint">No key saved yet.</p>
+        <label for="iiqApiKey">API key</label>
+        <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+        <p class="hint" id="iiqKeyHint">No key saved yet.</p>
+      </div>
+      <p class="hint" id="iiqMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
 
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="iiqSaveConfigBtn">Save config</button>
@@ -434,18 +448,22 @@
       <label for="ttsProviderSelect">Provider</label>
       <select id="ttsProviderSelect">
         <option value="">— select provider —</option>
+        <option value="__main__">— Use Main Provider —</option>
         <option value="xiaomi">Xiaomi MiMo</option>
         <option value="openai">OpenAI</option>
         <option value="edenai">EdenAI</option>
         <option value="custom">Custom (OpenAI-compatible)</option>
       </select>
 
-      <label for="ttsBaseUrl">Base URL</label>
-      <input id="ttsBaseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="off">
+      <div id="ttsCredentialFields">
+        <label for="ttsBaseUrl">Base URL</label>
+        <input id="ttsBaseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="off">
 
-      <label for="ttsApiKey">API Key</label>
-      <input id="ttsApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-      <p class="hint" id="ttsKeyHint">No key saved yet.</p>
+        <label for="ttsApiKey">API Key</label>
+        <input id="ttsApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+        <p class="hint" id="ttsKeyHint">No key saved yet.</p>
+      </div>
+      <p class="hint" id="ttsMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
 
       <label for="ttsModel">Model</label>
       <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
@@ -509,6 +527,21 @@
       const defaultUrl = PROVIDER_BASE_URLS[providerEl.value];
       if (defaultUrl) baseUrlEl.value = defaultUrl;
     });
+  }
+
+  const USE_MAIN_PROVIDER = '__main__';
+
+  // Toggles a card's own baseUrl/apiKey fields on or off when "Use Main
+  // Provider" is selected, so credentials only ever have to live in one
+  // place (the Main Provider panel) if the operator wants that.
+  function wireMainProviderToggle(providerEl, credentialFieldsEl, mainHintEl) {
+    function apply() {
+      const usingMain = providerEl.value === USE_MAIN_PROVIDER;
+      credentialFieldsEl.style.display = usingMain ? 'none' : '';
+      mainHintEl.style.display = usingMain ? '' : 'none';
+    }
+    providerEl.addEventListener('change', apply);
+    apply();
   }
 
   function setStatus(el, text, ok) {
@@ -912,6 +945,7 @@
   // ============================================================
   const ttsProviderEl = $('ttsProviderSelect'), ttsBaseUrlEl = $('ttsBaseUrl'), ttsApiKeyEl = $('ttsApiKey');
   wireBaseUrlAutofill(ttsProviderEl, ttsBaseUrlEl);
+  wireMainProviderToggle(ttsProviderEl, $('ttsCredentialFields'), $('ttsMainHint'));
   const ttsModelEl = $('ttsModel'), ttsKeyHintEl = $('ttsKeyHint'), ttsStatusEl = $('ttsStatus');
   const saveTtsBtn = $('saveTtsBtn'), ttsBadgeEl = $('ttsBadge');
 
@@ -920,10 +954,14 @@
       const res = await fetch('/admin/api/tts/config', { headers: authHeaders() });
       if (!res.ok) return;
       const cfg = await res.json();
-      if (cfg.provider) ttsProviderEl.value = cfg.provider;
+      ttsProviderEl.value = cfg.useMainProvider ? USE_MAIN_PROVIDER : (cfg.provider || '');
+      ttsProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) ttsBaseUrlEl.value = cfg.baseUrl;
       if (cfg.model) ttsModelEl.value = cfg.model;
       ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
+        setStatus(ttsStatusEl, 'Main Provider has no API key saved yet.', false);
+      }
       setBadge(ttsBadgeEl, Boolean(cfg.model));
     } catch (_) { /* ignore */ }
   }
@@ -931,12 +969,17 @@
   saveTtsBtn.addEventListener('click', async () => {
     const provider = ttsProviderEl.value;
     if (!provider) { setStatus(ttsStatusEl, 'Select a TTS provider.', false); return; }
-    const baseUrl = ttsBaseUrlEl.value.trim();
-    if (!baseUrl) { setStatus(ttsStatusEl, 'Enter a base URL.', false); return; }
+    const useMainProvider = provider === USE_MAIN_PROVIDER;
     const model = ttsModelEl.value.trim();
     if (!model) { setStatus(ttsStatusEl, 'Enter a model.', false); return; }
-    const body = { provider, baseUrl, model };
-    if (ttsApiKeyEl.value.trim()) body.apiKey = ttsApiKeyEl.value.trim();
+    const body = { model, useMainProvider };
+    if (!useMainProvider) {
+      const baseUrl = ttsBaseUrlEl.value.trim();
+      if (!baseUrl) { setStatus(ttsStatusEl, 'Enter a base URL.', false); return; }
+      body.provider = provider;
+      body.baseUrl = baseUrl;
+      if (ttsApiKeyEl.value.trim()) body.apiKey = ttsApiKeyEl.value.trim();
+    }
     saveTtsBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/tts/config', {
@@ -964,6 +1007,7 @@
   // ============================================================
   const riqProviderEl = $('riqProviderSelect'), riqBaseUrlEl = $('riqBaseUrl'), riqApiKeyEl = $('riqApiKey');
   wireBaseUrlAutofill(riqProviderEl, riqBaseUrlEl);
+  wireMainProviderToggle(riqProviderEl, $('riqCredentialFields'), $('riqMainHint'));
   const riqKeyHintEl = $('riqKeyHint'), riqConfigStatusEl = $('riqConfigStatus');
   const riqSaveConfigBtn = $('riqSaveConfigBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn');
   const riqModelStatusEl = $('riqModelStatus'), riqSaveModelBtn = $('riqSaveModelBtn');
@@ -992,11 +1036,16 @@
       const cfg = await res.json();
       riqCurrentModel = cfg.model;
       riqCurrentVisionModel = cfg.visionModel;
-      if (cfg.provider) riqProviderEl.value = cfg.provider;
+      riqProviderEl.value = cfg.useMainProvider ? USE_MAIN_PROVIDER : (cfg.provider || '');
+      riqProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) riqBaseUrlEl.value = cfg.baseUrl;
-      riqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
-      riqVisionDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
+      riqDropdown.setProviderLabel(effectiveProviderLabel);
+      riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
+        setStatus(riqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
+      }
       if (cfg.model) {
         riqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
         riqDropdown.setValue(cfg.model);
@@ -1014,10 +1063,15 @@
   riqSaveConfigBtn.addEventListener('click', async () => {
     const provider = riqProviderEl.value;
     if (!provider) { setStatus(riqConfigStatusEl, 'Select a provider first.', false); return; }
-    const baseUrl = riqBaseUrlEl.value.trim();
-    if (!baseUrl) { setStatus(riqConfigStatusEl, 'Enter a base URL.', false); return; }
-    const body = { provider, baseUrl };
-    if (riqApiKeyEl.value.trim()) body.apiKey = riqApiKeyEl.value.trim();
+    const useMainProvider = provider === USE_MAIN_PROVIDER;
+    const body = { useMainProvider };
+    if (!useMainProvider) {
+      const baseUrl = riqBaseUrlEl.value.trim();
+      if (!baseUrl) { setStatus(riqConfigStatusEl, 'Enter a base URL.', false); return; }
+      body.provider = provider;
+      body.baseUrl = baseUrl;
+      if (riqApiKeyEl.value.trim()) body.apiKey = riqApiKeyEl.value.trim();
+    }
     riqSaveConfigBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/reasoniq/config', {
@@ -1026,10 +1080,11 @@
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
       riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      riqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
-      riqVisionDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
+      riqDropdown.setProviderLabel(effectiveProviderLabel);
+      riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
       riqApiKeyEl.value = '';
-      setStatus(riqConfigStatusEl, 'Config saved.', true);
+      setStatus(riqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);
     } catch (err) {
       setStatus(riqConfigStatusEl, 'Could not save config.', false);
     } finally {
@@ -1110,6 +1165,7 @@
   // ============================================================
   const iiqProviderEl = $('iiqProviderSelect'), iiqBaseUrlEl = $('iiqBaseUrl'), iiqApiKeyEl = $('iiqApiKey');
   wireBaseUrlAutofill(iiqProviderEl, iiqBaseUrlEl);
+  wireMainProviderToggle(iiqProviderEl, $('iiqCredentialFields'), $('iiqMainHint'));
   const iiqKeyHintEl = $('iiqKeyHint'), iiqConfigStatusEl = $('iiqConfigStatus'), iiqEnvHintEl = $('iiqEnvHint');
   const iiqSaveConfigBtn = $('iiqSaveConfigBtn'), iiqFetchModelsBtn = $('iiqFetchModelsBtn');
   const iiqModelStatusEl = $('iiqModelStatus'), iiqSaveModelBtn = $('iiqSaveModelBtn'), iiqBadgeEl = $('iiqBadge');
@@ -1134,10 +1190,14 @@
       if (!res.ok) return;
       const cfg = await res.json();
       iiqCurrentModel = cfg.model;
-      if (cfg.provider) iiqProviderEl.value = cfg.provider;
+      iiqProviderEl.value = cfg.useMainProvider ? USE_MAIN_PROVIDER : (cfg.provider || '');
+      iiqProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) iiqBaseUrlEl.value = cfg.baseUrl;
-      iiqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
+        setStatus(iiqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
+      }
       if (cfg.model) {
         iiqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
         iiqDropdown.setValue(cfg.model);
@@ -1150,10 +1210,15 @@
   iiqSaveConfigBtn.addEventListener('click', async () => {
     const provider = iiqProviderEl.value;
     if (!provider) { setStatus(iiqConfigStatusEl, 'Select a provider first.', false); return; }
-    const baseUrl = iiqBaseUrlEl.value.trim();
-    if (!baseUrl) { setStatus(iiqConfigStatusEl, 'Enter a base URL.', false); return; }
-    const body = { provider, baseUrl };
-    if (iiqApiKeyEl.value.trim()) body.apiKey = iiqApiKeyEl.value.trim();
+    const useMainProvider = provider === USE_MAIN_PROVIDER;
+    const body = { useMainProvider };
+    if (!useMainProvider) {
+      const baseUrl = iiqBaseUrlEl.value.trim();
+      if (!baseUrl) { setStatus(iiqConfigStatusEl, 'Enter a base URL.', false); return; }
+      body.provider = provider;
+      body.baseUrl = baseUrl;
+      if (iiqApiKeyEl.value.trim()) body.apiKey = iiqApiKeyEl.value.trim();
+    }
     iiqSaveConfigBtn.disabled = true;
     try {
       const res = await fetch('/admin/api/intentiq/config', {
@@ -1162,10 +1227,10 @@
       if (!res.ok) throw new Error(await res.text());
       const cfg = await res.json();
       iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      iiqDropdown.setProviderLabel(providerLabelFor(cfg.provider));
+      iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
       iiqApiKeyEl.value = '';
       renderIntentIqEnvHint(cfg);
-      setStatus(iiqConfigStatusEl, 'Config saved.', true);
+      setStatus(iiqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);
     } catch (err) {
       setStatus(iiqConfigStatusEl, 'Could not save config.', false);
     } finally {

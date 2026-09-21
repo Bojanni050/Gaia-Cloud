@@ -69,6 +69,7 @@ const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = requi
 const { createReasoningModelClient, readReasoningTimeoutMs } = require('./reasoningModelClient');
 const { resolveReasoningModelConfig } = require('./reasoningModelConfigResolver');
 const { createReasoningModelStore } = require('./reasoningModelStore');
+const { createProviderStore } = require('../providerStore');
 const { SCHEMA_VERSION, REASONER_VERSION } = require('./reasonModels');
 const { logReasoningResult } = require('./reasonLog');
 
@@ -262,7 +263,7 @@ function degradedResult(reason, modelConfigured, evidence = []) {
 async function evaluate(input, options = {}) {
   const correlationId = input.correlationId || crypto.randomUUID();
   const model = options.reasoningModel || createReasoningModelClient({
-    ...resolveReasoningModelConfig({ store: createReasoningModelStore() }),
+    ...resolveReasoningModelConfig({ store: createReasoningModelStore(), providerStore: createProviderStore() }),
     timeoutMs: readReasoningTimeoutMs(),
   });
   const modelConfigured = typeof model.isConfigured === 'function' ? model.isConfigured() : true;

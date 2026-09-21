@@ -39,13 +39,24 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
 }
 
 /**
- * Resolve TTS configuration — fully independent from the main provider.
+ * Resolve TTS configuration — independent from the main provider by
+ * default, but `tts.useMainProvider` borrows the same provider's own
+ * provider/baseUrl/apiKey instead of requiring a second copy of it.
  * @param {{ getConfig: Function }} providerStore
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string }|null}
  */
 function resolveTtsConfig(providerStore, env = process.env) {
   const stored = providerStore ? providerStore.getConfig() : null;
+
+  if (stored && stored.tts && stored.tts.useMainProvider && stored.tts.model && stored.apiKey) {
+    return {
+      provider: stored.provider || 'openrouter',
+      baseUrl: stored.baseUrl || '',
+      model: stored.tts.model,
+      apiKey: stored.apiKey,
+    };
+  }
 
   if (stored && stored.tts && stored.tts.provider && stored.tts.model) {
     return {

@@ -65,3 +65,29 @@ test('resolveVisionModelConfig falls back to env vars when no store/apiKey is av
   assert.equal(config.baseUrl, 'http://x');
   assert.equal(config.model, 'm');
 });
+
+// --- useMainProvider (borrows providerStore.js's shared credentials) ---
+
+test('resolver: useMainProvider borrows the main provider store\'s credentials', () => {
+  const store = fakeStore({ model: 'anthropic/claude-3.5-sonnet', useMainProvider: true, apiKey: '' });
+  const providerStore = fakeStore({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-main-key' });
+  const config = resolveReasoningModelConfig({ store, providerStore, env: {} });
+  assert.equal(config.provider, 'openrouter');
+  assert.equal(config.apiKey, 'sk-main-key');
+  assert.equal(config.model, 'anthropic/claude-3.5-sonnet');
+});
+
+test('resolver: useMainProvider falls back to env vars when the main provider has no apiKey', () => {
+  const store = fakeStore({ model: 'x', useMainProvider: true });
+  const providerStore = fakeStore(null);
+  const config = resolveReasoningModelConfig({ store, providerStore, env: { REASONIQ_MODEL_BASE_URL: 'http://env', REASONIQ_MODEL_NAME: 'env-model' } });
+  assert.equal(config.baseUrl, 'http://env');
+});
+
+test('resolveVisionModelConfig: useMainProvider borrows main credentials and still applies visionModel', () => {
+  const store = fakeStore({ model: 'anthropic/claude-3.5-sonnet', visionModel: 'openai/gpt-4o-mini', useMainProvider: true });
+  const providerStore = fakeStore({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-main-key' });
+  const config = resolveVisionModelConfig({ store, providerStore, env: {} });
+  assert.equal(config.apiKey, 'sk-main-key');
+  assert.equal(config.model, 'openai/gpt-4o-mini');
+});

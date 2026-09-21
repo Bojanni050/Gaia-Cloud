@@ -12,7 +12,11 @@
 const { readIntentModelConfig } = require('./intentModelClient');
 
 /**
- * @param {{ store?: ReturnType<import('./intentModelStore').createIntentModelStore>, env?: NodeJS.ProcessEnv }} [options]
+ * @param {{
+ *   store?: ReturnType<import('./intentModelStore').createIntentModelStore>,
+ *   providerStore?: ReturnType<import('../providerStore').createProviderStore>,
+ *   env?: NodeJS.ProcessEnv,
+ * }} [options]
  * @returns {{ baseUrl: string, model: string, authToken: string }}
  */
 function resolveIntentModelConfig(options = {}) {
@@ -20,6 +24,20 @@ function resolveIntentModelConfig(options = {}) {
   const envConfig = readIntentModelConfig(env);
 
   const stored = options.store ? options.store.getConfig() : null;
+
+  // "Use the main provider" — borrow providerStore.js's shared credentials
+  // instead of requiring a second copy of the same API key.
+  if (stored && stored.useMainProvider) {
+    const main = options.providerStore ? options.providerStore.getConfig() : null;
+    if (main && main.apiKey) {
+      return {
+        baseUrl: main.baseUrl || '',
+        model: stored.model || '',
+        authToken: main.apiKey,
+      };
+    }
+  }
+
   if (stored && stored.apiKey) {
     return {
       baseUrl: stored.baseUrl || '',

@@ -26,6 +26,7 @@
 const { createReasoningModelClient } = require('./logos/reasoningModelClient');
 const { resolveVisionModelConfig } = require('./logos/reasoningModelConfigResolver');
 const { createReasoningModelStore } = require('./logos/reasoningModelStore');
+const { createProviderStore } = require('./providerStore');
 
 const IMAGE_MIME_PREFIX = 'image/';
 
@@ -54,7 +55,7 @@ function isImageMime(mimeType) {
  * @returns {Promise<string|null>} disclaimer-prefixed extracted text, or null if unavailable
  */
 async function resolveImageText(buffer, mimeType, options = {}) {
-  const model = options.model || createReasoningModelClient(resolveVisionModelConfig({ store: createReasoningModelStore() }));
+  const model = options.model || createReasoningModelClient(resolveVisionModelConfig({ store: createReasoningModelStore(), providerStore: createProviderStore() }));
 
   if (typeof model.isConfigured === 'function' && !model.isConfigured()) {
     return null;

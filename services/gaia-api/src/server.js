@@ -193,7 +193,7 @@ function createApp(env = process.env) {
   // classification) exactly when intentModelClient.js's own createFromEnv
   // would, i.e. no base URL configured at all.
   function getEffectiveIntentModel() {
-    const resolved = resolveIntentModelConfig({ store: intentModelStore, env });
+    const resolved = resolveIntentModelConfig({ store: intentModelStore, providerStore, env });
     return isIntentModelConfigured(resolved) ? createIntentModelClient(resolved) : undefined;
   }
 

@@ -154,6 +154,7 @@ test('DEFAULT_TTS contains empty TTS defaults', () => {
     baseUrl: '',
     apiKey: '',
     model: '',
+    useMainProvider: false,
   });
 });
 

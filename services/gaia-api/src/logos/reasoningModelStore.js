@@ -75,16 +75,20 @@ function createReasoningModelStore(options = {}) {
    * there's no reason to assume a second OpenRouter account for it.
    * Falls back to `model` wherever it's left unset (see
    * reasoningModelConfigResolver.js's resolveVisionModelConfig).
-   * @param {{ provider?: string, baseUrl?: string, model?: string, visionModel?: string, apiKey?: string }} partial
+   * `useMainProvider` borrows providerStore.js's shared provider/baseUrl/
+   * apiKey instead of requiring a second copy of the same credentials —
+   * see reasoningModelConfigResolver.js for how the two combine.
+   * @param {{ provider?: string, baseUrl?: string, model?: string, visionModel?: string, apiKey?: string, useMainProvider?: boolean }} partial
    */
   function saveConfig(partial) {
-    const current = readRaw() || { provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: '', visionModel: '', apiKey: '' };
+    const current = readRaw() || { provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: '', visionModel: '', apiKey: '', useMainProvider: false };
     const next = {
       provider: partial.provider !== undefined ? partial.provider : current.provider,
       baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : current.baseUrl,
       model: partial.model !== undefined ? partial.model : current.model,
       visionModel: partial.visionModel !== undefined ? partial.visionModel : (current.visionModel || ''),
       apiKey: partial.apiKey !== undefined ? partial.apiKey : current.apiKey,
+      useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(current.useMainProvider),
       updatedAt: new Date().toISOString(),
     };
     writeRaw(next);
@@ -95,7 +99,7 @@ function createReasoningModelStore(options = {}) {
   function getMaskedConfig() {
     const config = readRaw();
     if (!config) {
-      return { provider: null, baseUrl: null, model: null, visionModel: null, hasApiKey: false, maskedApiKey: null, updatedAt: null };
+      return { provider: null, baseUrl: null, model: null, visionModel: null, hasApiKey: false, maskedApiKey: null, useMainProvider: false, updatedAt: null };
     }
     return {
       provider: config.provider || null,
@@ -104,6 +108,7 @@ function createReasoningModelStore(options = {}) {
       visionModel: config.visionModel || null,
       hasApiKey: Boolean(config.apiKey),
       maskedApiKey: maskKey(config.apiKey),
+      useMainProvider: Boolean(config.useMainProvider),
       updatedAt: config.updatedAt || null,
     };
   }

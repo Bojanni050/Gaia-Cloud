@@ -59,6 +59,7 @@ const DEFAULT_TTS = Object.freeze({
   baseUrl: '',
   apiKey: '',
   model: '',
+  useMainProvider: false,
 });
 
 /**
@@ -141,9 +142,11 @@ function createProviderStore(options = {}) {
 
   /**
    * Save independent TTS configuration (provider, baseUrl, apiKey, model).
-   * TTS is fully independent from the main provider — can be a different
-   * provider with its own API key.
-   * @param {{ provider?: string, baseUrl?: string, apiKey?: string, model?: string }} partial
+   * TTS is fully independent from the main provider by default — can be a
+   * different provider with its own API key — but `useMainProvider` opts
+   * it into borrowing the main provider's own provider/baseUrl/apiKey
+   * instead (see providerConfigResolver.js's resolveTtsConfig).
+   * @param {{ provider?: string, baseUrl?: string, apiKey?: string, model?: string, useMainProvider?: boolean }} partial
    */
   function saveTtsConfig(partial) {
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
@@ -155,6 +158,7 @@ function createProviderStore(options = {}) {
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentTts.baseUrl,
         apiKey: partial.apiKey !== undefined ? partial.apiKey : currentTts.apiKey,
         model: partial.model !== undefined ? partial.model : currentTts.model,
+        useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentTts.useMainProvider),
       },
       updatedAt: new Date().toISOString(),
     };
@@ -189,6 +193,7 @@ function createProviderStore(options = {}) {
         model: tts.model || '',
         hasApiKey: Boolean(tts.apiKey),
         maskedApiKey: maskKey(tts.apiKey),
+        useMainProvider: Boolean(tts.useMainProvider),
       },
       updatedAt: config.updatedAt || null,
     };

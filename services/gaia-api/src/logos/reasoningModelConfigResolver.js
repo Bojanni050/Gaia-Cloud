@@ -12,13 +12,33 @@
 const { readReasoningModelConfig } = require('./reasoningModelClient');
 
 /**
- * @param {{ store?: ReturnType<import('./reasoningModelStore').createReasoningModelStore>, env?: NodeJS.ProcessEnv }} [options]
+ * @param {{
+ *   store?: ReturnType<import('./reasoningModelStore').createReasoningModelStore>,
+ *   providerStore?: ReturnType<import('../providerStore').createProviderStore>,
+ *   env?: NodeJS.ProcessEnv,
+ * }} [options]
  */
 function resolveReasoningModelConfig(options = {}) {
   const env = options.env || process.env;
   const envConfig = readReasoningModelConfig(env);
 
   const stored = options.store ? options.store.getConfig() : null;
+
+  // "Use the main provider" — the admin surface's shared Provider config
+  // (providerStore.js), credentials borrowed rather than duplicated. Only
+  // the model choice stays ReasonIQ's own.
+  if (stored && stored.useMainProvider) {
+    const main = options.providerStore ? options.providerStore.getConfig() : null;
+    if (main && main.apiKey) {
+      return {
+        provider: main.provider || 'openrouter',
+        baseUrl: main.baseUrl || 'https://openrouter.ai/api/v1',
+        model: stored.model || '',
+        apiKey: main.apiKey,
+      };
+    }
+  }
+
   if (stored && stored.apiKey) {
     return {
       provider: stored.provider || 'openrouter',
@@ -45,7 +65,9 @@ function resolveReasoningModelConfig(options = {}) {
 function resolveVisionModelConfig(options = {}) {
   const base = resolveReasoningModelConfig(options);
   const stored = options.store ? options.store.getConfig() : null;
-  if (stored && stored.apiKey && stored.visionModel) {
+  // base.apiKey (not stored.apiKey) so this also applies when the
+  // credentials came from useMainProvider rather than the store's own key.
+  if (stored && base.apiKey && stored.visionModel) {
     return { ...base, model: stored.visionModel };
   }
   return base;

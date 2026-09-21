@@ -65,8 +65,31 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
 
   // --- ReasonIQ routes (provider-agnostic) ---
 
+  // Resolves the provider/baseUrl/apiKey actually usable for a live models
+  // fetch: the role's own saved config, or — when useMainProvider is set —
+  // the shared Provider config's (providerStore) credentials/catalog. Used
+  // by both /api/reasoniq/models and /api/intentiq/models.
+  function resolveEffectiveProviderConfig(config) {
+    if (config && config.useMainProvider) {
+      const main = providerStore ? providerStore.getConfig() : null;
+      if (main && main.apiKey) {
+        return { provider: main.provider || 'openrouter', baseUrl: main.baseUrl || '', apiKey: main.apiKey, catalog: main.catalog || null };
+      }
+      return null;
+    }
+    if (config && config.apiKey) {
+      return { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey, catalog: null };
+    }
+    return null;
+  }
+
+  function mainProviderConfigured() {
+    const main = providerStore ? providerStore.getConfig() : null;
+    return Boolean(main && main.apiKey);
+  }
+
   router.get('/api/reasoniq/config', auth, (req, res) => {
-    res.json(store.getMaskedConfig());
+    res.json({ ...store.getMaskedConfig(), mainProviderConfigured: mainProviderConfigured() });
   });
 
   router.put('/api/reasoniq/config', auth, (req, res) => {
@@ -77,29 +100,35 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
     if (typeof body.model === 'string') allowed.model = body.model.trim();
     if (typeof body.visionModel === 'string') allowed.visionModel = body.visionModel.trim();
     if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+    if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 
     if (Object.keys(allowed).length === 0) {
       return res.status(400).json({ error: 'no valid fields supplied' });
     }
 
     store.saveConfig(allowed);
-    res.json(store.getMaskedConfig());
+    res.json({ ...store.getMaskedConfig(), mainProviderConfigured: mainProviderConfigured() });
   });
 
   router.get('/api/reasoniq/models', auth, async (req, res) => {
     const config = store.getConfig();
-    if (!config || !config.apiKey) {
-      return res.status(400).json({ error: 'save an API key first' });
+    const effective = resolveEffectiveProviderConfig(config);
+    if (!effective) {
+      return res.status(400).json({ error: config && config.useMainProvider ? 'configure the main provider first' : 'save an API key first' });
     }
-    if (!config.baseUrl) {
+    if (effective.catalog) {
+      // Already retrieved for the main provider — reuse it, no extra call.
+      return res.json({ models: effective.catalog });
+    }
+    if (!effective.baseUrl) {
       return res.status(400).json({ error: 'set a base URL for the provider' });
     }
 
     try {
       const models = await retrieveModelsFn({
-        provider: config.provider || 'openrouter',
-        baseUrl: config.baseUrl,
-        apiKey: config.apiKey,
+        provider: effective.provider,
+        baseUrl: effective.baseUrl,
+        apiKey: effective.apiKey,
       });
       res.json({ models });
     } catch (err) {
@@ -118,11 +147,12 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
     const envConfig = readIntentModelConfig();
     const masked = intentModelStore
       ? intentModelStore.getMaskedConfig()
-      : { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, updatedAt: null };
+      : { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, useMainProvider: false, updatedAt: null };
     res.json({
       ...masked,
       envModel: envConfig.model || null,
       envConfigured: Boolean(envConfig.baseUrl),
+      mainProviderConfigured: mainProviderConfigured(),
     });
   });
 
@@ -136,6 +166,7 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
     if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
     if (typeof body.model === 'string') allowed.model = body.model.trim();
     if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+    if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 
     if (Object.keys(allowed).length === 0) {
       return res.status(400).json({ error: 'no valid fields supplied' });
@@ -147,23 +178,28 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
       ...intentModelStore.getMaskedConfig(),
       envModel: envConfig.model || null,
       envConfigured: Boolean(envConfig.baseUrl),
+      mainProviderConfigured: mainProviderConfigured(),
     });
   });
 
   router.get('/api/intentiq/models', auth, async (req, res) => {
     const config = intentModelStore ? intentModelStore.getConfig() : null;
-    if (!config || !config.apiKey) {
-      return res.status(400).json({ error: 'save an API key first' });
+    const effective = resolveEffectiveProviderConfig(config);
+    if (!effective) {
+      return res.status(400).json({ error: config && config.useMainProvider ? 'configure the main provider first' : 'save an API key first' });
     }
-    if (!config.baseUrl) {
+    if (effective.catalog) {
+      return res.json({ models: effective.catalog });
+    }
+    if (!effective.baseUrl) {
       return res.status(400).json({ error: 'set a base URL for the provider' });
     }
 
     try {
       const models = await retrieveModelsFn({
-        provider: config.provider || 'openrouter',
-        baseUrl: config.baseUrl,
-        apiKey: config.apiKey,
+        provider: effective.provider,
+        baseUrl: effective.baseUrl,
+        apiKey: effective.apiKey,
       });
       res.json({ models });
     } catch (err) {
@@ -264,7 +300,7 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
     // --- TTS (independent) routes ---
 
     router.get('/api/tts/config', auth, (req, res) => {
-      res.json(providerStore.getMaskedConfig().tts);
+      res.json({ ...providerStore.getMaskedConfig().tts, mainProviderConfigured: mainProviderConfigured() });
     });
 
     router.put('/api/tts/config', auth, (req, res) => {
@@ -274,30 +310,34 @@ function createAdminRouter({ store, providerStore, decisionStore, intentModelSto
       if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
       if (typeof body.model === 'string') allowed.model = body.model.trim();
       if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+      if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 
       if (Object.keys(allowed).length === 0) {
         return res.status(400).json({ error: 'no valid fields supplied' });
       }
 
       providerStore.saveTtsConfig(allowed);
-      res.json(providerStore.getMaskedConfig().tts);
+      res.json({ ...providerStore.getMaskedConfig().tts, mainProviderConfigured: mainProviderConfigured() });
     });
 
     router.get('/api/tts/models', auth, async (req, res) => {
       const config = providerStore.getConfig();
       const tts = config && config.tts ? config.tts : {};
-      if (!tts.provider) {
-        return res.status(400).json({ error: 'configure a TTS provider first' });
+      const effective = tts.useMainProvider
+        ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
+        : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+      if (!effective) {
+        return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
       }
-      if (!tts.baseUrl) {
+      if (!effective.baseUrl) {
         return res.status(400).json({ error: 'set a base URL for the TTS provider' });
       }
 
       try {
         const models = await retrieveModelsFn({
-          provider: tts.provider,
-          baseUrl: tts.baseUrl,
-          apiKey: tts.apiKey || '',
+          provider: effective.provider,
+          baseUrl: effective.baseUrl,
+          apiKey: effective.apiKey,
         });
         // TTS doesn't need a persisted catalog — just return the list
         res.json({ models });
