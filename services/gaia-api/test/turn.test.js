@@ -1270,7 +1270,7 @@ test('performTurn: text attachments still work as text context', async () => {
 // and sources intact, and a reasoning failure still never takes down the
 // turn.
 
-test('0.2: performStreamingTurn assembles Hindsight + upload evidence and hands it to ReasonIQ', async () => {
+test('0.2: the background ReasonIQ call receives the assembled Hindsight + upload evidence', async () => {
   const reasonIQCalls = [];
   const hindsight = {
     recall: async () => [
@@ -2595,7 +2595,7 @@ function deepReasoningResult() {
   };
 }
 
-test('deferred reasoning: a deep turn replies without waiting for ReasonIQ, routes to Hermes, and applies hypotheses afterwards', async () => {
+test('deferred reasoning: an evidence-bearing analysis turn replies without waiting for ReasonIQ, and applies hypotheses afterwards', async () => {
   const { decide } = require('../src/decision/decisionEngine');
   const manager = (require('../src/reasoning/hypothesisManager')).createHypothesisManager({
     hypotheses: [{ id: 'hyp-seed', statement: 'Cancellation races teardown.', status: 'testing', confidence: 0.6, evidenceFor: ['e1'] }],
@@ -2620,17 +2620,19 @@ test('deferred reasoning: a deep turn replies without waiting for ReasonIQ, rout
     hypothesisRuntime: { manager },
   });
 
-  // The turn is finished while the reasoning call is still pending.
-  assert.equal(hermesCalls, 1, 'deep routes to Hermes exactly as before');
+  // The turn is finished while the reasoning call is still pending. The
+  // CURRENT turn's decision carries NO reasoning result at all — background
+  // cognition cannot influence the turn that produced it (Phase: ReasonIQ as
+  // background cognition). The analysis wording still routes to Hermes via
+  // the IntentIQ analysis cue.
+  assert.equal(hermesCalls, 1, 'the analysis turn still routes to Hermes (IntentIQ analysis cue)');
   assert.equal(decisionInputs.length, 1);
-  assert.equal(decisionInputs[0].reasoning.reasoningDepth, 'deep');
-  assert.equal(decisionInputs[0].reasoning.meta.fallbackReason, 'deferred');
-  assert.equal(reasonIQCalls.length, 1);
-  assert.equal(manager.get('hyp-seed').confidence, 0.6, 'not applied before the deferred call resolves');
+  assert.equal(decisionInputs[0].reasoning, null, 'no reasoning result in the current turn\'s decision');
+  assert.equal(manager.get('hyp-seed').confidence, 0.6, 'not applied before the background call resolves');
 
   release();
   await flushBackground();
-  assert.equal(manager.get('hyp-seed').confidence, 0.65, 'update applied once the deferred call resolved');
+  assert.equal(manager.get('hyp-seed').confidence, 0.65, 'update applied once the background call resolved');
   assert.equal(reasonIQCalls.length, 1, 'ReasonIQ runs exactly once per turn');
   assert.equal(reasonIQCalls[0].existingHypotheses[0].id, 'hyp-seed');
 });
@@ -2719,14 +2721,159 @@ test('deferred reasoning: a failing deferred ReasonIQ call never triggers a seco
   assert.equal(decisionInputs.length, 1, 'a ReasonIQ failure cannot cause another decision cycle');
 });
 
-// --- PHASE 1: deferred cognition boundary -----------------------------------
+// --- REASONIQ AS BACKGROUND COGNITION ----------------------------------------
 //
-// The conversational path is minimal turn analysis → required context →
-// Decision Engine → Orchestrator → Response Engine. Everything that is
-// learning/reflection (Memoryworthiness, hypothesis recall/persistence,
-// deferred ReasonIQ, pattern formation, Hindsight reflection) runs in
-// runDeferredCognition AFTER the reply exists and is never awaited by the
-// transports. These tests pin that boundary in both directions.
+// The conversational path (IntentIQ → Decision → Response) and the cognition
+// path (turn → ReasonIQ → hypotheses/patterns → storage) are two loosely
+// coupled processes. ReasonIQ analyzes the completed turn in the background:
+// it may generate and evaluate hypotheses and persist them where a FUTURE
+// turn's normal context recall can find them — but it can never reroute the
+// current turn, never re-enters the Decision Engine, never invokes itself, and
+// its failures never touch the conversation.
+
+test('background cognition: hypothesis GENERATION happens asynchronously, after the reply', async () => {
+  const { createHypothesisManager } = require('../src/reasoning/hypothesisManager');
+  const manager = createHypothesisManager({});
+  const order = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const hermes = { stream: async (m, { onDelta }) => { order.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
+  const reasonIQCalls = [];
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async (input) => {
+      order.push('reasonIQ');
+      reasonIQCalls.push(input);
+      await gate;
+      return {
+        interpretation: 'weighing',
+        hypotheses: [{ statement: 'Cancellation races stream teardown.', confidence: 0.7, evidenceFor: ['hindsight-1'], persistence: 'durable' }],
+        hypothesisUpdates: [],
+        contradictions: [], uncertainties: [], informationGaps: [],
+        conclusions: [], sufficientForConclusion: false, confidence: 0.7,
+      };
+    },
+    hypothesisRuntime: { manager },
+  });
+  // The hypothesis did NOT exist while the reply was produced; it is the
+  // background analysis that generates it.
+  assert.equal(order[0], 'hermes', 'the reply is produced first');
+  assert.ok(order.includes('reasonIQ'), 'the background analysis started');
+  assert.equal(manager.list().length, 0, 'no hypothesis exists at reply time');
+  release();
+  await flushBackground();
+  assert.equal(reasonIQCalls.length, 1);
+  assert.equal(manager.list().length, 1, 'the background analysis generated the hypothesis afterwards');
+  assert.match(manager.list()[0].statement, /Cancellation races/);
+});
+
+test('background cognition: hypothesis EVALUATION happens asynchronously (confidence updates on later evidence)', async () => {
+  const { createHypothesisManager } = require('../src/reasoning/hypothesisManager');
+  const manager = createHypothesisManager({
+    hypotheses: [{ id: 'hyp-seed', statement: 'Cancellation races teardown.', status: 'testing', confidence: 0.5, evidenceFor: ['e1'] }],
+  });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('ok', false); return 'A Reply.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => { await gate; return deepReasoningResult(); },
+    hypothesisRuntime: { manager },
+  });
+  assert.equal(manager.get('hyp-seed').confidence, 0.5, 'unchanged while the reply is produced');
+  release();
+  await flushBackground();
+  // deepReasoningResult() carries a +0.05 supporting confidenceDelta for
+  // hyp-seed — the background analysis evaluated the tracked hypothesis
+  // against the new evidence.
+  assert.equal(manager.get('hyp-seed').confidence, 0.55, 'the background analysis evaluated the hypothesis against new evidence');
+});
+
+test('background cognition: ReasonIQ cannot invoke itself recursively — one call per turn, no re-entry', async () => {
+  let reasonIQCalls = 0;
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('ok', false); return 'A Reply.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => {
+      reasonIQCalls += 1;
+      return deepReasoningResult();
+    },
+    hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
+  });
+  await flushBackground();
+  assert.equal(reasonIQCalls, 1, 'exactly one ReasonIQ execution — background cognition has no self-recursion path');
+});
+
+test('background cognition: cognitive material produced by turn N reaches turn N+1 through normal context recall', async () => {
+  const { createHypothesisManager } = require('../src/reasoning/hypothesisManager');
+  const manager = createHypothesisManager({});
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('ok', false); return 'A Reply.'; } };
+  const { decide } = require('../src/decision/decisionEngine');
+  const decisionInputs = [];
+
+  // Turn 1: analysis produces a durable cognitive observation.
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => ({
+      interpretation: 'weighing',
+      hypotheses: [{ statement: 'User appears to prefer architectural separation between agency, reasoning, and memory.', confidence: 0.7, evidenceFor: ['hindsight-1'], persistence: 'durable' }],
+      hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [],
+      conclusions: [], sufficientForConclusion: false, confidence: 0.7,
+    }),
+    hypothesisRuntime: { manager },
+  });
+  await flushBackground();
+  assert.equal(manager.list().length, 1, 'turn N produced a durable hypothesis');
+
+  // Turn 2: the SAME runtime is wired for the next turn — the normal context
+  // recall path (hypothesis/pattern recall → Decision Engine context) makes
+  // the stored cognitive material available; Gaia decides what to do with it.
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Wat vind je van mijn aanpak voor de cognitive architecture?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
+    reasonIQ: async () => ({}),
+    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
+    hypothesisRuntime: {
+      manager,
+      recallPatterns: async () => [{
+        id: 'ptf-1',
+        statement: manager.list()[0].statement,
+        status: 'established', confidence: 0.7,
+        hypothesisIds: [manager.list()[0].id],
+        persistence: 'durable', relevance: 0.9,
+      }],
+    },
+  });
+  await flushBackground();
+  assert.equal(decisionInputs.length, 1, 'turn N+1 makes exactly one decision of its own');
+  const recalled = decisionInputs[0].context.patterns || [];
+  assert.equal(recalled.length, 1, 'turn N\'s cognitive material reached turn N+1\'s context');
+  assert.match(recalled[0].statement, /architectural separation/);
+});
 
 test('deferred cognition: a normal streaming reply completes without awaiting deferred cognition', async () => {
   let release;

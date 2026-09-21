@@ -127,15 +127,28 @@ test('decide() routes complex intents to native when native is available (Genera
   assert.equal(decision.generationMode, 'native');
 });
 
-test('decide() routes deep reasoning to hermes even when native is available', () => {
+test('decide() routes an explicit analysis cue to hermes even when native is available', () => {
+  // ReasonIQ is background cognition: the analysis WORDING cue (IntentIQ's
+  // own signal) — not a reasoning result — marks the current turn as
+  // needing Hermes, exactly as it does inside buildPlan's reasoning steps.
+  const decision = decide({
+    userInput: 'Analyseer de architecture op race conditions.',
+    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
+    reasoning: null,
+    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
+  });
+  assert.equal(decision.action, 'capability');
+  assert.equal(decision.capability, 'hermes');
+});
+
+test('decide() never reroutes the current turn on a reasoning result (background cognition cannot touch this decision)', () => {
   const decision = decide({
     userInput: 'hello',
     intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
     reasoning: { reasoningDepth: 'deep' },
     availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
   });
-  assert.equal(decision.action, 'capability');
-  assert.equal(decision.capability, 'hermes');
+  assert.equal(decision.action, 'native', 'a reasoning result no longer forces Hermes for the current turn');
 });
 
 test('native eligibility has a single owner: the engine re-exports the policy module, never its own copy', () => {

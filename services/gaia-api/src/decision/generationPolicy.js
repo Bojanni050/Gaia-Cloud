@@ -41,7 +41,7 @@ const NATIVE_INTENTS = new Set([
  *
  * Precedence:
  *   1. Plan already selected → mode: 'plan'
- *   2. Deep reasoning (reasoningDepth === 'deep') → mode: 'hermes'
+ *   2. Explicit analysis (IntentIQ analysis cue) → mode: 'hermes'
  *   3. Selected Hermes skill → mode: 'hermes'
  *   4. Native eligible → mode: 'native'
  *   5. Default → mode: 'native' (Gaia speaks natively by default)
@@ -51,6 +51,7 @@ const NATIVE_INTENTS = new Set([
  *   reasoning?: object|null,
  *   selectedSkill?: string|null,
  *   hasPlan?: boolean,
+ *   wantsAnalysis?: boolean,
  * }} input
  * @returns {{ mode: 'native'|'hermes'|'plan', reason: string }}
  */
@@ -59,16 +60,20 @@ function decideGenerationMode({
   reasoning = null,
   selectedSkill = null,
   hasPlan = false,
+  wantsAnalysis = false,
 } = {}) {
   // 1. Plan already selected — the plan owns generation composition.
   if (hasPlan) {
     return { mode: 'plan', reason: 'multi-step plan selected — plan owns generation' };
   }
 
-  // 2. Deep reasoning requires Hermes. ReasonIQ already decided this
-  //    is a turn that needs deeper analysis — native is for simple turns.
-  if (reasoning && reasoning.reasoningDepth === 'deep') {
-    return { mode: 'hermes', reason: 'deep reasoning required' };
+  // 2. Explicit analysis requires Hermes. ReasonIQ is background cognition
+  //    (it no longer signals the current turn), so the ANALYSIS cue — an
+  //    IntentIQ wording signal (logos/intentSignals.js), read here exactly
+  //    like buildPlan reads it — is what marks a turn as needing deeper
+  //    analysis. Native is for simple turns.
+  if (wantsAnalysis) {
+    return { mode: 'hermes', reason: 'explicit analysis requested — specialized reasoning required' };
   }
 
   // 3. A selected Hermes skill requires Hermes. The Decision Engine

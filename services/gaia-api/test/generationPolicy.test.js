@@ -36,13 +36,24 @@ test('decideGenerationMode returns native for null intent and null reasoning', (
   assert.ok(typeof result.reason === 'string');
 });
 
-test('decideGenerationMode returns hermes for deep reasoning', () => {
+test('decideGenerationMode returns hermes for an explicit analysis cue', () => {
+  // ReasonIQ is background cognition: the CURRENT turn's Hermes trigger is
+  // the IntentIQ analysis wording cue, not a reasoning result.
   const result = decideGenerationMode({
     intent: { intent: 'inform.explain', sourceOfTruth: 'external_knowledge' },
-    reasoning: { reasoningDepth: 'deep' },
+    reasoning: null,
+    wantsAnalysis: true,
   });
   assert.equal(result.mode, 'hermes');
-  assert.match(result.reason, /deep reasoning/);
+  assert.match(result.reason, /analysis/);
+});
+
+test('decideGenerationMode ignores a stale reasoning result — background cognition cannot reroute the current turn', () => {
+  const result = decideGenerationMode({
+    intent: { intent: 'converse', sourceOfTruth: 'conversation' },
+    reasoning: { reasoningDepth: 'deep' },
+  });
+  assert.equal(result.mode, 'native');
 });
 
 test('decideGenerationMode returns hermes when a skill is selected', () => {
@@ -79,10 +90,11 @@ test('decideGenerationMode returns native for memory-sourced turns', () => {
   assert.equal(result.mode, 'native');
 });
 
-test('decideGenerationMode precedence: deep reasoning beats native eligibility', () => {
+test('decideGenerationMode precedence: an analysis cue beats native eligibility', () => {
   const result = decideGenerationMode({
     intent: { intent: 'converse', sourceOfTruth: 'conversation' },
-    reasoning: { reasoningDepth: 'deep' },
+    reasoning: null,
+    wantsAnalysis: true,
   });
   assert.equal(result.mode, 'hermes');
 });
@@ -99,8 +111,9 @@ test('decideGenerationMode precedence: selected skill beats native eligibility',
 test('decideGenerationMode precedence: plan beats everything', () => {
   const result = decideGenerationMode({
     intent: { intent: 'converse', sourceOfTruth: 'conversation' },
-    reasoning: { reasoningDepth: 'deep' },
+    reasoning: null,
     selectedSkill: 'systematic-debugging',
+    wantsAnalysis: true,
     hasPlan: true,
   });
   assert.equal(result.mode, 'plan');

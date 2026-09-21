@@ -237,26 +237,6 @@ function degradedResult(reason, modelConfigured, evidence = []) {
   }, evidence);
 }
 
-/**
- * Routing-only stand-in for a deep result whose model call has been DEFERRED.
- *
- * The only thing the live turn reads from ReasonIQ before it answers is
- * `reasoningDepth` (generationPolicy: deep → Hermes; decision.reasoning
- * label). `decideReasoningDepth` is a free heuristic, so the turn can route
- * on it immediately and run the expensive model call after the reply — see
- * turn.js. This result carries no analysis: no hypotheses, conclusions or
- * updates, and `fallbackReason: 'deferred'` says why it is empty.
- */
-function pendingDeepResult(evidence = []) {
-  return baseResult({
-    interpretation: 'Deep reasoning was deferred until after the reply for this turn.',
-    reasoningDepth: 'deep',
-    sufficientForConclusion: false,
-    confidence: 0,
-    meta: { reasonerVersion: REASONER_VERSION, reasoningModelConfigured: true, fallbackReason: 'deferred' },
-  }, evidence);
-}
-
 // --- public API ------------------------------------------------------------
 
 /**
@@ -338,4 +318,4 @@ async function evaluate(input, options = {}) {
   return result;
 }
 
-module.exports = { evaluate, decideReasoningDepth, pendingDeepResult, SCHEMA_VERSION };
+module.exports = { evaluate, decideReasoningDepth, SCHEMA_VERSION };

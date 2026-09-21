@@ -203,9 +203,9 @@ test('timing: runTurnCore produces timing events', async () => {
     assert.ok(turnDone.totalDurationMs >= 0);
     assert.ok(typeof turnDone.intentMs === 'number');
     assert.ok(typeof turnDone.retrievalMs === 'number');
-    // ReasonIQ is optional (Phase 2): a normal conversational turn makes no
-    // ReasonIQ call at all, so the turn carries no reasoning stage duration.
-    assert.equal(turnDone.reasoningMs, null);
+    // ReasonIQ is background cognition: the conversational pipeline has no
+    // reasoning stage at all, so turn.done carries no reasoningMs field.
+    assert.equal(turnDone.reasoningMs, undefined);
     assert.ok(typeof turnDone.decisionMs === 'number');
     assert.ok(typeof turnDone.capabilityMs === 'number');
   } finally {

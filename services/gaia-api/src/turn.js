@@ -7,9 +7,9 @@
  * COGNITIVE PARITY (this module's load-bearing rule): the non-streaming and
  * streaming paths share ONE cognitive pipeline — `runTurnCore` below — and
  * differ ONLY in delivery/transport. IntentIQ, Hindsight recall, evidence
- * assembly, ReasonIQ's routing result, Pattern Awareness, the Decision
- * Engine, the prompt assembly and the Response Engine are byte-for-byte the
- * same judgment calls whichever transport a client uses. What may differ:
+ * assembly, Pattern Awareness, the Decision Engine, the prompt assembly
+ * and the Response Engine are byte-for-byte the same judgment calls
+ * whichever transport a client uses. What may differ:
  *
  *   - wire shape: SSE deltas (streaming) vs one JSON body (non-streaming)
  *   - hermes invocation: stream(msgs,{onDelta}) vs chat(msgs)
@@ -30,13 +30,26 @@
  *
  * DEFERRED COGNITION (the conversational path stays short): everything that
  * is learning/reflection rather than response production — Memoryworthiness,
- * hypothesis recall and persistence, the deferred deep ReasonIQ call, gated
- * pattern formation and the post-turn Hindsight reflection — lives in
+ * hypothesis recall and persistence, background ReasonIQ (Gaia's asynchronous
+ * cognitive analysis: hypotheses, patterns, interpretations), gated pattern
+ * formation and the post-turn Hindsight reflection — lives in
  * `runDeferredCognition` below. runTurnCore starts that promise once the
  * reply is produced and NEVER awaits it: deferred work may not delay,
  * determine or alter the already-produced response, never touches the
  * client transport, and swallows its own failures. It is Gaia's internal
  * knowledge/memory lifecycle, not a second response engine.
+ *
+ * BACKGROUND COGNITION (ReasonIQ's architectural role): ReasonIQ is NOT a
+ * step in the conversational response pipeline. The conversational path is
+ * User → IntentIQ → context recall → Decision Engine → Orchestrator →
+ * Response, full stop. ReasonIQ analyzes the completed turn in the
+ * background (inside runDeferredCognition): it may generate/evaluate
+ * hypotheses, discover patterns and form interpretations, and persist them
+ * (via the hypothesis/pattern managers into Hindsight) where a FUTURE
+ * turn's normal context recall may find them. It never decides what Gaia
+ * says or does, never reroutes the turn that produced the analysis, and
+ * never re-enters the Decision Engine — the two paths are loosely coupled
+ * exactly because only stored cognitive material crosses between them.
  */
 
 const { buildSystemPrompt } = require('./foundation');
@@ -50,7 +63,7 @@ const {
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
-const { evaluate: evaluateReasoning, decideReasoningDepth, pendingDeepResult } = require('./logos/reasonIQ');
+const { evaluate: evaluateReasoning, decideReasoningDepth } = require('./logos/reasonIQ');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -444,45 +457,17 @@ async function runTurnCore({
   }
   timing.end('evidence_assembly');
 
-  // Logos: ReasonIQ consumes the IntentDecision plus the assembled evidence.
-  //
-  // ReasonIQ is NOT mandatory (Phase 2). The turn routes on the existing
-  // free depth heuristic (reasonIQ.js's decideReasoningDepth — the signal
-  // that has always said whether this turn warrants reasoning):
-  //
-  //   'deep'   → the existing flow: route on a routing-only result
-  //              (pendingDeepResult) and make the real ReasonIQ call inside
-  //              runDeferredCognition AFTER the reply, feeding the
-  //              hypothesis lifecycle exactly as before (Phase 1 kept).
-  //   'shallow' → NO ReasonIQ call on the conversational path at all:
-  //              reasoningResult stays null and the Decision Engine
-  //              decides the turn without it (a shallow result never made
-  //              a model call anyway; its only routing effect was the
-  //              'light' label, and a null result already reads as 'none' —
-  //              native-eligible).
-  //
-  // ONE decision point per turn is preserved: the Decision Engine decides
-  // the current turn exactly once, ReasonIQ runs only for a deep turn, at
-  // most once, and only after the decision — its result feeds the
-  // hypothesis lifecycle and never re-enters the Decision Engine, so no
-  // Decision → ReasonIQ → Decision loop can arise. Hypothesis seeding
-  // stays part of that deferred lifecycle: existingHypotheses flows into
-  // the deferred call only (see runDeferredCognition below).
-  const reasoningInput = {
-    text: userText,
-    intentDecision,
-    conversationContext: messages,
-    evidence,
-    contextId: conversationId,
-  };
-  const deferDeepReasoning = decideReasoningDepth(reasoningInput) === 'deep';
-
-  let reasoningResult = null;
-  if (deferDeepReasoning) {
-    timing.start('reasoniq');
-    reasoningResult = pendingDeepResult(evidence);
-    timing.end('reasoniq');
-  }
+  // ReasonIQ IS BACKGROUND COGNITION — it is not part of the conversational
+  // response pipeline at all. The conversational path is exactly:
+  // IntentIQ → context recall → Decision Engine → Orchestrator → reply.
+  // No ReasonIQ judgment, routing result or model call happens here; the
+  // Decision Engine receives reasoning: null (level 'none') for every turn.
+  // The completed turn's ingredients (user text, IntentDecision, assembled
+  // evidence) are handed to runDeferredCognition, which runs the reasoning
+  // AFTER the reply — see the module comment and runDeferredCognition below.
+  // Analysis/skill turns still reach Hermes through the IntentIQ-driven
+  // decision paths (plan reasoning steps, skill tasks, hermes fallback) —
+  // no reasoning signal from the current turn reroutes the current turn.
 
   // Gaia decides (decision/decisionEngine.js); the Orchestrator executes
   // exactly that decision (orchestration/orchestrator.js) — the Orchestrator
@@ -503,7 +488,12 @@ async function runTurnCore({
       userInput: userText,
       intent: intentDecision,
       context: { reflections, mentalModels, patterns: recalledPatterns },
-      reasoning: reasoningResult,
+      // ReasonIQ is background cognition (this phase): the decision for the
+      // CURRENT turn is made without any reasoning result. Cognitive
+      // material ReasonIQ produced for EARLIER turns reaches later turns
+      // through context (recalled patterns/hypotheses), never through this
+      // field.
+      reasoning: null,
       availableCapabilities,
     });
   } catch (_) {
@@ -670,7 +660,6 @@ async function runTurnCore({
   timing.done({
     intentMs: timing.getDuration('intent'),
     retrievalMs: timing.getDuration('memory_recall'),
-    reasoningMs: timing.getDuration('reasoniq'),
     decisionMs: timing.getDuration('decision'),
     capabilityMs: timing.getDuration('capability'),
     capabilities: capabilitiesSummary.length > 0 ? capabilitiesSummary : undefined,
@@ -689,8 +678,11 @@ async function runTurnCore({
     hypothesisRuntime,
     hindsight,
     reasonIQ,
-    reasoningInput,
-    deferDeepReasoning,
+    // The completed turn's raw ingredients — background cognition builds
+    // its own reasoning input from these (loosely coupled: nothing from the
+    // conversational decision flows in, nothing from the analysis flows
+    // back into it).
+    evidence,
     intentDecision,
     recalledReflections: reflections,
     executionResult,
@@ -737,9 +729,13 @@ async function runTurnCore({
  *   2. Hypothesis lifecycle preparation: ensureLoaded() + existing
  *      hypothesis preparation (manager state + best-effort recall), which
  *      only ever fed ReasonIQ's analysis products.
- *   3. Deferred ReasonIQ: the real deep model call when the turn routed on
- *      pendingDeepResult. A shallow turn makes no ReasonIQ call at all
- *      (ReasonIQ is optional, not mandatory).
+ *   3. Background ReasonIQ: the depth heuristic (decideReasoningDepth — a
+ *      free, local judgment) is evaluated HERE, in the background phase,
+ *      as the "is there something to reason over" gate. When it says deep,
+ *      the real model call runs here; a shallow turn makes no ReasonIQ call
+ *      at all. Nothing ReasonIQ produces can reach the user or the current
+ *      turn's decision — the reply was produced before this phase started,
+ *      and results feed only the hypothesis lifecycle.
  *   4. hypothesisRuntime.manager.applyReasoningResult() — the one place
  *      reasoning products enter the manager.
  *   5. Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15).
@@ -749,8 +745,7 @@ async function runTurnCore({
  *   hypothesisRuntime?: object|null,
  *   hindsight?: object|null,
  *   reasonIQ?: Function,
- *   reasoningInput: object,
- *   deferDeepReasoning: boolean,
+ *   evidence?: Array,
  *   intentDecision?: object|null,
  *   recalledReflections?: Array,
  *   executionResult: object|null,
@@ -769,8 +764,7 @@ async function runDeferredCognition({
   hypothesisRuntime,
   hindsight,
   reasonIQ = evaluateReasoning,
-  reasoningInput,
-  deferDeepReasoning,
+  evidence,
   intentDecision,
   recalledReflections,
   executionResult,
@@ -867,21 +861,28 @@ async function runDeferredCognition({
     timing.end('deferred.hypothesis_prep');
   }
 
-  // Deferred ReasonIQ — ONE clear background path, deep turns only. A deep
-  // turn routed on pendingDeepResult makes its real model call here; a
-  // shallow turn makes NO ReasonIQ call at all (ReasonIQ is optional, not
-  // mandatory). Nothing ReasonIQ produces here can reach the user: the reply
-  // was produced before this phase started, and the result feeds only the
-  // hypothesis lifecycle below — never a second Decision Engine cycle.
-  const deferredReasoningInput = {
-    ...reasoningInput,
+  // Background ReasonIQ — ONE clear background path. The depth heuristic
+  // (reasonIQ.js's decideReasoningDepth, free and local) is evaluated HERE
+  // as the "is there something to reason over" gate — exactly the signal
+  // that has always decided whether a reasoning model call is warranted.
+  // Deep → the real model call runs here; shallow → no ReasonIQ call at all.
+  // Nothing ReasonIQ produces can reach the user or re-enter the Decision
+  // Engine: the reply was produced before this phase started, and results
+  // feed only the hypothesis lifecycle below — Gaia's FUTURE turns may see
+  // them through the normal context recall, the current one cannot.
+  const backgroundReasoningInput = {
+    text: userText,
+    intentDecision,
+    conversationContext: messages,
+    evidence: Array.isArray(evidence) ? evidence : [],
+    contextId: conversationId,
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
   };
   let reasoningResult = null;
-  if (deferDeepReasoning) {
+  if (decideReasoningDepth(backgroundReasoningInput) === 'deep') {
     timing.start('reasoning_background');
     try {
-      reasoningResult = await reasonIQ(deferredReasoningInput, { logger: decisionLogger });
+      reasoningResult = await reasonIQ(backgroundReasoningInput, { logger: decisionLogger });
       timing.end('reasoning_background', { reasoningDepth: reasoningResult && reasoningResult.reasoningDepth });
     } catch (err) {
       reasoningResult = null;

@@ -433,11 +433,17 @@ function decide({ userInput, intent, context, reasoning, availableCapabilities }
   // The mode is added to the Decision for observability (logging, eval).
   const skillMatch = matchRequiredSkills({ task: userInput, intent, reasoning, availableCapabilities: capabilities });
   const selectedSkill = skillMatch.requiredSkills[0] || null;
+  // The same IntentIQ analysis cue buildPlan reads — one signal, one owner
+  // (logos/intentSignals.js). With ReasonIQ as background cognition, this
+  // wording cue is what marks the CURRENT turn as needing analysis-grade
+  // generation (Hermes), exactly as a plan reasoning step would.
+  const wantsAnalysis = Boolean(signalsFor(intent, userInput).analysis);
   const genPolicy = decideGenerationMode({
     intent,
     reasoning,
     selectedSkill,
     hasPlan: Boolean(planDecision),
+    wantsAnalysis,
   });
 
   // PATCH 7: Correct priority order
