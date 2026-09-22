@@ -10,6 +10,38 @@
 
 const MAX_TEXT_CHARS = 300;
 
+const MAX_ANALYSIS_ITEMS = 20;
+
+/**
+ * v1.0 analysis fields for the decision log: the FULL analysis products
+ * (observations, open questions, reflection), so the admin decision log can
+ * show what ReasonIQ actually derived — counts alone (the pre-v1.1 shape)
+ * made the admin's ReasonIQ filter a dead end for anyone trying to read
+ * the analysis. Bounded like every other field here: at most
+ * MAX_ANALYSIS_ITEMS entries, each statement truncated to
+ * MAX_TEXT_CHARS, never chain-of-thought (§13) — only the structured
+ * result itself.
+ */
+function analysisFields(result) {
+  const observations = (Array.isArray(result.observations) ? result.observations : [])
+    .filter((o) => o && o.statement)
+    .slice(0, MAX_ANALYSIS_ITEMS)
+    .map((o) => truncate(o.statement));
+  const openQuestions = (Array.isArray(result.openQuestions) ? result.openQuestions : [])
+    .filter((q) => typeof q === 'string' && q)
+    .slice(0, MAX_ANALYSIS_ITEMS)
+    .map((q) => truncate(q));
+  const reflection = result.reflection && typeof result.reflection === 'object'
+    ? {
+        goalAchieved: typeof result.reflection.goalAchieved === 'boolean' ? result.reflection.goalAchieved : null,
+        learned: result.reflection.learned ? truncate(result.reflection.learned) : null,
+        unresolved: result.reflection.unresolved ? truncate(result.reflection.unresolved) : null,
+        hypothesisImpact: result.reflection.hypothesisImpact ? truncate(result.reflection.hypothesisImpact) : null,
+      }
+    : null;
+  return { observations, openQuestions, reflection };
+}
+
 function truncate(text) {
   const str = String(text || '');
   return str.length > MAX_TEXT_CHARS ? `${str.slice(0, MAX_TEXT_CHARS)}…` : str;
@@ -37,6 +69,11 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
     observationCount: Array.isArray(entry.result.observations) ? entry.result.observations.length : 0,
     openQuestionCount: Array.isArray(entry.result.openQuestions) ? entry.result.openQuestions.length : 0,
     reflectionPresent: Boolean(entry.result.reflection),
+    // v1.1: the analysis products themselves — counts stayed for the
+    // summary line; content lets the admin decision log actually SHOW
+    // what ReasonIQ concluded, instead of "3 observations" with no way to
+    // read any of them.
+    ...analysisFields(entry.result),
     // ReasonIQ 0.2 — additive evidence observability (brief §18): how much
     // evidence this turn reasoned over and from where. Counts/sources come
     // from the assembled INPUT; no user content is logged here.

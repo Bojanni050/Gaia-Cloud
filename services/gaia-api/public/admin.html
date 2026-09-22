@@ -233,6 +233,13 @@
   .decision-time { color: var(--text-faint); font-size: 0.72rem; }
   .decision-summary { color: var(--text); }
   .decision-input { color: var(--text-dim); margin-top: 0.25rem; font-style: italic; overflow-wrap: anywhere; }
+  .decision-analysis { margin-top: 0.4rem; display: grid; gap: 0.3rem; }
+  .analysis-block { border-left: 2px solid var(--border-soft); padding: 0.15rem 0 0.15rem 0.5rem; }
+  .analysis-label { color: var(--text-faint); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .analysis-items { margin: 0.1rem 0 0; padding-left: 1rem; color: var(--text); overflow-wrap: anywhere; }
+  .analysis-items li { margin-bottom: 0.1rem; }
+  .analysis-reflection { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+  .analysis-reflection li { margin-bottom: 0.1rem; }
   .decisions-empty { color: var(--text-faint); font-size: 0.82rem; }
 </style>
 </head>
@@ -1424,6 +1431,38 @@
     return system || '?';
   }
 
+  function analysisBlocks(d) {
+    if (d.kind !== 'reasoniq.result') return '';
+    const blocks = [];
+    if (Array.isArray(d.observations) && d.observations.length) {
+      blocks.push(
+        '<div class="analysis-block"><span class="analysis-label">Observations</span>' +
+        '<ul class="analysis-items">' + d.observations.map((o) => '<li>' + escapeHtml(o) + '</li>').join('') + '</ul></div>'
+      );
+    }
+    if (Array.isArray(d.openQuestions) && d.openQuestions.length) {
+      blocks.push(
+        '<div class="analysis-block"><span class="analysis-label">Open questions</span>' +
+        '<ul class="analysis-items">' + d.openQuestions.map((q) => '<li>' + escapeHtml(q) + '</li>').join('') + '</ul></div>'
+      );
+    }
+    const r = d.reflection;
+    if (r && (r.goalAchieved !== null && r.goalAchieved !== undefined || r.learned || r.unresolved || r.hypothesisImpact)) {
+      const lines = [
+        r.goalAchieved === true ? 'goal achieved' : r.goalAchieved === false ? 'goal not achieved' : null,
+        r.learned ? 'learned: ' + r.learned : null,
+        r.unresolved ? 'unresolved: ' + r.unresolved : null,
+        r.hypothesisImpact ? 'hypothesis impact: ' + r.hypothesisImpact : null,
+      ].filter(Boolean);
+      if (lines.length) {
+        blocks.push(
+          '<div class="analysis-block"><span class="analysis-label">Reflection</span>' +
+          '<ul class="analysis-reflection">' + lines.map((l) => '<li>' + escapeHtml(l) + '</li>').join('') + '</ul></div>'
+        );
+      }
+    }
+    return blocks.length ? '<div class="decision-analysis">' + blocks.join('') + '</div>' : '';
+  }
   function renderDecisions(decisions) {
     if (!decisions.length) {
       decisionsListEl.innerHTML = '<div class="decisions-empty">No decisions logged yet.</div>';
@@ -1446,6 +1485,7 @@
           '</div>' +
           '<div class="decision-summary">' + escapeHtml(summarizeDecision(d)) + '</div>' +
           (d.input ? '<div class="decision-input">"' + escapeHtml(d.input) + '"</div>' : '') +
+          analysisBlocks(d) + +
         '</div>'
       );
     }).join('');
