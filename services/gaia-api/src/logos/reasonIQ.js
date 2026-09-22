@@ -117,6 +117,29 @@ function decideReasoningDepth(input) {
   return 'deep';
 }
 
+/**
+ * The explicit reason behind a shallow decideReasoningDepth outcome — the
+ * gate's own answer to "why was this turn skipped?". A sister function, not
+ * a second heuristic: turn.js logs this next to the depth decision so the
+ * decision log shows WHY ReasonIQ let a turn pass, not just that it did —
+ * without it, a shallow turn leaves no trace at all and "ReasonIQ never
+ * does anything" cannot be distinguished from "the gate is too strict".
+ * @param {{ text: string, evidence?: Array, intentDecision?: object|null }} input
+ * @returns {'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep'}
+ */
+function explainReasoningDepth(input) {
+  const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
+  if (!hasEvidence) return 'no_evidence';
+
+  const decision = input.intentDecision;
+  if (decision) {
+    if (!decision.intent && decision.status === 'unknown') return 'unknown_intent';
+    if (decision.status === 'ambiguous') return 'ambiguous_intent';
+    if (decision.intent && CONTEXT_ONLY_INTENTS.has(decision.intent)) return 'context_only_intent';
+  }
+  return 'deep';
+}
+
 // --- fallback / shallow result construction -------------------------------
 
 /**
@@ -282,7 +305,11 @@ async function evaluate(input, options = {}) {
   } else {
     const messages = buildReasoningPrompt(input);
     try {
-      const raw = await model.chat(messages, { logger: options.logger });
+      const raw = await model.chat(messages, {
+        logger: options.logger,
+        contextId: input.contextId || null,
+        correlationId,
+      });
       // The supplied evidence list is also the provenance whitelist (0.2
       // §16): any evidence id the model cites that is not in it was
       // invented, and is stripped before the result goes anywhere. 0.3
@@ -324,4 +351,4 @@ async function evaluate(input, options = {}) {
   return result;
 }
 
-module.exports = { evaluate, decideReasoningDepth, SCHEMA_VERSION };
+module.exports = { evaluate, decideReasoningDepth, explainReasoningDepth, SCHEMA_VERSION };

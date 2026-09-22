@@ -248,6 +248,21 @@ function createAdminRouter({
     res.json({ decisions: decisionStore.list({ limit: Number.isFinite(limit) ? limit : undefined, kind }) });
   });
 
+  // ReasonIQ's own activity log — the same decisionStore records, but
+  // filtered server-side to ReasonIQ's three kinds (gate, result, and the
+  // reasoning llm.call) and sorted newest first. Gives the admin page one
+  // dedicated surface for "what did ReasonIQ do with my turns?" without
+  // mixing in IntentIQ/native decisions.
+  router.get('/api/reasoniq/log', auth, (req, res) => {
+    if (!decisionStore) {
+      return res.json({ entries: [] });
+    }
+    const limit = Number(req.query.limit);
+    const entries = decisionStore.list({ limit: Number.isFinite(limit) ? limit : 1000 })
+      .filter((r) => r.kind === 'reasoniq.gate' || r.kind === 'reasoniq.result' || (r.kind === 'llm.call' && r.system === 'reasoniq'));
+    res.json({ entries });
+  });
+
   // --- Provider Settings routes ---
 
   if (providerStore) {

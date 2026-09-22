@@ -63,7 +63,9 @@ const {
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { interpret: classifyIntent } = require('./logos/intentIQ');
-const { evaluate: evaluateReasoning, decideReasoningDepth } = require('./logos/reasonIQ');
+const { evaluate: evaluateReasoning, decideReasoningDepth, explainReasoningDepth } = require('./logos/reasonIQ');
+const { logReasoningGate } = require('./logos/reasonLog');
+const crypto = require('crypto');
 const {
   formatReply, createStreamEmitter, resolveReplyText,
 } = require('./responseEngine');
@@ -876,14 +878,37 @@ async function runDeferredCognition({
     conversationContext: messages,
     evidence: Array.isArray(evidence) ? evidence : [],
     contextId: conversationId,
+    // One correlationId shared by this turn's gate record, reasoning result
+    // and reasoning LLM call — the admin log can then show one line of
+    // sight from "did the gate open?" to "what did the model do?".
+    correlationId: crypto.randomUUID(),
     // v1.0: the analysis sees the whole completed conversation — Gaia's
     // delivered reply is CONTEXT for the analysis, never something it can
     // edit (the reply was produced before this phase started).
     assistantReply: typeof replyText === 'string' ? replyText : null,
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
   };
+  // The gate's own trace: one cheap, local record per turn, written before
+  // the depth decision is acted on. Shallow turns leave a reason here
+  // instead of no trace at all; deep turns pair it with the result and llm
+  // call records below under the same correlationId.
+  const reasoningDepth = decideReasoningDepth(backgroundReasoningInput);
+  try {
+    logReasoningGate(
+      {
+        depth: reasoningDepth,
+        reason: explainReasoningDepth(backgroundReasoningInput),
+        intent: (intentDecision && intentDecision.intent) || null,
+        evidenceCount: Array.isArray(evidence) ? evidence.length : 0,
+        existingHypothesisCount: existingHypotheses.length,
+        contextId: conversationId,
+        correlationId: backgroundReasoningInput.correlationId,
+      },
+      decisionLogger
+    );
+  } catch (_) { /* observability never breaks the deferred phase */ }
   let reasoningResult = null;
-  if (decideReasoningDepth(backgroundReasoningInput) === 'deep') {
+  if (reasoningDepth === 'deep') {
     timing.start('reasoning_background');
     try {
       reasoningResult = await reasonIQ(backgroundReasoningInput, { logger: decisionLogger });

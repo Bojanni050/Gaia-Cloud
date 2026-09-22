@@ -656,3 +656,48 @@ test('TTS config is independent from main provider', async () => {
     await ctx.close();
   }
 });
+
+// --- GET /admin/api/reasoniq/log ----------------------------------------
+
+test('GET /admin/api/reasoniq/log requires auth', async () => {
+  const ctx = startTestServer();
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`);
+    assert.equal(res.status, 401);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/reasoniq/log returns only ReasonIQ records, newest first', async () => {
+  const ctx = startTestServer();
+  try {
+    ctx.decisionStore.append({ kind: 'reasoniq.gate', timestamp: '2026-01-01T00:00:01Z', depth: 'shallow', reason: 'no_evidence', evidenceCount: 0 });
+    ctx.decisionStore.append({ kind: 'reasoniq.result', timestamp: '2026-01-01T00:00:02Z', reasoningDepth: 'deep', confidence: 0.7 });
+    ctx.decisionStore.append({ kind: 'llm.call', timestamp: '2026-01-01T00:00:03Z', system: 'reasoniq', model: 'test-model', ok: true });
+    ctx.decisionStore.append({ kind: 'llm.call', timestamp: '2026-01-01T00:00:04Z', system: 'native', model: 'other-model', ok: true });
+    ctx.decisionStore.append({ kind: 'intentiq.decision', timestamp: '2026-01-01T00:00:05Z', intent: 'converse', status: 'accepted' });
+
+    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.entries.length, 3);
+    assert.ok(body.entries.every((e) => e.kind === 'reasoniq.gate' || e.kind === 'reasoniq.result' || (e.kind === 'llm.call' && e.system === 'reasoniq')));
+    assert.equal(body.entries[0].timestamp, '2026-01-01T00:00:03Z');
+    assert.equal(body.entries[2].timestamp, '2026-01-01T00:00:01Z');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/reasoniq/log returns an empty list without a decisionStore', async () => {
+  const ctx = startTestServer({ withDecisionStore: false });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.entries, []);
+  } finally {
+    await ctx.close();
+  }
+});

@@ -3313,3 +3313,72 @@ test('v1.0 background analysis: non-streaming transport behaves identically — 
   assert.equal(runtime.retained.filter((r) => r.kind === 'observation').length, 1);
   assert.equal(runtime.retained.filter((r) => r.kind === 'open-question').length, 1);
 });
+
+// === ReasonIQ gate log (turn integration) =================================
+
+test('deferred reasoning: every turn logs exactly one reasoniq.gate record with its reason', async () => {
+  const appended = [];
+  const decisionStore = { append: (r) => { appended.push(r); return true; } };
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('Hoi!', false); return 'Hoi!'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hoi, alles goed?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted', confidence: 0.9 }),
+    decisionStore,
+  });
+  await flushBackground();
+
+  const gates = appended.filter((r) => r.kind === 'reasoniq.gate');
+  assert.equal(gates.length, 1, 'exactly one gate record per turn');
+  assert.equal(gates[0].depth, 'shallow');
+  assert.equal(gates[0].reason, 'no_evidence');
+  assert.equal(gates[0].intent, 'converse');
+  assert.equal(gates[0].evidenceCount, 0);
+  assert.ok(gates[0].correlationId, 'the gate record carries a correlationId');
+  assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0, 'shallow still writes no result record');
+});
+
+test('deferred reasoning: a deep turn shares one correlationId across gate, result and llm.call', async () => {
+  const appended = [];
+  const decisionStore = { append: (r) => { appended.push(r); return true; } };
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('Analyse klaar.', false); return 'Analyse klaar.'; } };
+  const modelCalls = [];
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Verklaar waarom de server crasht.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    attachments: [{ filename: 'log.txt', content: 'Error: stack overflow at line 42 in parser.js' }],
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted', confidence: 0.8 }),
+    reasonIQ: async (input, options) => {
+      modelCalls.push(input.correlationId);
+      options.logger(JSON.stringify({
+        kind: 'reasoniq.result',
+        correlationId: input.correlationId,
+        reasoningDepth: 'deep',
+        confidence: 0.7,
+        hypotheses: [], hypothesisUpdates: [], contradictions: [],
+        observations: [], openQuestions: [], reflection: null,
+      }));
+      return deepReasoningResult();
+    },
+    decisionStore,
+  });
+  await flushBackground();
+
+  const gate = appended.find((r) => r.kind === 'reasoniq.gate');
+  const result = appended.find((r) => r.kind === 'reasoniq.result');
+  assert.ok(gate, 'a deep turn logs its gate record');
+  assert.equal(gate.depth, 'deep');
+  assert.equal(gate.reason, 'deep');
+  assert.ok(gate.evidenceCount >= 1, 'the evidence count is visible on the gate');
+  assert.ok(result, 'a deep turn logs its result record');
+  assert.equal(gate.correlationId, result.correlationId, 'gate and result share the correlationId');
+  assert.equal(modelCalls[0], gate.correlationId, 'the reasoning input carries the same correlationId');
+});
