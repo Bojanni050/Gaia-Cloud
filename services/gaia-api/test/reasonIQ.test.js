@@ -881,4 +881,61 @@ test('v1.0 logging: the result line counts observations/open questions and repor
   assert.equal(record.observationCount, 1);
   assert.equal(record.openQuestionCount, 1);
   assert.equal(record.reflectionPresent, true);
+  // v1.1: the analysis content itself is logged, so the admin decision log
+  // can show what ReasonIQ derived instead of bare counts.
+  assert.deepEqual(record.observations, ['The user explicitly decided that ReasonIQ must not participate in the conversation loop.']);
+  assert.deepEqual(record.openQuestions, ['Does the separation extend to synchronous reasoning for exceptional cases?']);
+  assert.equal(record.reflection.goalAchieved, true);
+  assert.match(record.reflection.learned, /deliberate user decision/);
+  assert.equal(record.reflection.unresolved, null);
+  assert.match(record.reflection.hypothesisImpact, /gained support/);
+});
+
+test('v1.1 logging: shallow results log empty analysis fields, not missing ones', async () => {
+  const lines = [];
+  await evaluate(
+    { text: 'hi there', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 } },
+    { reasoningModel: { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.reasoningDepth, 'shallow');
+  assert.deepEqual(record.observations, []);
+  assert.deepEqual(record.openQuestions, []);
+  assert.equal(record.reflection, null);
+});
+
+test('v1.1 logging: long analysis content is truncated and lists are bounded', async () => {
+  const longStatement = 'x'.repeat(1000);
+  const manyQuestions = Array.from({ length: 30 }, (_, i) => 'question ' + i);
+  const output = JSON.stringify({
+    interpretation: 'many observations',
+    evidence: [{ content: 'c', type: 'fact', origin: 'conversation' }],
+    hypotheses: [],
+    hypothesisUpdates: [],
+    contradictions: [],
+    uncertainties: [],
+    informationGaps: [],
+    observations: Array.from({ length: 30 }, (_, i) => ({ statement: longStatement + ' #' + i, evidence: [], relatedHypothesisId: null })),
+    openQuestions: manyQuestions,
+    reflection: { goalAchieved: null, learned: longStatement, unresolved: null, hypothesisImpact: null },
+    conclusions: [],
+    sufficientForConclusion: true,
+    confidence: 0.6,
+  });
+  const lines = [];
+  await evaluate(
+    {
+      text: 'bounded analysis test',
+      evidence: [{ id: 'evidence-1', source: 'conversation', content: 'c' }],
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+    },
+    { reasoningModel: { chat: async () => output, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.observations.length, 20);
+  assert.ok(record.observations[0].length <= 301);
+  assert.ok(record.observations[0].endsWith('…'));
+  assert.equal(record.openQuestions.length, 20);
+  assert.equal(record.reflection.learned.length, 301);
+  assert.ok(record.reflection.goalAchieved === null);
 });
