@@ -62,6 +62,7 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
     reasoningDepth: entry.result.reasoningDepth,
     hypothesisCount: entry.result.hypotheses.length,
     contradictionCount: entry.result.contradictions.length,
+    hypothesisUpdateCount: Array.isArray(entry.result.hypothesisUpdates) ? entry.result.hypothesisUpdates.length : 0,
     sufficientForConclusion: entry.result.sufficientForConclusion,
     // Cognitive Analysis Model v1.0 — additive background-cognition
     // observability: what the analysis derived, and its self-assessment.
@@ -90,4 +91,32 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
   return record;
 }
 
-module.exports = { logReasoningResult, truncate };
+/**
+ * One cheap, local gate record per turn (kind 'reasoniq.gate') — written
+ * BEFORE the depth decision is acted on, so every turn leaves a trace of
+ * whether ReasonIQ engaged and why not. Without it, shallow turns (the
+ * majority) are invisible in the decision log and "ReasonIQ never does
+ * anything" is indistinguishable from "the gate is too strict". Never
+ * includes user text — intent and counts only, same observability posture
+ * as the result record.
+ *
+ * @param {{ depth: 'shallow'|'deep', reason: 'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep', intent: string|null, evidenceCount: number, existingHypothesisCount: number, contextId: string|undefined, correlationId: string }} entry
+ * @param {(line: string) => void} [sink]
+ */
+function logReasoningGate(entry, sink = (line) => console.log(line)) {
+  const record = {
+    kind: 'reasoniq.gate',
+    timestamp: new Date().toISOString(),
+    correlationId: entry.correlationId,
+    contextId: entry.contextId || null,
+    depth: entry.depth,
+    reason: entry.reason,
+    intent: entry.intent || null,
+    evidenceCount: typeof entry.evidenceCount === 'number' ? entry.evidenceCount : 0,
+    existingHypothesisCount: typeof entry.existingHypothesisCount === 'number' ? entry.existingHypothesisCount : 0,
+  };
+  sink(JSON.stringify(record));
+  return record;
+}
+
+module.exports = { logReasoningResult, logReasoningGate, truncate };

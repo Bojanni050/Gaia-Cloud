@@ -240,6 +240,7 @@
   .analysis-items li { margin-bottom: 0.1rem; }
   .analysis-reflection { margin: 0; color: var(--text); overflow-wrap: anywhere; }
   .analysis-reflection li { margin-bottom: 0.1rem; }
+  .decision-badge.gate { background: color-mix(in srgb, var(--text-faint) 18%, transparent); color: var(--text-dim); }
   .decisions-empty { color: var(--text-faint); font-size: 0.82rem; }
 </style>
 </head>
@@ -494,6 +495,30 @@
 
   <hr class="separator">
 
+  <!-- ReasonIQ activity log -->
+  <div class="panel">
+    <h2>ReasonIQ — activity log</h2>
+    <p class="section-sub">Every turn's gate decision (why ReasonIQ engaged or skipped), deep analysis results, and actual reasoning model calls — linked by correlation ID.</p>
+    <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
+      <div style="flex:1; min-width:130px;">
+        <label for="riqLogKind">Kind</label>
+        <select id="riqLogKind">
+          <option value="">All</option>
+          <option value="reasoniq.gate">Gate decisions</option>
+          <option value="reasoniq.result">Analysis results</option>
+          <option value="llm.call">Model calls</option>
+        </select>
+      </div>
+      <div style="flex:0 0 90px; min-width:90px;">
+        <label for="riqLogLimit">Limit</label>
+        <input id="riqLogLimit" type="number" value="100" min="1" max="500">
+      </div>
+      <button id="refreshRiqLogBtn" class="secondary">Refresh</button>
+    </div>
+    <div class="status" id="riqLogStatus"></div>
+    <div class="decisions-list" id="riqLogList"></div>
+  </div>
+
   <!-- Decision Log -->
   <div class="panel">
     <h2>Logos — decision log</h2>
@@ -505,6 +530,7 @@
           <option value="">All</option>
           <option value="intentiq.decision">IntentIQ</option>
           <option value="reasoniq.result">ReasonIQ</option>
+          <option value="reasoniq.gate">ReasonIQ gates</option>
           <option value="llm.call">LLM calls</option>
         </select>
       </div>
@@ -1517,9 +1543,95 @@
   exportDecisionsJsonBtn.addEventListener('click', () => exportDecisions('json'));
   exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
 
+  // --- ReasonIQ activity log ---
+  const riqLogKindEl = $('riqLogKind'), riqLogLimitEl = $('riqLogLimit');
+  const refreshRiqLogBtn = $('refreshRiqLogBtn'), riqLogStatusEl = $('riqLogStatus'), riqLogListEl = $('riqLogList');
+
+  const GATE_REASONS = {
+    no_evidence: 'no evidence to reason over',
+    context_only_intent: 'conversational/context-only intent',
+    ambiguous_intent: 'ambiguous intent',
+    unknown_intent: 'unknown intent',
+    deep: 'deep analysis warranted',
+  };
+
+  function summarizeGate(d) {
+    return [
+      'depth: ' + (d.depth || '—'),
+      GATE_REASONS[d.reason] || d.reason || '—',
+      d.intent ? 'intent: ' + d.intent : null,
+      'evidence: ' + (d.evidenceCount ?? 0),
+      'tracked hypotheses: ' + (d.existingHypothesisCount ?? 0),
+    ].filter(Boolean).join(' · ');
+  }
+
+  function summarizeRiqLlmCall(d) {
+    return [
+      (d.ok ? '✓ ok' : '✗ failed'),
+      'model: ' + (d.model || '—'),
+      d.provider ? 'provider: ' + d.provider : null,
+      typeof d.latencyMs === 'number' ? d.latencyMs + 'ms' : null,
+      d.errorMessage ? 'error: ' + d.errorMessage : null,
+    ].filter(Boolean).join(' · ');
+  }
+
+  function renderRiqLog(entries) {
+    if (!entries.length) {
+      riqLogListEl.innerHTML = '<div class="decisions-empty">No ReasonIQ activity yet.</div>';
+      return;
+    }
+    riqLogListEl.innerHTML = entries.map((d) => {
+      let badgeClass = '', badgeLabel = '', summary = '';
+      if (d.kind === 'reasoniq.gate') {
+        badgeClass = 'gate'; badgeLabel = 'Gate · ' + (d.depth || '?'); summary = summarizeGate(d);
+      } else if (d.kind === 'reasoniq.result') {
+        badgeClass = 'reasoniq'; badgeLabel = 'Result'; summary = summarizeDecision(d);
+      } else {
+        badgeClass = 'llm-call'; badgeLabel = 'LLM call'; summary = summarizeRiqLlmCall(d);
+      }
+      return (
+        '<div class="decision-row">' +
+          '<div class="decision-head">' +
+            '<span class="decision-badge ' + badgeClass + '">' + escapeHtml(badgeLabel) + '</span>' +
+            '<span class="decision-time">' + escapeHtml(formatTime(d.timestamp)) +
+              (d.contextId ? ' · ' + escapeHtml(d.contextId) : '') +
+              (d.correlationId ? ' · ' + escapeHtml(d.correlationId.slice(0, 8)) : '') + '</span>' +
+          '</div>' +
+          '<div class="decision-summary">' + escapeHtml(summary) + '</div>' +
+          analysisBlocks(d) +
+        '</div>' +
+        ''
+      );
+    }).join('');
+  }
+
+  async function loadRiqLog() {
+    refreshRiqLogBtn.disabled = true;
+    setStatus(riqLogStatusEl, 'Loading…', true);
+    try {
+      const params = new URLSearchParams();
+      const limit = parseInt(riqLogLimitEl.value, 10);
+      if (limit > 0) params.set('limit', String(limit));
+      const res = await fetch('/admin/api/reasoniq/log?' + params.toString(), { headers: authHeaders() });
+      if (!res.ok) throw new Error('request failed (' + res.status + ')');
+      const body = await res.json();
+      let entries = body.entries || [];
+      if (riqLogKindEl.value) entries = entries.filter((e) => e.kind === riqLogKindEl.value);
+      renderRiqLog(entries);
+      setStatus(riqLogStatusEl, entries.length + ' shown.', true);
+    } catch (err) {
+      setStatus(riqLogStatusEl, 'Could not load ReasonIQ log: ' + err.message, false);
+    } finally {
+      refreshRiqLogBtn.disabled = false;
+    }
+  }
+
+  refreshRiqLogBtn.addEventListener('click', loadRiqLog);
+  riqLogKindEl.addEventListener('change', loadRiqLog);
+
   // --- Init ---
-  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); }
-  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); });
+  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); loadRiqLog(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); loadRiqLog(); });
 })();
 </script>
 </body>

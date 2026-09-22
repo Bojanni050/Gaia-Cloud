@@ -79,7 +79,7 @@ function createReasoningModelClient(options = {}) {
 
   /**
    * @param {Array<{role: string, content: string|Array<object>}>} messages content may be a plain string, or an OpenAI-compatible content-block array (e.g. for image_url blocks — see ocrResolver.js)
-   * @param {{ responseFormat?: object|null, logger?: (line: string) => void }} [options] Defaults to forcing `{type:"json_object"}`, ReasonIQ's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking ReasonIQ's structured-output question). `logger` is the same per-turn sink reasonIQ.js's evaluate() receives for logReasoningResult — forwarded here so an actual LLM call gets logged too (kind 'llm.call'), distinct from the reasoning result itself.
+   * @param {{ responseFormat?: object|null, logger?: (line: string) => void, contextId?: string|null, correlationId?: string|null }} [options] Defaults to forcing `{type:"json_object"}`, ReasonIQ's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking ReasonIQ's structured-output question). `logger` is the same per-turn sink reasonIQ.js's evaluate() receives for logReasoningResult — forwarded here so an actual LLM call gets logged too (kind 'llm.call'), distinct from the reasoning result itself. `contextId`/`correlationId` come from the reasoning input, so an actual call can be tied to the turn it served in the admin log.
    * @returns {Promise<string>} the raw text content of the completion — the caller parses/validates it, this client does not.
    */
   async function chat(messages, options = {}) {
@@ -95,6 +95,8 @@ function createReasoningModelClient(options = {}) {
         latencyMs: Date.now() - startedAt,
         ok,
         errorMessage: errorMessage || null,
+        contextId: options.contextId || null,
+        correlationId: options.correlationId || null,
       }, options.logger);
     };
 

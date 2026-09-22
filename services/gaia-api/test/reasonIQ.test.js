@@ -10,7 +10,8 @@ const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = requi
 const { buildReasoningPrompt } = require('../src/logos/reasonPrompt');
 const { createReasoningModelClient } = require('../src/logos/reasoningModelClient');
 const reasonIQ = require('../src/logos/reasonIQ');
-const { evaluate, decideReasoningDepth } = reasonIQ;
+const { evaluate, explainReasoningDepth, decideReasoningDepth } = reasonIQ;
+const { logReasoningGate } = require('../src/logos/reasonLog');
 const { runLogos } = require('../src/logos/index');
 
 const silent = { silent: true };
@@ -938,4 +939,51 @@ test('v1.1 logging: long analysis content is truncated and lists are bounded', a
   assert.equal(record.openQuestions.length, 20);
   assert.equal(record.reflection.learned.length, 301);
   assert.ok(record.reflection.goalAchieved === null);
+});
+
+// === ReasonIQ gate log ====================================================
+
+test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason', () => {
+  assert.equal(explainReasoningDepth({ text: 'short', evidence: [] }), 'no_evidence');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }), 'no_evidence');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'converse', status: 'accepted' } }), 'context_only_intent');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: null, status: 'unknown' } }), 'unknown_intent');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'deep');
+  // reason and depth agree on the same input, always
+  for (const input of [
+    { text: 'x', evidence: [] },
+    { text: 'x', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'meta.question', status: 'accepted' } },
+    { text: 'x', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } },
+  ]) {
+    assert.equal(
+      decideReasoningDepth(input) === 'deep',
+      explainReasoningDepth(input) === 'deep'
+    );
+  }
+});
+
+test('logReasoningGate writes a cheap per-turn trace without user text', () => {
+  const lines = [];
+  const record = logReasoningGate(
+    {
+      depth: 'shallow',
+      reason: 'no_evidence',
+      intent: 'converse',
+      evidenceCount: 0,
+      existingHypothesisCount: 2,
+      contextId: 'ctx-1',
+      correlationId: 'corr-1',
+    },
+    (l) => lines.push(l)
+  );
+  assert.equal(lines.length, 1);
+  assert.equal(record.kind, 'reasoniq.gate');
+  assert.equal(record.depth, 'shallow');
+  assert.equal(record.reason, 'no_evidence');
+  assert.equal(record.intent, 'converse');
+  assert.equal(record.evidenceCount, 0);
+  assert.equal(record.existingHypothesisCount, 2);
+  assert.equal(record.contextId, 'ctx-1');
+  assert.equal(record.correlationId, 'corr-1');
+  assert.ok(!JSON.stringify(record).includes('user text'), 'gate record carries no user text');
 });
