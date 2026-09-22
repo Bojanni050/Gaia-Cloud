@@ -37,7 +37,15 @@ const SCHEMA_VERSION = 'reasoniq.v1';
 // are NEVER automatically asked of the user) and a reflection block
 // (background self-assessment, observability-only). Additive again;
 // nothing was removed.
-const REASONER_VERSION = 'reasoniq-v1.0';
+// v1.1 (Cognitive Analysis Model, Part 4): relationships between existing
+// knowledge (observation↔hypothesis, hypothesis↔pattern, pattern↔pattern,
+// new-evidence↔existing-knowledge) become an explicit analysis product —
+// they ride existing structures and persist as gaia:relationship world
+// facts, never a separate store. The reflection block gains the remaining
+// Part 4 axes: directionChange (where the conversation turned) and
+// patternImpact (which patterns emerged/changed). Still additive; nothing
+// was removed, and openQuestions keep their never-asked posture.
+const REASONER_VERSION = 'reasoniq-v1.1';
 
 /** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions ReasonIQ must never collapse (§11). */
 const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unknown']);
@@ -57,6 +65,24 @@ const REASONING_DEPTHS = Object.freeze(['shallow', 'deep']);
 
 /** How much a contradiction matters — ReasonIQ reports it, Gaia weighs it. */
 const CONTRADICTION_SIGNIFICANCE = Object.freeze(['low', 'medium', 'high']);
+
+/**
+ * v1.1 (Part 4 §Relationships): the kinds of existing knowledge a
+ * relationship can connect. Observations and hypotheses arrive as input
+ * context; patterns arrive as input context; evidence is the assembled
+ * evidence list. No kind outside this set can ever be claimed as a
+ * relationship endpoint.
+ */
+const RELATIONSHIP_NODE_KINDS = Object.freeze(['evidence', 'observation', 'hypothesis', 'pattern']);
+
+/**
+ * v1.1 (Part 4 §Relationships): what a relationship asserts about its two
+ * endpoints. The four evidence verdicts (supports/weakens/contradicts/
+ * irrelevant) cover evidence-driven pressure; relates_to covers
+ * topic/theme kinship that carries no directional verdict — the same
+ * vocabulary the hypothesisManager already applies to evidence updates.
+ */
+const RELATIONSHIP_TYPES = Object.freeze(['supports', 'weakens', 'contradicts', 'irrelevant', 'relates_to']);
 
 function isValidEpistemicStatus(v) {
   return EPISTEMIC_STATUS.includes(v);
@@ -136,15 +162,42 @@ function isValidHypothesisStatus(v) {
  */
 
 /**
+ * @typedef {Object} KnowledgeRelationship
+ * v1.1 (Part 4 §Relationships): one explicit relationship between two nodes
+ * of existing knowledge. Endpoints are VALIDATED against what was actually
+ * supplied this turn (evidence ids, observation statements, existing
+ * hypothesis ids, existing pattern ids) — an invented reference is dropped
+ * at the endpoint, never passed upstream. ReasonIQ identifies the
+ * relationship; it never acts on it (no lifecycle, no confidence change
+ * here). Persistence rides existing structures: gaia:relationship world
+ * facts via the cognition adapter — there is no relationship database.
+ * @property {'evidence'|'observation'|'hypothesis'|'pattern'} fromKind
+ * @property {string|null} fromId - evidence id / hypothesis id / pattern id when the endpoint has one; observations are content-addressed
+ * @property {string} fromStatement - endpoint content, for auditability when ids are absent
+ * @property {'evidence'|'observation'|'hypothesis'|'pattern'} toKind
+ * @property {string|null} toId
+ * @property {string} toStatement
+ * @property {'supports'|'weakens'|'contradicts'|'irrelevant'|'relates_to'} type
+ * @property {number} confidence - confidence in the relationship claim itself, never any endpoint's confidence
+ * @property {string|null} rationale - why this relationship follows from the analysis
+ */
+
+/**
  * @typedef {Object} Reflection
  * v1.0 (Cognitive Analysis Model §7): background self-assessment of the
  * completed conversation. Internal cognitive material — observability
  * only, never persisted as a memory object, and it can never modify the
  * already-delivered response (ReasonIQ runs after the reply exists).
+ * v1.1 (Part 4 §Reflection) adds two axes: directionChange (where the
+ * conversation changed direction) and patternImpact (which patterns
+ * emerged or changed). Both stay optional nullable strings — honest
+ * absence over fabricated narration.
  * @property {boolean|null} goalAchieved - whether the conversation's apparent goal was achieved, when that is assessable
  * @property {string|null} learned - what this turn established/taught
  * @property {string|null} unresolved - what remained unresolved
  * @property {string|null} hypothesisImpact - whether existing hypotheses were strengthened/weakened, and what new hypotheses emerged
+ * @property {string|null} directionChange - v1.1: where the conversation changed direction, when it did
+ * @property {string|null} patternImpact - v1.1: which patterns emerged or changed, when any did
  */
 
 /**
@@ -168,6 +221,7 @@ function isValidHypothesisStatus(v) {
  * @property {string[]} informationGaps
  * @property {Observation[]} observations - v1.0: concrete derived information (fact-shaped, never hypotheses)
  * @property {string[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; ReasonIQ NEVER asks the user about them
+ * @property {KnowledgeRelationship[]} relationships - v1.1: explicit relationships between existing knowledge — endpoint-validated, persisted via the cognition adapter as gaia:relationship world facts
  * @property {Reflection|null} reflection - v1.0: background self-assessment; observability-only, never persisted as memory
  * @property {Conclusion[]} conclusions
  * @property {boolean} sufficientForConclusion
@@ -195,6 +249,8 @@ module.exports = {
   HYPOTHESIS_STATUSES,
   REASONING_DEPTHS,
   CONTRADICTION_SIGNIFICANCE,
+  RELATIONSHIP_NODE_KINDS,
+  RELATIONSHIP_TYPES,
   isValidEpistemicStatus,
   isValidVerdict,
   isValidHypothesisStatus,

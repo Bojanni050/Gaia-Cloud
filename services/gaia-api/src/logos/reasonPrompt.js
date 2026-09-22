@@ -37,10 +37,18 @@ Rules:
 - openQuestions are unresolved questions worth keeping (an uncertain interpretation,
   a hypothesis needing more evidence, an unfinished goal). You identify them;
   you NEVER ask the user about them — that is Gaia's decision, later.
+- relationships connect EXISTING knowledge you were given or just derived:
+  observation↔hypothesis, hypothesis↔pattern, pattern↔pattern, or new
+  evidence↔existing knowledge. Each endpoint must be locatable in the input
+  (an evidence id, one of this turn's observation statements, an existing
+  hypothesis id, an existing pattern id from existingPatterns) or in your
+  own observations array — a relationship to anything else is invented and
+  will be dropped. You identify relationships; you never act on them.
 - reflection is your honest self-assessment of how this conversation went: whether
-  the apparent goal was achieved, what was learned, what remained unresolved, and
-  whether existing hypotheses were strengthened or weakened. It is internal
-  background material — it never changes the already-delivered response.
+  the apparent goal was achieved, where the conversation changed direction,
+  what was learned, what remained unresolved, which hypotheses changed, and
+  which patterns emerged. It is internal background material — it never
+  changes the already-delivered response.
 - The input may carry assistantReply: what Gaia already answered for this turn.
   It is context for your analysis of the conversation, never something you edit.
 - confidence values are 0..1 and must never be reported as exactly 1 (never claim certainty).
@@ -90,11 +98,24 @@ Schema:
     "relatedHypothesisId": string|null // EXISTING hypothesis this is relevant to, when one does
   }],
   "openQuestions": [string],        // unresolved questions — identified, never asked
+  "relationships": [{              // explicit links between existing knowledge
+    "fromKind": "evidence"|"observation"|"hypothesis"|"pattern",
+    "fromId": string|null,          // evidence/hypothesis/pattern id when it has one
+    "fromStatement": string,        // endpoint content (the observation's statement for observation endpoints)
+    "toKind": "evidence"|"observation"|"hypothesis"|"pattern",
+    "toId": string|null,
+    "toStatement": string,
+    "type": "supports"|"weakens"|"contradicts"|"irrelevant"|"relates_to",
+    "confidence": number,          // confidence in the relationship claim itself
+    "rationale": string|null
+  }],
   "reflection": {                   // background self-assessment; never alters the delivered reply
     "goalAchieved": boolean|null,
     "learned": string|null,
     "unresolved": string|null,
-    "hypothesisImpact": string|null
+    "hypothesisImpact": string|null,
+    "directionChange": string|null, // where the conversation changed direction
+    "patternImpact": string|null    // which patterns emerged or changed
   },
   "conclusions": [{ "statement": string, "basis": "fact"|"inference"|"hypothesis", "confidence": number, "evidence": [string] /* input evidence IDS this stands on */ }],
   "sufficientForConclusion": boolean,
@@ -108,6 +129,7 @@ Schema:
  *   conversationContext: Array<{role: string, content: string}>,
  *   evidence: Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>,
  *   existingHypotheses?: Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>,
+ *   existingPatterns?: Array<{id: string, statement: string, status?: string, confidence?: number|null}>,
  *   assistantReply?: string|null, v1.0: Gaia's already-delivered reply for this turn — analysis context only
  * }} input
  * @returns {Array<{role: string, content: string}>}
@@ -132,6 +154,15 @@ function buildReasoningPrompt(input) {
       confidence: typeof h.confidence === 'number' ? h.confidence : null,
       evidenceFor: Array.isArray(h.evidenceFor) ? h.evidenceFor : [],
       evidenceAgainst: Array.isArray(h.evidenceAgainst) ? h.evidenceAgainst : [],
+    })),
+    // v1.1 (Part 4): existing patterns as CONTEXT for relationship
+    // identification (hypothesis↔pattern, pattern↔pattern) — slimmed to
+    // the same depth as hypotheses, never a second pattern store.
+    existingPatterns: (input.existingPatterns || []).slice(0, 6).map((p) => ({
+      id: p.id,
+      statement: p.statement,
+      status: p.status || null,
+      confidence: typeof p.confidence === 'number' ? p.confidence : null,
     })),
   };
 

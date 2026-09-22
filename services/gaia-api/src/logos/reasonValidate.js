@@ -11,7 +11,7 @@
  * an honest fallback result rather than ever passing bad data upstream.
  */
 
-const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, CONTRADICTION_SIGNIFICANCE } = require('./reasonModels');
+const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./reasonModels');
 
 class MalformedReasoningOutputError extends Error {
   constructor(reason) {
@@ -159,12 +159,65 @@ function coerceReflection(item) {
   const learned = asNullableString(item.learned);
   const unresolved = asNullableString(item.unresolved);
   const hypothesisImpact = asNullableString(item.hypothesisImpact);
-  if (learned == null && unresolved == null && hypothesisImpact == null) return null;
+  // v1.1 (Part 4 §Reflection): the two remaining reflection axes — where
+  // the conversation changed direction and which patterns emerged/changed.
+  const directionChange = asNullableString(item.directionChange);
+  const patternImpact = asNullableString(item.patternImpact);
+  if (
+    learned == null && unresolved == null && hypothesisImpact == null
+    && directionChange == null && patternImpact == null
+  ) return null;
   return {
     goalAchieved: typeof item.goalAchieved === 'boolean' ? item.goalAchieved : null,
     learned,
     unresolved,
     hypothesisImpact,
+    directionChange,
+    patternImpact,
+  };
+}
+
+/**
+ * v1.1 (Part 4 §Relationships): one explicit relationship between two nodes
+ * of existing knowledge. Shape-strict here — both endpoints must name a
+ * known node kind and a non-empty content statement — while every id/
+ * statement reference is validated against what was actually supplied in
+ * resolveProvenance below: an invented reference drops the whole
+ * relationship (an endpoint that cannot be located says nothing), never
+ * passes it upstream.
+ */
+function coerceRelationship(item) {
+  if (!item || typeof item !== 'object') throw new MalformedReasoningOutputError('relationship is not an object');
+  if (!RELATIONSHIP_TYPES.includes(item.type)) {
+    throw new MalformedReasoningOutputError(`invalid relationship type: ${JSON.stringify(item.type)}`);
+  }
+  const coerceEndpoint = (prefix) => {
+       const kind = item[`${prefix}Kind`];
+    if (!RELATIONSHIP_NODE_KINDS.includes(kind)) {
+      throw new MalformedReasoningOutputError(`invalid ${prefix}Kind: ${JSON.stringify(kind)}`);
+    }
+    const id = typeof item[`${prefix}Id`] === 'string' && item[`${prefix}Id`].trim() ? item[`${prefix}Id`].trim() : null;
+    const statement = asString(item[`${prefix}Statement`]);
+    if (!id && !statement) {
+      throw new MalformedReasoningOutputError(`relationship ${prefix} endpoint has neither id nor statement`);
+    }
+    return { kind, id, statement };
+  };
+  const from = coerceEndpoint('from');
+  const to = coerceEndpoint('to');
+  if (from.kind === to.kind && from.id && to.id && from.id === to.id) {
+    throw new MalformedReasoningOutputError('relationship endpoints are identical');
+  }
+  return {
+    fromKind: from.kind,
+    fromId: from.id,
+    fromStatement: from.statement,
+    toKind: to.kind,
+    toId: to.id,
+    toStatement: to.statement,
+    type: item.type,
+    confidence: clampConfidence(item.confidence),
+    rationale: asString(item.rationale, null),
   };
 }
 
@@ -203,11 +256,18 @@ function dedupeIds(value) {
  * hypothesisUpdates' hypothesisId must reference hypotheses that were in
  * the input list, or they are nulled/dropped — a model can never conjure a
  * hypothesis into being updated.
+ * v1.1 (Part 4 §Relationships): relationship endpoints are validated the
+ * same way — an endpoint must be locatable in what was actually supplied
+ * this turn (evidence id, this turn's observation statements, existing
+ * hypothesis id, existing pattern id) or the whole relationship is
+ * dropped. A model can never conjure a relationship to knowledge that
+ * was not given to it.
  * @param {object} body a parsed-and-coerced result body
  * @param {Array<{id?: string, source?: string}>|undefined} knownEvidence
  * @param {Array<{id: string}>|undefined} knownExisting
+ * @param {Array<{id: string}>|undefined} knownPatterns - v1.1: existing patterns supplied as context, for pattern endpoints
  */
-function resolveProvenance(body, knownEvidence, knownExisting) {
+function resolveProvenance(body, knownEvidence, knownExisting, knownPatterns) {
   const known = new Map();
   for (const e of Array.isArray(knownEvidence) ? knownEvidence : []) {
     if (e && typeof e.id === 'string' && e.id) known.set(e.id, typeof e.source === 'string' ? e.source : null);
@@ -215,6 +275,9 @@ function resolveProvenance(body, knownEvidence, knownExisting) {
 
   const knownHypIds = new Set((Array.isArray(knownExisting) ? knownExisting : [])
     .map((h) => (h && typeof h.id === 'string' ? h.id : null))
+    .filter(Boolean));
+  const knownPatternIds = new Set((Array.isArray(knownPatterns) ? knownPatterns : [])
+    .map((p) => (p && typeof p.id === 'string' ? p.id : null))
     .filter(Boolean));
 
   for (const h of body.hypotheses) {
@@ -248,6 +311,26 @@ function resolveProvenance(body, knownEvidence, knownExisting) {
       if (c.evidenceB != null && !known.has(c.evidenceB)) c.evidenceB = null;
     }
   }
+  // v1.1: relationship endpoints must be locatable in what was supplied —
+  // evidence ids, this turn's observation statements, existing hypothesis
+  // ids, existing pattern ids. An endpoint that cannot be located drops
+  // the whole relationship; matching by trimmed statement is the fallback
+  // for observation endpoints, which are content-addressed, not id'd.
+  const observationStatements = new Set(body.observations.map((o) => o.statement.trim()).filter(Boolean));
+  const endpointLocatable = (endpoint) => {
+    if (endpoint.kind === 'evidence') return endpoint.id != null && known.has(endpoint.id);
+    if (endpoint.kind === 'hypothesis') return endpoint.id != null && knownHypIds.has(endpoint.id);
+    if (endpoint.kind === 'pattern') return endpoint.id != null && knownPatternIds.has(endpoint.id);
+    if (endpoint.kind === 'observation') {
+      if (observationStatements.size === 0) return false;
+      return observationStatements.has(String(endpoint.statement || '').trim());
+    }
+    return false;
+  };
+  body.relationships = body.relationships.filter(
+    (r) => endpointLocatable({ kind: r.fromKind, id: r.fromId, statement: r.fromStatement })
+      && endpointLocatable({ kind: r.toKind, id: r.toKind === 'observation' ? r.toStatement : r.toId, statement: r.toStatement })
+  );
 
   body.observations = body.observations.map((o) => {
     const resolved = {
@@ -283,10 +366,13 @@ function resolveProvenance(body, knownEvidence, knownExisting) {
  * @param {Array<{id: string}>} [knownExisting] the existing hypotheses
  *   supplied as context (0.3) — existingId/hypothesisUpdates references are
  *   validated against them; invented ones are dropped/nulled
+ * @param {Array<{id: string}>} [knownPatterns] the existing patterns
+ *   supplied as context (v1.1) — pattern relationship endpoints are
+ *   validated against them; invented ones drop the relationship
  * @returns {object} a validated ReasoningResult body (no schemaVersion/reasoningDepth/meta)
  * @throws {MalformedReasoningOutputError}
  */
-function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting) {
+function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting, knownPatterns) {
   let parsed;
   try {
     parsed = JSON.parse(rawText);
@@ -310,12 +396,13 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting) 
     informationGaps: asArray(parsed.informationGaps).map((g) => asString(g)).filter(Boolean),
     observations: asArray(parsed.observations).map(coerceObservation),
     openQuestions: asArray(parsed.openQuestions).map((q) => asString(q)).filter(Boolean),
+    relationships: asArray(parsed.relationships).map(coerceRelationship),
     reflection: coerceReflection(parsed.reflection),
     conclusions: asArray(parsed.conclusions).map(coerceConclusion),
     sufficientForConclusion: Boolean(parsed.sufficientForConclusion),
     confidence: clampConfidence(parsed.confidence),
   };
-  return resolveProvenance(body, knownEvidence, knownExisting);
+  return resolveProvenance(body, knownEvidence, knownExisting, knownPatterns);
 }
 
 module.exports = { parseAndValidateReasoningOutput, MalformedReasoningOutputError, clampConfidence };

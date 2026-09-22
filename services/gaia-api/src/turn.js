@@ -862,6 +862,21 @@ async function runDeferredCognition({
     }
     timing.end('deferred.hypothesis_prep');
   }
+  // v1.1 (Part 4 §Relationships): existing patterns are CONTEXT for
+  // relationship identification (hypothesis↔pattern, pattern↔pattern)
+  // — manager state first, same seeding posture as hypotheses. Never a
+  // second pattern store; failures are non-fatal.
+  let existingPatterns = [];
+  if (hypothesisRuntime && hypothesisRuntime.patternManager) {
+    try {
+      existingPatterns = hypothesisRuntime.patternManager.list().map((p) => ({
+        id: p.id,
+        statement: p.statement,
+        status: p.status,
+        confidence: typeof p.confidence === 'number' ? p.confidence : null,
+      }));
+    } catch (_) { /* context seeding must never break the deferred phase */ }
+  }
 
   // Background ReasonIQ — ONE clear background path. The depth heuristic
   // (reasonIQ.js's decideReasoningDepth, free and local) is evaluated HERE
@@ -887,6 +902,8 @@ async function runDeferredCognition({
     // edit (the reply was produced before this phase started).
     assistantReply: typeof replyText === 'string' ? replyText : null,
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
+    // v1.1: existing patterns as analysis context (Part 4 relationships).
+    ...(hypothesisRuntime ? { existingPatterns } : {}),
   };
   // The gate's own trace: one cheap, local record per turn, written before
   // the depth decision is acted on. Shallow turns leave a reason here
@@ -971,9 +988,13 @@ async function runDeferredCognition({
     // conversational memory — a memory-unworthy request can still yield
     // legitimate analysis products (same §15 rule as hypotheses).
     if (hypothesisRuntime.cognition && reasoningResult) {
-      const { retainObservation, retainOpenQuestion } = hypothesisRuntime.cognition;
+      const { retainObservation, retainOpenQuestion, retainRelationship } = hypothesisRuntime.cognition;
       const observations = Array.isArray(reasoningResult.observations) ? reasoningResult.observations : [];
       const openQuestions = Array.isArray(reasoningResult.openQuestions) ? reasoningResult.openQuestions : [];
+      // v1.1 (Part 4 §Relationships): endpoint-validated relationships
+      // persist as gaia:relationship world facts — Hindsight IS the
+      // relationship mechanism; there is no separate relationship store.
+      const relationships = Array.isArray(reasoningResult.relationships) ? reasoningResult.relationships : [];
       if (typeof retainObservation === 'function' && observations.length > 0) {
         timing.start('deferred.cognition_observations');
         try {
@@ -995,6 +1016,17 @@ async function runDeferredCognition({
           console.warn(`[gaia:cognition] open question retention failed (non-fatal): ${err.message}`);
         }
         timing.end('deferred.cognition_open_questions', { openQuestionCount: openQuestions.length });
+      }
+      if (typeof retainRelationship === 'function' && relationships.length > 0) {
+        timing.start('deferred.cognition_relationships');
+        try {
+          for (const r of relationships) {
+            await retainRelationship(r);
+          }
+        } catch (err) {
+          console.warn(`[gaia:cognition] relationship retention failed (non-fatal): ${err.message}`);
+        }
+        timing.end('deferred.cognition_relationships', { relationshipCount: relationships.length });
       }
     }
   }

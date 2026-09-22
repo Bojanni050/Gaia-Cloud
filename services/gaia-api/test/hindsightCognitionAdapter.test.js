@@ -7,6 +7,7 @@ const {
   createHindsightCognitionAdapter,
   OBSERVATION_TAG,
   OPEN_QUESTION_TAG,
+  RELATIONSHIP_TAG,
 } = require('../src/reasoning/hindsightCognitionAdapter');
 
 function makeFake() {
@@ -79,6 +80,64 @@ test('cognition adapter: an empty observation or question is refused, not stored
   const adapter = createHindsightCognitionAdapter({ client });
   await assert.rejects(() => adapter.retainObservation({ statement: '  ' }));
   await assert.rejects(() => adapter.retainOpenQuestion(''));
+  assert.equal(facts.size, 0);
+});
+
+test('cognition adapter: a relationship persists as a gaia:relationship world fact with structured endpoint metadata', async () => {
+  const { client, facts } = makeFake();
+  const adapter = createHindsightCognitionAdapter({ client });
+  const { factId } = await adapter.retainRelationship({
+    fromKind: 'evidence',
+    fromId: 'evidence-1',
+    fromStatement: 'the user referenced the pattern milestone',
+    toKind: 'pattern',
+    toId: 'ptn-1',
+    toStatement: 'Recurring relationship around: streaming races.',
+    type: 'relates_to',
+    confidence: 0.6,
+    rationale: 'thematic kin',
+  });
+  const unit = [...facts.values()][0];
+  assert.equal(unit.type, 'world');
+  assert.equal(unit.tags[0], RELATIONSHIP_TAG);
+  assert.equal(unit.context, 'gaia relationship');
+  assert.match(unit.document_id, /^gaia-rel-/);
+  assert.equal(unit.metadata.gaia_relationship_from_kind, 'evidence');
+  assert.equal(unit.metadata.gaia_relationship_from_id, 'evidence-1');
+  assert.equal(unit.metadata.gaia_relationship_to_kind, 'pattern');
+  assert.equal(unit.metadata.gaia_relationship_to_id, 'ptn-1');
+  assert.equal(unit.metadata.gaia_relationship_type, 'relates_to');
+  assert.equal(unit.metadata.gaia_relationship_confidence, '0.6');
+  assert.equal(unit.metadata.gaia_relationship_updated_by, 'gaia-reasoniq');
+  assert.match(unit.text, /evidence:evidence-1 relates_to pattern:ptn-1/);
+  assert.equal(factId, unit.id);
+});
+
+test('cognition adapter: an observation-endpoint relationship stores by statement when no id exists', async () => {
+  const { client, facts } = makeFake();
+  const adapter = createHindsightCognitionAdapter({ client });
+  await adapter.retainRelationship({
+    fromKind: 'observation',
+    fromId: null,
+    fromStatement: 'The user explicitly linked hypothesis tracking to pattern formation.',
+    toKind: 'hypothesis',
+    toId: 'hyp-1',
+    toStatement: 'Concurrent cancellation causes the streaming race.',
+    type: 'supports',
+    confidence: 0.7,
+    rationale: null,
+  });
+  const unit = [...facts.values()][0];
+  assert.equal(unit.metadata.gaia_relationship_from_id, '');
+  assert.equal(unit.metadata.gaia_relationship_from_statement, 'The user explicitly linked hypothesis tracking to pattern formation.');
+  assert.match(unit.text, /observation:.* supports hypothesis:hyp-1/);
+});
+
+test('cognition adapter: a relationship without endpoints or type is refused, not stored silently', async () => {
+  const { client, facts } = makeFake();
+  const adapter = createHindsightCognitionAdapter({ client });
+  await assert.rejects(() => adapter.retainRelationship({ fromKind: 'evidence', toKind: '', type: '' }));
+  await assert.rejects(() => adapter.retainRelationship(null));
   assert.equal(facts.size, 0);
 });
 

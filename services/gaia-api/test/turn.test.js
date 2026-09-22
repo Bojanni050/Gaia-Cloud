@@ -1476,6 +1476,99 @@ test("0.4 turn: a durable hypothesis change opens the gate; a plain conversation
   assert.equal(runtime.patternManager.list().length, 0); // no pattern from "Hoi Gaia"
 });
 
+// --- ReasonIQ v1.1 (Part 4): relationships in the deferred cognition phase ----
+
+test("v1.1 turn: existing patterns are seeded into the deferred ReasonIQ call and relationships persist via the cognition adapter", async () => {
+  const reasonIQCalls = [];
+  const retained = [];
+  const { createHypothesisManager } = require("../src/reasoning/hypothesisManager");
+  const manager = createHypothesisManager({
+    hypotheses: [{ id: "hyp-seed", statement: "Cancellation races teardown.", status: "testing", confidence: 0.6, evidenceFor: ["e1"] }],
+  });
+  const patternManager = {
+    list: () => [{ id: "ptn-1", statement: "Recurring relationship around: streaming races.", status: "supported", confidence: 0.7 }],
+  };
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta("ok", false); return "A reply."; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Analyseer de streaming architecture op race conditions, zoals we eerder bespraken." }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
+    reasonIQ: async (input) => {
+      reasonIQCalls.push(input);
+      return {
+        interpretation: "weighing",
+        hypotheses: [],
+        hypothesisUpdates: [],
+        contradictions: [], uncertainties: [], informationGaps: [],
+        observations: [],
+        openQuestions: [],
+        relationships: [
+          {
+            fromKind: "evidence", fromId: "e1", fromStatement: "the recalled memory",
+            toKind: "pattern", toId: "ptn-1", toStatement: "Recurring relationship around: streaming races.",
+            type: "relates_to", confidence: 0.6, rationale: "the recalled race discussion matches the pattern",
+          },
+        ],
+        conclusions: [], sufficientForConclusion: false, confidence: 0.65,
+      };
+    },
+    hypothesisRuntime: {
+      manager,
+      patternManager,
+      cognition: {
+        retainObservation: async () => {},
+        retainOpenQuestion: async () => {},
+        retainRelationship: async (r) => { retained.push(r); },
+      },
+    },
+  });
+  assert.match(res.written.at(-1), /data: \[DONE\]/, "the reply is delivered without waiting for ReasonIQ");
+  await flushBackground();
+  assert.equal(reasonIQCalls.length, 1, "ReasonIQ runs exactly once for a reasoning turn");
+  // The deferred call carries the seeded pattern context.
+  assert.equal(reasonIQCalls[0].existingPatterns[0].id, "ptn-1");
+  assert.equal(reasonIQCalls[0].existingPatterns[0].statement, "Recurring relationship around: streaming races.");
+  // The validated relationship reached the cognition adapter (Hindsight mechanism).
+  assert.equal(retained.length, 1);
+  assert.equal(retained[0].toId, "ptn-1");
+  assert.equal(retained[0].type, "relates_to");
+});
+
+test("v1.1 turn: relationship retention failure is non-fatal \u2014 the reply already delivered stands", async () => {
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta("still fine", false); return "still fine"; } };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: "user", content: "Analyseer de architectuur op race conditions, zoals we eerder bespraken." }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res,
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "inform.explain", status: "accepted" }),
+    reasonIQ: async () => ({
+      interpretation: "x",
+      hypotheses: [], hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [],
+      observations: [], openQuestions: [],
+      relationships: [{ fromKind: "evidence", fromId: "e1", fromStatement: "x", toKind: "pattern", toId: "ptn-1", toStatement: "y", type: "relates_to", confidence: 0.5, rationale: null }],
+      conclusions: [], sufficientForConclusion: false, confidence: 0.6,
+    }),
+    hypothesisRuntime: {
+      manager: require("../src/reasoning/hypothesisManager").createHypothesisManager({}),
+      patternManager: { list: () => [{ id: "ptn-1", statement: "y", status: "candidate", confidence: 0.5 }] },
+      cognition: {
+        retainObservation: async () => {},
+        retainOpenQuestion: async () => {},
+        retainRelationship: async () => { throw new Error("hindsight down"); },
+      },
+    },
+  });
+  await flushBackground();
+  assert.match(res.written[0], /still fine/, "the reply survives a relationship persistence failure");
+});
+
 // --- Pattern Awareness 0.1: gated recall + decision-owned usage ----------------
 
 const PATTERN_CANDIDATE = {

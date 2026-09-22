@@ -169,6 +169,7 @@ function baseResult(overrides = {}, evidence = []) {
     // them from the validated model output, shallow results stay empty.
     observations: [],
     openQuestions: [],
+    relationships: [],
     reflection: null,
     conclusions: [],
     sufficientForConclusion: false,
@@ -274,6 +275,7 @@ function degradedResult(reason, modelConfigured, evidence = []) {
  * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT (§10), never mixed into evidence
  * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; ReasonIQ never fetches anything itself
  * @property {Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>} [existingHypotheses] - 0.3: hypotheses Gaia is already tracking (retrieved by the CALLER — never by ReasonIQ); context only (brief §16)
+ * @property {Array<{id: string, statement: string, status?: string, confidence?: number|null}>} [existingPatterns] - v1.1: patterns Gaia is already tracking (retrieved by the CALLER); context only, for relationship identification
  * @property {string} [assistantReply] - v1.0: Gaia's already-delivered reply for this turn — analysis context only, never edited
  * @property {string} [correlationId]
  * @property {string} [contextId]
@@ -319,7 +321,8 @@ async function evaluate(input, options = {}) {
       const validated = parseAndValidateReasoningOutput(
         raw,
         Array.isArray(input.evidence) ? input.evidence : [],
-        Array.isArray(input.existingHypotheses) ? input.existingHypotheses : []
+        Array.isArray(input.existingHypotheses) ? input.existingHypotheses : [],
+        Array.isArray(input.existingPatterns) ? input.existingPatterns : []
       );
       const { evidenceCount, evidenceSources } = evidenceMeta(input.evidence);
       result = {

@@ -941,6 +941,180 @@ test('v1.1 logging: long analysis content is truncated and lists are bounded', a
   assert.ok(record.reflection.goalAchieved === null);
 });
 
+// === ReasonIQ v1.1 — Cognitive Analysis Model, Part 4 ======================
+
+const V11_OUTPUT = JSON.stringify({
+  interpretation: 'The user connected the background-cognition decision to the pattern work.',
+  evidence: [{ content: 'the user referenced the pattern milestone', type: 'fact', origin: 'conversation' }],
+  hypotheses: [],
+  hypothesisUpdates: [],
+  contradictions: [],
+  uncertainties: [],
+  informationGaps: [],
+  observations: [
+    { statement: 'The user explicitly linked hypothesis tracking to pattern formation.', evidence: ['evidence-1'], relatedHypothesisId: 'hyp-1' },
+  ],
+  openQuestions: ['Will the relationship mechanism feed pattern formation directly?'],
+  relationships: [
+    {
+      fromKind: 'evidence', fromId: 'evidence-1', fromStatement: 'the user referenced the pattern milestone',
+      toKind: 'hypothesis', toId: 'hyp-1', toStatement: 'Concurrent cancellation causes the streaming race.',
+      type: 'supports', confidence: 0.7, rationale: 'the reference directly strengthens the hypothesis',
+    },
+    {
+      fromKind: 'observation', fromId: null, fromStatement: 'The user explicitly linked hypothesis tracking to pattern formation.',
+      toKind: 'pattern', toId: 'ptn-1', toStatement: 'Recurring relationship around: streaming races.',
+      type: 'relates_to', confidence: 0.6, rationale: 'the observation is thematic kin to the pattern',
+    },
+    {
+      fromKind: 'pattern', fromId: 'ptn-1', fromStatement: 'Recurring relationship around: streaming races.',
+      toKind: 'pattern', toId: 'ptn-2', toStatement: 'Recurring relationship around: late-night productivity.',
+      type: 'relates_to', confidence: 0.55, rationale: 'both patterns recur around deep-work sessions',
+    },
+    {
+      fromKind: 'hypothesis', fromId: 'hyp-invented', fromStatement: 'An invented hypothesis.',
+      toKind: 'pattern', toId: 'ptn-1', toStatement: 'Recurring relationship around: streaming races.',
+      type: 'weakens', confidence: 0.4, rationale: 'invented endpoint',
+    },
+  ],
+  reflection: {
+    goalAchieved: true,
+    learned: 'The relationship layer is wanted as part of background cognition.',
+    unresolved: 'Whether relationships should feed pattern formation directly.',
+    hypothesisImpact: 'hyp-1 was strengthened by the explicit reference.',
+    directionChange: 'The conversation moved from architecture boundaries to knowledge linking.',
+    patternImpact: 'The streaming-race pattern gained a new related observation.',
+  },
+  conclusions: [],
+  sufficientForConclusion: true,
+  confidence: 0.7,
+});
+
+test('v1.1 validation: relationships parse with locatable endpoints and keep their type/confidence', () => {
+  const result = parseAndValidateReasoningOutput(
+    V11_OUTPUT,
+    [{ id: 'evidence-1', source: 'conversation' }],
+    [{ id: 'hyp-1', statement: 'Concurrent cancellation causes the streaming race.' }],
+    [{ id: 'ptn-1', statement: 'Recurring relationship around: streaming races.' }, { id: 'ptn-2', statement: 'Recurring relationship around: late-night productivity.' }]
+  );
+  assert.equal(result.relationships.length, 3);
+  const [evToHyp, obsToPtn, ptnToPtn] = result.relationships;
+  assert.equal(evToHyp.fromKind, 'evidence');
+  assert.equal(evToHyp.fromId, 'evidence-1');
+  assert.equal(evToHyp.toKind, 'hypothesis');
+  assert.equal(evToHyp.toId, 'hyp-1');
+  assert.equal(evToHyp.type, 'supports');
+  assert.equal(evToHyp.confidence, 0.7);
+  assert.equal(obsToPtn.fromKind, 'observation');
+  assert.equal(obsToPtn.fromId, null);
+  assert.equal(obsToPtn.toKind, 'pattern');
+  assert.equal(obsToPtn.toId, 'ptn-1');
+  assert.equal(ptnToPtn.type, 'relates_to');
+  // The invented hypothesis endpoint dropped that whole relationship.
+  assert.ok(!result.relationships.some((r) => r.fromId === 'hyp-invented'));
+});
+
+test('v1.1 validation: reflection keeps the new directionChange and patternImpact axes', () => {
+  const result = parseAndValidateReasoningOutput(V11_OUTPUT, [{ id: 'evidence-1', source: 'conversation' }], [], []);
+  assert.match(result.reflection.directionChange, /architecture boundaries to knowledge linking/);
+  assert.match(result.reflection.patternImpact, /streaming-race pattern/);
+});
+
+test('v1.1 validation: an invalid relationship type or unknown node kind is malformed, not coerced', () => {
+  const bad = (output) => parseAndValidateReasoningOutput(JSON.stringify(output), [{ id: 'evidence-1', source: 'conversation' }], [], []);
+  assert.throws(() => bad({ interpretation: 'x', relationships: [{ fromKind: 'evidence', fromId: 'evidence-1', toKind: 'hypothesis', toId: 'hyp-1', type: 'causes' }] }), MalformedReasoningOutputError);
+  assert.throws(() => bad({ interpretation: 'x', relationships: [{ fromKind: 'alien', fromId: 'a', toKind: 'evidence', toId: 'evidence-1', type: 'supports' }] }), MalformedReasoningOutputError);
+  assert.throws(() => bad({ interpretation: 'x', relationships: [{ fromKind: 'evidence', toKind: 'evidence', toId: 'evidence-1', type: 'relates_to' }] }), MalformedReasoningOutputError);
+});
+
+test('v1.1 validation: relationships with no locatable endpoint at all are dropped entirely', () => {
+  const output = {
+    interpretation: 'x',
+    observations: [],
+    relationships: [
+      { fromKind: 'evidence', fromId: 'made-up', fromStatement: 'never supplied', toKind: 'hypothesis', toId: 'hyp-9', toStatement: 'also invented', type: 'supports' },
+    ],
+  };
+  const result = parseAndValidateReasoningOutput(JSON.stringify(output), [{ id: 'evidence-1', source: 'conversation' }], [], []);
+  assert.deepEqual(result.relationships, []);
+});
+
+test('v1.1 evaluate: deep results carry relationships and the extended reflection; shallow results default them', async () => {
+  const model = { chat: async () => V11_OUTPUT, isConfigured: () => true };
+  const deep = await evaluate(
+    {
+      text: 'Link the hypothesis work to the pattern milestone.',
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+      evidence: [{ id: 'evidence-1', source: 'conversation', content: 'the user referenced the pattern milestone' }],
+      existingHypotheses: [{ id: 'hyp-1', statement: 'Concurrent cancellation causes the streaming race.' }],
+      existingPatterns: [{ id: 'ptn-1', statement: 'Recurring relationship around: streaming races.' }, { id: 'ptn-2', statement: 'Recurring relationship around: late-night productivity.' }],
+    },
+    { reasoningModel: model, silent: true }
+  );
+  assert.equal(deep.reasoningDepth, 'deep');
+  assert.equal(deep.relationships.length, 3);
+  assert.equal(deep.reflection.directionChange != null, true);
+  const shallow = await evaluate(
+    { text: 'hi there', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 } },
+    { reasoningModel: { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true }, silent: true }
+  );
+  assert.deepEqual(shallow.relationships, []);
+  assert.equal(shallow.reflection, null);
+});
+
+test('v1.1 prompt: the schema asks for relationships and carries existing patterns as context', () => {
+  const messages = buildReasoningPrompt({
+    text: 'Link the knowledge.',
+    intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+    evidence: [],
+    existingPatterns: [{ id: 'ptn-1', statement: 'Recurring relationship around: streaming races.', status: 'supported', confidence: 0.7 }],
+  });
+  assert.match(messages[0].content, /relationships/);
+  assert.match(messages[0].content, /existingPatterns/);
+  assert.match(messages[0].content, /relates_to/);
+  assert.match(messages[0].content, /directionChange/);
+  assert.match(messages[0].content, /patternImpact/);
+  const payload = JSON.parse(messages[1].content.split('```json\n')[1].split('\n```')[0]);
+  assert.equal(payload.existingPatterns[0].id, 'ptn-1');
+  // No patterns supplied → an empty list rides along, never a fabricated one.
+  const bare = buildReasoningPrompt({ text: 'x', intentDecision: null, evidence: [] });
+  const barePayload = JSON.parse(bare[1].content.split('```json\n')[1].split('\n```')[0]);
+  assert.deepEqual(barePayload.existingPatterns, []);
+});
+
+test('v1.1 logging: the result line counts and renders relationships and the extended reflection', async () => {
+  const lines = [];
+  await evaluate(
+    {
+      text: 'Link the hypothesis work to the pattern milestone.',
+      intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
+      evidence: [{ id: 'evidence-1', source: 'conversation', content: 'the user referenced the pattern milestone' }],
+      existingHypotheses: [{ id: 'hyp-1', statement: 'Concurrent cancellation causes the streaming race.' }],
+      existingPatterns: [{ id: 'ptn-1', statement: 'Recurring relationship around: streaming races.' }, { id: 'ptn-2', statement: 'Recurring relationship around: late-night productivity.' }],
+    },
+    { reasoningModel: { chat: async () => V11_OUTPUT, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.relationshipCount, 3);
+  assert.equal(record.relationships.length, 3);
+  assert.match(record.relationships[0], /evidence:evidence-1 supports hypothesis:hyp-1/);
+  assert.match(record.relationships[1], /observation:/);
+  assert.match(record.relationships[2], /pattern:ptn-1 relates_to pattern:ptn-2/);
+  assert.match(record.reflection.directionChange, /architecture boundaries/);
+  assert.match(record.reflection.patternImpact, /streaming-race pattern/);
+});
+
+test('v1.1 logging: shallow results log empty relationship fields', async () => {
+  const lines = [];
+  await evaluate(
+    { text: 'hi there', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 } },
+    { reasoningModel: { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true }, silent: false, logger: (l) => lines.push(l) }
+  );
+  const record = JSON.parse(lines[0]);
+  assert.equal(record.relationshipCount, 0);
+  assert.deepEqual(record.relationships, []);
+});
+
 // === ReasonIQ gate log ====================================================
 
 test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason', () => {

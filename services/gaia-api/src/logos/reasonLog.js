@@ -37,9 +37,19 @@ function analysisFields(result) {
         learned: result.reflection.learned ? truncate(result.reflection.learned) : null,
         unresolved: result.reflection.unresolved ? truncate(result.reflection.unresolved) : null,
         hypothesisImpact: result.reflection.hypothesisImpact ? truncate(result.reflection.hypothesisImpact) : null,
+        // v1.1 (Part 4 §Reflection): the two new reflection axes.
+        directionChange: result.reflection.directionChange ? truncate(result.reflection.directionChange) : null,
+        patternImpact: result.reflection.patternImpact ? truncate(result.reflection.patternImpact) : null,
       }
     : null;
-  return { observations, openQuestions, reflection };
+  // v1.1 (Part 4 §Relationships): bounded renderings of the identified
+  // relationships — kind:id/kind:id plus the type, so the admin log shows
+  // WHICH knowledge was connected, not just a count.
+  const relationships = (Array.isArray(result.relationships) ? result.relationships : [])
+    .filter((r) => r && r.fromKind && r.toKind && r.type)
+    .slice(0, MAX_ANALYSIS_ITEMS)
+    .map((r) => truncate(`${r.fromKind}:${r.fromId || r.fromStatement} ${r.type} ${r.toKind}:${r.toId || r.toStatement}`));
+  return { observations, openQuestions, relationships, reflection };
 }
 
 function truncate(text) {
@@ -69,6 +79,7 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
     // Counts only, never content — same posture as the fields above.
     observationCount: Array.isArray(entry.result.observations) ? entry.result.observations.length : 0,
     openQuestionCount: Array.isArray(entry.result.openQuestions) ? entry.result.openQuestions.length : 0,
+    relationshipCount: Array.isArray(entry.result.relationships) ? entry.result.relationships.length : 0,
     reflectionPresent: Boolean(entry.result.reflection),
     // v1.1: the analysis products themselves — counts stayed for the
     // summary line; content lets the admin decision log actually SHOW
