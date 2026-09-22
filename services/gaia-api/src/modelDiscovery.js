@@ -193,11 +193,17 @@ function normalizeEdenAiModel(m) {
     id: m.id || '',
     name: m.model_name || m.name || m.id || '',
     capabilities: caps,
-    // EdenAI's public /v3/models catalog doesn't report context length,
-    // pricing, or a description — it's capability metadata only. Cost is
-    // known only per actual call, in that call's own response.
-    contextLength: null,
-    pricing: { prompt: null, completion: null },
+    // EdenAI's public /v3/models catalog reports context length and
+    // per-token pricing (input_cost_per_token / output_cost_per_token,
+    // USD per token as numbers), but no free-text description. Pricing is
+    // mapped onto the same shape OpenRouter uses (prompt/completion, USD
+    // per token) so the shared price formatting shows Eden's own rates,
+    // not OpenRouter's.
+    contextLength: typeof m.context_length === 'number' ? m.context_length : null,
+    pricing: {
+      prompt: m.pricing?.input_cost_per_token ?? null,
+      completion: m.pricing?.output_cost_per_token ?? null,
+    },
     description: null,
   };
 }

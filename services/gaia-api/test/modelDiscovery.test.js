@@ -58,6 +58,26 @@ test('normalizeEdenAiModel: falls back to name then id', () => {
   assert.equal(normalizeEdenAiModel({ id: 'a', model_name: 'C', name: 'B' }).name, 'C');
 });
 
+test('normalizeEdenAiModel: maps EdenAI per-token pricing onto the shared prompt/completion shape', () => {
+  const m = {
+    id: 'deepinfra/XiaomiMiMo/MiMo-V2.6-Pro',
+    model_name: 'MiMo-V2.6-Pro',
+    context_length: 1048576,
+    pricing: { input_cost_per_token: 4.35e-7, output_cost_per_token: 8.7e-7 },
+  };
+  const result = normalizeEdenAiModel(m);
+  assert.equal(result.pricing.prompt, 4.35e-7);
+  assert.equal(result.pricing.completion, 8.7e-7);
+  assert.equal(result.contextLength, 1048576);
+});
+
+test('normalizeEdenAiModel: leaves pricing null when EdenAI reports none', () => {
+  const result = normalizeEdenAiModel({ id: 'a/model', model_name: 'A' });
+  assert.equal(result.pricing.prompt, null);
+  assert.equal(result.pricing.completion, null);
+  assert.equal(result.contextLength, null);
+});
+
 // --- normalizeOpenAiModel ---
 
 test('normalizeOpenAiModel: extracts capabilities from OpenAI metadata', () => {
