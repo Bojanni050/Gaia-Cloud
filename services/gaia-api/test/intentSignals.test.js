@@ -25,6 +25,23 @@ test('detectSignals: each signal fires on its own cue', () => {
   assert.equal(detectSignals('weet je nog wie anton is').rememberedKnowledge, true);
   assert.equal(detectSignals('analyseer deze aanpak').analysis, true);
   assert.equal(detectSignals('wat was er in juni ook alweer?').lookup, true);
+  assert.equal(detectSignals('wat staat er in foundation over mijn planning?').recordedKnowledge, true);
+  assert.equal(detectSignals('wat heb ik vastgelegd over de VPS?').recordedKnowledge, true);
+});
+
+test('detectSignals: the archive signal and the memory signal stay strictly apart', () => {
+  // Remembering (Hindsight) must never look like searching the archive.
+  const remembered = detectSignals('weet je nog wie anton is');
+  assert.equal(remembered.rememberedKnowledge, true);
+  assert.equal(remembered.recordedKnowledge, false);
+  // And an archive ask is not answered by "what do you remember".
+  const recorded = detectSignals('zoek in mijn archief naar Tailscale-notities');
+  assert.equal(recorded.recordedKnowledge, true);
+  assert.equal(recorded.rememberedKnowledge, false);
+  // Plain statements still trigger neither.
+  const statement = detectSignals('nu weer bezig met de ontwikkeling van chronicle en jou');
+  assert.equal(statement.recordedKnowledge, false);
+  assert.equal(statement.rememberedKnowledge, false);
 });
 
 test('detectSignals: statements from real turns do not look like lookups', () => {

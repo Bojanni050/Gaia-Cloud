@@ -102,6 +102,19 @@ const CAPABILITY_REGISTRY = Object.freeze({
     ]),
   }),
 
+  // Foundation — Bo's epistemische geheugen (Bojanni050/Foundation): what is
+  // RECORDED there, as opposed to what Gaia remembers (hindsight). Results
+  // arrive status-labelled ([bevestigd feit] / [hypothese · open] / …) —
+  // the archive counterpart of hindsight, never a second reflective memory.
+  foundation: Object.freeze({
+    id: 'foundation',
+    type: 'retrieval',
+    description: "Foundation: Bo's epistemische geheugen — wat ER IS VASTGELEGD (observaties, hypothesen, bevestigde feiten), altijd mét status per resultaat",
+    skills: Object.freeze([
+      Object.freeze({ id: 'foundation-memory-search', category: 'retrieval', routing: false, description: 'semantische zoekopdracht in Foundation geheugen' }),
+    ]),
+  }),
+
   tool: Object.freeze({
     id: 'tool',
     type: 'capability',

@@ -31,6 +31,9 @@ const FULL_REGISTRY = [
   { id: 'conversation_search' },
   { id: 'hindsight' },
 ];
+// The VPS configuration additionally registers FOUNDATION_MEMORY_URL — i.e.
+// these tests reflect a Gaia that can search Foundation at all.
+const FULL_REGISTRY_WITH_FOUNDATION = [...FULL_REGISTRY, { id: 'foundation' }];
 
 // --- §20/§29: plan schema validation ------------------------------------------
 
@@ -169,6 +172,64 @@ test('§25 both retrievals: remembered knowledge + literal statement', () => {
   assert.equal(d.action, 'plan');
   assert.deepEqual(d.steps.map((s) => s.capability || s.mode), ['conversation_search', 'hindsight', 'native']);
   assert.equal(validateDecision(d), null);
+});
+
+// --- Foundation: the archive counterpart ---------------------------------------
+
+test('§25 foundation-only: a recorded-knowledge ask becomes [foundation → native]', () => {
+  const d = decide({
+    userInput: 'wat staat er in foundation over mijn VPS-setup?',
+    intent: null,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: FULL_REGISTRY_WITH_FOUNDATION,
+  });
+  assert.equal(d.action, 'plan');
+  assert.deepEqual(d.steps.map((s) => s.capability || s.mode), ['foundation', 'native']);
+  // Generation consumes the retrieval result — never a dangling step.
+  assert.deepEqual(d.steps[1].sources, [d.steps[0].id]);
+  assert.equal(d.steps[0].input.query, 'wat staat er in foundation over mijn VPS-setup?');
+  assert.equal(validateDecision(d), null);
+});
+
+test('§25 foundation + analysis: retrieved records get analysed then answered natively', () => {
+  const d = decide({
+    userInput: 'wat heb ik vastgelegd over de migratie, en analyseer of dat nog klopt',
+    intent: null,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: FULL_REGISTRY_WITH_FOUNDATION,
+  });
+  assert.equal(d.action, 'plan');
+  assert.deepEqual(d.steps.map((s) => s.capability || s.mode), ['foundation', 'hermes', 'native']);
+  assert.equal(validateDecision(d), null);
+});
+
+test('§25 remembered + recorded: both sources are distinct retrievals (§17 — never the same source twice)', () => {
+  const d = decide({
+    userInput: 'weet je nog wat ik hierover vertelde, en wat staat er ondertussen in foundation vastgelegd?',
+    intent: null,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: FULL_REGISTRY_WITH_FOUNDATION,
+  });
+  assert.equal(d.action, 'plan');
+  assert.deepEqual(d.steps.map((s) => s.capability || s.mode), ['hindsight', 'foundation', 'native']);
+  assert.equal(validateDecision(d), null);
+});
+
+test('§25 foundation unconfigured: the plan is discarded whole, never partially executable — the cascade answers unchanged', () => {
+  const userInput = 'wat staat er in foundation over mijn VPS-setup?';
+  assert.ok(buildPlan({ userInput, intent: null }), 'the plan itself is warranted');
+  const d = decide({
+    userInput,
+    intent: null,
+    context: { reflections: [], mentalModels: [], patterns: [] },
+    reasoning: null,
+    availableCapabilities: FULL_REGISTRY, // no foundation key = env unset
+  });
+  assert.notEqual(d.action, 'plan');
+  assert.notEqual(d.capability, 'foundation');
 });
 
 test('§25 search + Hermes: retrieved decisions get analysed then answered natively', () => {

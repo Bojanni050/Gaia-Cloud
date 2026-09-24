@@ -87,6 +87,14 @@ test('other Gaia capabilities carry their function modes as non-routing skills',
   }
 });
 
+test('foundation is registered as the archive counterpart of hindsight (retrieval, non-routing skill)', () => {
+  const foundation = getCapabilityProfile('foundation');
+  assert.ok(foundation, 'foundation must be in the registry — awareness renders from it');
+  assert.equal(foundation.type, 'retrieval');
+  assert.ok(hasSkill('foundation', 'foundation-memory-search'));
+  assert.equal(routingSkills('foundation').length, 0, 'archive selection is Decision input, never a skill target');
+});
+
 // --- §10/§18: skill + capability validation -------------------------------------
 
 test('validateCapabilitySkill: known combo valid; unknown skill / unknown capability invalid', () => {

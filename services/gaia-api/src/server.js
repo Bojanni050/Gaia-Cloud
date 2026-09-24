@@ -38,6 +38,7 @@ const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
 const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
 const { createConversationSearchTool } = require('./tools/conversationSearch');
 const { createHindsightRetrievalCapability } = require('./tools/hindsightRetrieval');
+const { createFromEnv: createFoundationFromEnv } = require('./tools/foundationSearch');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -267,9 +268,17 @@ function createApp(env = process.env) {
   // plans. Same client instance every other Hindsight use shares; it can
   // never write (Memoryworthiness owns ingestion).
   const hindsightRetrieval = createHindsightRetrievalCapability({ hindsight });
+  // foundation — read-only retrieval over Bo's epistemische geheugen
+  // (Bojanni050/Foundation, GET /api/memory/search). undefined when
+  // FOUNDATION_MEMORY_URL is unset → the key never enters turnTools → the
+  // Decision Engine never sees a "foundation" capability and recorded-
+  // knowledge turns fall through to the existing cascade (same uniform
+  // posture as web above).
+  const foundationRetrieval = createFoundationFromEnv(env);
   const turnTools = {
     conversation_search: conversationSearchTool,
     hindsight: hindsightRetrieval,
+    ...(foundationRetrieval ? { foundation: foundationRetrieval } : {}),
   };
 
   app.post('/conversation/turn', auth, async (req, res) => {

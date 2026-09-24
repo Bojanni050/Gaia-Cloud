@@ -213,6 +213,10 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const wantsPastLookup = Boolean(signals.pastLookup);
   const wantsRemembered = Boolean(signals.rememberedKnowledge)
     || Boolean(intent && intent.intent === 'memory.inspect');
+  // The archive counterpart: "what is recorded in Foundation" is a distinct
+  // retrieval need from "what do you remember" (Hindsight) — spec §17 counts
+  // them as separate sources, so asking both earns both steps.
+  const wantsRecorded = Boolean(signals.recordedKnowledge);
   const wantsAnalysis = Boolean(signals.analysis);
   const wantsExternal = Boolean(intent && intent.sourceOfTruth === 'external_knowledge');
   const isAnchoredFollowUp = shouldUseConversationSearch(intent, userInput);
@@ -228,6 +232,7 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const distinctRetrievals = [];
   if (isAnchoredFollowUp || wantsExactHistory || wantsPastLookup) distinctRetrievals.push('conversation_search');
   if (wantsRemembered) distinctRetrievals.push('hindsight');
+  if (wantsRecorded) distinctRetrievals.push('foundation');
   const dedupedRetrievals = [...new Set(distinctRetrievals)];
 
   const multiSource = dedupedRetrievals.length >= 2;
@@ -237,13 +242,16 @@ function buildPlan({ userInput = '', intent = null } = {}) {
   const exactHistoryStandalone = wantsExactHistory && !isAnchoredFollowUp;
   // Minimum-sufficient: Hermes only when explicit analysis or a skill task
   // requires it. Standalone web-retrieval plans use web → native — Gaia's
-  // own generator formulates the answer from the found sources.
+  // own generator formulates the answer from the found sources. A standalone
+  // recorded-knowledge ask mirrors that: [foundation → native], because the
+  // archive (unlike Hindsight recall, which runTurnCore already gathered as
+  // context) is only searched when the plan says so.
   const needsReasoning = wantsAnalysis || Boolean(skillTask);
   // A clear skill task (debugging / test strategy / code review) warrants
   // its own minimal [hermes(skill) → native] plan even without retrievals.
   const skillReasoning = Boolean(skillTask);
 
-  if (!multiSource && !retrievalPlusReasoning && !wantsExternal && !exactHistoryStandalone && !skillReasoning && !isAnchoredFollowUp) return null;
+  if (!multiSource && !retrievalPlusReasoning && !wantsExternal && !wantsRecorded && !exactHistoryStandalone && !skillReasoning && !isAnchoredFollowUp) return null;
 
   const steps = [];
   let n = 0;
@@ -275,6 +283,16 @@ function buildPlan({ userInput = '', intent = null } = {}) {
       id: nextId(),
       type: 'retrieval',
       capability: 'hindsight',
+      input: { query: userInput, limit: 6 },
+    });
+  }
+  if (dedupedRetrievals.includes('foundation')) {
+    // Archive retrieval: results arrive status-labelled by the capability;
+    // this step only says WHERE to look, never what to conclude.
+    steps.push({
+      id: nextId(),
+      type: 'retrieval',
+      capability: 'foundation',
       input: { query: userInput, limit: 6 },
     });
   }

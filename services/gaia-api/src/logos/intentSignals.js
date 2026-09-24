@@ -43,6 +43,25 @@ const SIGNAL_PATTERNS = Object.freeze({
     /\bwhat do you remember\b/i, /\bremember about me\b/i,
     /\bwat je (over|van)[\s\S]{0,40}\b(weet|kent)\b/i,
   ]),
+  /**
+   * The user asks what is RECORDED/REGISTERED in Foundation (the archive) —
+   * the deliberate counterpart of rememberedKnowledge: "wat herinnert je"
+   * is Hindsight, "wat staat er vastgelegd" is Foundation. Explicitly
+   * archive-shaped wording only (Foundation/archief/vastgelegd + a
+   * lookup cue) — never a guess from topic alone.
+   */
+  recordedKnowledge: Object.freeze([
+    // the archive itself is named as the place to look
+    /\bin foundation\b/i,
+    /\bfoundation\s+(zoeken|geheugen|archief|notities|data|gegevens)\b/i,
+    /\b(door)?zoek(opdracht)?\b[\s\S]{0,50}\b(mijn\s+)?(archief|notities|aantekeningen)\b/i,
+    // what has been written down / registered
+    /\b(wat|iets)\b[\s\S]{0,40}\b(vastligt|vastgelegd|geregistreerd|genoteerd|opgeschreven|gedocumenteerd)\b/i,
+    /\b(heb ik|hebben we)\b[\s\S]{0,40}\b(genoteerd|opgeschreven|vastgelegd|geregistreerd)\b/i,
+    // english counterparts
+    /\bsearch\b[\s\S]{0,50}\b(the\s+)?(archive|foundation|recorded)\b/i,
+    /\bwhat('s| is| has been)\b[\s\S]{0,40}\b(recorded|logged|noted|documented|written down)\b/i,
+  ]),
   /** The retrieved material must be ANALYSED, not just shown. */
   analysis: Object.freeze([
     /\b(analyseer|beoordeel|vergelijk|evaluer)\w*\b/i,
@@ -94,6 +113,7 @@ const SIGNAL_NAMES = Object.freeze(Object.keys(SIGNAL_PATTERNS));
  * @property {boolean} exactHistory        asks for what was literally said
  * @property {boolean} pastLookup          points at a past conversation moment
  * @property {boolean} rememberedKnowledge asks what Gaia remembers
+ * @property {boolean} recordedKnowledge   asks what is recorded in Foundation (the archive)
  * @property {boolean} analysis            wants retrieved material analysed
  * @property {boolean} lookup              is worded as a question / recall cue
  * @property {string[]} skillTasks         routing-skill task shapes the wording matches (ids, in priority order)
