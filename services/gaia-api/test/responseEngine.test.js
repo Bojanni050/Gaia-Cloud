@@ -87,13 +87,70 @@ test('fail() before any delta returns a clean calm JSON error, not a half-open s
   assert.equal(res.headers, null); // never switched into SSE mode
 });
 
-test('fail() after a delta ends the stream calmly, without a fabricated error frame', () => {
+test('fail() after a delta reports the calm error as an error frame and never claims completion', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);
   emitter.delta('partial', {});
   emitter.fail(new Error('connection dropped'));
   assert.equal(res.ended, true);
   assert.ok(!res.written.includes('data: [DONE]\n\n')); // never claims a clean completion
+  // The calm failure still REACHES the client (the stream is open, so a
+  // JSON body is no longer possible) — in the typed frame's own wording,
+  // with the underlying error nowhere in it.
+  const last = JSON.parse(res.written.at(-1).slice('data: '.length));
+  assert.equal(last.type, 'error');
+  assert.equal(last.error, CALM_FALLBACK);
+  assert.ok(!res.written.join('').includes('connection dropped'));
+});
+
+// --- step frames (plan progress) -----------------------------------------
+
+test('step() writes a typed frame whose empty delta an old reader ignores as "no content"', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const payload = { id: 'step-1', index: 1, total: 2, type: 'retrieval', status: 'start' };
+  emitter.step(payload);
+  assert.equal(
+    res.written[0],
+    `data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'step', step: payload })}\n\n`
+  );
+  // The compatibility promise, stated from the frame itself: a reader that
+  // only knows { choices: [{ delta }] } appends nothing from this frame.
+  const frame = JSON.parse(res.written[0].slice('data: '.length));
+  assert.deepEqual(frame.choices[0].delta, {});
+  assert.equal(frame.choices[0].delta.content, undefined);
+});
+
+test('step() opens the stream — progress must arrive while the plan still runs', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  emitter.step({ id: 'step-1', index: 1, total: 2, type: 'retrieval', status: 'start' });
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+  assert.equal(res.ended, false);
+});
+
+test('an empty step payload is a no-op and never opens the stream', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  emitter.step(undefined);
+  emitter.step(null);
+  emitter.step('step-1');
+  assert.equal(res.headers, null);
+  assert.equal(res.written.length, 0);
+});
+
+test('fail() after only progress frames sends the calm error frame, not a JSON body', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  emitter.step({ id: 'step-1', index: 1, total: 3, type: 'reasoning', status: 'start' });
+  emitter.fail(new Error('hermes 502 at http://internal:8642'));
+  assert.equal(res.ended, true);
+  assert.equal(res.jsonBody, null, 'headers already went out with the progress frame');
+  assert.ok(!res.written.includes('data: [DONE]\n\n'));
+  const last = JSON.parse(res.written.at(-1).slice('data: '.length));
+  assert.equal(last.type, 'error');
+  assert.equal(last.error, CALM_FALLBACK);
+  assert.ok(!res.written.join('').includes('8642'), 'no transport detail may reach the client');
 });
 
 test('an empty delta is a no-op and never opens the stream prematurely', () => {

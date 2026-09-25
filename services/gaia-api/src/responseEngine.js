@@ -21,6 +21,31 @@
  * result, produce the response — a direct Gaia answer and a
  * capability-produced answer converge here into the same shape.
  *
+ * THE FRAME FAMILY (this module's wire vocabulary): every frame this module
+ * writes is one `data:` JSON line ending in a blank line, terminated by
+ * `data: [DONE]`. Content frames keep the original OpenAI-compatible
+ * `{ choices: [{ delta }] }` shape untouched. Two EXTENSION frames were
+ * added alongside it:
+ *
+ *   { choices: [{ delta: {} }], type: 'step',   step: {...} }   plan progress
+ *   { choices: [{ delta: {} }], type: 'error',  error: '...' }  calm failure
+ *
+ * Both deliberately carry an EMPTY `choices[0].delta` next to their type:
+ * a client written against the original contract reads that as "no content
+ * here" and appends nothing (it keeps working unchanged), while a client
+ * that knows the extension renders progress or the calm failure. So the
+ * extension is additive by construction — old readers ignore it, new readers
+ * gain it, and no reader can mistake it for Gaia's answer.
+ *
+ * Two rules bound every frame this module ever writes, extension or not:
+ * (1) only THIS module introduces a frame type — a capability may never
+ * invent one, which is what keeps "what reaches the client" in one place;
+ * (2) a frame carries Gaia-level facts only. The step frame reports a plan
+ * step's position, its type in the Decision Engine's own vocabulary
+ * (retrieval/reasoning/generation/capability) and its status — never the
+ * capability id behind it, never content, never the error behind a failure
+ * (that is `toCalmError()`'s text and nothing else).
+ *
  * generateReply/generateStreamingReply extend this seam to the Decision
  * Engine / Orchestrator flow (decision/decisionEngine.js, orchestration/
  * orchestrator.js) — the non-streaming and streaming twins of the same
@@ -87,13 +112,16 @@ function formatReply(text) {
 
 /**
  * Creates a streaming emitter bound to one HTTP response. A capability
- * (or Gaia orchestrating one) calls delta()/finish()/fail() — never
+ * (or Gaia orchestrating one) calls delta()/step()/finish()/fail() — never
  * res.write()/res.end() directly — so the SSE wire shape and the
  * completion/failure lifecycle live in exactly one place.
  *
- * Headers are sent lazily, on the first delta: if the capability fails
- * before producing any content, the caller still gets a clean JSON error
- * instead of a half-open stream.
+ * Headers are sent lazily, on the first frame of any kind: if the turn
+ * fails before producing a single byte, the caller still gets a clean JSON
+ * error instead of a half-open stream. The first step frame therefore also
+ * opens the stream — progress is only progress if it arrives while the
+ * plan is still running — and from that moment on a failure is reported as
+ * an `error` frame inside the stream (see fail()) rather than as JSON.
  * @param {import('express').Response} res
  */
 function createStreamEmitter(res) {
@@ -123,6 +151,21 @@ function createStreamEmitter(res) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: frame }] })}\n\n`);
   }
 
+  /**
+   * Reports one plan step's progress as an extension frame (module header:
+   * THE FRAME FAMILY). Progress only — `payload` is a Gaia-level fact
+   * (`{ id, index, total, type, status }`, status: start|done|failed),
+   * never content and never a capability id, so a step frame can never be
+   * mistaken for something Gaia says. A missing/empty payload is a no-op
+   * (it must not open the stream for nothing).
+   * @param {{ id: string, index: number, total: number, type: string, status: 'start'|'done'|'failed' }} payload
+   */
+  function step(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    ensureHeaders();
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'step', step: payload })}\n\n`);
+  }
+
   /** Finalizes a successful stream. */
   function finish() {
     ensureHeaders();
@@ -131,20 +174,24 @@ function createStreamEmitter(res) {
   }
 
   /**
-   * Finalizes a failed stream, calmly. Before any content shipped, this is
-   * a normal JSON error response. After content is already on the wire,
-   * there is no calm way to inject an "error" frame a client would need
-   * capability-specific logic to render — so the stream simply ends.
+   * Finalizes a failed stream, calmly. Before any frame shipped, this is a
+   * normal JSON error response. Once the stream is open (content — or just
+   * progress frames — already went out), the same calm text goes out as an
+   * `error` frame and the stream ends WITHOUT `[DONE]`, so the client can
+   * tell a failure from a finished reply instead of reading a silently
+   * truncated stream as complete. The wording is always toCalmError()'s —
+   * the underlying error never crosses this seam, on either path.
    */
   function fail() {
     if (!headersSent) {
       res.status(502).json({ error: toCalmError() });
-    } else {
-      res.end();
+      return;
     }
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'error', error: toCalmError() })}\n\n`);
+    res.end();
   }
 
-  return { delta, finish, fail };
+  return { delta, step, finish, fail };
 }
 
 /**

@@ -11,7 +11,9 @@
  * and the Response Engine are byte-for-byte the same judgment calls
  * whichever transport a client uses. What may differ:
  *
- *   - wire shape: SSE deltas (streaming) vs one JSON body (non-streaming)
+ *   - wire shape: SSE deltas + typed step/error frames (streaming) vs one
+ *     JSON body (non-streaming) — progress is transport, so the JSON path
+ *     reports none of it
  *   - hermes invocation: stream(msgs,{onDelta}) vs chat(msgs)
  *   - reply finalization: deliverReply's emitter dance vs
  *     formatReply — the streaming/non-streaming twins of the same
@@ -337,6 +339,7 @@ function logDecisionPlan(decision, logger) {
  *   decisionEngine?: Function,
  *   orchestrate?: Function,
  *   onDelta?: Function,
+ *   onStep?: Function,
  * }} input
  * @returns {Promise<{ decision: object, executionResult: object|null, replyText: string|null, timing: object, startDeferredCognition: () => Promise<void> }>}
  *   replyText is null exactly when there is nothing to say (capability
@@ -345,6 +348,11 @@ function logDecisionPlan(decision, logger) {
  *   startDeferredCognition hands the caller the deferred learning/
  *   reflection lifecycle for the completed turn: it is STARTED by the
  *   transport once the reply is delivered and NEVER awaited.
+ *
+ *   onStep is plan progress (orchestrator's reportStep) — transport, not
+ *   cognition: the streaming path wires it to the Response Engine's step
+ *   frame, the non-streaming path passes nothing and gets no frames. The
+ *   plan itself, its order and its result are identical either way.
  */
 async function runTurnCore({
   messages,
@@ -364,6 +372,7 @@ async function runTurnCore({
   decisionEngine = decideAction,
   orchestrate = executeDecision,
   onDelta,
+  onStep,
   userDisplayName,
 }) {
   const userText = latestUserText(messages);
@@ -634,7 +643,7 @@ async function runTurnCore({
       }
     }
 
-    executionResult = await orchestrate(decision, { capabilities: timedCapabilities, nativeGenerator, messages: assembled, onDelta, conversationId });
+    executionResult = await orchestrate(decision, { capabilities: timedCapabilities, nativeGenerator, messages: assembled, onDelta, onStep, conversationId });
   } catch (_) {
     executionResult = null;
   }
@@ -1158,10 +1167,12 @@ async function performTurn({
 /**
  * Performs one conversational turn, STREAMED — the Phase B parity path.
  * Same cognitive pipeline as performTurn (runTurnCore above); delivery is
- * SSE: headers sent lazily on the first delta, capability content streamed
- * as it arrives, clarify/refuse rendered by the Response Engine's emitter,
- * and a clean JSON error instead of a half-open stream when nothing was
- * said.
+ * SSE: headers sent lazily on the first frame, plan progress reported as
+ * `step` frames while the plan runs, capability content streamed as it
+ * arrives, clarify/refuse rendered by the Response Engine's emitter, and —
+ * when nothing was said — either a clean JSON error (nothing shipped yet)
+ * or a calm `error` frame on the already-open stream (the Response Engine
+ * owns both halves of that choice).
  *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
@@ -1236,6 +1247,17 @@ async function performStreamingTurn({
     { onFirstToken: (ms) => { timeToFirstTokenMs = ms; } }
   );
 
+  // PLAN PROGRESS — the stream's second, content-free channel. A plan used
+  // to be silent until its last step answered (intermediate steps must not
+  // stream: their output is context, not Gaia's reply). onStep gives the
+  // client something honest to show meanwhile — "step 2 of 3, still
+  // working" — through the Response Engine's step frame, so progress and
+  // answer stay separate frames and progress can never be read as text
+  // Gaia said. Deliberately NOT wrapped in the contentEmitted tracking: a
+  // step frame emits no content, so it can never make a reply look
+  // delivered.
+  const onStep = (payload) => emitter.step(payload);
+
   let coreResult;
   try {
     coreResult = await runTurnCore({
@@ -1257,6 +1279,7 @@ async function performStreamingTurn({
       decisionEngine,
       orchestrate,
       onDelta,
+      onStep,
       userDisplayName,
     });
   } catch (_) {
@@ -1285,10 +1308,12 @@ async function performStreamingTurn({
   }
 
   // Nothing usable was said (execution failed / empty output): report the
-  // calm failure through the emitter — before any content shipped this is
-  // a normal JSON error, after content it simply ends the stream. Deferred
-  // cognition still runs: a deep turn's analysis is Gaia-knowledge, not
-  // part of the reply — but no Hindsight reflection (nothing was said, see
+  // calm failure through the emitter — before any frame shipped this is a
+  // normal JSON error, on an already-open stream it is a calm `error`
+  // frame followed by the end of the stream (no [DONE], so the client
+  // never mistakes the failure for a finished reply). Deferred cognition
+  // still runs: a deep turn's analysis is Gaia-knowledge, not part of the
+  // reply — but no Hindsight reflection (nothing was said, see
   // runDeferredCognition's replyText gate).
   if (typeof replyText !== 'string' || replyText.length === 0) {
     emitter.fail();

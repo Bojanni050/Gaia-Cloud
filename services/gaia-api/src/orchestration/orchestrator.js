@@ -131,6 +131,7 @@ function outcomeSummary(loop) {
  *   nativeGenerator?: { generate: Function, stream?: Function },
  *   messages?: Array,
  *   onDelta?: Function,
+ *   onStep?: Function,
  *   conversationId?: string|null,
  * }} [context]
  * @returns {Promise<ExecutionResult>}
@@ -140,6 +141,7 @@ async function execute(decision, {
   nativeGenerator,
   messages,
   onDelta,
+  onStep,
   conversationId = null,
 } = {}) {
   const problem = validateDecision(decision);
@@ -237,7 +239,7 @@ async function execute(decision, {
       return { action: 'refuse', output: null, reason: decision.reason };
 
     case 'plan':
-      return executePlan(decision, { capabilities, nativeGenerator, messages, onDelta, conversationId });
+      return executePlan(decision, { capabilities, nativeGenerator, messages, onDelta, onStep, conversationId });
 
     /* istanbul ignore next -- unreachable: validateDecision already rejects any other action */
     default:
@@ -295,9 +297,13 @@ function formatStepOutputForContext(step, output) {
  * step speaking in Gaia's voice, or a terminal capability result when the
  * plan ends at retrieval/capability (web-style, spec §8).
  *
- * Delivery: only the LAST step may stream to the client (its output is the
- * reply); earlier steps run with the emitter detached, because their output
- * is context for later steps, not something Gaia says — see stepOnDelta.
+ * Delivery: two distinct channels, both ending at the Response Engine.
+ * Only the LAST step may stream to the client (its output is the reply);
+ * earlier steps run with the emitter detached, because their output is
+ * context for later steps, not something Gaia says — see stepOnDelta. So
+ * that a plan is not silent while it runs, every step reports its progress
+ * through `onStep` (start/done/failed) — a separate, content-free channel
+ * the client renders as "step 2 of 3" rather than as Gaia's answer.
  *
  * @param {import('../decision/decisionSchema').Decision} decision action==='plan'
  * @param {object} ctx same context as execute()
@@ -308,6 +314,7 @@ async function executePlan(decision, ctx = {}) {
     nativeGenerator,
     messages,
     onDelta,
+    onStep,
     conversationId = null,
   } = ctx;
 
@@ -326,9 +333,23 @@ async function executePlan(decision, ctx = {}) {
   // leave that partial text standing whenever a later required step fails.
   const stepOnDelta = (index) => (index === steps.length - 1 ? onDelta : undefined);
 
+  // PROGRESS REPORTING — the client's window onto a plan that is still
+  // running (responseEngine's step frame). Gaia-level facts only: position,
+  // step type, status — never a capability id, never content, never the
+  // error behind a failure, so progress can neither be mistaken for the
+  // answer nor reveal which capability a step actually used. No onStep
+  // (the non-streaming transport, tests without a client) means no frames:
+  // progress is transport, not cognition, and changes nothing about what
+  // executes or what the ExecutionResult says.
+  const reportStep = (step, index, status) => {
+    if (typeof onStep !== 'function') return;
+    onStep({ id: step.id, index: index + 1, total: steps.length, type: step.type, status });
+  };
+
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
     const startedAt = Date.now();
+    reportStep(step, index, 'start');
     // Resolve this step's references: prior results ride along as a plain
     // sources map AND as rendered context for generation/reasoning inputs.
     const resolvedSources = {};
@@ -428,6 +449,7 @@ async function executePlan(decision, ctx = {}) {
         status: 'success',
         latencyMs: Date.now() - startedAt,
       });
+      reportStep(step, index, 'done');
     } catch (err) {
       stepReports.push({
         id: step.id,
@@ -437,6 +459,7 @@ async function executePlan(decision, ctx = {}) {
         latencyMs: Date.now() - startedAt,
         error: String(err && err.message ? err.message : err),
       });
+      reportStep(step, index, 'failed');
       if (!step.optional) {
         // Required failure ⇒ the plan stops HERE. Structured failure, calm
         // null output; no replanning, no silent fallback to another
