@@ -295,6 +295,10 @@ function formatStepOutputForContext(step, output) {
  * step speaking in Gaia's voice, or a terminal capability result when the
  * plan ends at retrieval/capability (web-style, spec §8).
  *
+ * Delivery: only the LAST step may stream to the client (its output is the
+ * reply); earlier steps run with the emitter detached, because their output
+ * is context for later steps, not something Gaia says — see stepOnDelta.
+ *
  * @param {import('../decision/decisionSchema').Decision} decision action==='plan'
  * @param {object} ctx same context as execute()
  */
@@ -311,7 +315,19 @@ async function executePlan(decision, ctx = {}) {
   const outputsById = new Map(); // stepId → formatted context text for later steps
   let lastOutput = null;
 
-  for (const step of decision.steps || []) {
+  const steps = decision.steps || [];
+  // DELIVERY BOUNDARY — only the LAST step's output becomes the reply
+  // (ExecutionResult.output → responseEngine.js → client). Every earlier
+  // step's output is rendered into context for the steps that follow
+  // (formatStepOutputForContext) and is Gaia's internal work, not something
+  // she says. Those steps therefore run WITHOUT the stream emitter attached:
+  // passing the caller's onDelta to every step would paste raw retrieval/
+  // analysis text into the client's answer ahead of the composed reply, and
+  // leave that partial text standing whenever a later required step fails.
+  const stepOnDelta = (index) => (index === steps.length - 1 ? onDelta : undefined);
+
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
     const startedAt = Date.now();
     // Resolve this step's references: prior results ride along as a plain
     // sources map AND as rendered context for generation/reasoning inputs.
@@ -357,7 +373,7 @@ async function executePlan(decision, ctx = {}) {
         request,
         adapter,
         max_attempts: decision.max_attempts,
-        adapterOptions: { onDelta, conversationId },
+        adapterOptions: { onDelta: stepOnDelta(index), conversationId },
       });
       if (loop.verdict === 'success') return unwrapLoopOutput(loop.lastResult);
       if (loop.verdict === 'ask_user') {
@@ -389,8 +405,10 @@ async function executePlan(decision, ctx = {}) {
             if (!nativeGenerator || typeof nativeGenerator.generate !== 'function') {
               throw new Error('native generator is not available');
             }
-            output = onDelta && typeof nativeGenerator.stream === 'function'
-              ? await nativeGenerator.stream(invokeMessages, { onDelta })
+            // Only the last step streams (see stepOnDelta above); a
+            // generation step that is not last is context for what follows.
+            output = stepOnDelta(index) && typeof nativeGenerator.stream === 'function'
+              ? await nativeGenerator.stream(invokeMessages, { onDelta: stepOnDelta(index) })
               : await nativeGenerator.generate(invokeMessages);
           } else {
             output = await runStepThroughLoop({ stepMessages: invokeMessages, stepInput: step.input });

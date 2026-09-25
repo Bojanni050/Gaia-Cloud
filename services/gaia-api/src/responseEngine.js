@@ -24,12 +24,16 @@
  * generateReply/generateStreamingReply extend this seam to the Decision
  * Engine / Orchestrator flow (decision/decisionEngine.js, orchestration/
  * orchestrator.js) — the non-streaming and streaming twins of the same
- * judgment. For `capability`/`tool`, the text either already reached the
- * client as deltas during orchestrator.execute() (streaming — it was handed
- * this module's own stream emitter as `onDelta`) or is simply the
- * capability's returned string (non-streaming); either way this module's
- * job is just to report back what was said. For `clarify`/`refuse` — turns
- * the Orchestrator deliberately executed *without* calling any capability —
+ * judgment. For `capability`/`tool`/`plan`, the text either already reached
+ * the client as deltas during orchestrator.execute() (streaming — it was
+ * handed this module's own stream emitter as `onDelta`) or it is simply the
+ * capability's returned string; in the streaming case the caller reports
+ * which of the two happened (`contentEmitted`) and `deliverReply` decides:
+ * emit it here when it never streamed, stay silent when it did. That is a
+ * reported fact rather than an assumption because streaming is not
+ * guaranteed — retrieval tools and other non-streaming capabilities return
+ * text without ever calling onDelta. For `clarify`/`refuse` — turns the
+ * Orchestrator deliberately executed *without* calling any capability —
  * nothing has been said yet, so this is the one place that renders Gaia's
  * own calm words for them. That is what keeps the invariant true even for
  * capability-free turns: Response Engine, never a capability, speaks for
@@ -228,46 +232,64 @@ function generateReply({ decision, executionResult, intent }) {
 }
 
 /**
+ * Streaming twin of formatReply: delivers an ALREADY-resolved reply text
+ * onto the stream — exactly once.
+ *
+ * The rule this one function owns: a reply reaches the client either (a) as
+ * deltas DURING execution, when the capability/generator actually streamed
+ * (`contentEmitted: true`), or (b) here, as one final delta. Never twice,
+ * never zero times. That matters because (a) is an assumption, not a
+ * guarantee — clarification/refusal wording is rendered here, and plenty of
+ * executions return text without ever calling onDelta (retrieval tools, a
+ * plan whose last step hands back a terminal result, a non-streaming
+ * generator fallback). Before this rule existed, those turns ended with an
+ * empty stream while conversation history held the full reply.
+ *
+ * @param {ReturnType<typeof createStreamEmitter>} emitter
+ * @param {string|null|undefined} replyText resolved reply text (resolveReplyText)
+ * @param {{ contentEmitted?: boolean }} [options] true when content deltas
+ *   already reached the client during execution
+ * @returns {boolean} true when this call wrote the text to the stream
+ */
+function deliverReply(emitter, replyText, { contentEmitted = false } = {}) {
+  if (typeof replyText !== 'string' || replyText.length === 0) return false;
+  if (contentEmitted) return false;
+  emitter.delta(replyText);
+  return true;
+}
+
+/**
  * Turns one turn's ExecutionResult (orchestration/orchestrator.js) into the
- * final reply text, emitting it through the given stream emitter when
- * nothing has been said yet. Returns the full reply text on success (for
- * the caller's own hindsight-reflection / history-save use), or null when
- * there is nothing to say — the caller is expected to treat null as a
- * capability failure and call `emitter.fail()` itself, exactly like a
+ * final reply text, emitting it through the given stream emitter when it has
+ * not already reached the client as deltas. Returns the full reply text on
+ * success (for the caller's own hindsight-reflection / history-save use), or
+ * null when there is nothing to say — the caller is expected to treat null as
+ * a capability failure and call `emitter.fail()` itself, exactly like a
  * failed non-streaming capability call already does.
  *
- * - capability/tool: the capability already streamed its own content via
- *   `onDelta` during orchestrator.execute(); this just reports back what
- *   the capability returned as its final text (or null if it returned
- *   nothing usable, or the capability/tool was unavailable).
- * - native: the native generator already streamed its content via
- *   `onDelta` during orchestrator.execute(); same reporting as above.
+ * - capability/tool/native/plan: emitted only when it did NOT already stream
+ *   during orchestrator.execute() — pass `contentEmitted` from the caller's
+ *   own delta tracking (deliverReply is the single owner of that judgment).
  * - clarify/refuse: no capability was called — Gaia's own calm wording is
  *   rendered and emitted here, through this module's own emitter, never a
  *   capability's.
  *
  * PATCH 6: Passes intent context for Response Engine override on meta-intents
  *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter>, intent?: object }} input
+ * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter>, intent?: object, contentEmitted?: boolean }} input
  * @returns {string|null}
  */
-function generateStreamingReply({ decision, executionResult, emitter, intent }) {
+function generateStreamingReply({ decision, executionResult, emitter, intent, contentEmitted = false }) {
   const text = resolveReplyText(executionResult, { intent });
   if (text === null) return null;
-
-  // capability/tool/native text was already emitted as deltas during
-  // orchestrator.execute() (via `onDelta`) — only clarify/refuse's
-  // Gaia-rendered words still need to reach the client here.
-  const action = executionResult && executionResult.action;
-  if (action === 'clarify' || action === 'refuse') {
-    emitter.delta(text);
-  }
+  deliverReply(emitter, text, { contentEmitted });
   return text;
 }
 
 module.exports = {
   formatReply,
   createStreamEmitter,
+  deliverReply,
   generateReply,
   generateStreamingReply,
   resolveReplyText,

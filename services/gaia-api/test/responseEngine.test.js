@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatReply, createStreamEmitter, generateReply, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
+const { formatReply, createStreamEmitter, deliverReply, generateReply, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
 
 function fakeRes() {
   return {
@@ -107,16 +107,30 @@ test('an empty delta is a no-op and never opens the stream prematurely', () => {
 
 // --- generateStreamingReply (Decision Engine / Orchestrator seam) ---------
 
-test('generateStreamingReply for a capability/tool result reports back what already streamed, without emitting anything itself', () => {
+test('generateStreamingReply for a capability/tool result that already streamed emits nothing itself', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);
   const text = generateStreamingReply({
     decision: { action: 'capability', capability: 'hermes' },
     executionResult: { action: 'capability', capability: 'hermes', output: 'already streamed via onDelta' },
     emitter,
+    contentEmitted: true,
   });
   assert.equal(text, 'already streamed via onDelta');
   assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
+});
+
+test('generateStreamingReply for a capability result that never streamed emits it here (no empty stream)', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'capability', capability: 'conversation_search' },
+    executionResult: { action: 'capability', capability: 'conversation_search', output: 'found passages' },
+    emitter,
+    contentEmitted: false,
+  });
+  assert.equal(text, 'found passages');
+  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: 'found passages' } }] })}\n\n`);
 });
 
 test('generateStreamingReply treats a tool result the same way as a capability result', () => {
@@ -126,6 +140,7 @@ test('generateStreamingReply treats a tool result the same way as a capability r
     decision: { action: 'tool', capability: 'web' },
     executionResult: { action: 'tool', capability: 'web', output: 'search result' },
     emitter,
+    contentEmitted: true,
   });
   assert.equal(text, 'search result');
   assert.equal(res.written.length, 0);
@@ -175,9 +190,44 @@ test('generateStreamingReply for native with output reports back what was alread
     decision: { action: 'native' },
     executionResult: { action: 'native', output: 'already streamed via onDelta' },
     emitter,
+    contentEmitted: true,
   });
   assert.equal(text, 'already streamed via onDelta');
   assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
+});
+
+test('generateStreamingReply for a plan whose last step never streamed emits the composed answer', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  const text = generateStreamingReply({
+    decision: { action: 'plan' },
+    executionResult: { action: 'plan', output: 'het samengestelde antwoord' },
+    emitter,
+    contentEmitted: false,
+  });
+  assert.equal(text, 'het samengestelde antwoord');
+  assert.equal(res.written.length, 1);
+  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: 'het samengestelde antwoord' } }] })}\n\n`);
+});
+
+// --- deliverReply (the exactly-once rule) ---------------------------------
+
+test('deliverReply writes the reply once when nothing streamed, and stays silent when it did', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  assert.equal(deliverReply(emitter, 'hallo', { contentEmitted: false }), true);
+  assert.equal(deliverReply(emitter, 'hallo', { contentEmitted: true }), false);
+  assert.equal(res.written.length, 1);
+});
+
+test('deliverReply never writes empty or missing text', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  assert.equal(deliverReply(emitter, '', { contentEmitted: false }), false);
+  assert.equal(deliverReply(emitter, null, { contentEmitted: false }), false);
+  assert.equal(deliverReply(emitter, undefined), false);
+  assert.equal(res.written.length, 0);
+  assert.equal(res.headers, null); // headers stay lazy — a clean JSON error is still possible
 });
 
 test('generateStreamingReply for native with no output returns null', () => {

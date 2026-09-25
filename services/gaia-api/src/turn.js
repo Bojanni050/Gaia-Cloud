@@ -13,8 +13,9 @@
  *
  *   - wire shape: SSE deltas (streaming) vs one JSON body (non-streaming)
  *   - hermes invocation: stream(msgs,{onDelta}) vs chat(msgs)
- *   - reply finalization: generateStreamingReply's emitter dance vs
- *     formatReply — both twins of responseEngine.resolveReplyText
+ *   - reply finalization: deliverReply's emitter dance vs
+ *     formatReply — the streaming/non-streaming twins of the same
+ *     responseEngine.resolveReplyText judgment
  *   - history-save timing: inline after the stream finishes (streaming)
  *     vs a fire-and-forget save in the route handler (non-streaming)
  *
@@ -67,7 +68,7 @@ const { evaluate: evaluateReasoning, decideReasoningDepth, explainReasoningDepth
 const { logReasoningGate } = require('./logos/reasonLog');
 const crypto = require('crypto');
 const {
-  formatReply, createStreamEmitter, resolveReplyText,
+  formatReply, createStreamEmitter, resolveReplyText, deliverReply,
 } = require('./responseEngine');
 const { decide: decideAction } = require('./decision/decisionEngine');
 const { execute: executeDecision } = require('./orchestration/orchestrator');
@@ -1218,10 +1219,20 @@ async function performStreamingTurn({
   const emitter = createStreamEmitter(res);
 
   // First-token tracking: wraps onDelta to capture time-to-first-token
-  // for streaming generation.
+  // for streaming generation. The same wrapper also records the FACT of
+  // delivery: `contentEmitted` becomes true once user-facing content (not
+  // a reasoning-trace delta) has actually been written to this response.
+  // runTurnCore's execution may or may not produce such deltas — a
+  // capability that returns text without streaming never calls onDelta —
+  // so the Response Engine is told what happened instead of assuming it
+  // (responseEngine.deliverReply).
   let timeToFirstTokenMs = null;
+  let contentEmitted = false;
   const onDelta = trackFirstToken(
-    (chunk, isReasoning) => { emitter.delta(chunk, { reasoning: isReasoning }); },
+    (chunk, isReasoning) => {
+      if (chunk && !isReasoning) contentEmitted = true;
+      emitter.delta(chunk, { reasoning: isReasoning });
+    },
     { onFirstToken: (ms) => { timeToFirstTokenMs = ms; } }
   );
 
@@ -1259,7 +1270,7 @@ async function performStreamingTurn({
   // never awaited. Gaia's learning/reflection runs in the background once
   // the conversational response is delivered (see runDeferredCognition).
   // It never rejects and never touches `res`.
-  const { executionResult, replyText, timing, startDeferredCognition } = coreResult;
+  const { replyText, timing, startDeferredCognition } = coreResult;
 
   // Log first_token for streaming generation
   if (timeToFirstTokenMs !== null) {
@@ -1286,13 +1297,14 @@ async function performStreamingTurn({
     return;
   }
 
-  // capability/tool/native text was already emitted as deltas during
-  // orchestrate(); only clarify/refuse's Gaia-rendered words still need
-  // to reach the client here.
-  const action = executionResult && executionResult.action;
-  if (action === 'clarify' || action === 'refuse') {
-    emitter.delta(replyText);
-  }
+  // Response Engine owns this judgment (responseEngine.deliverReply): the
+  // reply either already reached the client as deltas during orchestrate()
+  // — streamed capability/native/plan output — or it is written here as one
+  // final delta. Clarify/refuse wording always lands here, and so does any
+  // execution whose text never streamed (retrieval tools, a plan ending on
+  // a terminal result, a non-streaming generator fallback) — those turns
+  // used to finish with an empty stream while history kept the full reply.
+  deliverReply(emitter, replyText, { contentEmitted });
   emitter.finish();
 
   // The conversational response path is complete — start the deferred
