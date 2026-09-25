@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { formatReply, createStreamEmitter, generateReply, generateStreamingReply, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
+const { formatReply, createStreamEmitter, resolveReplyText, toCalmError, CALM_FALLBACK, CLARIFY_FALLBACK, REFUSE_FALLBACK } = require('../src/responseEngine');
 
 function fakeRes() {
   return {
@@ -105,191 +105,90 @@ test('an empty delta is a no-op and never opens the stream prematurely', () => {
   assert.equal(res.written.length, 0);
 });
 
-// --- generateStreamingReply (Decision Engine / Orchestrator seam) ---------
+// --- resolveReplyText (Decision Engine / Orchestrator seam) ---------------
 
-test('generateStreamingReply for a capability/tool result reports back what already streamed, without emitting anything itself', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({
-    decision: { action: 'capability', capability: 'hermes' },
-    executionResult: { action: 'capability', capability: 'hermes', output: 'already streamed via onDelta' },
-    emitter,
-  });
-  assert.equal(text, 'already streamed via onDelta');
-  assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
-});
-
-test('generateStreamingReply treats a tool result the same way as a capability result', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({
-    decision: { action: 'tool', capability: 'web' },
-    executionResult: { action: 'tool', capability: 'web', output: 'search result' },
-    emitter,
-  });
-  assert.equal(text, 'search result');
-  assert.equal(res.written.length, 0);
-});
-
-test('generateStreamingReply returns null when a capability/tool produced no usable output', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
+test('resolveReplyText for a capability/tool result reports back the capability\'s returned text', () => {
   assert.equal(
-    generateStreamingReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: null }, emitter }),
-    null
-  );
-  assert.equal(
-    generateStreamingReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: '' }, emitter }),
-    null
+    resolveReplyText({ action: 'capability', capability: 'hermes', output: 'already streamed via onDelta' }),
+    'already streamed via onDelta'
   );
 });
 
-test('generateStreamingReply for clarify renders and emits Gaia\'s own calm words, without any capability', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({
-    decision: { action: 'clarify', reason: 'ambiguous' },
-    executionResult: { action: 'clarify', output: null, reason: 'ambiguous' },
-    emitter,
-  });
-  assert.equal(text, CLARIFY_FALLBACK);
-  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: CLARIFY_FALLBACK } }] })}\n\n`);
+test('resolveReplyText treats a tool result the same way as a capability result', () => {
+  assert.equal(resolveReplyText({ action: 'tool', capability: 'web', output: 'search result' }), 'search result');
 });
 
-test('generateStreamingReply for refuse renders and emits Gaia\'s own calm words, without any capability', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({
-    decision: { action: 'refuse', reason: 'policy' },
-    executionResult: { action: 'refuse', output: null, reason: 'policy' },
-    emitter,
-  });
-  assert.equal(text, REFUSE_FALLBACK);
-  assert.equal(res.written[0], `data: ${JSON.stringify({ choices: [{ delta: { content: REFUSE_FALLBACK } }] })}\n\n`);
+test('resolveReplyText returns null when a capability/tool produced no usable output', () => {
+  assert.equal(resolveReplyText({ action: 'capability', output: null }), null);
+  assert.equal(resolveReplyText({ action: 'capability', output: '' }), null);
 });
 
-test('generateStreamingReply for native with output reports back what was already streamed via onDelta', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'native', output: 'already streamed via onDelta' },
-    emitter,
-  });
-  assert.equal(text, 'already streamed via onDelta');
-  assert.equal(res.written.length, 0); // nothing emitted here — the capability already did, via onDelta
+test('resolveReplyText for clarify renders Gaia\'s own calm words, without any capability', () => {
+  assert.equal(resolveReplyText({ action: 'clarify', output: null, reason: 'ambiguous' }), CLARIFY_FALLBACK);
 });
 
-test('generateStreamingReply for native with no output returns null', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  const text = generateStreamingReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null }, emitter });
-  assert.equal(text, null);
-  assert.equal(res.written.length, 0);
+test('resolveReplyText for refuse renders Gaia\'s own calm words, without any capability', () => {
+  assert.equal(resolveReplyText({ action: 'refuse', output: null, reason: 'policy' }), REFUSE_FALLBACK);
 });
 
-test('generateStreamingReply returns null when there is no execution result at all', () => {
-  const res = fakeRes();
-  const emitter = createStreamEmitter(res);
-  assert.equal(generateStreamingReply({ decision: { action: 'capability' }, executionResult: null, emitter }), null);
+test('resolveReplyText for native with output reports back the native generator\'s text', () => {
+  assert.equal(resolveReplyText({ action: 'native', output: 'already streamed via onDelta' }), 'already streamed via onDelta');
 });
 
-// --- generateReply (non-streaming twin, used by performTurn) --------------
-
-test('generateReply reports back a capability/tool\'s returned text as-is', () => {
-  assert.equal(
-    generateReply({ decision: { action: 'capability' }, executionResult: { action: 'capability', output: 'hi there' } }),
-    'hi there'
-  );
-  assert.equal(
-    generateReply({ decision: { action: 'tool' }, executionResult: { action: 'tool', output: 'search result' } }),
-    'search result'
-  );
+test('resolveReplyText returns null for native with no output', () => {
+  assert.equal(resolveReplyText({ action: 'native', output: null }), null);
 });
 
-test('generateReply returns null when a capability/tool produced no usable output', () => {
-  assert.equal(generateReply({ decision: {}, executionResult: { action: 'capability', output: null } }), null);
-  assert.equal(generateReply({ decision: {}, executionResult: { action: 'capability', output: '' } }), null);
-});
-
-test('generateReply renders Gaia\'s own calm words for clarify/refuse, without a capability', () => {
-  assert.equal(generateReply({ decision: { action: 'clarify' }, executionResult: { action: 'clarify', output: null } }), CLARIFY_FALLBACK);
-  assert.equal(generateReply({ decision: { action: 'refuse' }, executionResult: { action: 'refuse', output: null } }), REFUSE_FALLBACK);
-});
-
-test('generateReply returns native generator output as reply text', () => {
-  assert.equal(
-    generateReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: 'Gaia says hello' } }),
-    'Gaia says hello'
-  );
-});
-
-test('generateReply returns null for native with no output', () => {
-  assert.equal(generateReply({ decision: { action: 'native' }, executionResult: { action: 'native', output: null } }), null);
-});
-
-test('generateReply returns null for a missing execution result', () => {
-  assert.equal(generateReply({ decision: {}, executionResult: null }), null);
+test('resolveReplyText returns null when there is no execution result at all', () => {
+  assert.equal(resolveReplyText(null), null);
 });
 
 // === PATCH 1-3: Image availability responses ==============================
 
-test('generateReply returns image unavailable response for image_unavailable action', () => {
+test('resolveReplyText returns image unavailable response for image_unavailable action', () => {
   const { IMAGE_UNAVAILABLE_RESPONSE } = require('../src/responseEngine');
-  const result = generateReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'image_unavailable', output: null },
-  });
-  assert.equal(result, IMAGE_UNAVAILABLE_RESPONSE);
+  assert.equal(resolveReplyText({ action: 'image_unavailable', output: null }), IMAGE_UNAVAILABLE_RESPONSE);
 });
 
-test('generateReply returns image unknown response for image_unknown action', () => {
+test('resolveReplyText returns image unknown response for image_unknown action', () => {
   const { IMAGE_UNKNOWN_RESPONSE } = require('../src/responseEngine');
-  const result = generateReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'image_unknown', output: null },
-  });
-  assert.equal(result, IMAGE_UNKNOWN_RESPONSE);
+  assert.equal(resolveReplyText({ action: 'image_unknown', output: null }), IMAGE_UNKNOWN_RESPONSE);
 });
 
 // === PATCH 6: Response Engine override for meta-intents ===================
 
-test('generateReply returns null for meta-intents (override capability candidate)', () => {
+test('resolveReplyText returns null for meta-intents (override capability candidate)', () => {
   // When user asks about Gaia's previous behavior, Response Engine should override
   // the capability candidate and answer directly from conversation context
-  const result = generateReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'capability', output: 'web search result' },
-    intent: { intent: 'meta.question', status: 'accepted' },
-  });
+  const result = resolveReplyText(
+    { action: 'capability', output: 'web search result' },
+    { intent: { intent: 'meta.question', status: 'accepted' } }
+  );
   // The Response Engine should override and return null to let native handle it
   assert.equal(result, null);
 });
 
-test('generateReply returns null for meta.correction intents', () => {
-  const result = generateReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'capability', output: 'some result' },
-    intent: { intent: 'meta.correction', status: 'accepted' },
-  });
+test('resolveReplyText returns null for meta.correction intents', () => {
+  const result = resolveReplyText(
+    { action: 'capability', output: 'some result' },
+    { intent: { intent: 'meta.correction', status: 'accepted' } }
+  );
   assert.equal(result, null);
 });
 
-test('generateReply returns null for meta.capability_question intents', () => {
-  const result = generateReply({
-    decision: { action: 'native' },
-    executionResult: { action: 'tool', output: 'search result' },
-    intent: { intent: 'meta.capability_question', status: 'accepted' },
-  });
+test('resolveReplyText returns null for meta.capability_question intents', () => {
+  const result = resolveReplyText(
+    { action: 'tool', output: 'search result' },
+    { intent: { intent: 'meta.capability_question', status: 'accepted' } }
+  );
   assert.equal(result, null);
 });
 
-test('generateReply does NOT override non-meta intents', () => {
+test('resolveReplyText does NOT override non-meta intents', () => {
   // For regular intents, the capability output should be returned
-  const result = generateReply({
-    decision: { action: 'capability' },
-    executionResult: { action: 'capability', output: 'web search result' },
-    intent: { intent: 'inform.explain', status: 'accepted' },
-  });
+  const result = resolveReplyText(
+    { action: 'capability', output: 'web search result' },
+    { intent: { intent: 'inform.explain', status: 'accepted' } }
+  );
   assert.equal(result, 'web search result');
 });

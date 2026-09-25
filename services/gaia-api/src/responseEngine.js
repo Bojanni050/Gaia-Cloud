@@ -21,19 +21,18 @@
  * result, produce the response — a direct Gaia answer and a
  * capability-produced answer converge here into the same shape.
  *
- * generateReply/generateStreamingReply extend this seam to the Decision
- * Engine / Orchestrator flow (decision/decisionEngine.js, orchestration/
- * orchestrator.js) — the non-streaming and streaming twins of the same
- * judgment. For `capability`/`tool`, the text either already reached the
- * client as deltas during orchestrator.execute() (streaming — it was handed
- * this module's own stream emitter as `onDelta`) or is simply the
- * capability's returned string (non-streaming); either way this module's
- * job is just to report back what was said. For `clarify`/`refuse` — turns
- * the Orchestrator deliberately executed *without* calling any capability —
- * nothing has been said yet, so this is the one place that renders Gaia's
- * own calm words for them. That is what keeps the invariant true even for
- * capability-free turns: Response Engine, never a capability, speaks for
- * Gaia.
+ * turn.js calls resolveReplyText to judge what an ExecutionResult means
+ * as reply text, then expresses it through formatReply (non-streaming) or
+ * the stream emitter (streaming) — the two transports share that one
+ * judgment so they can never quietly diverge on what counts as "nothing to
+ * say". For `capability`/`tool`, the text either already reached the client
+ * as deltas during orchestrator.execute() (streaming — it was handed this
+ * module's own stream emitter as `onDelta`) or is simply the capability's
+ * returned string (non-streaming). For `clarify`/`refuse` — turns the
+ * Orchestrator deliberately executed *without* calling any capability —
+ * turn.js emits Gaia's own calm words through this module's emitter. That
+ * is what keeps the invariant true even for capability-free turns:
+ * Response Engine, never a capability, speaks for Gaia.
  *
  * PATCH 6: Response Engine override
  * - When the user's intent is meta-question, explanation, correction, or
@@ -145,9 +144,9 @@ function createStreamEmitter(res) {
 
 /**
  * The one place that judges what an ExecutionResult (orchestration/
- * orchestrator.js) means as reply text. Shared by both generateReply
- * (non-streaming) and generateStreamingReply (streaming) so the two paths
- * can never quietly diverge on what counts as "nothing to say".
+ * orchestrator.js) means as reply text. Called by turn.js's turn core, so
+ * both transports share this judgment and can never quietly diverge on
+ * what counts as "nothing to say".
  *
  * - capability/tool: whatever the capability returned, as long as it's a
  *   non-empty string; null if it returned nothing usable, or the
@@ -211,65 +210,9 @@ function resolveReplyText(executionResult, context = {}) {
   }
 }
 
-/**
- * Non-streaming twin of generateStreamingReply: turns one turn's
- * ExecutionResult into the final reply text, with no emitter — there is no
- * stream to have already carried it. Used by performTurn (turn.js), which
- * hands the returned text straight to formatReply for the HTTP-shaped
- * result, exactly as it always has.
- *
- * PATCH 6: Passes intent context for Response Engine override on meta-intents
- *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, intent?: object }} input
- * @returns {string|null}
- */
-function generateReply({ decision, executionResult, intent }) {
-  return resolveReplyText(executionResult, { intent });
-}
-
-/**
- * Turns one turn's ExecutionResult (orchestration/orchestrator.js) into the
- * final reply text, emitting it through the given stream emitter when
- * nothing has been said yet. Returns the full reply text on success (for
- * the caller's own hindsight-reflection / history-save use), or null when
- * there is nothing to say — the caller is expected to treat null as a
- * capability failure and call `emitter.fail()` itself, exactly like a
- * failed non-streaming capability call already does.
- *
- * - capability/tool: the capability already streamed its own content via
- *   `onDelta` during orchestrator.execute(); this just reports back what
- *   the capability returned as its final text (or null if it returned
- *   nothing usable, or the capability/tool was unavailable).
- * - native: the native generator already streamed its content via
- *   `onDelta` during orchestrator.execute(); same reporting as above.
- * - clarify/refuse: no capability was called — Gaia's own calm wording is
- *   rendered and emitted here, through this module's own emitter, never a
- *   capability's.
- *
- * PATCH 6: Passes intent context for Response Engine override on meta-intents
- *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter>, intent?: object }} input
- * @returns {string|null}
- */
-function generateStreamingReply({ decision, executionResult, emitter, intent }) {
-  const text = resolveReplyText(executionResult, { intent });
-  if (text === null) return null;
-
-  // capability/tool/native text was already emitted as deltas during
-  // orchestrator.execute() (via `onDelta`) — only clarify/refuse's
-  // Gaia-rendered words still need to reach the client here.
-  const action = executionResult && executionResult.action;
-  if (action === 'clarify' || action === 'refuse') {
-    emitter.delta(text);
-  }
-  return text;
-}
-
 module.exports = {
   formatReply,
   createStreamEmitter,
-  generateReply,
-  generateStreamingReply,
   resolveReplyText,
   toCalmError,
   CALM_FALLBACK,

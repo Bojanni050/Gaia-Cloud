@@ -13,8 +13,9 @@
  *
  *   - wire shape: SSE deltas (streaming) vs one JSON body (non-streaming)
  *   - hermes invocation: stream(msgs,{onDelta}) vs chat(msgs)
- *   - reply finalization: generateStreamingReply's emitter dance vs
- *     formatReply — both twins of responseEngine.resolveReplyText
+ *   - reply finalization: the streaming path's emitter dance (delta for
+ *     clarify/refuse, finish otherwise) vs formatReply — both transports
+ *     share responseEngine.resolveReplyText's one judgment
  *   - history-save timing: inline after the stream finishes (streaming)
  *     vs a fire-and-forget save in the route handler (non-streaming)
  *
