@@ -1,9 +1,9 @@
 ---
 title: Gaia — Evolution
 document: evolution
-version: 1.0.0
+version: 1.0.1
 status: active
-last_updated: 2026-08-05
+last_updated: 2026-09-30
 owner: Gaia Product Foundation
 framing: "Gaia is a lifelong personal intelligence designed to grow through understanding."
 ---
@@ -641,6 +641,18 @@ The actual constitution — the "You are Gaia…" document with her character, c
 **What was deliberately not built.** No server-side sanitization/stripping of leaked tool-call-shaped text was added to the Response Engine. The prompt-level fix addresses the actual cause (a model producing text it was never asked to produce); a regex-based strip would be a band-aid over that, with its own false-positive risk (e.g. a user genuinely asking Gaia to explain what tool-calling syntax looks like). If this recurs after the SOUL update, a defense-in-depth filter at the Response Engine boundary is the next lever — it was not needed on the first attempt at the root cause.
 
 **Why this matters.** This is a second, different instance of the same underlying invariant Gaia's architecture already protects for providers, models, and transport details: nothing about the machinery beneath Gaia should ever reach the person she's talking to. A hallucinated tool-call tag is just as much a leak of "the machinery underneath" as a stack trace or a provider name would be — SOUL already forbade the latter; it needed to say so for the former too.
+
+---
+
+## Amendment — SOUL Gains a Lexicon: Naming the Words Not to Say
+
+**Context.** SOUL has always forbade the *register* of an assistant — "no corporate assistant boilerplate, no performative enthusiasm, no filler" — and `docs/lexicon.md` has always stated the *philosophy* of her vocabulary: translate by default, concepts for people and implementation names for developers, "Let go," "I remember." What neither document did was name the specific words. The gap between "don't sound like an assistant" and an actual banned word list is where chat vocabulary survives: a model given only the general rule will still say *chat*, *sessie*, *geheugen*, or *samenvatting*, because those are the default register of the models she runs on, not a violation of anything she was explicitly told. Worse, the one document that came closest to a real lexicon was in the wrong place to enforce it: `lexicon.md` reaches the model only when the Foundation Selector (`evolution.md`, "Canonical Foundation Engine") judges the turn to warrant it, so the vocabulary rules were conditional on a routing decision, while SOUL is unconditional — it is prepended to every single reasoning call.
+
+**What changed.** `services/gaia-api/identity/soul.md` (now v1.3.0) — a new `### Lexicon & Taalgebruik` subsection under §2 The Constitution, placed next to "How you communicate" because it is the same kind of rule, and before "Continuity" so the wording choices are settled before the continuity rules that follow them. It states the principle first (human, quiet concepts; avoid the language of chat interfaces and assistants), then the substitutions as explicit pairs — *chat/sessie* → *gesprek*; *nieuwe chat* → *een nieuwe bladzijde* / *begin een pagina*; *geheugen/profiel* → *begrip* / *wat ik begrijp*; *samenvatting* → *reflectie*; *verwijderen* → *loslaten* — and closes on the tone rule the rest of SOUL already implied: no excessive politeness, no "Waarmee kan ik je vandaag helpen?", and nothing beyond calm, natural, thoughtful speech.
+
+**What was deliberately not built.** `docs/lexicon.md` was not deleted, rewritten, or merged into SOUL. The reasoning in it — the two layers of language, when technical vocabulary becomes appropriate, the translation examples — is still correct, still more detailed than SOUL has room for, and still useful to anyone building on this codebase. What changed is only that the handful of rules that must hold on *every* turn now live in the document that is on *every* turn, while the reference material stays where the Foundation Selector can still choose it. No sanitization, word-blocking, or post-processing filter was added; like the tool-call-syntax fix above, the cause is the prompt, and a band-aid at the Response Engine would carry the same false-positive risk (a user legitimately asking what "geheugen" means in this context).
+
+**Why this matters.** This is the third instance of the same pattern — machinery vocabulary, then tool-call syntax, now chat-interface vocabulary — and each time the fix landed in SOUL rather than in code, because the thing leaking is a habit of the model underneath, and a habit is corrected by constitution, not by filtering. It also sharpens something SOUL previously left implicit: the substitutions are not a translation table for technical words (that was always `lexicon.md`'s job, and it covers it). Every word on the list is one Gaia could have said perfectly well about herself — *geheugen* and *samenvatting* are ordinary Dutch. They are banned because they point at the interface she is not, not because they are wrong.
 
 ---
 
