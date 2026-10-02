@@ -487,8 +487,12 @@
       <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
 
       <label for="ttsVoice">Voice ID</label>
-      <input id="ttsVoice" type="text" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
-      <p class="hint">Mistral Voxtral only — leave empty for the default voice. Ignored by MiMo.</p>
+      <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
+      <datalist id="ttsVoiceList"></datalist>
+      <p class="hint">Mistral Voxtral only — leave empty for the default voice. Ignored by MiMo. Save first, then load the list.</p>
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="loadTtsVoicesBtn" class="secondary">Get voices</button>
+      </div>
 
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="saveTtsBtn">Save voice</button>
@@ -1085,6 +1089,34 @@
       setStatus(ttsStatusEl, 'Could not save voice — check the bearer token.', false);
     } finally {
       saveTtsBtn.disabled = false;
+    }
+  });
+
+  const loadTtsVoicesBtn = $('loadTtsVoicesBtn'), ttsVoiceListEl = $('ttsVoiceList');
+
+  loadTtsVoicesBtn.addEventListener('click', async () => {
+    // Reads the *saved* TTS config server-side (same effective config
+    // POST /speech speaks with) — save the Voice section first when the
+    // provider, URL, or key changed.
+    loadTtsVoicesBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/tts/voices', { headers: authHeaders() });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+      const voices = Array.isArray(body.voices) ? body.voices : [];
+      ttsVoiceListEl.replaceChildren();
+      for (const voice of voices) {
+        if (!voice || typeof voice.id !== 'string' || !voice.id) continue;
+        const option = document.createElement('option');
+        option.value = voice.id;
+        option.label = typeof voice.name === 'string' && voice.name ? voice.name : voice.id;
+        ttsVoiceListEl.appendChild(option);
+      }
+      setStatus(ttsStatusEl, voices.length + (voices.length === 1 ? ' voice' : ' voices') + ' loaded — pick one or keep typing an ID.', true);
+    } catch (err) {
+      setStatus(ttsStatusEl, 'Could not load voices — ' + (err && err.message ? err.message : 'check the bearer token and saved TTS config.'), false);
+    } finally {
+      loadTtsVoicesBtn.disabled = false;
     }
   });
 

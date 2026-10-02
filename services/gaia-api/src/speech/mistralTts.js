@@ -222,6 +222,65 @@ function createMistralTts(options = {}) {
 }
 
 /**
+ * Lists the saved voices (preset + custom) on the Mistral account, for
+ * admin surfaces that let an operator pick a `voice_id` instead of typing
+ * one blind (see adminRoutes.js's GET /admin/api/tts/voices).
+ *
+ * @param {{
+ *   baseUrl: string,
+ *   authToken?: string,
+ *   fetchImpl?: Function,
+ *   timeoutMs?: number,
+ * }} options
+ * @returns {Promise<Array<{ id: string, name: string }>>}
+ */
+async function listVoices(options = {}) {
+  const baseUrl = String(options.baseUrl || '').replace(/\/+$/, '');
+  const authToken = options.authToken || '';
+  const fetchImpl = options.fetchImpl || fetch;
+  const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+
+  if (!baseUrl) {
+    throw new Error('GAIA_TTS_BASE_URL is required for speech synthesis');
+  }
+
+  const headers = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+  let response;
+  try {
+    response = await fetchImpl(`${baseUrl}/audio/voices`, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    console.error(`[gaia:tts] unreachable at ${baseUrl}: ${error.message}`);
+    throw new Error('voice listing unreachable');
+  }
+
+  if (!response.ok) {
+    console.error(`[gaia:tts] responded ${response.status} at ${baseUrl}`);
+    const error = new Error('voice listing responded with an error');
+    error.status = response.status;
+    throw error;
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    console.error(`[gaia:tts] unreadable response at ${baseUrl}`);
+    throw new Error('voice listing returned an unreadable response');
+  }
+
+  const items = data && Array.isArray(data.items) ? data.items : [];
+  return items
+    .filter((voice) => voice && typeof voice.id === 'string' && voice.id !== '')
+    .map((voice) => ({ id: voice.id, name: typeof voice.name === 'string' && voice.name !== '' ? voice.name : voice.id }));
+}
+
+/**
  * Composes readTtsConfig + isConfigured + createMistralTts, mirroring
  * mimoTts.js's createFromEnv — the one call server.js needs. Returns
  * `undefined` when GAIA_TTS_BASE_URL/GAIA_TTS_MODEL are unset, so callers
@@ -237,6 +296,7 @@ function createFromEnv(env = process.env) {
 
 module.exports = {
   createMistralTts,
+  listVoices,
   readTtsConfig,
   isConfigured,
   createFromEnv,

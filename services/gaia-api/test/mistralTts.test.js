@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   createMistralTts,
+  listVoices,
   readTtsConfig,
   isConfigured,
   createFromEnv,
@@ -236,6 +237,68 @@ test('synthesize() throws a calm error on an unreadable (non-JSON) response', as
   const fetchImpl = async () => ({ ok: true, json: async () => { throw new Error('bad json'); } });
   const tts = createMistralTts({ baseUrl: 'http://test', model: 'm', fetchImpl });
   await assert.rejects(() => tts.synthesize('hi'), /speech synthesis returned an unreadable response/);
+});
+
+// --- listVoices (admin voice picker) ----------------------------------------
+
+test('listVoices() GETs {baseUrl}/audio/voices and maps items to id/name pairs', async () => {
+  let seenUrl;
+  let seenHeaders;
+  const fetchImpl = async (url, fetchOptions) => {
+    seenUrl = url;
+    seenHeaders = fetchOptions.headers;
+    return {
+      ok: true,
+      json: async () => ({
+        items: [
+          { id: 'voice-1', name: 'Gaia Warm', type: 'custom' },
+          { id: 'voice-2', name: '', type: 'preset' },
+          { id: '', name: 'nameless' },
+          null,
+        ],
+        total: 4,
+      }),
+    };
+  };
+  const voices = await listVoices({ baseUrl: 'http://test:1234/v1/', authToken: 'k', fetchImpl });
+  assert.equal(seenUrl, 'http://test:1234/v1/audio/voices');
+  assert.equal(seenHeaders.Authorization, 'Bearer k');
+  assert.deepEqual(voices, [
+    { id: 'voice-1', name: 'Gaia Warm' },
+    { id: 'voice-2', name: 'voice-2' },
+  ]);
+});
+
+test('listVoices() throws when baseUrl is missing', async () => {
+  await assert.rejects(() => listVoices({}), /GAIA_TTS_BASE_URL/);
+});
+
+test('listVoices() throws a calm error on network failure', async () => {
+  const fetchImpl = async () => { throw new Error('ECONNREFUSED 1.2.3.4:443'); };
+  await assert.rejects(() => listVoices({ baseUrl: 'http://test', fetchImpl }), (err) => {
+    assert.match(err.message, /voice listing unreachable/);
+    assert.ok(!err.message.includes('1.2.3.4'));
+    return true;
+  });
+});
+
+test('listVoices() carries the HTTP status so callers can map 401 to bad-key wording', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 401 });
+  await assert.rejects(() => listVoices({ baseUrl: 'http://test', fetchImpl }), (err) => {
+    assert.match(err.message, /voice listing responded with an error/);
+    assert.equal(err.status, 401);
+    return true;
+  });
+});
+
+test('listVoices() throws a calm error on an unreadable response', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => { throw new Error('bad json'); } });
+  await assert.rejects(() => listVoices({ baseUrl: 'http://test', fetchImpl }), /voice listing returned an unreadable response/);
+});
+
+test('listVoices() returns an empty list when the response has no items array', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => ({}) });
+  assert.deepEqual(await listVoices({ baseUrl: 'http://test', fetchImpl }), []);
 });
 
 // --- Architectural invariant: no cognitive dependencies ---------------------

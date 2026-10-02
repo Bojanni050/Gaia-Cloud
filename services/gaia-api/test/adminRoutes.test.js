@@ -35,13 +35,20 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false }
     return fakeProviderModels || [];
   };
 
+  let fakeTtsVoices = null;
+  let fakeTtsVoicesError = null;
+  const listTtsVoicesFn = async () => {
+    if (fakeTtsVoicesError) throw fakeTtsVoicesError;
+    return fakeTtsVoices || [];
+  };
+
   const providerStore = withProviderStore
     ? createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') })
     : undefined;
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn }));
+  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -56,6 +63,8 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false }
     setError: (err) => { fakeOpenRouterError = err; },
     setProviderModels: (models) => { fakeProviderModels = models; },
     setProviderError: (err) => { fakeProviderError = err; },
+    setTtsVoices: (voices) => { fakeTtsVoices = voices; },
+    setTtsVoicesError: (err) => { fakeTtsVoicesError = err; },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -569,6 +578,74 @@ test('PUT /admin/api/tts/config saves a Mistral voiceId alongside the model', as
     assert.equal(body.voiceId, 'gaia-voice-1');
     // Verify persisted — voiceId is not a secret, it round-trips in the clear
     assert.equal(ctx.providerStore.getConfig().tts.voiceId, 'gaia-voice-1');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/voices returns the saved voices for a Mistral TTS provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'mistral-key', model: 'voxtral-mini-tts-2603' }),
+    });
+    ctx.setTtsVoices([{ id: 'voice-1', name: 'Gaia Warm' }, { id: 'voice-2', name: 'voice-2' }]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.voices, [{ id: 'voice-1', name: 'Gaia Warm' }, { id: 'voice-2', name: 'voice-2' }]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/voices requires a TTS provider first', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /configure a TTS provider/);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/voices refuses non-Mistral providers — MiMo has no voice library', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', model: 'mimo-tts' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /only available for Mistral/);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/voices maps a 401 to bad-key wording, other failures to a calm 502', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'wrong-key', model: 'voxtral-mini-tts-2603' }),
+    });
+    const authError = new Error('voice listing responded with an error');
+    authError.status = 401;
+    ctx.setTtsVoicesError(authError);
+    const res401 = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res401.status, 401);
+    assert.match((await res401.json()).error, /check your TTS API key/);
+
+    ctx.setTtsVoicesError(new Error('socket hangup'));
+    const res502 = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res502.status, 502);
+    assert.match((await res502.json()).error, /could not retrieve voices/);
   } finally {
     await ctx.close();
   }

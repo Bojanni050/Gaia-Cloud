@@ -28,6 +28,7 @@
  *   GET  /admin/api/tts/config        -> masked TTS config
  *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model?, voiceId? }
  *   GET  /admin/api/tts/models        -> retrieve models from TTS provider
+ *   GET  /admin/api/tts/voices        -> list saved voices from the TTS provider (Mistral only)
  *
  *   IntentIQ (semantic classification model — same shape as ReasonIQ's):
  *   GET  /admin/api/intentiq/config   -> masked current config + env fallback
@@ -41,6 +42,7 @@ const express = require('express');
 const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
+const { listVoices: listMistralVoices } = require('./speech/mistralTts');
 const { readIntentModelConfig } = require('./logos/intentModelClient');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision'];
@@ -55,6 +57,7 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  *   createOpenRouterClientFn?: typeof createOpenRouterClient,
  *   retrieveModelsFn?: typeof retrieveModels,
  *   retrieveOpenRouterModelEndpointsFn?: typeof retrieveOpenRouterModelEndpoints,
+ *   listTtsVoicesFn?: (options: { baseUrl: string, apiKey?: string }) => Promise<Array<{ id: string, name: string }>>,
  * }} deps
  */
 function createAdminRouter({
@@ -62,6 +65,7 @@ function createAdminRouter({
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
+  listTtsVoicesFn = listMistralVoices,
 }) {
   const router = express.Router();
 
@@ -391,6 +395,39 @@ function createAdminRouter({
           return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
         }
         res.status(502).json({ error: 'could not retrieve models from TTS provider' });
+      }
+    });
+
+    router.get('/api/tts/voices', auth, async (req, res) => {
+      const config = providerStore.getConfig();
+      const tts = config && config.tts ? config.tts : {};
+      const effective = tts.useMainProvider
+        ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
+        : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+      if (!effective) {
+        return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
+      }
+      // Only Mistral exposes a voice library (GET /v1/audio/voices) —
+      // MiMo designs its voice from a prompt instead, so there is nothing
+      // to list for any other provider.
+      if (effective.provider !== 'mistral') {
+        return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral' });
+      }
+      if (!effective.baseUrl) {
+        return res.status(400).json({ error: 'set a base URL for the TTS provider' });
+      }
+
+      try {
+        const voices = await listTtsVoicesFn({
+          baseUrl: effective.baseUrl,
+          authToken: effective.apiKey,
+        });
+        res.json({ voices });
+      } catch (err) {
+        if (err && err.status === 401) {
+          return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
+        }
+        res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
       }
     });
   }
