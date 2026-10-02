@@ -250,18 +250,18 @@ test('listVoices() GETs {baseUrl}/audio/voices and maps items to id/name pairs',
     return {
       ok: true,
       json: async () => ({
+        // No `total` here — a short page alone must end the walk.
         items: [
           { id: 'voice-1', name: 'Gaia Warm', type: 'custom' },
           { id: 'voice-2', name: '', type: 'preset' },
           { id: '', name: 'nameless' },
           null,
         ],
-        total: 4,
       }),
     };
   };
   const voices = await listVoices({ baseUrl: 'http://test:1234/v1/', authToken: 'k', fetchImpl });
-  assert.equal(seenUrl, 'http://test:1234/v1/audio/voices');
+  assert.equal(seenUrl, 'http://test:1234/v1/audio/voices?limit=100&offset=0');
   assert.equal(seenHeaders.Authorization, 'Bearer k');
   assert.deepEqual(voices, [
     { id: 'voice-1', name: 'Gaia Warm' },
@@ -299,6 +299,37 @@ test('listVoices() throws a calm error on an unreadable response', async () => {
 test('listVoices() returns an empty list when the response has no items array', async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => ({}) });
   assert.deepEqual(await listVoices({ baseUrl: 'http://test', fetchImpl }), []);
+});
+
+test('listVoices() follows pages until the reported total is reached', async () => {
+  const seenOffsets = [];
+  const fetchImpl = async (url) => {
+    seenOffsets.push(url);
+    const offset = Number(new URL(url).searchParams.get('offset'));
+    const items = offset === 0
+      ? [{ id: 'voice-1', name: 'One' }, { id: 'voice-2', name: 'Two' }]
+      : [{ id: 'voice-3', name: 'Three' }];
+    return { ok: true, json: async () => ({ items, total: 3 }) };
+  };
+  // The server pages smaller than the requested limit=100 here — the
+  // reported total (3) must keep the walk going past the short page.
+  const voices = await listVoices({ baseUrl: 'http://test', fetchImpl });
+  assert.deepEqual(seenOffsets, [
+    'http://test/audio/voices?limit=100&offset=0',
+    'http://test/audio/voices?limit=100&offset=2',
+  ]);
+  assert.deepEqual(voices.map((v) => v.id), ['voice-1', 'voice-2', 'voice-3']);
+});
+
+test('listVoices() stops after a short page even without a total', async () => {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return { ok: true, json: async () => ({ items: [{ id: 'only', name: 'Only' }] }) };
+  };
+  const voices = await listVoices({ baseUrl: 'http://test', fetchImpl });
+  assert.equal(calls, 1);
+  assert.deepEqual(voices, [{ id: 'only', name: 'Only' }]);
 });
 
 // --- Architectural invariant: no cognitive dependencies ---------------------

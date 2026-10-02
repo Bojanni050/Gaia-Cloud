@@ -226,6 +226,10 @@ function createMistralTts(options = {}) {
  * admin surfaces that let an operator pick a `voice_id` instead of typing
  * one blind (see adminRoutes.js's GET /admin/api/tts/voices).
  *
+ * The endpoint is paginated (10 per page by default) — this follows
+ * pages until the reported total is reached, an empty page arrives, or
+ * a short page arrives, so callers always get the whole library.
+ *
  * @param {{
  *   baseUrl: string,
  *   authToken?: string,
@@ -247,37 +251,62 @@ async function listVoices(options = {}) {
   const headers = {};
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-  let response;
-  try {
-    response = await fetchImpl(`${baseUrl}/audio/voices`, {
-      method: 'GET',
-      headers,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    console.error(`[gaia:tts] unreachable at ${baseUrl}: ${error.message}`);
-    throw new Error('voice listing unreachable');
+  async function fetchPage(offset, limit) {
+    let response;
+    try {
+      response = await fetchImpl(`${baseUrl}/audio/voices?limit=${limit}&offset=${offset}`, {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      console.error(`[gaia:tts] unreachable at ${baseUrl}: ${error.message}`);
+      throw new Error('voice listing unreachable');
+    }
+
+    if (!response.ok) {
+      console.error(`[gaia:tts] responded ${response.status} at ${baseUrl}`);
+      const error = new Error('voice listing responded with an error');
+      error.status = response.status;
+      throw error;
+    }
+
+    try {
+      return await response.json();
+    } catch (_) {
+      console.error(`[gaia:tts] unreadable response at ${baseUrl}`);
+      throw new Error('voice listing returned an unreadable response');
+    }
   }
 
-  if (!response.ok) {
-    console.error(`[gaia:tts] responded ${response.status} at ${baseUrl}`);
-    const error = new Error('voice listing responded with an error');
-    error.status = response.status;
-    throw error;
+  const voices = [];
+  const seen = new Set();
+  const limit = 100;
+  let offset = 0;
+  // Bounded: a misbehaving pager (total that never arrives) stops after
+  // 10 pages / ~1000 voices rather than looping forever.
+  for (let page = 0; page < 10; page++) {
+    const data = await fetchPage(offset, limit);
+    const items = data && Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) break;
+    for (const voice of items) {
+      if (!voice || typeof voice.id !== 'string' || voice.id === '' || seen.has(voice.id)) continue;
+      seen.add(voice.id);
+      voices.push({ id: voice.id, name: typeof voice.name === 'string' && voice.name !== '' ? voice.name : voice.id });
+    }
+    offset += items.length;
+    const total = data && typeof data.total === 'number' ? data.total : null;
+    // The reported total leads: some servers page smaller than the
+    // requested limit, so a short page alone must not stop the walk when
+    // the total says there is more. Without a total, a short page is the
+    // only end-of-list signal there is.
+    if (total !== null) {
+      if (voices.length >= total) break;
+    } else if (items.length < limit) {
+      break;
+    }
   }
-
-  let data;
-  try {
-    data = await response.json();
-  } catch (_) {
-    console.error(`[gaia:tts] unreadable response at ${baseUrl}`);
-    throw new Error('voice listing returned an unreadable response');
-  }
-
-  const items = data && Array.isArray(data.items) ? data.items : [];
-  return items
-    .filter((voice) => voice && typeof voice.id === 'string' && voice.id !== '')
-    .map((voice) => ({ id: voice.id, name: typeof voice.name === 'string' && voice.name !== '' ? voice.name : voice.id }));
+  return voices;
 }
 
 /**
