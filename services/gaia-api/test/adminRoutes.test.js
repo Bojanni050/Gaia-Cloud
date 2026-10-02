@@ -12,7 +12,7 @@ const { createProviderStore } = require('../src/providerStore');
 const { createDecisionStore } = require('../src/logos/decisionStore');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
-function startTestServer({ withDecisionStore = true, withProviderStore = false } = {}) {
+function startTestServer({ withDecisionStore = true, withProviderStore = false, ttsLog = null } = {}) {
   const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-')), 'config.json');
   const store = createReasoningModelStore({ storePath });
   const decisionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-decisions-'));
@@ -48,7 +48,7 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false }
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn }));
+  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, ttsLog }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -646,6 +646,35 @@ test('GET /admin/api/tts/voices maps a 401 to bad-key wording, other failures to
     const res502 = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
     assert.equal(res502.status, 502);
     assert.match((await res502.json()).error, /could not retrieve voices/);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/log returns an empty tail when constructed without a log', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/log`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).entries, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/log returns recorded attempts, newest first', async () => {
+  const { createTtsLog } = require('../src/speech/ttsLog');
+  const ttsLog = createTtsLog();
+  ttsLog.record({ provider: 'mistral', model: 'voxtral-mini-tts-2603', outcome: 'ok', status: 200 });
+  ttsLog.record({ provider: 'mistral', model: 'voxtral-mini-tts-2603', outcome: 'error', status: 502 });
+  const ctx = startTestServer({ withProviderStore: true, ttsLog });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/log`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const entries = (await res.json()).entries;
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].outcome, 'error');
+    assert.equal(entries[1].outcome, 'ok');
   } finally {
     await ctx.close();
   }

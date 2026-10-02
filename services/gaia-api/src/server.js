@@ -54,6 +54,7 @@ const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
+const { createTtsLog } = require('./speech/ttsLog');
 const { createIntentModelStore } = require('./logos/intentModelStore');
 const { resolveIntentModelConfig } = require('./logos/intentModelConfigResolver');
 const { createIntentModelClient, isConfigured: isIntentModelConfigured } = require('./logos/intentModelClient');
@@ -194,7 +195,11 @@ function createApp(env = process.env) {
   const intentModelStore = createIntentModelStore(
     env.INTENTIQ_CONFIG_PATH !== undefined ? { storePath: env.INTENTIQ_CONFIG_PATH } : {}
   );
-  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, intentModelStore, auth }));
+  // Voice activity tail for the admin surface (GET /admin/api/tts/log) —
+  // in-memory by design: a restart clears it, same as a fresh pair of
+  // ears on the next shift.
+  const ttsLog = createTtsLog();
+  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, intentModelStore, auth, ttsLog }));
 
   // IntentIQ's semantic-classification model client, re-resolved on every
   // call (not once at startup) — same reasoning as getEffectiveNativeGenerator
@@ -238,8 +243,10 @@ function createApp(env = process.env) {
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
+    // The resolved config travels with the client so POST /speech can log
+    // *what* it spoke with (provider/model/voice) without re-resolving.
     if (!providerTtsConfig || !providerTtsConfig.baseUrl || !providerTtsConfig.model) {
-      return tts;
+      return { tts, config: providerTtsConfig };
     }
     // Mistral speaks its own protocol (POST {base}/audio/speech, base64
     // JSON) — everything else stays on the MiMo client, which is also what
@@ -247,19 +254,25 @@ function createApp(env = process.env) {
     // fall through to MiMo rather than 503: a stored baseUrl/model pair is
     // a configured voice until proven otherwise.
     if (providerTtsConfig.provider === 'mistral') {
-      return require('./speech/mistralTts').createMistralTts({
+      return {
+        tts: require('./speech/mistralTts').createMistralTts({
+          baseUrl: providerTtsConfig.baseUrl,
+          model: providerTtsConfig.model,
+          authToken: providerTtsConfig.apiKey,
+          voiceId: providerTtsConfig.voiceId,
+          format: env.GAIA_TTS_FORMAT,
+        }),
+        config: providerTtsConfig,
+      };
+    }
+    return {
+      tts: require('./speech/mimoTts').createMimoTts({
         baseUrl: providerTtsConfig.baseUrl,
         model: providerTtsConfig.model,
         authToken: providerTtsConfig.apiKey,
-        voiceId: providerTtsConfig.voiceId,
-        format: env.GAIA_TTS_FORMAT,
-      });
-    }
-    return require('./speech/mimoTts').createMimoTts({
-      baseUrl: providerTtsConfig.baseUrl,
-      model: providerTtsConfig.model,
-      authToken: providerTtsConfig.apiKey,
-    });
+      }),
+      config: providerTtsConfig,
+    };
   }
 
   /**
@@ -466,13 +479,25 @@ function createApp(env = process.env) {
     if (typeof text !== 'string' || text.trim() === '') {
       return res.status(400).json({ error: 'text must be a non-empty string' });
     }
-    const effectiveTts = getEffectiveTts();
+    const { tts: effectiveTts, config: ttsConfig } = getEffectiveTts();
+    // Operator diagnostics (GET /admin/api/tts/log): what the voice
+    // attempted, with what, and how it ended. Clients never see this —
+    // they keep the calm wording below — but "she doesn't speak" without
+    // it is undebuggable.
+    const logBase = {
+      provider: ttsConfig ? ttsConfig.provider : null,
+      model: ttsConfig ? ttsConfig.model : null,
+      voiceId: (ttsConfig && ttsConfig.voiceId) || '',
+      chars: text.trim().length,
+      preview: String(text).slice(0, 80),
+    };
     if (!effectiveTts) {
+      ttsLog.record({ ...logBase, outcome: 'not-configured', error: 'speech is not configured', status: 503, durationMs: 0 });
       return res.status(503).json({ error: 'speech is not configured' });
     }
+    const ttsStart = process.hrtime.bigint();
     try {
       const ttsTraceId = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const ttsStart = process.hrtime.bigint();
       const { audio, mimeType } = await effectiveTts.synthesize(text);
       const ttsDurationMs = Number(process.hrtime.bigint() - ttsStart) / 1e6;
       try {
@@ -483,10 +508,13 @@ function createApp(env = process.env) {
           durationMs: Math.round(ttsDurationMs * 100) / 100,
         }));
       } catch (_) { /* never break a turn */ }
+      ttsLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs: Math.round(ttsDurationMs * 100) / 100 });
       res.status(200).type(mimeType).send(audio);
     } catch (_) {
       // Calm, generic — same posture as responseEngine.js's toCalmError:
       // never forward the underlying error, provider name, or endpoint.
+      const ttsDurationMs = Number(process.hrtime.bigint() - ttsStart) / 1e6;
+      ttsLog.record({ ...logBase, outcome: 'error', error: 'gaia could not speak right now', status: 502, durationMs: Math.round(ttsDurationMs * 100) / 100 });
       res.status(502).json({ error: 'gaia could not speak right now' });
     }
   });

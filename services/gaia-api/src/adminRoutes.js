@@ -29,6 +29,7 @@
  *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model?, voiceId? }
  *   GET  /admin/api/tts/models        -> retrieve models from TTS provider
  *   GET  /admin/api/tts/voices        -> list saved voices from the TTS provider (Mistral only)
+ *   GET  /admin/api/tts/log           -> recent speech-synthesis attempts, newest first
  *
  *   IntentIQ (semantic classification model — same shape as ReasonIQ's):
  *   GET  /admin/api/intentiq/config   -> masked current config + env fallback
@@ -58,10 +59,11 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  *   retrieveModelsFn?: typeof retrieveModels,
  *   retrieveOpenRouterModelEndpointsFn?: typeof retrieveOpenRouterModelEndpoints,
  *   listTtsVoicesFn?: (options: { baseUrl: string, apiKey?: string }) => Promise<Array<{ id: string, name: string }>>,
+ *   ttsLog?: { list: () => object[] },
  * }} deps
  */
 function createAdminRouter({
-  store, providerStore, decisionStore, intentModelStore, auth,
+  store, providerStore, decisionStore, intentModelStore, auth, ttsLog,
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
@@ -429,6 +431,16 @@ function createAdminRouter({
         }
         res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
       }
+    });
+
+    router.get('/api/tts/log', auth, (req, res) => {
+      // The voice activity tail (src/speech/ttsLog.js) — what POST
+      // /speech attempted, with what, and how it ended. Operator-only
+      // like everything under /admin: entries name the provider/model
+      // (already visible in the masked TTS config) but never carry keys,
+      // endpoints, or stacks. Absent when this router was constructed
+      // without a log (unit tests) — an empty tail, not a 404.
+      res.json({ entries: ttsLog ? ttsLog.list() : [] });
     });
   }
 

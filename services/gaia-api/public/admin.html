@@ -498,6 +498,12 @@
         <button id="saveTtsBtn">Save voice</button>
       </div>
       <div class="status" id="ttsStatus"></div>
+
+      <label>Recent voice activity</label>
+      <div class="decisions-list" id="ttsLogList"></div>
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="refreshTtsLogBtn" class="secondary">Refresh activity</button>
+      </div>
     </section>
 
   </div>
@@ -1052,6 +1058,7 @@
         setStatus(ttsStatusEl, 'Main Provider has no API key saved yet.', false);
       }
       setBadge(ttsBadgeEl, Boolean(cfg.model));
+      loadTtsLog();
     } catch (_) { /* ignore */ }
   }
 
@@ -1119,6 +1126,54 @@
       loadTtsVoicesBtn.disabled = false;
     }
   });
+
+  const refreshTtsLogBtn = $('refreshTtsLogBtn'), ttsLogListEl = $('ttsLogList');
+
+  function summarizeTtsEntry(e) {
+    return [
+      'provider: ' + (e.provider || '—'),
+      'model: ' + (e.model || '—'),
+      e.voiceId ? 'voice: ' + e.voiceId : null,
+      typeof e.chars === 'number' ? e.chars + ' chars' : null,
+      'status: ' + (e.status ?? '—'),
+      typeof e.durationMs === 'number' ? e.durationMs + 'ms' : null,
+      e.error ? 'error: ' + e.error : null,
+    ].filter(Boolean).join(' · ');
+  }
+
+  function renderTtsLog(entries) {
+    if (!entries.length) {
+      ttsLogListEl.innerHTML = '<div class="decisions-empty">No voice activity yet — speak attempts appear here.</div>';
+      return;
+    }
+    ttsLogListEl.innerHTML = entries.map((e) => {
+      const ok = e.outcome === 'ok';
+      return (
+        '<div class="decision-row">' +
+          '<div class="decision-head">' +
+            '<span class="decision-badge">' + (ok ? '✓ spoken' : '✗ ' + escapeHtml(e.outcome || 'error')) + '</span>' +
+            '<span class="decision-time">' + escapeHtml(formatTime(e.at)) + '</span>' +
+          '</div>' +
+          '<div class="decision-summary">' + escapeHtml(summarizeTtsEntry(e)) + '</div>' +
+          (e.preview ? '<div class="decision-input">"' + escapeHtml(e.preview) + (typeof e.chars === 'number' && e.chars > e.preview.length ? '…' : '') + '"</div>' : '') +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  async function loadTtsLog() {
+    refreshTtsLogBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/tts/log', { headers: authHeaders() });
+      if (!res.ok) return;
+      const body = await res.json();
+      renderTtsLog(Array.isArray(body.entries) ? body.entries : []);
+    } catch (_) { /* ignore */ } finally {
+      refreshTtsLogBtn.disabled = false;
+    }
+  }
+
+  refreshTtsLogBtn.addEventListener('click', loadTtsLog);
 
   // ============================================================
   // ReasonIQ — Reasoning + Vision (provider-agnostic, own key)

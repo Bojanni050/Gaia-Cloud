@@ -478,6 +478,60 @@ test('POST /speech omits voice_id when no voice is configured, never sending an 
   );
 });
 
+test('POST /speech records each attempt in the admin voice-activity log', async () => {
+  await withMockedFetch(
+    mockFetch(),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+      await withServer(app, async (port) => {
+        const speechRes = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'Yes. It feels good to be here.' }),
+        });
+        assert.equal(speechRes.status, 200);
+
+        const logRes = await originalFetch(`http://127.0.0.1:${port}/admin/api/tts/log`, {
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        });
+        assert.equal(logRes.status, 200);
+        const entries = (await logRes.json()).entries;
+        assert.equal(entries.length, 1);
+        assert.equal(entries[0].outcome, 'ok');
+        assert.equal(entries[0].status, 200);
+        assert.equal(entries[0].provider, 'env');
+        assert.equal(entries[0].model, 'mimo-v2.5-tts-voicedesign');
+        assert.match(entries[0].preview, /It feels good/);
+      });
+    }
+  );
+});
+
+test('POST /speech logs not-configured attempts instead of failing silently', async () => {
+  await withMockedFetch(
+    mockFetch(),
+    async (originalFetch) => {
+      const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+      await withServer(app, async (port) => {
+        const speechRes = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'hi' }),
+        });
+        assert.equal(speechRes.status, 503);
+
+        const logRes = await originalFetch(`http://127.0.0.1:${port}/admin/api/tts/log`, {
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        });
+        const entries = (await logRes.json()).entries;
+        assert.equal(entries.length, 1);
+        assert.equal(entries[0].outcome, 'not-configured');
+        assert.equal(entries[0].status, 503);
+      });
+    }
+  );
+});
+
 // --- GET /speech/info (voice description for clients) ------------------------
 
 test('GET /speech/info requires auth, same boundary as POST /speech', async () => {
