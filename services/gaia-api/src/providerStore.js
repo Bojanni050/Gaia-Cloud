@@ -25,6 +25,7 @@
  *       baseUrl: "...",
  *       apiKey: "...",
  *       model: "...",
+ *       voiceId: "...", // saved voice for providers with preset/custom voices (Mistral); ignored by MiMo
  *     },
  *     updatedAt: ISO timestamp,
  *   }
@@ -59,6 +60,7 @@ const DEFAULT_TTS = Object.freeze({
   baseUrl: '',
   apiKey: '',
   model: '',
+  voiceId: '',
   useMainProvider: false,
 });
 
@@ -141,7 +143,7 @@ function createProviderStore(options = {}) {
   }
 
   /**
-   * Save independent TTS configuration (provider, baseUrl, apiKey, model).
+   * Save independent TTS configuration (provider, baseUrl, apiKey, model, voiceId).
    * TTS is fully independent from the main provider by default — can be a
    * different provider with its own API key — but `useMainProvider` opts
    * it into borrowing the main provider's own provider/baseUrl/apiKey
@@ -158,6 +160,7 @@ function createProviderStore(options = {}) {
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentTts.baseUrl,
         apiKey: partial.apiKey !== undefined ? partial.apiKey : currentTts.apiKey,
         model: partial.model !== undefined ? partial.model : currentTts.model,
+        voiceId: partial.voiceId !== undefined ? partial.voiceId : (currentTts.voiceId || ''),
         useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentTts.useMainProvider),
       },
       updatedAt: new Date().toISOString(),
@@ -191,6 +194,7 @@ function createProviderStore(options = {}) {
         provider: tts.provider || '',
         baseUrl: tts.baseUrl || '',
         model: tts.model || '',
+        voiceId: tts.voiceId || '',
         hasApiKey: Boolean(tts.apiKey),
         maskedApiKey: maskKey(tts.apiKey),
         useMainProvider: Boolean(tts.useMainProvider),

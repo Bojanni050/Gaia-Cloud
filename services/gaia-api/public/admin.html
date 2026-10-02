@@ -467,6 +467,7 @@
         <option value="">— select provider —</option>
         <option value="__main__">— Use Main Provider —</option>
         <option value="xiaomi">Xiaomi MiMo</option>
+        <option value="mistral">Mistral Voxtral</option>
         <option value="openai">OpenAI</option>
         <option value="edenai">EdenAI</option>
         <option value="custom">Custom (OpenAI-compatible)</option>
@@ -484,6 +485,10 @@
 
       <label for="ttsModel">Model</label>
       <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+
+      <label for="ttsVoice">Voice ID</label>
+      <input id="ttsVoice" type="text" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
+      <p class="hint">Mistral Voxtral only — leave empty for the default voice. Ignored by MiMo.</p>
 
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="saveTtsBtn">Save voice</button>
@@ -1025,6 +1030,7 @@
   wireBaseUrlAutofill(ttsProviderEl, ttsBaseUrlEl);
   wireMainProviderToggle(ttsProviderEl, $('ttsCredentialFields'), $('ttsMainHint'));
   const ttsModelEl = $('ttsModel'), ttsKeyHintEl = $('ttsKeyHint'), ttsStatusEl = $('ttsStatus');
+  const ttsVoiceEl = $('ttsVoice');
   const saveTtsBtn = $('saveTtsBtn'), ttsBadgeEl = $('ttsBadge');
 
   async function loadTtsConfig() {
@@ -1036,6 +1042,7 @@
       ttsProviderEl.dispatchEvent(new Event('change'));
       if (cfg.baseUrl) ttsBaseUrlEl.value = cfg.baseUrl;
       if (cfg.model) ttsModelEl.value = cfg.model;
+      ttsVoiceEl.value = cfg.voiceId || '';
       ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
       if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
         setStatus(ttsStatusEl, 'Main Provider has no API key saved yet.', false);
@@ -1056,6 +1063,7 @@
       if (!baseUrl) { setStatus(ttsStatusEl, 'Enter a base URL.', false); return; }
       body.provider = provider;
       body.baseUrl = baseUrl;
+      body.voiceId = ttsVoiceEl.value.trim();
       if (ttsApiKeyEl.value.trim()) body.apiKey = ttsApiKeyEl.value.trim();
     }
     saveTtsBtn.disabled = true;

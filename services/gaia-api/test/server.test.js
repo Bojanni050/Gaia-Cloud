@@ -373,6 +373,178 @@ test('POST /speech maps a Xiaomi failure to a calm 502, never leaking the provid
   );
 });
 
+// --- TTS provider dispatch (MiMo vs Mistral Voxtral) --------------------------
+//
+// The store-backed provider value picks the client: 'mistral' speaks
+// Mistral's POST {base}/audio/speech protocol, everything else (including
+// the pre-provider 'env' fallback) stays on MiMo's /chat/completions
+// protocol. These go through createApp + a real HTTP server with a
+// provider-config file on disk, exactly like an admin-saved Voice section.
+
+function writeTtsProviderConfig(tts) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-api-tts-provider-test-'));
+  const storePath = path.join(dir, 'provider-config.json');
+  fs.writeFileSync(storePath, JSON.stringify({
+    provider: '',
+    baseUrl: '',
+    apiKey: '',
+    catalog: [],
+    catalogRetrievedAt: null,
+    roles: {
+      generation: { mode: 'catalog', model: '' },
+      reasoning: { mode: 'catalog', model: '' },
+      vision: { mode: 'catalog', model: '' },
+    },
+    tts,
+    updatedAt: new Date().toISOString(),
+  }));
+  return storePath;
+}
+
+function mockMistralTtsFetch({ onSpeech } = {}) {
+  return async (url, options = {}) => {
+    const href = String(url);
+    if (href.startsWith(`${TTS_BASE}/audio/speech`)) {
+      const requestBody = options.body ? JSON.parse(options.body) : {};
+      if (onSpeech) onSpeech(href, requestBody);
+      return {
+        ok: true,
+        json: async () => ({ audio_data: Buffer.from('ID3-fake-mp3-bytes').toString('base64') }),
+      };
+    }
+    throw new Error(`unexpected fetch in test to ${href}`);
+  };
+}
+
+test('POST /speech dispatches to Mistral Voxtral when the stored TTS provider is mistral', async () => {
+  let speechCalls = 0;
+  let seenBody;
+
+  await withMockedFetch(
+    mockMistralTtsFetch({ onSpeech: (href, body) => { speechCalls += 1; seenBody = body; } }),
+    async (originalFetch) => {
+      const storePath = writeTtsProviderConfig({
+        provider: 'mistral',
+        baseUrl: TTS_BASE,
+        apiKey: 'mistral-key',
+        model: 'voxtral-mini-tts-2603',
+        voiceId: 'gaia-voice-1',
+      });
+      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'Ja. Het voelt goed om er te zijn.' }),
+        });
+        const buf = Buffer.from(await res.arrayBuffer());
+
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+        assert.equal(buf.toString(), 'ID3-fake-mp3-bytes');
+        assert.equal(speechCalls, 1);
+        assert.equal(seenBody.model, 'voxtral-mini-tts-2603');
+        assert.equal(seenBody.input, 'Ja. Het voelt goed om er te zijn.');
+        assert.equal(seenBody.voice_id, 'gaia-voice-1');
+        assert.equal(seenBody.response_format, 'mp3');
+      });
+    }
+  );
+});
+
+test('POST /speech omits voice_id when no voice is configured, never sending an empty one', async () => {
+  let seenBody;
+
+  await withMockedFetch(
+    mockMistralTtsFetch({ onSpeech: (href, body) => { seenBody = body; } }),
+    async (originalFetch) => {
+      const storePath = writeTtsProviderConfig({
+        provider: 'mistral',
+        baseUrl: TTS_BASE,
+        apiKey: 'mistral-key',
+        model: 'voxtral-mini-tts-2603',
+      });
+      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ text: 'hi' }),
+        });
+        assert.equal(res.status, 200);
+        assert.ok(!('voice_id' in seenBody));
+      });
+    }
+  );
+});
+
+// --- GET /speech/info (voice description for clients) ------------------------
+
+test('GET /speech/info requires auth, same boundary as POST /speech', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv());
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`);
+      assert.equal(res.status, 401);
+    });
+  });
+});
+
+test('GET /speech/info reports unconfigured with English-only languages when no TTS is set', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.configured, false);
+      assert.equal(body.provider, null);
+      assert.deepEqual(body.languages, ['en']);
+    });
+  });
+});
+
+test('GET /speech/info reports the env (MiMo) voice as Chinese/English-only', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.configured, true);
+      assert.equal(body.provider, 'env');
+      assert.deepEqual(body.languages, ['zh', 'en']);
+    });
+  });
+});
+
+test('GET /speech/info reports the stored Mistral voice with Dutch among its languages', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const storePath = writeTtsProviderConfig({
+      provider: 'mistral',
+      baseUrl: TTS_BASE,
+      apiKey: 'mistral-key',
+      model: 'voxtral-mini-tts-2603',
+    });
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const body = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(body.configured, true);
+      assert.equal(body.provider, 'mistral');
+      assert.ok(body.languages.includes('nl'));
+      assert.ok(body.languages.includes('en'));
+    });
+  });
+});
+
 // --- webSearch wiring (src/tools/braveSearch.js) ---------------------------
 //
 // No non-streaming ("performTurn") equivalent of the streaming test below:

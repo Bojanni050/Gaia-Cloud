@@ -153,6 +153,19 @@ test('resolveTtsConfig: falls back to env vars', () => {
   assert.equal(config.baseUrl, 'https://tts.com');
   assert.equal(config.model, 'tts1');
   assert.equal(config.apiKey, 'tk');
+  assert.equal(config.voiceId, '');
+});
+
+test('resolveTtsConfig: passes the stored voiceId through (Mistral), defaulting to empty', () => {
+  const withVoice = createMockStore({
+    tts: { provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', model: 'voxtral-mini-tts-2603', voiceId: 'gaia-voice-1' },
+  });
+  assert.equal(resolveTtsConfig(withVoice).voiceId, 'gaia-voice-1');
+  const withoutVoice = createMockStore({
+    tts: { provider: 'xiaomi', baseUrl: 'https://x', model: 'mimo-tts' },
+  });
+  assert.equal(resolveTtsConfig(withoutVoice).voiceId, '');
+  assert.equal(resolveTtsConfig(null, { GAIA_TTS_BASE_URL: 'https://tts.com', GAIA_TTS_MODEL: 'tts1', GAIA_TTS_VOICE_ID: 'env-voice' }).voiceId, 'env-voice');
 });
 
 test('resolveTtsConfig: env fallback returns null when vars unset', () => {

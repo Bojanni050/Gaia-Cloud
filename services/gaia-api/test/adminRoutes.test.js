@@ -555,6 +555,25 @@ test('PUT /admin/api/tts/config saves TTS config', async () => {
   }
 });
 
+test('PUT /admin/api/tts/config saves a Mistral voiceId alongside the model', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'mistral-key', model: 'voxtral-mini-tts-2603', voiceId: 'gaia-voice-1' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, 'mistral');
+    assert.equal(body.model, 'voxtral-mini-tts-2603');
+    assert.equal(body.voiceId, 'gaia-voice-1');
+    // Verify persisted — voiceId is not a secret, it round-trips in the clear
+    assert.equal(ctx.providerStore.getConfig().tts.voiceId, 'gaia-voice-1');
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('PUT /admin/api/tts/config partial update keeps previously stored apiKey', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {

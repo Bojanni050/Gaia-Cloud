@@ -44,7 +44,7 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
  * provider/baseUrl/apiKey instead of requiring a second copy of it.
  * @param {{ getConfig: Function }} providerStore
  * @param {NodeJS.ProcessEnv} [env]
- * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string }|null}
+ * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string, voiceId: string }|null}
  */
 function resolveTtsConfig(providerStore, env = process.env) {
   const stored = providerStore ? providerStore.getConfig() : null;
@@ -55,6 +55,7 @@ function resolveTtsConfig(providerStore, env = process.env) {
       baseUrl: stored.baseUrl || '',
       model: stored.tts.model,
       apiKey: stored.apiKey,
+      voiceId: stored.tts.voiceId || '',
     };
   }
 
@@ -64,6 +65,7 @@ function resolveTtsConfig(providerStore, env = process.env) {
       baseUrl: stored.tts.baseUrl || '',
       model: stored.tts.model,
       apiKey: stored.tts.apiKey || '',
+      voiceId: stored.tts.voiceId || '',
     };
   }
 
@@ -74,6 +76,7 @@ function resolveTtsConfig(providerStore, env = process.env) {
       baseUrl: env.GAIA_TTS_BASE_URL,
       model: env.GAIA_TTS_MODEL,
       apiKey: env.GAIA_TTS_AUTH_TOKEN || '',
+      voiceId: env.GAIA_TTS_VOICE_ID || '',
     };
   }
   return null;

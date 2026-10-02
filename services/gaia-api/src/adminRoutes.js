@@ -26,7 +26,7 @@
  *
  *   TTS (independent):
  *   GET  /admin/api/tts/config        -> masked TTS config
- *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model? }
+ *   PUT  /admin/api/tts/config        -> { provider?, baseUrl?, apiKey?, model?, voiceId? }
  *   GET  /admin/api/tts/models        -> retrieve models from TTS provider
  *
  *   IntentIQ (semantic classification model — same shape as ReasonIQ's):
@@ -352,6 +352,7 @@ function createAdminRouter({
       if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
       if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
       if (typeof body.model === 'string') allowed.model = body.model.trim();
+      if (typeof body.voiceId === 'string') allowed.voiceId = body.voiceId.trim();
       if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
       if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 

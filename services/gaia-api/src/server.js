@@ -12,8 +12,11 @@
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
  *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
- *   POST /speech             → audio/wav            (auth required; { text } → Gaia's voice, src/speech/mimoTts.js —
- *                              presentation-only, always *after* a text reply exists, never part of the Decision Engine)
+ *   POST /speech             → audio/*             (auth required; { text } → Gaia's voice, src/speech/mimoTts.js or
+ *                              src/speech/mistralTts.js per the TTS provider — presentation-only, always *after* a text
+ *                              reply exists, never part of the Decision Engine)
+ *   GET  /speech/info        → voice description    (auth required; { configured, provider, languages } — so clients
+ *                              know whether a non-English reply is worth speaking; judges no text)
  *
  * Everything cognitive lives here or behind a capability (Hermes, or Gaia's
  * own native generator — src/generation/gaiaGenerator.js, wired in below via
@@ -148,9 +151,10 @@ function createApp(env = process.env) {
   // ReasonIQ) because this client is a singleton invoked from
   // orchestrator.js, which has no per-turn logger in scope.
   const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger);
-  // Gaia's voice (src/speech/mimoTts.js) — undefined when GAIA_TTS_BASE_URL/
-  // GAIA_TTS_MODEL are unset, in which case POST /speech answers 503
-  // rather than attempting a call with nothing configured. Entirely
+  // Gaia's voice (src/speech/mimoTts.js, src/speech/mistralTts.js) —
+  // undefined when GAIA_TTS_BASE_URL/GAIA_TTS_MODEL are unset, in which
+  // case POST /speech answers 503 rather than attempting a call with
+  // nothing configured. Entirely
   // separate from nativeGenerator above: this never influences what Gaia
   // says, only how an already-decided reply sounds.
   const tts = createTtsFromEnv(env);
@@ -234,13 +238,42 @@ function createApp(env = process.env) {
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
-    return providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
-      ? require('./speech/mimoTts').createMimoTts({
-          baseUrl: providerTtsConfig.baseUrl,
-          model: providerTtsConfig.model,
-          authToken: providerTtsConfig.apiKey,
-        })
-      : tts;
+    if (!providerTtsConfig || !providerTtsConfig.baseUrl || !providerTtsConfig.model) {
+      return tts;
+    }
+    // Mistral speaks its own protocol (POST {base}/audio/speech, base64
+    // JSON) — everything else stays on the MiMo client, which is also what
+    // the pre-provider 'env' fallback resolves to. Unknown provider values
+    // fall through to MiMo rather than 503: a stored baseUrl/model pair is
+    // a configured voice until proven otherwise.
+    if (providerTtsConfig.provider === 'mistral') {
+      return require('./speech/mistralTts').createMistralTts({
+        baseUrl: providerTtsConfig.baseUrl,
+        model: providerTtsConfig.model,
+        authToken: providerTtsConfig.apiKey,
+        voiceId: providerTtsConfig.voiceId,
+        format: env.GAIA_TTS_FORMAT,
+      });
+    }
+    return require('./speech/mimoTts').createMimoTts({
+      baseUrl: providerTtsConfig.baseUrl,
+      model: providerTtsConfig.model,
+      authToken: providerTtsConfig.apiKey,
+    });
+  }
+
+  /**
+   * Languages the configured TTS voice can pronounce, for clients that
+   * gate *whether* to speak (the desktop stays silent on Dutch while the
+   * voice is MiMo-only). Read from the provider, never the text — this
+   * endpoint judges no reply, it only describes the voice.
+   * @param {string} [provider]
+   * @returns {string[]}
+   */
+  function languagesForTtsProvider(provider) {
+    if (provider === 'mistral') return require('./speech/mistralTts').LANGUAGES;
+    if (provider === 'xiaomi' || provider === 'env') return require('./speech/mimoTts').LANGUAGES;
+    return ['en'];
   }
 
   const libraryStore = createLibraryStore(env.LIBRARY_PATH !== undefined ? { libraryDir: env.LIBRARY_PATH } : {});
@@ -415,6 +448,19 @@ function createApp(env = process.env) {
   // wiring), not a fresh prompt for Gaia to answer — this route does not
   // run IntentIQ/ReasonIQ/the Decision Engine/Orchestrator/Response Engine
   // at all, by construction (it never imports any of them).
+  // Gaia's voice info — which provider backs POST /speech and which
+  // languages it pronounces, so clients can decide *whether* to speak a
+  // given reply (Dutch stays silent on a MiMo-only voice). Describes the
+  // voice, never judges text: no request body, no language detection here.
+  app.get('/speech/info', auth, (req, res) => {
+    const providerTtsConfig = resolveTtsConfig(providerStore, env);
+    const configured = Boolean(
+      providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
+    ) || Boolean(tts);
+    const provider = providerTtsConfig ? providerTtsConfig.provider : null;
+    res.json({ configured, provider, languages: languagesForTtsProvider(provider) });
+  });
+
   app.post('/speech', auth, async (req, res) => {
     const text = req.body && req.body.text;
     if (typeof text !== 'string' || text.trim() === '') {

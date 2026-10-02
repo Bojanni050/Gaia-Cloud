@@ -59,6 +59,13 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 
 /**
+ * Languages mimo-v2.5-tts-voicedesign pronounces (Xiaomi's docs, 2026-08)
+ * — advertised to clients via GET /speech/info so the desktop knows a
+ * Dutch reply would come back mispronounced rather than rejected.
+ */
+const LANGUAGES = ['zh', 'en'];
+
+/**
  * Gaia's default voice — calm, intelligent, warm but restrained. Not an
  * impersonation of any existing voice; only these qualities are used as a
  * textual description, per mimo-v2.5-tts-voicedesign's voice-design
@@ -230,4 +237,5 @@ module.exports = {
   createFromEnv,
   mimeTypeFor,
   DEFAULT_VOICE_DESCRIPTION,
+  LANGUAGES,
 };

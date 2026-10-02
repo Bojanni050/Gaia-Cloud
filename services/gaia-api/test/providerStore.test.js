@@ -154,6 +154,7 @@ test('DEFAULT_TTS contains empty TTS defaults', () => {
     baseUrl: '',
     apiKey: '',
     model: '',
+    voiceId: '',
     useMainProvider: false,
   });
 });
@@ -177,6 +178,15 @@ test('saveTtsConfig partial update keeps previously stored apiKey', () => {
   const config = store.getConfig();
   assert.equal(config.tts.apiKey, 'tts-key');
   assert.equal(config.tts.model, 'm2');
+});
+
+test('saveTtsConfig persists a voiceId, defaulting to empty for providers without voices', () => {
+  const store = tempStore();
+  store.saveTtsConfig({ provider: 'mistral', model: 'voxtral-mini-tts-2603', voiceId: 'gaia-voice-1' });
+  assert.equal(store.getConfig().tts.voiceId, 'gaia-voice-1');
+  store.saveTtsConfig({ voiceId: '' }); // cleared from the admin panel
+  assert.equal(store.getConfig().tts.voiceId, '');
+  assert.equal(store.getMaskedConfig().tts.voiceId, '');
 });
 
 test('saveTtsConfig does not affect main provider or roles', () => {

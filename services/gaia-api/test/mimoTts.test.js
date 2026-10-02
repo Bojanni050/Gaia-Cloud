@@ -58,6 +58,11 @@ test('mimeTypeFor maps known formats and falls back generically for unknown ones
   assert.equal(mimeTypeFor('nonsense'), 'application/octet-stream');
 });
 
+test('LANGUAGES is Chinese/English only — the desktop gate reads this', () => {
+  const { LANGUAGES } = require('../src/speech/mimoTts');
+  assert.deepEqual(LANGUAGES, ['zh', 'en']);
+});
+
 // --- createFromEnv (the composition server.js uses) -------------------------
 
 test('createFromEnv returns undefined when GAIA_TTS_* is unset — /speech answers 503 rather than guessing', () => {
