@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * ReasonIQ v0.1 — synthetic evaluation set.
+ * Logos v0.1 — synthetic evaluation set.
  *
- * IMPORTANT: every case below is invented to stress-test ReasonIQ's
+ * IMPORTANT: every case below is invented to stress-test Logos's
  * pipeline (prompting, parsing, validation, depth-gating, degradation)
- * against the reasoningModelStub.js stand-in described in eval/README.md
+ * against the logosModelStub.js stand-in described in eval/README.md
  * — this repository has no live reasoning-model credential to score
  * against a real LLM. None of this is real user data.
  *
@@ -184,7 +184,7 @@ const CASES = [
     expect: { reasoningDepth: 'deep', minHypotheses: 1 },
   },
 
-  // --- creative reasoning (light touch — ReasonIQ interprets, doesn't generate) --
+  // --- creative reasoning (light touch — Logos interprets, doesn't generate) --
   {
     id: 'creative-01',
     input: {
@@ -192,7 +192,7 @@ const CASES = [
       intentDecision: { intent: 'create.generate', status: 'accepted' },
     },
     expect: { reasoningDepth: 'shallow', expectSufficient: true },
-    notes: 'ReasonIQ interprets the request; it does not draft the copy itself. create.generate is deliberately NOT in EVIDENCE_DEPENDENT_INTENTS — the text itself is the description, unlike transform/explain/decide/act, which need external material the heuristic can\'t verify was given. Whether the description is detailed enough to actually write from is a real-reasoning judgment, left for v0.2.',
+    notes: 'Logos interprets the request; it does not draft the copy itself. create.generate is deliberately NOT in EVIDENCE_DEPENDENT_INTENTS — the text itself is the description, unlike transform/explain/decide/act, which need external material the heuristic can\'t verify was given. Whether the description is detailed enough to actually write from is a real-reasoning judgment, left for v0.2.',
   },
 
   // --- contradictions across supplied evidence --------------------------------
@@ -275,7 +275,7 @@ const CASES = [
       evidence: [{ content: 'no attachment or prior artifact was actually supplied in this evaluation case' }],
     },
     expect: { reasoningDepth: 'deep' },
-    notes: 'mirrors the IntentIQ follow-up example ("En deze dan?") — tests whether ReasonIQ notices the referent is still unresolved',
+    notes: 'mirrors the IntentIQ follow-up example ("En deze dan?") — tests whether Logos notices the referent is still unresolved',
   },
 
   // --- more technical reasoning --------------------------------------------
@@ -361,7 +361,7 @@ const CASES = [
       intentDecision: { intent: null, status: 'ambiguous' },
     },
     expect: { reasoningDepth: 'deep', expectSufficient: false },
-    notes: 'mirrors the IntentIQ taxonomy\'s own flagship ambiguous example — ReasonIQ should not invent a task to reason about',
+    notes: 'mirrors the IntentIQ taxonomy\'s own flagship ambiguous example — Logos should not invent a task to reason about',
   },
 ];
 

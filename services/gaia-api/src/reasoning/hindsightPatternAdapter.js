@@ -27,7 +27,7 @@
 
 const PATTERN_TAG = 'gaia:pattern';
 const PATTERN_CONTEXT = 'gaia pattern';
-const UPDATED_BY = 'gaia-reasoniq';
+const UPDATED_BY = 'gaia-logos';
 // Patterns are long-term constructs by definition (0.4 brief §15).
 const PATTERN_PERSISTENCE = 'durable';
 

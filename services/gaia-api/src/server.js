@@ -8,7 +8,7 @@
  *   GET  /soul               → { version: string }   (identity version only)
  *   POST /conversation/turn  → { reply: string }     (auth required, Desktop's exact contract; optional { attachmentIds: [...] } inlines library files as context)
  *   POST /conversation/turn  → SSE stream            (auth required; { ..., stream: true } — Phase B, docs/web-migration-plan.md)
- *   /admin/*                 → operator-only ReasonIQ config + IntentIQ/ReasonIQ decision log (adminRoutes.js) — never part of any client's contract
+ *   /admin/*                 → operator-only provider/TTS config + Logos decision log (adminRoutes.js) — never part of any client's contract
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
  *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
@@ -42,7 +42,6 @@ const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
-const { createReasoningModelStore } = require('./logos/reasoningModelStore');
 const { createProviderStore } = require('./providerStore');
 const { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig } = require('./providerConfigResolver');
 const { createChronicleClient } = require('./chronicleClient');
@@ -74,7 +73,7 @@ function createApp(env = process.env) {
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });
-  // Hypothesis Persistence 0.1 — ReasonIQ's structured hypotheses persist
+  // Hypothesis Persistence 0.1 — Logos's structured hypotheses persist
   // as retained world-facts (tag gaia:hypothesis) through
   // HypothesisManager's policy into Hindsight via the thin adapter. Boot
   // loads the currently-active hypotheses once, lazily, best-effort; every
@@ -84,7 +83,7 @@ function createApp(env = process.env) {
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
     const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsight });
     const hypothesisManager = createHypothesisManager({ sink: hypothesisAdapter.sink });
-    // ReasonIQ 0.4 — pattern formation over DURABLE hypotheses, persisted
+    // Logos pattern formation over DURABLE hypotheses, persisted
     // via the same principles (gaia:pattern world-facts). Gated: only runs
     // when a durable hypothesis actually changed during a turn.
     const patternAdapter = createHindsightPatternAdapter({ client: hindsight });
@@ -120,14 +119,13 @@ function createApp(env = process.env) {
       },
     };
   }
-  // Durable IntentIQ/ReasonIQ decision log (adminRoutes.js's
+  // Durable Logos decision log (adminRoutes.js's
   // /admin/api/logos/decisions) — created here, ahead of the native
   // generator below, so its sink can also capture kind 'llm.call' records:
-  // every actual LLM HTTP call IntentIQ/ReasonIQ/the native generator
-  // makes, not just the decision each one eventually reaches (a decision
-  // can be reached without a model call at all — heuristic-only
-  // classification, shallow reasoning — so the two are genuinely
-  // different observability questions).
+  // every actual LLM HTTP call the native generator makes, not just the
+  // decision each one eventually reaches (a background Logos reflection
+  // can be reached without a model call at all — shallow reflection — so
+  // the two are genuinely different observability questions).
   const decisionStore = createDecisionStore(
     env.LOGOS_DECISIONS_PATH !== undefined ? { decisionsDir: env.LOGOS_DECISIONS_PATH } : {}
   );
@@ -145,8 +143,8 @@ function createApp(env = process.env) {
   // Decision Engine never sees a "native" capability and every turn routes
   // through Hermes exactly as before this existed (see .env.example).
   // Provider store may override env vars when role selections exist.
-  // `llmCallLogger` is bound here (not threaded per-call like IntentIQ/
-  // ReasonIQ) because this client is a singleton invoked from
+  // `llmCallLogger` is bound here (not threaded per-call like Logos's
+  // background reflection) because this client is a singleton invoked from
   // orchestrator.js, which has no per-turn logger in scope.
   const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger);
   // Gaia's voice (src/speech/mimoTts.js, src/speech/mistralTts.js) —
@@ -178,9 +176,6 @@ function createApp(env = process.env) {
   // the constitution itself stays server-side.
   app.get('/soul', (req, res) => res.json({ version: soul.version }));
 
-  const reasoningModelStore = createReasoningModelStore(
-    env.REASONIQ_CONFIG_PATH !== undefined ? { storePath: env.REASONIQ_CONFIG_PATH } : {}
-  );
   const providerStore = createProviderStore(
     env.GAIA_PROVIDER_CONFIG_PATH !== undefined ? { storePath: env.GAIA_PROVIDER_CONFIG_PATH } : {}
   );
@@ -191,7 +186,7 @@ function createApp(env = process.env) {
   // in-memory by design: a restart clears it, same as a fresh pair of
   // ears on the next shift.
   const ttsLog = createTtsLog();
-  app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, intentModelStore, auth, ttsLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, intentModelStore, auth, ttsLog }));
 
   // v3.0: no live IntentIQ — Logos reflects after delivery. The intent
   // model store stays for the admin surface only.
@@ -438,7 +433,7 @@ function createApp(env = process.env) {
   // it only ever turns given text into audio. `text` here is expected to
   // be the client's already-received Gaia response (see the desktop's own
   // wiring), not a fresh prompt for Gaia to answer — this route does not
-  // run IntentIQ/ReasonIQ/the Decision Engine/Orchestrator/Response Engine
+  // run IntentIQ/the Decision Engine/Orchestrator/Response Engine
   // at all, by construction (it never imports any of them).
   // Gaia's voice info — which provider backs POST /speech and which
   // languages it pronounces, so clients can decide *whether* to speak a

@@ -24,10 +24,9 @@ framing: "Gaia is a lifelong personal intelligence designed to grow through unde
 
 **What's there** (`services/gaia-api/src/adminRoutes.js`, static page at `services/gaia-api/public/admin.html`):
 
-- **Logos decision log** — `GET /admin/api/logos/decisions`: the durable, browsable log of every IntentIQ/ReasonIQ decision Logos has made (what it classified, what it concluded).
-- **LLM call log** — every actual model call from IntentIQ, ReasonIQ, and Gaia's native voice generator is logged and viewable here — the place to look when something Gaia said or decided needs tracing back to the actual model call behind it.
-- **ReasonIQ config** — `GET`/`PUT /admin/api/reasoniq/config`, `GET /admin/api/reasoniq/models` — reasoning-model provider, base URL, model, vision model.
-- **Provider Settings** — `GET`/`PUT /admin/api/provider/config`, `.../roles`, `.../capabilities`, `.../models` — the unified model-provider config and per-role (generation/reasoning/vision) model selection.
+- **Logos decision log** — `GET /admin/api/logos/decisions`: the durable, browsable log of every Logos reflection (what it concluded) and IntentIQ decision (what it classified).
+- **LLM call log** — every actual model call from IntentIQ, Logos background reflection, and Gaia's native voice generator is logged and viewable here — the place to look when something Gaia said or decided needs tracing back to the actual model call behind it.
+- **Provider Settings** — `GET`/`PUT /admin/api/provider/config`, `.../roles`, `.../capabilities`, `.../models` — the unified model-provider config and per-role (generation/reasoning/vision) model selection. Logos reflection uses the `reasoning` role; image OCR uses the `vision` role.
 - **TTS config** — `GET`/`PUT /admin/api/tts/config`, `GET /admin/api/tts/models`.
 
 None of this is part of any client's contract (Desktop, Web) — it's Gaia Cloud operator tooling only.

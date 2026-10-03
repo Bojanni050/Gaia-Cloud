@@ -7,14 +7,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createAdminRouter } = require('../src/adminRoutes');
-const { createReasoningModelStore } = require('../src/logos/reasoningModelStore');
 const { createProviderStore } = require('../src/providerStore');
 const { createDecisionStore } = require('../src/logos/decisionStore');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
 function startTestServer({ withDecisionStore = true, withProviderStore = false, ttsLog = null } = {}) {
-  const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-')), 'config.json');
-  const store = createReasoningModelStore({ storePath });
   const decisionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-decisions-'));
   const decisionStore = withDecisionStore ? createDecisionStore({ decisionsDir }) : undefined;
   const auth = createAuthMiddleware(parseTokens('test-token'));
@@ -48,7 +45,7 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ store, providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, ttsLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, ttsLog }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -56,7 +53,6 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
 
   return {
     baseUrl,
-    store,
     providerStore,
     decisionStore,
     setModels: (models) => { fakeOpenRouterModels = models; },
@@ -79,151 +75,51 @@ test('GET /admin serves the static admin page without auth', async () => {
     const res = await fetch(`${ctx.baseUrl}/admin`);
     assert.equal(res.status, 200);
     const body = await res.text();
-    assert.match(body, /ReasonIQ/);
+    assert.match(body, /Logos/);
   } finally {
     await ctx.close();
   }
 });
 
-test('GET /admin/api/reasoniq/config requires auth', async () => {
-  const ctx = startTestServer();
-  try {
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`);
-    assert.equal(res.status, 401);
-  } finally {
-    await ctx.close();
-  }
-});
+// --- retired ReasonIQ routes (V3: unified provider roles own reasoning/vision) ---
 
-test('GET /admin/api/reasoniq/config returns an empty masked config before anything is saved', async () => {
+test('GET /admin/api/reasoniq/config is gone (404)', async () => {
   const ctx = startTestServer();
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, { headers: authHeaders() });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.hasApiKey, false);
+    assert.equal(res.status, 404);
   } finally {
     await ctx.close();
   }
 });
 
-test('PUT /admin/api/reasoniq/config saves an api key, and the response never contains the raw key', async () => {
+test('PUT /admin/api/reasoniq/config is gone (404)', async () => {
   const ctx = startTestServer();
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ provider: 'openrouter', apiKey: 'sk-or-super-secret-value' }),
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ model: 'x' }),
     });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.hasApiKey, true);
-    assert.ok(!JSON.stringify(body).includes('sk-or-super-secret-value'));
-
-    // But it really was persisted:
-    assert.equal(ctx.store.getConfig().apiKey, 'sk-or-super-secret-value');
+    assert.equal(res.status, 404);
   } finally {
     await ctx.close();
   }
 });
 
-test('PUT /admin/api/reasoniq/config with only a model does not clear the previously saved key', async () => {
-  const ctx = startTestServer();
-  try {
-    await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-secret' }),
-    });
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ model: 'anthropic/claude-3.5-sonnet' }),
-    });
-    const body = await res.json();
-    assert.equal(body.model, 'anthropic/claude-3.5-sonnet');
-    assert.equal(body.hasApiKey, true);
-    assert.equal(ctx.store.getConfig().apiKey, 'sk-or-secret');
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('PUT /admin/api/reasoniq/config rejects an empty body', async () => {
-  const ctx = startTestServer();
-  try {
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({}),
-    });
-    assert.equal(res.status, 400);
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('GET /admin/api/reasoniq/models requires a saved key first', async () => {
+test('GET /admin/api/reasoniq/models is gone (404)', async () => {
   const ctx = startTestServer();
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/models`, { headers: authHeaders() });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 404);
   } finally {
     await ctx.close();
   }
 });
 
-test('GET /admin/api/reasoniq/models returns the fetched model list once a key is saved', async () => {
+test('GET /admin/api/reasoniq/log is gone (404)', async () => {
   const ctx = startTestServer();
   try {
-    await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x', baseUrl: 'https://openrouter.ai/api/v1' }),
-    });
-    ctx.setProviderModels([{ id: 'openai/gpt-4o-mini', name: 'GPT-4o mini', contextLength: 128000, pricing: { prompt: '0.15', completion: '0.6' } }]);
-
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/models`, { headers: authHeaders() });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.models.length, 1);
-    assert.equal(body.models[0].id, 'openai/gpt-4o-mini');
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('PUT /admin/api/reasoniq/config saves a visionModel independently of model', async () => {
-  const ctx = startTestServer();
-  try {
-    await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x', model: 'anthropic/claude-3.5-sonnet' }),
-    });
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ visionModel: 'openai/gpt-4o-mini' }),
-    });
-    const body = await res.json();
-    assert.equal(body.visionModel, 'openai/gpt-4o-mini');
-    assert.equal(body.model, 'anthropic/claude-3.5-sonnet'); // unaffected by the vision-only update
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('GET /admin/api/reasoniq/config reports visionModel: null before anything is saved', async () => {
-  const ctx = startTestServer();
-  try {
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, { headers: authHeaders() });
-    const body = await res.json();
-    assert.equal(body.visionModel, null);
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('GET /admin/api/reasoniq/models maps an OpenRouter failure to a calm 502', async () => {
-  const ctx = startTestServer();
-  try {
-    await fetch(`${ctx.baseUrl}/admin/api/reasoniq/config`, {
-      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ apiKey: 'sk-or-x', baseUrl: 'https://openrouter.ai/api/v1' }),
-    });
-    ctx.setProviderError(new Error('openrouter rejected the api key'));
-
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/models`, { headers: authHeaders() });
-    assert.equal(res.status, 502);
-    const body = await res.json();
-    assert.ok(!JSON.stringify(body).includes('sk-or-x'));
+    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`, { headers: authHeaders() });
+    assert.equal(res.status, 404);
   } finally {
     await ctx.close();
   }
@@ -245,13 +141,13 @@ test('GET /admin/api/logos/decisions returns the durable log, newest first', asy
   const ctx = startTestServer();
   try {
     ctx.decisionStore.append({ kind: 'intentiq.decision', intent: 'first' });
-    ctx.decisionStore.append({ kind: 'reasoniq.result', reasoningDepth: 'shallow' });
+    ctx.decisionStore.append({ kind: 'logos.result', reasoningDepth: 'shallow' });
 
     const res = await fetch(`${ctx.baseUrl}/admin/api/logos/decisions`, { headers: authHeaders() });
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.decisions.length, 2);
-    assert.equal(body.decisions[0].kind, 'reasoniq.result');
+    assert.equal(body.decisions[0].kind, 'logos.result');
   } finally {
     await ctx.close();
   }
@@ -261,7 +157,7 @@ test('GET /admin/api/logos/decisions supports limit and kind filters', async () 
   const ctx = startTestServer();
   try {
     ctx.decisionStore.append({ kind: 'intentiq.decision', intent: 'a' });
-    ctx.decisionStore.append({ kind: 'reasoniq.result', reasoningDepth: 'shallow' });
+    ctx.decisionStore.append({ kind: 'logos.result', reasoningDepth: 'shallow' });
     ctx.decisionStore.append({ kind: 'intentiq.decision', intent: 'b' });
 
     const res = await fetch(`${ctx.baseUrl}/admin/api/logos/decisions?kind=intentiq.decision&limit=1`, {
@@ -777,51 +673,6 @@ test('TTS config is independent from main provider', async () => {
     assert.equal(ttsConfig.model, 'mimo');
     // Main config should not contain TTS apiKey
     assert.ok(!JSON.stringify(mainConfig).includes('tts-key'));
-  } finally {
-    await ctx.close();
-  }
-});
-
-// --- GET /admin/api/reasoniq/log ----------------------------------------
-
-test('GET /admin/api/reasoniq/log requires auth', async () => {
-  const ctx = startTestServer();
-  try {
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`);
-    assert.equal(res.status, 401);
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('GET /admin/api/reasoniq/log returns only ReasonIQ records, newest first', async () => {
-  const ctx = startTestServer();
-  try {
-    ctx.decisionStore.append({ kind: 'reasoniq.gate', timestamp: '2026-01-01T00:00:01Z', depth: 'shallow', reason: 'no_evidence', evidenceCount: 0 });
-    ctx.decisionStore.append({ kind: 'reasoniq.result', timestamp: '2026-01-01T00:00:02Z', reasoningDepth: 'deep', confidence: 0.7 });
-    ctx.decisionStore.append({ kind: 'llm.call', timestamp: '2026-01-01T00:00:03Z', system: 'reasoniq', model: 'test-model', ok: true });
-    ctx.decisionStore.append({ kind: 'llm.call', timestamp: '2026-01-01T00:00:04Z', system: 'native', model: 'other-model', ok: true });
-    ctx.decisionStore.append({ kind: 'intentiq.decision', timestamp: '2026-01-01T00:00:05Z', intent: 'converse', status: 'accepted' });
-
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`, { headers: authHeaders() });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.entries.length, 3);
-    assert.ok(body.entries.every((e) => e.kind === 'reasoniq.gate' || e.kind === 'reasoniq.result' || (e.kind === 'llm.call' && e.system === 'reasoniq')));
-    assert.equal(body.entries[0].timestamp, '2026-01-01T00:00:03Z');
-    assert.equal(body.entries[2].timestamp, '2026-01-01T00:00:01Z');
-  } finally {
-    await ctx.close();
-  }
-});
-
-test('GET /admin/api/reasoniq/log returns an empty list without a decisionStore', async () => {
-  const ctx = startTestServer({ withDecisionStore: false });
-  try {
-    const res = await fetch(`${ctx.baseUrl}/admin/api/reasoniq/log`, { headers: authHeaders() });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.deepEqual(body.entries, []);
   } finally {
     await ctx.close();
   }

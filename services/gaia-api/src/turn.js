@@ -21,7 +21,7 @@
  *
  * BACKGROUND (Logos is the reflection on the experience): Chronicle
  * observation registration, Memoryworthiness, hypothesis lifecycle,
- * background ReasonIQ, gated pattern formation, Hindsight reflection and
+ * background Logos reflection, gated pattern formation, Hindsight reflection and
  * DecisionIQ review run in `runDeferredCognition` — started AFTER the
  * reply is delivered, never awaited, never touching the transport, never
  * altering the reply. Derived knowledge stays `interpretation`/
@@ -42,8 +42,10 @@ const {
 } = require('./memoryWorthiness');
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness, evaluatePatternUsage } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
-const { evaluate: evaluateReasoning, decideReasoningDepth, explainReasoningDepth } = require('./logos/reasonIQ');
-const { logReasoningGate } = require('./logos/reasonLog');
+const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require('./logos/logos');
+const { logLogosGate } = require('./logos/logosLog');
+const { shouldRecall } = require('./memoryPolicy');
+const { logRecallMeasure } = require('./recallLog');
 const crypto = require('crypto');
 const {
   formatReply, createStreamEmitter, resolveReplyText, deliverReply, toCalmError,
@@ -260,8 +262,8 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
  * validate → SOUL/context prompt → gated memory recall → ONE inference
  * call (primary, backup on retryable pre-output failure) → Response
  * Engine. The only transport knob is `onDelta`: present ⇒ streaming
- * generation with SSE delivery; absent ⇒ one JSON body. No IntentIQ, no
- * ReasonIQ, no Decision Engine, no Orchestrator, no plan/tool/capability
+ * generation with SSE delivery; absent ⇒ one JSON body. No Logos
+ * pre-flight, no Decision Engine, no Orchestrator, no plan/tool/capability
  * routing in this path.
  *
  * @param {{
@@ -278,7 +280,8 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
  *   chronicle?: { append: Function }|null,
  *   hypothesisRuntime?: object|null,
  *   decisionStore?: { append: (record: object) => boolean },
- *   reasonIQ?: Function,
+ *   reasonIQ?: Function, // background Logos evaluator (legacy param name, kept for tests/callers)
+ *   logos?: Function, // preferred alias for reasonIQ above
  *   onDelta?: Function,
  *   userDisplayName?: string,
  * }} input
@@ -298,7 +301,7 @@ async function runTurnCore({
   chronicle,
   hypothesisRuntime,
   decisionStore,
-  reasonIQ = evaluateReasoning,
+  reasonIQ = evaluateLogos,
   onDelta,
   userDisplayName,
 }) {
@@ -350,6 +353,26 @@ async function runTurnCore({
       : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
+
+  // Meetbasis voor Gaia-geïnitieerde recall: één regel per turn met gate
+  // en counts only (nooit user-/memory-inhoud). Blijft werken zonder
+  // decisionStore via console.log-default; met store is hij ook duurzaam
+  // voor `GET /admin/api/logos/decisions`.
+  try {
+    logRecallMeasure({
+      traceId: traceId || null,
+      gated: shouldRecall(userText, { intentDecision }),
+      hasHindsight: Boolean(hindsight),
+      reflectionCount: Array.isArray(reflections) ? reflections.length : 0,
+      mentalModelCount: Array.isArray(mentalModels) ? mentalModels.length : 0,
+      patternCount: Array.isArray(recalledPatterns) ? recalledPatterns.length : 0,
+      knowledgePageCount: Array.isArray(knowledgePages) ? knowledgePages.length : 0,
+      queryLength: String(userText || '').length,
+      wantPatterns,
+    }, decisionLogger);
+  } catch (_) {
+    // Observability must never take down a turn.
+  }
 
   const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
   const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
@@ -512,7 +535,7 @@ async function runTurnCore({
  *   1. Chronicle observation registration (status `observation`).
  *   2. Memoryworthiness evaluation (cheap, deterministic).
  *   3. Hypothesis lifecycle preparation (manager state + best-effort
- *      recall) and background ReasonIQ (depth heuristic gate; deep ⇒ one
+ *      recall) and background Logos reflection (depth heuristic gate; deep ⇒ one
  *      model call here, shallow ⇒ none). Feeds only the hypothesis
  *      lifecycle for FUTURE turns.
  *   4. hypothesisRuntime.manager.applyReasoningResult().
@@ -528,7 +551,7 @@ async function runDeferredCognition({
   hypothesisRuntime,
   hindsight,
   chronicle,
-  reasonIQ = evaluateReasoning,
+  reasonIQ = evaluateLogos,
   evidence,
   intentDecision,
   recalledReflections,
@@ -629,11 +652,12 @@ async function runDeferredCognition({
     } catch (_) { /* context seeding must never break the deferred phase */ }
   }
 
-  // 3b. Background ReasonIQ — the depth heuristic (free, local) gates one
+  // 3b. Background Logos — the depth heuristic (free, local) gates one
   //     model call HERE. Nothing produced can reach the user: the reply
   //     was delivered before this phase started.
   const backgroundReasoningInput = {
     text: userText,
+    intentHint: intentDecision,
     intentDecision,
     conversationContext: messages,
     evidence: Array.isArray(evidence) ? evidence : [],
@@ -643,12 +667,12 @@ async function runDeferredCognition({
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
     ...(hypothesisRuntime ? { existingPatterns } : {}),
   };
-  const reasoningDepth = decideReasoningDepth(backgroundReasoningInput);
+  const reasoningDepth = decideLogosDepth(backgroundReasoningInput);
   try {
-    logReasoningGate(
+    logLogosGate(
       {
         depth: reasoningDepth,
-        reason: explainReasoningDepth(backgroundReasoningInput),
+        reason: explainLogosDepth(backgroundReasoningInput),
         intent: (intentDecision && intentDecision.intent) || null,
         evidenceCount: Array.isArray(evidence) ? evidence.length : 0,
         existingHypothesisCount: existingHypotheses.length,

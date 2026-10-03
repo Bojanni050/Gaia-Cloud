@@ -2,19 +2,19 @@
 'use strict';
 
 /**
- * CLI entry for the ReasonIQ evaluation harness.
+ * CLI entry for the Logos evaluation harness.
  * Usage: node eval/run-reason.js  (or: npm run eval:reason)
  */
 
-const { CASES } = require('./reason-cases');
-const { runEvaluation } = require('./reason-harness');
-const { createReasoningModelStub } = require('../src/logos/reasoningModelStub');
+const { CASES } = require('./logos-cases');
+const { runEvaluation } = require('./logos-harness');
+const { createLogosModelStub } = require('../src/logos/logosModelStub');
 
-const model = createReasoningModelStub();
+const model = createLogosModelStub();
 
 runEvaluation(CASES, model).then(({ report, results }) => {
-  console.log('ReasonIQ v0.1 — synthetic evaluation report');
-  console.log('(design/evaluation cases, scored against the deterministic reasoningModelStub — NOT a real reasoning model)\n');
+  console.log('Logos v0.1 — synthetic evaluation report');
+  console.log('(design/evaluation cases, scored against the deterministic logosModelStub — NOT a real reasoning model)\n');
   console.log(`reasoner:                  ${report.reasonerVersion}`);
   console.log(`cases:                     ${report.total}`);
   console.log(`pass rate:                 ${report.passRate}`);

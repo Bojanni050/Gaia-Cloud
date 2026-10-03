@@ -18,9 +18,9 @@ Kept in lockstep with the desktop's seam (`desktop/src/state/contract.js`):
 | GET    | `/conversations/:id/export/json`  | Bearer | JSON file download |
 | GET    | `/conversations/:id/export/markdown` | Bearer | Markdown file download |
 
-`attachmentIds` names files already uploaded to the library (`/library/files`) — never file bytes. `library.js`'s `resolveAttachmentsForPrompt` reads each one server-side and inlines it into the system prompt as attached context (`turn.js`'s `renderAttachmentContext`): text files verbatim, images via `ocrResolver.js`'s vision-model step (disclaimer-prefixed — a description is an inference, not a transcript), everything else (PDFs, other binaries — no extraction pipeline for those yet) noted as attached but not read. This resolution happens entirely *before* `performTurn`/ReasonIQ ever see the turn — ReasonIQ reasons over what it's given, it never fetches or transforms a raw attachment itself. Omitting `attachmentIds` produces byte-identical behavior to before this existed — Desktop's contract stays additive, never modified underneath existing callers.
+`attachmentIds` names files already uploaded to the library (`/library/files`) — never file bytes. `library.js`'s `resolveAttachmentsForPrompt` reads each one server-side and inlines it into the system prompt as attached context (`turn.js`'s `renderAttachmentContext`): text files verbatim, images via `ocrResolver.js`'s vision-model step (disclaimer-prefixed — a description is an inference, not a transcript), everything else (PDFs, other binaries — no extraction pipeline for those yet) noted as attached but not read. This resolution happens entirely *before* `performTurn`/Logos ever see the turn — Logos reasons over what it's given, it never fetches or transforms a raw attachment itself. Omitting `attachmentIds` produces byte-identical behavior to before this existed — Desktop's contract stays additive, never modified underneath existing callers.
 
-Image OCR reuses ReasonIQ's own configured reasoning model (`/admin`'s OpenRouter model) rather than a separate provider config — if that model isn't multimodal, or isn't configured, image attachments degrade to "not read" exactly like before this existed.
+Image OCR uses the unified provider's `vision` role (Main Provider, `/admin` role card), falling back to the `reasoning` role — if that model isn't multimodal, or isn't configured, image attachments degrade to "not read" exactly like before this existed.
 
 `conversationId` (the client's own thread id — Desktop already generates one per thread) triggers a fire-and-forget save of the full transcript, including the reply, after a successful turn (`conversationStore.js`). This is deliberately **not** Hindsight: architecture.md is explicit that Hindsight stores reflections, never the raw transcript — chat history is the literal log a person reopens to keep reading, a different job with its own store. Omitting `conversationId` skips saving entirely; the reply is unaffected either way.
 
@@ -45,7 +45,7 @@ path (SSE/WebSocket) — clients were built with that seam ready.
 
 Also part of the client contract, a **file library** (`library.js`,
 `libraryRoutes.js`) — storage and browsing only in this phase, nothing
-here feeds ReasonIQ, Hermes, or Hindsight yet:
+here feeds Logos, Hermes, or Hindsight yet:
 
 | Method | Path                  | Auth   | Body / Result |
 |--------|-----------------------|--------|----------------|
@@ -55,7 +55,7 @@ here feeds ReasonIQ, Hermes, or Hindsight yet:
 | DELETE | `/library/files/:id`  | Bearer | 204 |
 
 Files persist on disk under `LIBRARY_PATH` (default `data/library/`,
-same persistent volume as `reasoningModelStore.js`'s admin config — see
+same persistent volume as the provider store's admin config — see
 `docker-compose.yml`). One directory per file (`meta.json` + `blob`), no
 shared index to corrupt under concurrent writes. Capped at
 `LIBRARY_MAX_FILE_SIZE_MB` (default 25MB) per upload.
@@ -66,12 +66,7 @@ normal sense — see `adminRoutes.js`):
 
 | Method | Path                          | Auth   | Body / Result |
 |--------|-------------------------------|--------|----------------|
-| GET    | `/admin`                      | none   | the static ReasonIQ model-config page (`public/admin.html`) |
-| GET    | `/admin/api/reasoniq/config`  | Bearer | masked config: `{ provider, baseUrl, model, visionModel, hasApiKey, maskedApiKey, updatedAt }` |
-| PUT    | `/admin/api/reasoniq/config`  | Bearer | in: `{ provider?, baseUrl?, model?, visionModel?, apiKey? }` → out: masked config |
-| GET    | `/admin/api/reasoniq/models`  | Bearer | `{ models: [{ id, name, contextLength, pricing }] }`, fetched live from OpenRouter using the saved key — feeds both the ReasonIQ model picker and the vision-model picker |
-
-`visionModel` is a separate, optional model id used only for image OCR (`ocrResolver.js`) — same OpenRouter account as `model` (no reason to assume a second API key), but independently choosable since a good reasoning model and a good vision model aren't always the same one. Left unset, image OCR reuses `model` (`reasoningModelConfigResolver.js`'s `resolveVisionModelConfig`).
+| GET    | `/admin`                      | none   | the static operator page (`public/admin.html`) — provider, roles, TTS, decision log |
 
 ## Boundaries
 
@@ -108,53 +103,46 @@ decision later once there's a Gaia-side decision layer to consume it.
 
 Run the synthetic evaluation set: `npm run eval:intent` (see `eval/README.md`).
 
-## Logos.ReasonIQ (v0.1)
+## Logos (V3 unified faculty)
 
-`src/logos/reasonIQ.js` — Gaia's first ReasonIQ: "what does this mean,
-what follows, what hypotheses are plausible, how certain are we?"
-Consumes an `IntentDecision` from IntentIQ (never re-derives intent),
-reasons over explicitly-supplied text/context/evidence only (no memory,
-no database, no tool access), and returns a structured `ReasoningResult`
-(`schemaVersion: "reasoniq.v1"`) distinguishing fact / inference /
+`src/logos/logos.js` — Gaia's cognitive faculty: "what is the user trying
+to achieve, what does this mean, what follows, what hypotheses are
+plausible, how certain are we?" Intent interpretation and reasoning are
+prompt-level faculties of one Logos pass (`src/logos/logosPrompt.js`),
+not separate IntentIQ/ReasonIQ subsystems. An optional intent hint may be
+supplied (tested, never trusted blindly, never required). Logos reasons
+over explicitly-supplied text/context/evidence only (no memory, no
+database, no tool access), and returns a structured `LogosResult`
+(`schemaVersion: "logos.v1"`) distinguishing fact / inference /
 hypothesis / unknown, with Stash-inspired evidence verdicts
 (`supports`/`weakens`/`contradicts`/`irrelevant`) per hypothesis — see
-`src/logos/reasonModels.js` for the full vocabulary and
-`docs/` design research for how those verdicts were chosen.
+`src/logos/logosSchema.js` for the full vocabulary.
 
-ReasonIQ has its **own, independently configurable reasoning model**
-(`src/logos/reasoningModelClient.js`, `REASONIQ_MODEL_*` env vars) —
-deliberately not Hermes, not a Gaia capability, and never selected by
-Gaia. It decides per turn whether that model is even worth calling
-(`decideReasoningDepth`): **only when `evidence` was actually supplied**
-— intent and text length don't factor in, since without evidence a model
-call can't produce anything the cheap path doesn't already know. That
-cheap path isn't a placeholder either — `shallowResult()` still reads
-IntentIQ's own status and whether an evidence-dependent intent
+Logos uses the **unified provider's `reasoning` role**
+(`src/logos/logosModelClient.js`, `src/providerConfigResolver.js`,
+`REASONIQ_MODEL_*` env vars as fallback) — deliberately not Hermes, not
+a Gaia capability, and never selected by Gaia. It decides per turn
+whether that model is even worth calling (`decideLogosDepth`): **only
+when `evidence` was actually supplied** — intent and text length don't
+factor in, since without evidence a model call can't produce anything
+the cheap path doesn't already know. That cheap path isn't a
+placeholder either — `shallowResult()` still reads the intent hint's
+status and whether an evidence-dependent intent
 (`EVIDENCE_DEPENDENT_INTENTS`: `inform.explain`, `create.transform`,
 `decide.support`, `act.perform`) got any evidence, and reports honest
 uncertainty/information-gaps and a correspondingly lower confidence from
 that alone. With no model configured, or on an unreachable/malformed
-response, ReasonIQ degrades to an honest, low-confidence result rather
-than guessing or throwing into the turn.
+response, Logos degrades to an honest, low-confidence result rather
+than guessing or throwing into the turn. Logos never confirms or rejects
+a hypothesis itself (Absolute Override: only a human confirms).
 
-**Out of scope this phase** (see the ReasonIQ v0.1 implementation
-report): Hermes, Hindsight, MCP, tool execution, capability routing, and
-persistence of any kind.
+**Never in the live path** — `turn.js` runs direct generation only; the
+background reflection (`runDeferredCognition`) calls Logos after the
+reply is delivered, fire-and-forget, and the result feeds future turns
+only via Hindsight recall. See `docs/architecture-v3.md` for the V3
+status and open decisions.
 
-**Wired into `turn.js` as an observe-only seam, same posture as
-IntentIQ** — every streaming turn hands IntentIQ's real `IntentDecision`
-to ReasonIQ (the same composition `src/logos/index.js`'s `runLogos()`
-tests directly), but the result is dev-logged only and never changes
-document selection, recall, or the Hermes call. Unlike IntentIQ's free
-heuristic, this call is **fire-and-forget, not awaited** — ReasonIQ may
-invoke a real, paid reasoning model once one is configured via `/admin`,
-and awaiting it would add real latency to every turn for a result
-nothing reads yet. Gaia doesn't supply ReasonIQ any `evidence` yet
-either, so most calls today resolve shallow or degrade instantly. There
-is still no Gaia-side decision that consumes a `ReasoningResult` — that
-remains a later phase.
-
-Run the synthetic evaluation set: `npm run eval:reason` (see
+Run the synthetic evaluation set: `npm run eval:logos` (see
 `eval/README.md` — it runs against a labeled non-LLM stub, not a real
 model; read that file before trusting the pass rate).
 

@@ -44,7 +44,7 @@ const HYPOTHESIS_TAG = 'gaia:hypothesis';
 const KNOWLEDGE_TAG = 'gaia:knowledge';
 const HYPOTHESIS_CONTEXT = 'gaia hypothesis';
 const KNOWLEDGE_CONTEXT = 'gaia knowledge';
-const UPDATED_BY = 'gaia-reasoniq';
+const UPDATED_BY = 'gaia-logos';
 
 /**
  * Adopts the native fact id(s) Hindsight assigned to a just-retained

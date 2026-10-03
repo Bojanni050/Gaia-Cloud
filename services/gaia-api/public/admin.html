@@ -321,7 +321,7 @@
       <div class="status" id="genStatus"></div>
     </section>
 
-    <!-- ReasonIQ — Reasoning -->
+    <!-- Logos — Reasoning (Main Provider role) -->
     <section class="role-card cyan">
       <div class="role-card-head">
         <div class="role-icon cyan">
@@ -332,39 +332,9 @@
         </div>
       </div>
       <p class="role-title">Reasoning</p>
-      <p class="role-desc">Gaia's cognitive layer — evaluates hypotheses and contradictions before a reply is written. Independent provider from Generation.</p>
+      <p class="role-desc">Logos background reflection — weighs evidence and hypotheses after a reply is delivered. Always uses the Main Provider above.</p>
 
-      <label for="riqProviderSelect">Provider</label>
-      <select id="riqProviderSelect">
-        <option value="">— select provider —</option>
-        <option value="__main__">— Use Main Provider —</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="edenai">EdenAI</option>
-        <option value="openai">OpenAI</option>
-        <option value="mistral">Mistral</option>
-        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-        <option value="litellm">LiteLLM</option>
-        <option value="custom">Custom (OpenAI-compatible)</option>
-      </select>
-
-      <div id="riqCredentialFields">
-        <label for="riqBaseUrl">Base URL</label>
-        <input id="riqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
-
-        <label for="riqApiKey">API key</label>
-        <input id="riqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-        <p class="hint" id="riqKeyHint">No key saved yet.</p>
-      </div>
-      <p class="hint" id="riqMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
-
-      <div class="role-actions-row" style="justify-content:flex-start;">
-        <button id="riqSaveConfigBtn">Save config</button>
-        <button id="riqFetchModelsBtn" class="secondary">Fetch models</button>
-      </div>
-      <div class="status" id="riqConfigStatus"></div>
-
-      <label>Model for ReasonIQ</label>
+      <label>Model for Logos reflection</label>
       <div id="riqDropdown"></div>
 
       <div class="role-actions-row push-bottom">
@@ -373,24 +343,24 @@
       <div class="status" id="riqModelStatus"></div>
     </section>
 
-    <!-- Vision (ReasonIQ's vision model) -->
+    <!-- Vision (Main Provider role) -->
     <section class="role-card violet">
       <div class="role-card-head">
         <div class="role-icon violet">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <div class="role-status">
-          <span class="role-status-badge inactive" id="riqVisionBadge">Reusing ReasonIQ</span>
+          <span class="role-status-badge inactive" id="riqVisionBadge">Inactive</span>
         </div>
       </div>
       <p class="role-title">Vision</p>
-      <p class="role-desc">Reads image attachments (OCR). Uses ReasonIQ's provider and key above — pick a different model here, or leave unset to reuse ReasonIQ's own model.</p>
+      <p class="role-desc">Reads image attachments (OCR). Uses the Main Provider above — pick a multimodal model here, or leave unset.</p>
 
       <label>Vision model</label>
       <div id="riqVisionDropdown"></div>
 
       <div class="role-actions-row push-bottom">
-        <button id="riqClearVisionModelBtn" class="secondary">Reuse ReasonIQ's model</button>
+        <button id="riqClearVisionModelBtn" class="secondary">Clear</button>
         <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="riqVisionModelStatus"></div>
@@ -510,42 +480,18 @@
 
   <hr class="separator">
 
-  <!-- ReasonIQ activity log -->
-  <div class="panel">
-    <h2>ReasonIQ — activity log</h2>
-    <p class="section-sub">Every turn's gate decision (why ReasonIQ engaged or skipped), deep analysis results, and actual reasoning model calls — linked by correlation ID.</p>
-    <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
-      <div style="flex:1; min-width:130px;">
-        <label for="riqLogKind">Kind</label>
-        <select id="riqLogKind">
-          <option value="">All</option>
-          <option value="reasoniq.gate">Gate decisions</option>
-          <option value="reasoniq.result">Analysis results</option>
-          <option value="llm.call">Model calls</option>
-        </select>
-      </div>
-      <div style="flex:0 0 90px; min-width:90px;">
-        <label for="riqLogLimit">Limit</label>
-        <input id="riqLogLimit" type="number" value="100" min="1" max="500">
-      </div>
-      <button id="refreshRiqLogBtn" class="secondary">Refresh</button>
-    </div>
-    <div class="status" id="riqLogStatus"></div>
-    <div class="decisions-list" id="riqLogList"></div>
-  </div>
-
   <!-- Decision Log -->
   <div class="panel">
     <h2>Logos — decision log</h2>
-    <p class="section-sub">Durable copy of every IntentIQ/ReasonIQ decision and LLM call.</p>
+    <p class="section-sub">Durable copy of every Logos reflection, IntentIQ decision, and LLM call.</p>
     <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
       <div style="flex:1; min-width:130px;">
         <label for="decisionsKind">Kind</label>
         <select id="decisionsKind">
           <option value="">All</option>
           <option value="intentiq.decision">IntentIQ</option>
-          <option value="reasoniq.result">ReasonIQ</option>
-          <option value="reasoniq.gate">ReasonIQ gates</option>
+          <option value="logos.result">Logos reflection</option>
+          <option value="logos.gate">Logos gates</option>
           <option value="llm.call">LLM calls</option>
         </select>
       </div>
@@ -946,6 +892,7 @@
       }
       setBadge(genBadgeEl, Boolean(currentGenModel));
       updateCapabilities(cfg.roles || {}, cfg.tts || {});
+      applyLogosRoles(cfg);
     } catch (_) { /* ignore on initial load */ }
   }
 
@@ -988,6 +935,7 @@
       const body = await res.json();
       catalog = body.catalog || [];
       genDropdown.setModels(catalog);
+      if (currentConfig) { currentConfig.catalog = catalog; applyLogosRoles(currentConfig); }
       setStatus(providerStatusEl, catalog.length > 0 ? (catalog.length + ' models retrieved.') : 'No models returned.', true);
     } catch (err) {
       setStatus(providerStatusEl, 'Could not retrieve models: ' + err.message, false);
@@ -1176,140 +1124,73 @@
   refreshTtsLogBtn.addEventListener('click', loadTtsLog);
 
   // ============================================================
-  // ReasonIQ — Reasoning + Vision (provider-agnostic, own key)
+  // Logos reasoning + vision (Main Provider roles)
   // ============================================================
-  const riqProviderEl = $('riqProviderSelect'), riqBaseUrlEl = $('riqBaseUrl'), riqApiKeyEl = $('riqApiKey');
-  wireBaseUrlAutofill(riqProviderEl, riqBaseUrlEl);
-  wireMainProviderToggle(riqProviderEl, $('riqCredentialFields'), $('riqMainHint'));
-  const riqKeyHintEl = $('riqKeyHint'), riqConfigStatusEl = $('riqConfigStatus');
-  const riqSaveConfigBtn = $('riqSaveConfigBtn'), riqFetchModelsBtn = $('riqFetchModelsBtn');
   const riqModelStatusEl = $('riqModelStatus'), riqSaveModelBtn = $('riqSaveModelBtn');
   const riqVisionModelStatusEl = $('riqVisionModelStatus');
   const riqSaveVisionModelBtn = $('riqSaveVisionModelBtn'), riqClearVisionModelBtn = $('riqClearVisionModelBtn');
   const riqBadgeEl = $('riqBadge'), riqVisionBadgeEl = $('riqVisionBadge');
 
-  let riqModels = [];
   let riqCurrentModel = null;
   let riqCurrentVisionModel = null;
 
   const riqDropdown = createModelDropdown($('riqDropdown'), {
-    placeholder: '— save config and fetch models —',
+    placeholder: '— retrieve models above first —',
     onChange: () => { riqSaveModelBtn.disabled = !riqDropdown.getValue(); },
   });
   const riqVisionDropdown = createModelDropdown($('riqVisionDropdown'), {
-    placeholder: '— save config and fetch models —',
-    emptyOptionLabel: "— reuse ReasonIQ's model —",
+    placeholder: '— retrieve models above first —',
+    emptyOptionLabel: '— unset —',
     onChange: () => { riqSaveVisionModelBtn.disabled = false; },
   });
 
-  async function loadRiqConfig() {
-    try {
-      const res = await fetch('/admin/api/reasoniq/config', { headers: authHeaders() });
-      if (!res.ok) return;
-      const cfg = await res.json();
-      riqCurrentModel = cfg.model;
-      riqCurrentVisionModel = cfg.visionModel;
-      riqProviderEl.value = cfg.useMainProvider ? USE_MAIN_PROVIDER : (cfg.provider || '');
-      riqProviderEl.dispatchEvent(new Event('change'));
-      if (cfg.baseUrl) riqBaseUrlEl.value = cfg.baseUrl;
-      const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
-      const effectiveProviderId = cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider;
-      riqDropdown.setProviderLabel(effectiveProviderLabel);
-      riqDropdown.setProviderId(effectiveProviderId);
-      riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
-      riqVisionDropdown.setProviderId(effectiveProviderId);
-      riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
-        setStatus(riqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
-      }
-      if (cfg.model) {
-        riqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
-        riqDropdown.setValue(cfg.model);
-      }
-      if (cfg.visionModel) {
-        riqVisionDropdown.setModels([{ id: cfg.visionModel, name: cfg.visionModel }]);
-        riqVisionDropdown.setValue(cfg.visionModel);
-        riqSaveVisionModelBtn.disabled = false;
-      }
-      setBadge(riqBadgeEl, Boolean(riqCurrentModel));
-      setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Reusing ReasonIQ');
-    } catch (_) { /* ignore */ }
+  // Populated from the Main Provider config (loadProviderConfig owns the
+  // fetch; this applies it to the Logos cards). Called after every
+  // provider load/save/retrieve so the cards never go stale.
+  function applyLogosRoles(cfg) {
+    const models = (cfg && cfg.catalog) || [];
+    const provider = (cfg && cfg.provider) || '';
+    const label = providerLabelFor(provider);
+    riqDropdown.setProviderLabel(label);
+    riqDropdown.setProviderId(provider);
+    riqVisionDropdown.setProviderLabel(label);
+    riqVisionDropdown.setProviderId(provider);
+    riqDropdown.setModels(models);
+    riqVisionDropdown.setModels(models);
+    const reasoning = cfg && cfg.roles && cfg.roles.reasoning && cfg.roles.reasoning.model;
+    const vision = cfg && cfg.roles && cfg.roles.vision && cfg.roles.vision.model;
+    riqCurrentModel = reasoning || null;
+    riqCurrentVisionModel = vision || null;
+    if (reasoning) { riqDropdown.setValue(reasoning); riqSaveModelBtn.disabled = false; }
+    if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
+    setBadge(riqBadgeEl, Boolean(riqCurrentModel));
+    setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Inactive');
   }
 
-  riqSaveConfigBtn.addEventListener('click', async () => {
-    const provider = riqProviderEl.value;
-    if (!provider) { setStatus(riqConfigStatusEl, 'Select a provider first.', false); return; }
-    const useMainProvider = provider === USE_MAIN_PROVIDER;
-    const body = { useMainProvider };
-    if (!useMainProvider) {
-      const baseUrl = riqBaseUrlEl.value.trim();
-      if (!baseUrl) { setStatus(riqConfigStatusEl, 'Enter a base URL.', false); return; }
-      body.provider = provider;
-      body.baseUrl = baseUrl;
-      if (riqApiKeyEl.value.trim()) body.apiKey = riqApiKeyEl.value.trim();
-    }
-    riqSaveConfigBtn.disabled = true;
+  async function saveLogosRole(role, model, statusEl, badgeEl, okText) {
     try {
-      const res = await fetch('/admin/api/reasoniq/config', {
-        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
+      const res = await fetch('/admin/api/provider/roles', {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ role, mode: 'catalog', model: model || '' }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const cfg = await res.json();
-      riqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      const effectiveProviderLabel = cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider);
-      const effectiveProviderId = cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider;
-      riqDropdown.setProviderLabel(effectiveProviderLabel);
-      riqDropdown.setProviderId(effectiveProviderId);
-      riqVisionDropdown.setProviderLabel(effectiveProviderLabel);
-      riqVisionDropdown.setProviderId(effectiveProviderId);
-      riqApiKeyEl.value = '';
-      setStatus(riqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);
+      const updated = await res.json();
+      currentConfig = updated;
+      if (role === 'reasoning') { riqCurrentModel = model || null; setBadge(riqBadgeEl, Boolean(model)); }
+      else { riqCurrentVisionModel = model || null; setBadge(riqVisionBadgeEl, Boolean(model), 'Active', 'Inactive'); }
+      setStatus(statusEl, okText, true);
+      updateCapabilities(updated.roles || {}, updated.tts || {});
     } catch (err) {
-      setStatus(riqConfigStatusEl, 'Could not save config.', false);
-    } finally {
-      riqSaveConfigBtn.disabled = false;
+      setStatus(statusEl, 'Could not save the selection.', false);
     }
-  });
-
-  riqFetchModelsBtn.addEventListener('click', async () => {
-    riqFetchModelsBtn.disabled = true;
-    setStatus(riqModelStatusEl, 'Fetching…', true);
-    try {
-      const res = await fetch('/admin/api/reasoniq/models', { headers: authHeaders() });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'request failed');
-      }
-      const body = await res.json();
-      riqModels = body.models || [];
-      riqDropdown.setModels(riqModels);
-      riqVisionDropdown.setModels(riqModels);
-      if (riqCurrentModel) riqDropdown.setValue(riqCurrentModel);
-      if (riqCurrentVisionModel) riqVisionDropdown.setValue(riqCurrentVisionModel);
-      riqSaveModelBtn.disabled = riqModels.length === 0;
-      setStatus(riqModelStatusEl, riqModels.length + ' models available.', true);
-    } catch (err) {
-      setStatus(riqModelStatusEl, 'Could not fetch models: ' + err.message, false);
-    } finally {
-      riqFetchModelsBtn.disabled = false;
-    }
-  });
+  }
 
   riqSaveModelBtn.addEventListener('click', async () => {
     const model = riqDropdown.getValue();
     if (!model) return;
     riqSaveModelBtn.disabled = true;
     try {
-      const res = await fetch('/admin/api/reasoniq/config', {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ model }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      riqCurrentModel = model;
-      setBadge(riqBadgeEl, true);
-      setStatus(riqModelStatusEl, 'ReasonIQ will use ' + riqCurrentModel + '.', true);
-    } catch (err) {
-      setStatus(riqModelStatusEl, 'Could not save the selection.', false);
+      await saveLogosRole('reasoning', model, riqModelStatusEl, riqBadgeEl, 'Logos reflection will use ' + model + '.');
     } finally {
       riqSaveModelBtn.disabled = false;
     }
@@ -1319,16 +1200,8 @@
     const model = riqVisionDropdown.getValue();
     riqSaveVisionModelBtn.disabled = true;
     try {
-      const res = await fetch('/admin/api/reasoniq/config', {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ visionModel: model }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      riqCurrentVisionModel = model;
-      setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Reusing ReasonIQ');
-      setStatus(riqVisionModelStatusEl, riqCurrentVisionModel ? ('Image OCR will use ' + riqCurrentVisionModel + '.') : "Image OCR will reuse ReasonIQ's model.", true);
-    } catch (err) {
-      setStatus(riqVisionModelStatusEl, 'Could not save the selection.', false);
+      await saveLogosRole('vision', model, riqVisionModelStatusEl, riqVisionBadgeEl,
+        model ? ('Image OCR will use ' + model + '.') : 'Vision model cleared.');
     } finally {
       riqSaveVisionModelBtn.disabled = false;
     }
@@ -1522,7 +1395,7 @@
         d.needsClarification ? 'needs clarification' : null,
       ].filter(Boolean).join(' · ');
     }
-    if (d.kind === 'reasoniq.result') {
+    if (d.kind === 'logos.result' || d.kind === 'reasoniq.result') {
       return [
         'depth: ' + (d.reasoningDepth || '—'),
         typeof d.confidence === 'number' ? 'confidence: ' + d.confidence.toFixed(2) : null,
@@ -1547,13 +1420,13 @@
 
   function systemLabel(system) {
     if (system === 'intentiq') return 'IntentIQ';
-    if (system === 'reasoniq') return 'ReasonIQ';
+    if (system === 'logos' || system === 'reasoniq') return 'Logos';
     if (system === 'native') return 'Gaia (native)';
     return system || '?';
   }
 
   function analysisBlocks(d) {
-    if (d.kind !== 'reasoniq.result') return '';
+    if (d.kind !== 'logos.result' && d.kind !== 'reasoniq.result') return '';
     const blocks = [];
     if (Array.isArray(d.observations) && d.observations.length) {
       blocks.push(
@@ -1591,11 +1464,11 @@
     }
     decisionsListEl.innerHTML = decisions.map((d) => {
       const badgeClass = d.kind === 'intentiq.decision' ? 'intentiq'
-        : d.kind === 'reasoniq.result' ? 'reasoniq'
+        : (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'reasoniq'
         : d.kind === 'llm.call' ? 'llm-call'
         : '';
       const badgeLabel = d.kind === 'intentiq.decision' ? 'IntentIQ'
-        : d.kind === 'reasoniq.result' ? 'ReasonIQ'
+        : (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'Logos'
         : d.kind === 'llm.call' ? 'LLM call · ' + systemLabel(d.system)
         : (d.kind || '?');
       return (
@@ -1638,95 +1511,9 @@
   exportDecisionsJsonBtn.addEventListener('click', () => exportDecisions('json'));
   exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
 
-  // --- ReasonIQ activity log ---
-  const riqLogKindEl = $('riqLogKind'), riqLogLimitEl = $('riqLogLimit');
-  const refreshRiqLogBtn = $('refreshRiqLogBtn'), riqLogStatusEl = $('riqLogStatus'), riqLogListEl = $('riqLogList');
-
-  const GATE_REASONS = {
-    no_evidence: 'no evidence to reason over',
-    context_only_intent: 'conversational/context-only intent',
-    ambiguous_intent: 'ambiguous intent',
-    unknown_intent: 'unknown intent',
-    deep: 'deep analysis warranted',
-  };
-
-  function summarizeGate(d) {
-    return [
-      'depth: ' + (d.depth || '—'),
-      GATE_REASONS[d.reason] || d.reason || '—',
-      d.intent ? 'intent: ' + d.intent : null,
-      'evidence: ' + (d.evidenceCount ?? 0),
-      'tracked hypotheses: ' + (d.existingHypothesisCount ?? 0),
-    ].filter(Boolean).join(' · ');
-  }
-
-  function summarizeRiqLlmCall(d) {
-    return [
-      (d.ok ? '✓ ok' : '✗ failed'),
-      'model: ' + (d.model || '—'),
-      d.provider ? 'provider: ' + d.provider : null,
-      typeof d.latencyMs === 'number' ? d.latencyMs + 'ms' : null,
-      d.errorMessage ? 'error: ' + d.errorMessage : null,
-    ].filter(Boolean).join(' · ');
-  }
-
-  function renderRiqLog(entries) {
-    if (!entries.length) {
-      riqLogListEl.innerHTML = '<div class="decisions-empty">No ReasonIQ activity yet.</div>';
-      return;
-    }
-    riqLogListEl.innerHTML = entries.map((d) => {
-      let badgeClass = '', badgeLabel = '', summary = '';
-      if (d.kind === 'reasoniq.gate') {
-        badgeClass = 'gate'; badgeLabel = 'Gate · ' + (d.depth || '?'); summary = summarizeGate(d);
-      } else if (d.kind === 'reasoniq.result') {
-        badgeClass = 'reasoniq'; badgeLabel = 'Result'; summary = summarizeDecision(d);
-      } else {
-        badgeClass = 'llm-call'; badgeLabel = 'LLM call'; summary = summarizeRiqLlmCall(d);
-      }
-      return (
-        '<div class="decision-row">' +
-          '<div class="decision-head">' +
-            '<span class="decision-badge ' + badgeClass + '">' + escapeHtml(badgeLabel) + '</span>' +
-            '<span class="decision-time">' + escapeHtml(formatTime(d.timestamp)) +
-              (d.contextId ? ' · ' + escapeHtml(d.contextId) : '') +
-              (d.correlationId ? ' · ' + escapeHtml(d.correlationId.slice(0, 8)) : '') + '</span>' +
-          '</div>' +
-          '<div class="decision-summary">' + escapeHtml(summary) + '</div>' +
-          analysisBlocks(d) +
-        '</div>' +
-        ''
-      );
-    }).join('');
-  }
-
-  async function loadRiqLog() {
-    refreshRiqLogBtn.disabled = true;
-    setStatus(riqLogStatusEl, 'Loading…', true);
-    try {
-      const params = new URLSearchParams();
-      const limit = parseInt(riqLogLimitEl.value, 10);
-      if (limit > 0) params.set('limit', String(limit));
-      const res = await fetch('/admin/api/reasoniq/log?' + params.toString(), { headers: authHeaders() });
-      if (!res.ok) throw new Error('request failed (' + res.status + ')');
-      const body = await res.json();
-      let entries = body.entries || [];
-      if (riqLogKindEl.value) entries = entries.filter((e) => e.kind === riqLogKindEl.value);
-      renderRiqLog(entries);
-      setStatus(riqLogStatusEl, entries.length + ' shown.', true);
-    } catch (err) {
-      setStatus(riqLogStatusEl, 'Could not load ReasonIQ log: ' + err.message, false);
-    } finally {
-      refreshRiqLogBtn.disabled = false;
-    }
-  }
-
-  refreshRiqLogBtn.addEventListener('click', loadRiqLog);
-  riqLogKindEl.addEventListener('change', loadRiqLog);
-
   // --- Init ---
-  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); loadRiqLog(); }
-  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadRiqConfig(); loadIntentIqConfig(); loadDecisions(); loadRiqLog(); });
+  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadIntentIqConfig(); loadDecisions(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadIntentIqConfig(); loadDecisions(); });
 })();
 </script>
 </body>

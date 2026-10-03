@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * ReasonIQ evaluation harness. Runs eval/reason-cases.js (synthetic,
+ * Logos evaluation harness. Runs eva./logos-cases.js (synthetic,
  * see that file's own header) against reasonIQ.evaluate(), using
- * reasoningModelStub.js's deterministic stand-in reasoning model —
+ * logosModelStub.js's deterministic stand-in reasoning model —
  * see eval/README.md for why: this sandbox has no live reasoning-model
  * credential to score against a real LLM.
  *
@@ -18,19 +18,19 @@
  * and are named explicitly as v0.2 work in the implementation report.
  */
 
-const { evaluate } = require('../src/logos/reasonIQ');
-const { REASONER_VERSION } = require('../src/logos/reasonModels');
+const { evaluate } = require('../src/logos/logos');
+const { REASONER_VERSION } = require('../src/logos/logosSchema');
 
 function hasVerdict(result, verdict) {
   return result.hypotheses.some((h) => h.evidenceAssessments.some((a) => a.verdict === verdict));
 }
 
 /**
- * @param {import('./reason-cases').CASES[number]} testCase
+ * @param {import('./logos-cases').CASES[number]} testCase
  * @param {object} model
  */
 async function runCase(testCase, model) {
-  const result = await evaluate(testCase.input, { reasoningModel: model, silent: true });
+  const result = await evaluate(testCase.input, { model, silent: true });
 
   const checks = [];
   const exp = testCase.expect || {};
@@ -51,7 +51,7 @@ async function runCase(testCase, model) {
     checks.push({ name: 'evidenceVerdict', pass: hasVerdict(result, exp.expectVerdict), got: result.hypotheses.flatMap((h) => h.evidenceAssessments.map((a) => a.verdict)) });
   }
 
-  const structurallyValid = result.schemaVersion === 'reasoniq.v1'
+  const structurallyValid = result.schemaVersion === 'logos.v1'
     && typeof result.interpretation === 'string'
     && Array.isArray(result.hypotheses)
     && Array.isArray(result.evidence)

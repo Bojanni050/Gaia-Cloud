@@ -1,34 +1,26 @@
 'use strict';
 
 /**
- * ReasonIQ's reasoning model client — deliberately separate from
- * hermesClient.js. Hermes is a capability Gaia may task explicitly, once
- * she has decided a turn needs it; ReasonIQ's reasoning model is part of
- * Logos's own cognitive implementation, invoked by ReasonIQ itself, on
- * its own schedule, never selected or routed to by Gaia (§2, §3, §21 of
- * this phase's brief). The two clients happen to share an OpenAI-
- * compatible HTTP shape because that shape is common infrastructure, not
- * because ReasonIQ depends on Hermes — this file has no reference to
- * hermesClient.js and reads its own, independent environment variables.
+ * Logos's model client — the single OpenAI-compatible chat seam behind the
+ * unified V3 Logos faculty (and, separately, OCR/vision transcription via
+ * ocrResolver.js, which reuses the same provider credentials with its own
+ * vision model id). Deliberately separate from hermesClient.js: Hermes is
+ * a capability Gaia may task explicitly; this client is part of Logos's
+ * own cognitive implementation and Gaia's background reflection.
  *
- * Configuration (independent of HERMES_*):
- *   REASONIQ_MODEL_BASE_URL   - OpenAI-compatible base URL. Unset = "no
- *                                reasoning model configured"; ReasonIQ
- *                                degrades to shallow-only reasoning
- *                                rather than failing the turn (see
- *                                reasonIQ.js).
- *   REASONIQ_MODEL_NAME       - model identifier sent to that endpoint.
- *   REASONIQ_MODEL_API_KEY    - optional bearer token.
- *   REASONIQ_MODEL_PROVIDER   - free-text label for observability only
- *                                (e.g. "openai-compatible"); never sent
- *                                upstream, never returned to any client.
+ * Configuration arrives as explicit { provider, baseUrl, model, apiKey }
+ * — resolved by the caller from the unified provider roles
+ * (providerStore.js role 'reasoning', 'vision' for OCR) with
+ * REASONIQ_MODEL_* env vars as the ops-level fallback. Unset baseUrl/model
+ * = "no model configured"; Logos degrades to shallow-only reflection
+ * rather than failing the turn.
  */
 
 const { logLlmCall } = require('./llmCallLog');
 
 const DEFAULT_TIMEOUT_MS = 60000;
 
-// ReasonIQ's own budget for one reasoning call. A failed call degrades to a
+// Logos's own budget for one reasoning call. A failed call degrades to a
 // shallow result, so waiting a full minute on a slow or queued model (seen
 // on free OpenRouter models) only delays the turn for nothing. The client
 // default above stays generous because the same client also serves OCR.
@@ -38,15 +30,17 @@ const REASONING_TIMEOUT_MS = 20000;
  * @param {NodeJS.ProcessEnv} env REASONIQ_MODEL_TIMEOUT_MS overrides the default
  * @returns {number}
  */
-function readReasoningTimeoutMs(env = process.env) {
-  const n = Number(env.REASONIQ_MODEL_TIMEOUT_MS);
+function readLogosTimeoutMs(env = process.env) {
+  const n = Number(env.LOGOS_MODEL_TIMEOUT_MS ?? env.REASONIQ_MODEL_TIMEOUT_MS);
   return Number.isFinite(n) && n > 0 ? n : REASONING_TIMEOUT_MS;
 }
+// Backward-compat alias.
+const readReasoningTimeoutMs = readLogosTimeoutMs;
 
 const isTimeout = (error) => Boolean(error) && (error.name === 'TimeoutError' || error.name === 'AbortError');
 
 /** @param {NodeJS.ProcessEnv} env */
-function readReasoningModelConfig(env = process.env) {
+function readLogosModelConfig(env = process.env) {
   return {
     provider: env.REASONIQ_MODEL_PROVIDER || 'openai-compatible',
     baseUrl: env.REASONIQ_MODEL_BASE_URL || '',
@@ -60,14 +54,14 @@ function isConfigured(config) {
 }
 
 /**
- * Creates ReasonIQ's reasoning model client. `chat()` requests a single,
- * non-streaming, structured-JSON completion — ReasonIQ is a cognitive
+ * Creates Logos's reasoning model client. `chat()` requests a single,
+ * non-streaming, structured-JSON completion — Logos is a cognitive
  * step inside one turn, not a chat surface, so there is no streaming
  * concern here the way there is in hermesClient.js.
  *
  * @param {{ baseUrl?: string, model?: string, apiKey?: string, provider?: string, fetchImpl?: Function, timeoutMs?: number }} [options]
  */
-function createReasoningModelClient(options = {}) {
+function createLogosModelClient(options = {}) {
   const config = {
     provider: options.provider || 'openai-compatible',
     baseUrl: String(options.baseUrl || '').replace(/\/+$/, ''),
@@ -79,7 +73,7 @@ function createReasoningModelClient(options = {}) {
 
   /**
    * @param {Array<{role: string, content: string|Array<object>}>} messages content may be a plain string, or an OpenAI-compatible content-block array (e.g. for image_url blocks — see ocrResolver.js)
-   * @param {{ responseFormat?: object|null, logger?: (line: string) => void, contextId?: string|null, correlationId?: string|null }} [options] Defaults to forcing `{type:"json_object"}`, ReasonIQ's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking ReasonIQ's structured-output question). `logger` is the same per-turn sink reasonIQ.js's evaluate() receives for logReasoningResult — forwarded here so an actual LLM call gets logged too (kind 'llm.call'), distinct from the reasoning result itself. `contextId`/`correlationId` come from the reasoning input, so an actual call can be tied to the turn it served in the admin log.
+   * @param {{ responseFormat?: object|null, logger?: (line: string) => void, contextId?: string|null, correlationId?: string|null }} [options] Defaults to forcing `{type:"json_object"}`, Logos's own need — omitted from the request entirely, not just unset, when explicitly passed `null` (e.g. a freeform-text caller like OCR that isn't asking Logos's structured-output question). `logger` is the same per-turn sink reasonIQ.js's evaluate() receives for logReasoningResult — forwarded here so an actual LLM call gets logged too (kind 'llm.call'), distinct from the reasoning result itself. `contextId`/`correlationId` come from the reasoning input, so an actual call can be tied to the turn it served in the admin log.
    * @returns {Promise<string>} the raw text content of the completion — the caller parses/validates it, this client does not.
    */
   async function chat(messages, options = {}) {
@@ -87,7 +81,7 @@ function createReasoningModelClient(options = {}) {
     const logCall = (ok, errorMessage) => {
       if (!options.logger) return;
       logLlmCall({
-        system: 'reasoniq',
+        system: 'logos',
         provider: config.provider,
         baseUrl: config.baseUrl,
         model: config.model,
@@ -101,7 +95,7 @@ function createReasoningModelClient(options = {}) {
     };
 
     if (!isConfigured(config)) {
-      throw new Error('reasoning model not configured (REASONIQ_MODEL_BASE_URL / REASONIQ_MODEL_NAME unset)');
+      throw new Error('logos model not configured (provider role "reasoning" or REASONIQ_MODEL_BASE_URL / REASONIQ_MODEL_NAME unset)');
     }
 
     const headers = { 'Content-Type': 'application/json' };
@@ -120,15 +114,15 @@ function createReasoningModelClient(options = {}) {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      console.error(`[reasonIQ:model] unreachable at ${config.baseUrl}: ${error.message}`);
+      console.error(`[logos:model] unreachable at ${config.baseUrl}: ${error.message}`);
       logCall(false, isTimeout(error) ? 'timeout' : 'unreachable');
-      throw new Error('reasoning model unreachable');
+      throw new Error('logos model unreachable');
     }
 
     if (!response.ok) {
-      console.error(`[reasonIQ:model] responded ${response.status} at ${config.baseUrl}`);
+      console.error(`[logos:model] responded ${response.status} at ${config.baseUrl}`);
       logCall(false, `HTTP ${response.status}`);
-      throw new Error('reasoning model responded with an error');
+      throw new Error('logos model responded with an error');
     }
 
     let data;
@@ -137,18 +131,18 @@ function createReasoningModelClient(options = {}) {
     } catch (error) {
       // The timeout also covers reading the body: a model that sends headers
       // and then stalls surfaces here, not in the fetch above.
-      console.error(`[reasonIQ:model] unreadable response at ${config.baseUrl}`);
+      console.error(`[logos:model] unreadable response at ${config.baseUrl}`);
       logCall(false, isTimeout(error) ? 'timeout' : 'unreadable response');
-      throw new Error('reasoning model returned an unreadable response');
+      throw new Error('logos model returned an unreadable response');
     }
 
     const content = data && data.choices && data.choices[0] && data.choices[0].message
       ? data.choices[0].message.content
       : undefined;
     if (typeof content !== 'string' || content.length === 0) {
-      console.error(`[reasonIQ:model] no content in response at ${config.baseUrl}`);
+      console.error(`[logos:model] no content in response at ${config.baseUrl}`);
       logCall(false, 'no content in response');
-      throw new Error('reasoning model returned no content');
+      throw new Error('logos model returned no content');
     }
     logCall(true);
     return content;
@@ -157,4 +151,4 @@ function createReasoningModelClient(options = {}) {
   return { chat, config, isConfigured: () => isConfigured(config) };
 }
 
-module.exports = { createReasoningModelClient, readReasoningModelConfig, readReasoningTimeoutMs, isConfigured };
+module.exports = { createLogosModelClient, createReasoningModelClient: createLogosModelClient, readLogosModelConfig, readReasoningModelConfig: readLogosModelConfig, readLogosTimeoutMs, readReasoningTimeoutMs, isConfigured };

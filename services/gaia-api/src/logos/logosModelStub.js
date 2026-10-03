@@ -6,17 +6,17 @@
  * A deterministic stand-in that implements the same `{ chat(messages) }`
  * shape as reasoningModelClient.js, for use where no live reasoning model
  * is configured/reachable: unit tests, and this sandbox's evaluation run
- * (see eval/README.md and the ReasonIQ v0.1 implementation report — there
+ * (see eval/README.md and the Logos v0.1 implementation report — there
  * is no live LLM credential available here, so `npm run eval:reason`
  * scores this stub, not a real model; that gap is reported explicitly,
  * not hidden).
  *
  * It applies a handful of legible, deliberately simple rules to the last
  * user message (and any supplied evidence) to produce *plausible-shaped*
- * JSON matching ReasonIQ's expected output — enough to exercise the full
+ * JSON matching Logos's expected output — enough to exercise the full
  * pipeline (prompting, parsing, validation, fallback paths, evaluation
  * scoring) end-to-end without a network call. It is not a reasoning
- * engine and must never be treated as evidence that ReasonIQ "works" in
+ * engine and must never be treated as evidence that Logos "works" in
  * the way a real reasoning model's output would.
  */
 
@@ -28,10 +28,10 @@ function extractLatestUserText(messages) {
 }
 
 /**
- * The stub is handed ReasonIQ's fully-assembled prompt messages (system +
+ * The stub is handed Logos's fully-assembled prompt messages (system +
  * user, per reasonPrompt.js) and pulls out the pieces it needs from the
  * user message's embedded JSON payload — it does not re-derive anything
- * ReasonIQ already computed.
+ * Logos already computed.
  */
 function parsePromptPayload(messages) {
   const userText = extractLatestUserText(messages);
@@ -58,7 +58,7 @@ function stubVerdict(evidenceText, hypothesisStatement) {
 
 /**
  * @param {Array<{role: string, content: string}>} messages
- * @returns {Promise<string>} JSON text mimicking ReasonIQ's expected model output
+ * @returns {Promise<string>} JSON text mimicking Logos's expected model output
  */
 async function chat(messages) {
   const payload = parsePromptPayload(messages);
@@ -115,4 +115,4 @@ async function chat(messages) {
   return JSON.stringify(result);
 }
 
-module.exports = { createReasoningModelStub: () => ({ chat, isConfigured: () => true, config: { provider: 'stub' } }) };
+module.exports = { createReasoningModelStub: () => ({ chat, isConfigured: () => true, config: { provider: 'stub' } }), createLogosModelStub: () => ({ chat, isConfigured: () => true, config: { provider: 'stub' } }) };

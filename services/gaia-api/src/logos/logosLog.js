@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Structured, server-side-only logging for ReasonIQ decisions. Same
+ * Structured, server-side-only logging for Logos decisions. Same
  * discipline as intentLog.js: a dev/eval observability surface, never
  * returned to a client. Deliberately does not log hidden chain-of-thought
- * (§13) — only the structured result itself, which already carries
+ * — only the structured result itself, which already carries
  * rationale in `reasoning`/`explanation` fields where relevant.
  */
 
@@ -61,10 +61,10 @@ function truncate(text) {
  * @param {{ result: object, input: string, contextId: string|undefined, correlationId: string }} entry
  * @param {(line: string) => void} [sink]
  */
-function logReasoningResult(entry, sink = (line) => console.log(line)) {
+function logLogosResult(entry, sink = (line) => console.log(line)) {
   const meta = entry.result.meta || {};
   const record = {
-    kind: 'reasoniq.result',
+    kind: 'logos.result',
     timestamp: new Date().toISOString(),
     correlationId: entry.correlationId,
     contextId: entry.contextId || null,
@@ -103,9 +103,9 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
 }
 
 /**
- * One cheap, local gate record per turn (kind 'reasoniq.gate') — written
+ * One cheap, local gate record per turn (kind 'logos.gate') — written
  * BEFORE the depth decision is acted on, so every turn leaves a trace of
- * whether ReasonIQ engaged and why not. Without it, shallow turns (the
+ * whether Logos engaged and why not. Without it, shallow turns (the
  * majority) are invisible in the decision log and "ReasonIQ never does
  * anything" is indistinguishable from "the gate is too strict". Never
  * includes user text — intent and counts only, same observability posture
@@ -114,9 +114,9 @@ function logReasoningResult(entry, sink = (line) => console.log(line)) {
  * @param {{ depth: 'shallow'|'deep', reason: 'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep', intent: string|null, evidenceCount: number, existingHypothesisCount: number, contextId: string|undefined, correlationId: string }} entry
  * @param {(line: string) => void} [sink]
  */
-function logReasoningGate(entry, sink = (line) => console.log(line)) {
+function logLogosGate(entry, sink = (line) => console.log(line)) {
   const record = {
-    kind: 'reasoniq.gate',
+    kind: 'logos.gate',
     timestamp: new Date().toISOString(),
     correlationId: entry.correlationId,
     contextId: entry.contextId || null,
@@ -130,4 +130,4 @@ function logReasoningGate(entry, sink = (line) => console.log(line)) {
   return record;
 }
 
-module.exports = { logReasoningResult, logReasoningGate, truncate };
+module.exports = { logLogosResult, logLogosGate, logReasoningResult: logLogosResult, logReasoningGate: logLogosGate, truncate };

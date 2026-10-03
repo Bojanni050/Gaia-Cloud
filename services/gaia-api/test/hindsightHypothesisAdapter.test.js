@@ -123,7 +123,7 @@ test('persistence: a proposed hypothesis retains as a world fact with full gaia_
   assert.equal(md.gaia_hypothesis_version, '1');
   assert.equal(md.gaia_hypothesis_status, 'derived' === md.gaia_hypothesis_method ? 'testing' : md.gaia_hypothesis_status);
   assert.equal(md.gaia_hypothesis_confidence, '0.64');
-  assert.equal(md.gaia_hypothesis_updated_by, 'gaia-reasoniq');
+  assert.equal(md.gaia_hypothesis_updated_by, 'gaia-logos');
   assert.deepEqual(JSON.parse(md.gaia_hypothesis_evidence_for), ['hs_native_9']); // NATIVE provenance id
   assert.deepEqual(JSON.parse(md.gaia_hypothesis_evidence_against), []);
 });
@@ -299,7 +299,7 @@ test('retrieval: recall scoped to gaia:hypothesis reconstructs Gaia state from m
     context: 'gaia hypothesis', metadata: {
       gaia_hypothesis_id: 'hyp-42', gaia_hypothesis_version: '2', gaia_hypothesis_status: 'testing',
       gaia_hypothesis_confidence: '0.6', gaia_hypothesis_evidence_for: '["e1"]', gaia_hypothesis_evidence_against: '[]',
-      gaia_hypothesis_updated_by: 'gaia-reasoniq', gaia_hypothesis_method: 'derived',
+      gaia_hypothesis_updated_by: 'gaia-logos', gaia_hypothesis_method: 'derived',
     }, tags: ['gaia:hypothesis'], document_id: 'gaia-hyp-hyp-42-v2',
   });
   fake.facts.set('hsf_cur', {
@@ -307,7 +307,7 @@ test('retrieval: recall scoped to gaia:hypothesis reconstructs Gaia state from m
     context: 'gaia hypothesis', metadata: {
       gaia_hypothesis_id: 'hyp-42', gaia_hypothesis_version: '3', gaia_hypothesis_status: 'confirmed',
       gaia_hypothesis_confidence: '0.81', gaia_hypothesis_evidence_for: '["e1","e2"]',
-      gaia_hypothesis_evidence_against: '["e3"]', gaia_hypothesis_updated_by: 'gaia-reasoniq',
+      gaia_hypothesis_evidence_against: '["e3"]', gaia_hypothesis_updated_by: 'gaia-logos',
       gaia_hypothesis_method: 'tested', gaia_hypothesis_rejection_reason: '',
     }, tags: ['gaia:hypothesis'], document_id: 'gaia-hyp-hyp-42-v3',
   });
@@ -338,12 +338,12 @@ test('boot load: reconstructs the highest active version per hypothesis', async 
   const { adapter } = makeRuntime(fake);
   fake.facts.set('hsf_v1', {
     id: 'hsf_v1', text: 'v1 text', type: 'world', state: 'invalidated',
-    context: 'gaia hypothesis', metadata: { gaia_hypothesis_id: 'hyp-7', gaia_hypothesis_version: '1', gaia_hypothesis_status: 'proposed', gaia_hypothesis_confidence: '0.5', gaia_hypothesis_evidence_for: '[]', gaia_hypothesis_evidence_against: '[]', gaia_hypothesis_updated_by: 'gaia-reasoniq' },
+    context: 'gaia hypothesis', metadata: { gaia_hypothesis_id: 'hyp-7', gaia_hypothesis_version: '1', gaia_hypothesis_status: 'proposed', gaia_hypothesis_confidence: '0.5', gaia_hypothesis_evidence_for: '[]', gaia_hypothesis_evidence_against: '[]', gaia_hypothesis_updated_by: 'gaia-logos' },
     tags: ['gaia:hypothesis'], document_id: 'gaia-hyp-hyp-7-v1',
   });
   fake.facts.set('hsf_v2', {
     id: 'hsf_v2', text: 'v2 refined statement.', type: 'world', state: 'valid',
-    context: 'gaia hypothesis', metadata: { gaia_hypothesis_id: 'hyp-7', gaia_hypothesis_version: '2', gaia_hypothesis_status: 'testing', gaia_hypothesis_confidence: '0.66', gaia_hypothesis_evidence_for: '["n1"]', gaia_hypothesis_evidence_against: '[]', gaia_hypothesis_updated_by: 'gaia-reasoniq', gaia_hypothesis_method: 'derived' },
+    context: 'gaia hypothesis', metadata: { gaia_hypothesis_id: 'hyp-7', gaia_hypothesis_version: '2', gaia_hypothesis_status: 'testing', gaia_hypothesis_confidence: '0.66', gaia_hypothesis_evidence_for: '["n1"]', gaia_hypothesis_evidence_against: '[]', gaia_hypothesis_updated_by: 'gaia-logos', gaia_hypothesis_method: 'derived' },
     tags: ['gaia:hypothesis'], document_id: 'gaia-hyp-hyp-7-v2',
   });
 
@@ -420,13 +420,13 @@ test("0.1 retrieval filter: recallHypotheses can narrow to durable/ephemeral ada
   fake.facts.set("hsf_d", {
     id: "hsf_d", text: "Durable pattern.", type: "world", state: "valid",
     context: "gaia hypothesis",
-    metadata: { gaia_hypothesis_id: "hyp-D", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.6", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-reasoniq", gaia_hypothesis_persistence: "durable" },
+    metadata: { gaia_hypothesis_id: "hyp-D", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.6", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-logos", gaia_hypothesis_persistence: "durable" },
     tags: ["gaia:hypothesis"], document_id: "gaia-hyp-hyp-D-v1",
   });
   fake.facts.set("hsf_e", {
     id: "hsf_e", text: "Ephemeral task guess.", type: "world", state: "valid",
     context: "gaia hypothesis",
-    metadata: { gaia_hypothesis_id: "hyp-E", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.5", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-reasoniq" },
+    metadata: { gaia_hypothesis_id: "hyp-E", gaia_hypothesis_version: "1", gaia_hypothesis_status: "testing", gaia_hypothesis_confidence: "0.5", gaia_hypothesis_evidence_for: "[]", gaia_hypothesis_evidence_against: "[]", gaia_hypothesis_updated_by: "gaia-logos" },
     tags: ["gaia:hypothesis"], document_id: "gaia-hyp-hyp-E-v1",
   });
 

@@ -1,48 +1,48 @@
 'use strict';
 
 /**
- * Logos — composes IntentIQ and ReasonIQ for one turn.
+ * Logos — composes the unified V3 faculty for one turn.
  *
- * Not wired into turn.js in this phase. This module exists to give the
- * IntentIQ -> ReasonIQ handoff a real, testable seam (per the ReasonIQ
- * v0.1 implementation brief, §19) without touching the live conversation
- * path — turn.js's own integration decision belongs to whichever phase
- * gives Gaia an actual decision to make with a ReasoningResult (tools/
- * capabilities are explicitly out of scope right now). Calling this from
- * turn.js today would just be a second dev-log-only seam with nothing
- * downstream to consume it, which is not what was asked for.
+ * V3: intent interpretation and reasoning are prompt-level faculties of
+ * one Logos pass, not separate IntentIQ/ReasonIQ subsystems. An optional
+ * intent hint may be supplied (while IntentIQ still exists); Logos tests
+ * it, never trusts it blindly, and works without it.
+ *
+ * Not wired into turn.js's live path: the live turn is direct generation
+ * and Logos runs as background reflection after delivery (see turn.js's
+ * runDeferredCognition). This module exists for explicit callers and
+ * tests that want the full single-pass seam in one place.
  */
 
-const { classify } = require('./intentIQ');
-const reasonIQ = require('./reasonIQ');
+const logos = require('./logos');
 
 /**
  * @param {Array<{role: string, content: string}>} messages
  * @param {{
  *   evidence?: Array<{content: string, source?: string}>,
+ *   intentHint?: object|null,
  *   contextId?: string,
+ *   model?: object,
  *   reasoningModel?: object,
  *   silent?: boolean,
  *   logger?: Function,
  * }} [options]
- * @returns {Promise<{ intentDecision: object, reasoningResult: object }>}
+ * @returns {Promise<{ intentHint: object|null, logosResult: object }>}
  */
 async function runLogos(messages, options = {}) {
-  const intentDecision = classify(messages, { contextId: options.contextId, silent: options.silent, logger: options.logger });
-
   const text = latestUserText(messages);
-  const reasoningResult = await reasonIQ.evaluate(
+  const logosResult = await logos.evaluate(
     {
       text,
-      intentDecision,
+      intentHint: options.intentHint || null,
       conversationContext: messages,
       evidence: options.evidence || [],
       contextId: options.contextId,
     },
-    { reasoningModel: options.reasoningModel, silent: options.silent, logger: options.logger }
+    { model: options.model || options.reasoningModel, silent: options.silent, logger: options.logger }
   );
 
-  return { intentDecision, reasoningResult };
+  return { intentHint: options.intentHint || null, logosResult };
 }
 
 function latestUserText(messages) {

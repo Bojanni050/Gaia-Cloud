@@ -6,7 +6,7 @@
  *
  * Boundary: this module decides; it does not execute (orchestration.js does
  * that) and it does not interpret or reason (IntentIQ/ReasonIQ already did
- * that upstream — see logos/intentIQ.js, logos/reasonIQ.js). It consumes
+ * that upstream — see logos/). It consumes
  * their output plus the set of capabilities actually available and returns
  * exactly one Decision (decisionSchema.js) — a small *plan*, not just an
  * action: `action` for what the Orchestrator executes, plus `context`/
@@ -360,13 +360,13 @@ const META_INTENT_TYPES = new Set([
 const isNativeTurn = isNativeEligible;
 
 /**
- * Maps ReasonIQ's own output to the Decision plan's coarse reasoning
- * level — interpretation, not re-classification. ReasonIQ already decided
- * reasoningDepth ('shallow'/'deep', reasonIQ.js's decideReasoningDepth);
+ * Maps Logos's own output to the Decision plan's coarse reasoning
+ * level — interpretation, not re-classification. Logos already decided
+ * reasoningDepth ('shallow'/'deep', logos.js's decideLogosDepth);
  * this only relabels that judgment for the plan, plus distinguishing "no
  * ReasonIQ result at all" (Desktop's no-Logos path) as 'none' rather than
  * silently treating it the same as a shallow result.
- * @param {object|null|undefined} reasoning - ReasonIQ's ReasoningResult, or null/undefined
+ * @param {object|null|undefined} reasoning - Logos's LogosResult, or null/undefined
  * @returns {'none'|'light'|'deep'}
  */
 function mapReasoningLevel(reasoning) {

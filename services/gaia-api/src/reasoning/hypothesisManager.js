@@ -14,7 +14,7 @@
  * manager keeps state in memory for the turn that owns it.
  *
  * Lifecycle (the frozen transitions below mirror the shape documented in
- * logos/reasonModels.js — services/cognition is a separate deployable not
+ * logos/logosSchema.js — services/cognition is a separate deployable not
  * present in this repo, so THIS map is this codebase's single source of
  * truth until that service exists):
  *
@@ -31,7 +31,7 @@
  *
  * Provenance note (0.3.x): several concepts here are adopted from
  * github.com/alash3al/stash — the four-way evidence verdicts were already
- * borrowed in logos/reasonModels.js; this pass adds its hypothesis-shape
+ * borrowed in logos/logosSchema.js; this pass adds its hypothesis-shape
  * ideas: a `method` field (asserted|derived|tested), an explicit
  * `rejectionReason`, tested/confirmed/rejected timestamps, and knowledge
  * promotion on confirm. Two DELIBERATE divergences, both required by our
@@ -45,7 +45,7 @@
  * adopted: transitions happen only through explicit, policy-gated calls.
  */
 
-const { EVIDENCE_VERDICTS } = require('../logos/reasonModels');
+const { EVIDENCE_VERDICTS } = require('../logos/logosSchema');
 
 /** How a hypothesis came to be / was settled (Stash's `method`, adopted). */
 const HYPOTHESIS_METHODS = Object.freeze(['asserted', 'derived', 'tested']);

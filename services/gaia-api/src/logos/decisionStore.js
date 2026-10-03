@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Durable persistence for the IntentIQ/ReasonIQ decision log lines that
- * intentLog.js/reasonLog.js already produce (structured JSON, one line per
+ * Durable persistence for the Logos decision log lines that
+ * intentLog.js/logosLog.js already produce (structured JSON, one line per
  * decision). Those write to console.log by default, which only survives as
  * long as `docker logs`' own retention — fine for live tailing, not for
  * looking back at "why did Gaia classify this the way it did" after the
@@ -64,7 +64,7 @@ function createDecisionStore(options = {}) {
    * case (recent lookups), never loads the whole history into memory at
    * once beyond what's needed.
    * @param {{ limit?: number, kind?: string }} [query] `kind` filters to
-   *   e.g. 'intentiq.decision' or 'reasoniq.result'; omitted returns both.
+   *   e.g. 'intentiq.decision' or 'logos.result'; omitted returns all kinds.
    * @returns {Array<object>}
    */
   function list(query = {}) {

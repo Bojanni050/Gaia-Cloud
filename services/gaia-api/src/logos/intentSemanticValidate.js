@@ -7,12 +7,12 @@
  * which intentIQ.js's classifySemantic catches and degrades from — the
  * heuristic classifier remains authoritative rather than ever passing bad
  * data upstream), lenient about a model's minor field omissions — the
- * same posture reasonValidate.js already keeps for ReasonIQ.
+ * same posture logosValidate.js already keeps for Logos.
  */
 
 const { isKnownIntent, SOURCE_OF_TRUTH_VALUES } = require('./intentTaxonomy');
 const { SPEECH_ACTS } = require('./intentSemanticPrompt');
-const { clampConfidence } = require('./reasonValidate');
+const { clampConfidence } = require('./logosValidate');
 
 class MalformedSemanticOutputError extends Error {
   constructor(reason) {

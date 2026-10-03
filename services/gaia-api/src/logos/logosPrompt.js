@@ -1,16 +1,24 @@
 'use strict';
 
 /**
- * Builds the prompt ReasonIQ sends to its reasoning model. Kept separate
- * from reasoningModelClient.js so the prompt contract can be tested and
+ * Builds the prompt Logos sends to its reasoning model. Kept separate
+ * from logosModelClient.js so the prompt contract can be tested and
  * evolved without touching the HTTP client, and so the eval harness can
- * inspect exactly what ReasonIQ asked for.
+ * inspect exactly what Logos asked for. V3: intent interpretation and
+ * reasoning are prompt-level faculties of the one Logos pass, not
+ * separate subsystems.
  */
 
-const SYSTEM_PROMPT = `You are Logos's ReasonIQ, Gaia's cognitive reasoning faculty.
+const SYSTEM_PROMPT = `You are Logos, Gaia's cognitive reasoning faculty.
 You interpret one conversational turn and produce a single, strictly-structured
 JSON reasoning result. You do not decide what Gaia says or does next — you only
 interpret, reason, and report your confidence honestly.
+
+First formulate what the user is trying to achieve, test that interpretation
+against the turn and context, then reason about what follows from the
+available information. Intent interpretation and reasoning are one
+integrated pass — not separate stages, and never a reason to invent
+evidence or certainty you do not have.
 
 Rules:
 - Never present a hypothesis as a confirmed fact.
@@ -134,11 +142,14 @@ Schema:
  * }} input
  * @returns {Array<{role: string, content: string}>}
  */
-function buildReasoningPrompt(input) {
+function buildLogosPrompt(input) {
+  // V3: IntentIQ is an optional hint, never a required input. Accept the
+  // legacy `intentDecision` shape during migration, prefer `intentHint`.
+  const intentForPrompt = input.intentHint || input.intentDecision || null;
   const payload = {
     text: input.text,
-    intent: input.intentDecision
-      ? { intent: input.intentDecision.intent, status: input.intentDecision.status, confidence: input.intentDecision.confidence }
+    intent: intentForPrompt
+      ? { intent: intentForPrompt.intent, status: intentForPrompt.status, confidence: intentForPrompt.confidence }
       : null,
     recentContext: (input.conversationContext || []).slice(-6).map(({ role, content }) => ({ role, content })),
     evidence: input.evidence || [],
@@ -168,6 +179,9 @@ function buildReasoningPrompt(input) {
 
   const userContent = [
     'Reason about this turn and return the JSON result described in your instructions.',
+    ...(input.intentHint && input.intentHint.intent
+      ? [`Intent hint (optional, test it, never trust it blindly): ${input.intentHint.intent} (status: ${input.intentHint.status || 'unknown'}, confidence: ${typeof input.intentHint.confidence === 'number' ? input.intentHint.confidence : 'n/a'})`]
+      : []),
     'Input:',
     '```json',
     JSON.stringify(payload, null, 2),
@@ -180,4 +194,4 @@ function buildReasoningPrompt(input) {
   ];
 }
 
-module.exports = { buildReasoningPrompt, SYSTEM_PROMPT };
+module.exports = { buildLogosPrompt, buildReasoningPrompt: buildLogosPrompt, SYSTEM_PROMPT };

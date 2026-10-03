@@ -55,7 +55,7 @@ test('cognition adapter: an observation persists as a gaia:observation world fac
   assert.equal(unit.tags[0], OBSERVATION_TAG);
   assert.equal(unit.context, 'gaia observation');
   assert.match(unit.document_id, /^gaia-obs-/);
-  assert.equal(unit.metadata.gaia_observation_updated_by, 'gaia-reasoniq');
+  assert.equal(unit.metadata.gaia_observation_updated_by, 'gaia-logos');
   assert.deepEqual(JSON.parse(unit.metadata.gaia_observation_evidence), ['evidence-1']);
   assert.equal(unit.metadata.gaia_observation_related_hypothesis, 'hyp-1');
   assert.equal(factId, unit.id);
@@ -71,7 +71,7 @@ test('cognition adapter: an open question persists as a gaia:open-question world
   assert.equal(unit.tags[0], OPEN_QUESTION_TAG);
   assert.equal(unit.context, 'gaia open question');
   assert.match(unit.document_id, /^gaia-oq-/);
-  assert.equal(unit.metadata.gaia_open_question_updated_by, 'gaia-reasoniq');
+  assert.equal(unit.metadata.gaia_open_question_updated_by, 'gaia-logos');
   assert.equal(factId, unit.id);
 });
 
@@ -108,7 +108,7 @@ test('cognition adapter: a relationship persists as a gaia:relationship world fa
   assert.equal(unit.metadata.gaia_relationship_to_id, 'ptn-1');
   assert.equal(unit.metadata.gaia_relationship_type, 'relates_to');
   assert.equal(unit.metadata.gaia_relationship_confidence, '0.6');
-  assert.equal(unit.metadata.gaia_relationship_updated_by, 'gaia-reasoniq');
+  assert.equal(unit.metadata.gaia_relationship_updated_by, 'gaia-logos');
   assert.match(unit.text, /evidence:evidence-1 relates_to pattern:ptn-1/);
   assert.equal(factId, unit.id);
 });

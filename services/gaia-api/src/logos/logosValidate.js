@@ -3,22 +3,24 @@
 /**
  * Validates and coerces a reasoning model's raw text output into a
  * well-formed ReasoningResult body (everything except schemaVersion/
- * reasoningDepth/meta, which reasonIQ.js attaches itself). Deliberately
+ * reasoningDepth/meta, which logos.js attaches itself). Deliberately
  * strict about shape, lenient about a model's minor field omissions —
  * a missing optional array becomes [], a missing optional string becomes
  * null — but a genuinely malformed or non-JSON response throws
- * MalformedReasoningOutputError, which reasonIQ.js catches and turns into
+ * MalformedReasoningOutputError, which logos.js catches and turns into
  * an honest fallback result rather than ever passing bad data upstream.
  */
 
-const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./reasonModels');
+const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./logosSchema');
 
-class MalformedReasoningOutputError extends Error {
+class MalformedLogosOutputError extends Error {
   constructor(reason) {
-    super(`malformed reasoning model output: ${reason}`);
-    this.name = 'MalformedReasoningOutputError';
+    super(`malformed logos model output: ${reason}`);
+    this.name = 'MalformedLogosOutputError';
   }
 }
+// Backward-compat alias for callers mid-migration.
+const MalformedReasoningOutputError = MalformedLogosOutputError;
 
 function clampConfidence(value, fallback = 0.5) {
   const n = Number(value);
@@ -69,7 +71,7 @@ function coerceHypothesis(item) {
     confidence: clampConfidence(item.confidence),
     status,
     verificationPlan: typeof item.verificationPlan === 'string' ? item.verificationPlan : null,
-    // ReasonIQ 0.2 provenance: ids into the assembled evidence list. Only
+    // Logos 0.2 provenance: ids into the assembled evidence list. Only
     // ever kept when they survive the known-evidence filter in
     // parseAndValidateReasoningOutput — a model may never invent a source.
     evidenceFor: dedupeIds(asArray(item.evidenceFor)),
@@ -248,7 +250,7 @@ function dedupeIds(value) {
 
 /**
  * Resolves every provenance link against the evidence that was ACTUALLY
- * supplied to ReasonIQ this turn. An id the model invented is dropped —
+ * supplied to Logos this turn. An id the model invented is dropped —
  * never silently accepted (brief §16: no fabricated sources). When no
  * known-evidence list is supplied (legacy callers), links pass through
  * unresolved with `source: null` rather than being guessed. The same
@@ -361,7 +363,7 @@ function resolveProvenance(body, knownEvidence, knownExisting, knownPatterns) {
 /**
  * @param {string} rawText raw text content from the reasoning model
  * @param {Array<{id?: string, source?: string}>} [knownEvidence] the evidence
- *   actually supplied to ReasonIQ this turn — provenance ids are validated
+ *   actually supplied to Logos this turn — provenance ids are validated
  *   against it; invented ids are dropped, never passed upstream
  * @param {Array<{id: string}>} [knownExisting] the existing hypotheses
  *   supplied as context (0.3) — existingId/hypothesisUpdates references are
@@ -405,4 +407,4 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting, 
   return resolveProvenance(body, knownEvidence, knownExisting, knownPatterns);
 }
 
-module.exports = { parseAndValidateReasoningOutput, MalformedReasoningOutputError, clampConfidence };
+module.exports = { parseAndValidateReasoningOutput, parseAndValidateLogosOutput: parseAndValidateReasoningOutput, MalformedReasoningOutputError, MalformedLogosOutputError, clampConfidence };

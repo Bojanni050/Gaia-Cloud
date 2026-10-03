@@ -1,77 +1,80 @@
 ﻿'use strict';
 
 /**
- * Logos.ReasonIQ v0.1 — "what does this mean, what follows from the
- * available information, what hypotheses are plausible, and how certain
- * are we?"
+ * Logos (V3 unified cognitive faculty) — "what is the user trying to
+ * achieve, what does this mean, what follows from the available
+ * information, what hypotheses are plausible, and how certain are we?"
  *
- * Scope for this phase (see the ReasonIQ v0.1 implementation brief):
+ * V3 consolidation (Sep 2026 decision): intent interpretation and
+ * reasoning are prompt-level faculties of ONE Logos pass, not separate
+ * IntentIQ/ReasonIQ subsystems. This module replaces logos/reasonIQ.js:
  *
- *   USER -> IntentIQ -> IntentDecision -> ReasonIQ -> Reasoning LLM
- *        -> ReasoningResult -> Gaia
+ *   USER -> Logos -> Reasoning LLM (provider role "reasoning")
+ *        -> LogosResult -> Gaia
  *
- * ReasonIQ is a cognitive component, not an agent. It never calls Hermes,
+ * Logos is a cognitive component, not an agent. It never calls Hermes,
  * Hindsight, or MCP; never selects or executes a tool; never writes to
- * any database; never decides Gaia's final response or action. It
- * consumes an already-produced IntentDecision (logos/intentIQ.js) rather
- * than re-deriving intent, and it owns its own reasoning model — a
- * separate, independently configurable LLM seam (reasoningModelClient.js)
- * that is not Hermes and not a Gaia capability. Everything it produces is
- * in-memory only; nothing here persists a hypothesis or a reasoning
- * result anywhere (Â§8 of the brief — Hindsight is out of scope this
- * phase).
+ * any database; never decides Gaia's final response or action. An
+ * optional intent hint (e.g. from IntentIQ, while it still exists) is
+ * consumed as a hint to test — never trusted blindly, never required.
+ * The model comes from the unified provider roles
+ * (providerStore.js role "reasoning", REASONIQ_MODEL_* env fallback),
+ * not from a per-faculty store. Everything produced is in-memory only;
+ * nothing here persists a hypothesis or a result anywhere — Hindsight
+ * persistence belongs to the caller (turn.js) via hypothesisManager.js.
  *
- * Reasoning depth: ReasonIQ decides for itself, per turn, whether the
- * reasoning model needs to be invoked at all (Â§6) — and it only does when
- * there is genuinely something to weigh. Without supplied evidence there
- * is nothing for a model call to reason *over*: no intent, however
- * substantial, turns an empty evidence list into hypotheses or verdicts,
- * so paying for a call there would only ever reproduce the same honest
- * "nothing to reason over" result the shallow path already gives for
- * free. Deep reasoning is therefore triggered by evidence, not by intent
- * or text length — the model *is* the reasoning engine, used only once
- * there is something to use it on.
+ * Gating: Logos decides for itself, per turn, whether the model needs to
+ * be invoked at all — and it only does when there is genuinely something
+ * to weigh. Without supplied evidence there is nothing for a model call
+ * to reason *over*, so paying for a call there would only reproduce the
+ * same honest "nothing to reason over" result the shallow path already
+ * gives for free. Deep reasoning is therefore triggered by evidence, not
+ * by intent or text length.
  *
- * "Shallow" is not "do nothing", though — see shallowResult()/
+ * "Shallow" is not "do nothing" — see shallowResult()/
  * EVIDENCE_DEPENDENT_INTENTS below. Before ever reaching for the model,
- * ReasonIQ still reads the cheap signals already on hand (IntentIQ's own
- * status, and whether an evidence-dependent intent got any evidence at
- * all) to report honest uncertainty and information gaps. Getting more
- * intelligent than that without a model call is future work, not a gap
- * in this pass — see the module's own limitations note in the
- * implementation report.
+ * Logos still reads the cheap signals already on hand to report honest
+ * uncertainty and information gaps.
  *
- * v0.2 — Evidence & Context Reasoning: the input's `evidence` list is now a
- * real, populated channel (assembled upstream by reasoning/
- * evidenceAssembler.js from what turn.js already fetched — Hindsight
- * recall, mental models, uploads). Deep results link hypotheses/
- * conclusions/contradictions back to stable evidence IDs, validated
- * strictly against the supplied list: invented ids are stripped, never
- * passed upstream. Contradictions carry an explicit significance;
- * sufficiency is reported as both sufficientForConclusion and its named
- * alias evidenceSufficient — what Gaia's Decision Engine does with that
- * stays entirely Gaia's call.
+ * Evidence & context: the input's `evidence` list is a real, populated
+ * channel (assembled upstream by reasoning/evidenceAssembler.js from what
+ * turn.js already fetched — Hindsight recall, mental models, uploads).
+ * Deep results link hypotheses/conclusions/contradictions back to stable
+ * evidence IDs, validated strictly against the supplied list: invented
+ * ids are stripped, never passed upstream.
  *
- * v0.3 — Hypothesis Lifecycle & Evidence Updates: the input may carry
- * `existingHypotheses` (retrieved by the caller; ReasonIQ still never
- * touches Hindsight), the model can recognize them via existingId instead
- * of duplicating them, and it reports explicit per-evidence
- * `hypothesisUpdates` (relation + bounded confidenceDelta + rationale).
- * ReasonIQ itself performs NO state transitions — structured updates flow
- * to reasoning/hypothesisManager.js, which validates every transition
- * against an explicit lifecycle and evidence policy, with persistence via
- * an injected sink only.
+ * Hypothesis lifecycle: the input may carry `existingHypotheses`
+ * (retrieved by the caller; Logos never touches Hindsight), the model can
+ * recognize them via existingId instead of duplicating them, and it
+ * reports explicit per-evidence `hypothesisUpdates` (relation + bounded
+ * confidenceDelta + rationale). Logos itself performs NO state
+ * transitions and NEVER promotes to `confirmed` — structured updates flow
+ * to reasoning/hypothesisManager.js (Absolute Override: only a human
+ * confirms).
  */
 
 const crypto = require('crypto');
-const { buildReasoningPrompt } = require('./reasonPrompt');
-const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('./reasonValidate');
-const { createReasoningModelClient, readReasoningTimeoutMs } = require('./reasoningModelClient');
-const { resolveReasoningModelConfig } = require('./reasoningModelConfigResolver');
-const { createReasoningModelStore } = require('./reasoningModelStore');
+const { buildLogosPrompt } = require('./logosPrompt');
+const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('./logosValidate');
+const { createLogosModelClient, readLogosTimeoutMs } = require('./logosModelClient');
+const { resolveRoleConfig } = require('../providerConfigResolver');
 const { createProviderStore } = require('../providerStore');
-const { SCHEMA_VERSION, REASONER_VERSION } = require('./reasonModels');
-const { logReasoningResult } = require('./reasonLog');
+const { SCHEMA_VERSION, REASONER_VERSION } = require('./logosSchema');
+const { logLogosResult } = require('./logosLog');
+
+/**
+ * Resolves the default Logos model from the unified provider roles —
+ * role "reasoning" first, REASONIQ_MODEL_* env vars as fallback (see
+ * providerConfigResolver.js). Returns null when nothing is configured;
+ * the caller degrades to an honest shallow result instead of failing.
+ */
+function defaultModelConfig(providerStore, env = process.env) {
+  try {
+    return resolveRoleConfig('reasoning', providerStore || createProviderStore(), env);
+  } catch (_) {
+    return null;
+  }
+}
 
 // --- reasoning depth heuristic --------------------------------------------
 
@@ -101,14 +104,14 @@ const CONTEXT_ONLY_INTENTS = new Set([
  * turn unclassified/ambiguous/conversational keeps it shallow; any other
  * intent (or no decision at all — the explicit-evidence eval/CLI shape)
  * lets evidence drive depth as before.
- * @param {{ text: string, evidence?: Array, intentDecision?: object|null }} input
+ * @param {{ text: string, evidence?: Array, intentHint?: object|null, intentDecision?: object|null }} input
  * @returns {'shallow'|'deep'}
  */
-function decideReasoningDepth(input) {
+function decideLogosDepth(input) {
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'shallow';
 
-  const decision = input.intentDecision;
+  const decision = input.intentHint || input.intentDecision || null;
   if (decision) {
     if (!decision.intent && decision.status === 'unknown') return 'shallow';
     if (decision.status === 'ambiguous') return 'shallow';
@@ -124,14 +127,14 @@ function decideReasoningDepth(input) {
  * decision log shows WHY ReasonIQ let a turn pass, not just that it did —
  * without it, a shallow turn leaves no trace at all and "ReasonIQ never
  * does anything" cannot be distinguished from "the gate is too strict".
- * @param {{ text: string, evidence?: Array, intentDecision?: object|null }} input
+ * @param {{ text: string, evidence?: Array, intentHint?: object|null, intentDecision?: object|null }} input
  * @returns {'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep'}
  */
-function explainReasoningDepth(input) {
+function explainLogosDepth(input) {
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'no_evidence';
 
-  const decision = input.intentDecision;
+  const decision = input.intentHint || input.intentDecision || null;
   if (decision) {
     if (!decision.intent && decision.status === 'unknown') return 'unknown_intent';
     if (decision.status === 'ambiguous') return 'ambiguous_intent';
@@ -220,15 +223,16 @@ function shallowResult(input) {
     }, suppliedEvidence);
   }
 
-  const intent = input.intentDecision && input.intentDecision.intent;
-  const status = input.intentDecision && input.intentDecision.status;
+  const hint = input.intentHint || input.intentDecision || null;
+  const intent = hint && hint.intent;
+  const status = hint && hint.status;
 
   const uncertainties = [];
   const informationGaps = [];
   let confidence = 0.5;
   let sufficientForConclusion = true;
 
-  if (!input.intentDecision || status === 'unknown') {
+  if (!hint || status === 'unknown') {
     uncertainties.push('what the user is trying to achieve for this turn is unclear');
     confidence = 0.25;
     sufficientForConclusion = false;
@@ -269,43 +273,47 @@ function degradedResult(reason, modelConfigured, evidence = []) {
 // --- public API ------------------------------------------------------------
 
 /**
- * @typedef {Object} ReasonIQInput
+ * @typedef {Object} LogosInput
  * @property {string} text - the current user input
- * @property {object|null} [intentDecision] - IntentIQ's IntentDecision for this turn (logos/intentIQ.js) — consumed, never re-derived
- * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT (§10), never mixed into evidence
- * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; ReasonIQ never fetches anything itself
- * @property {Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>} [existingHypotheses] - 0.3: hypotheses Gaia is already tracking (retrieved by the CALLER — never by ReasonIQ); context only (brief §16)
- * @property {Array<{id: string, statement: string, status?: string, confidence?: number|null}>} [existingPatterns] - v1.1: patterns Gaia is already tracking (retrieved by the CALLER); context only, for relationship identification
- * @property {string} [assistantReply] - v1.0: Gaia's already-delivered reply for this turn — analysis context only, never edited
+ * @property {object|null} [intentHint] - optional intent hint (e.g. IntentIQ's decision) — tested, never trusted blindly, never required
+ * @property {object|null} [intentDecision] - legacy alias of intentHint, accepted during migration
+ * @property {Array<{role: string, content: string}>} [conversationContext] - recent turns — CONTEXT, never mixed into evidence
+ * @property {Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>} [evidence] - evidence assembled upstream (evidenceAssembler.js) from what the context layer already gathered; Logos never fetches anything itself
+ * @property {Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>} [existingHypotheses] - hypotheses Gaia is already tracking (retrieved by the CALLER — never by Logos); context only
+ * @property {Array<{id: string, statement: string, status?: string, confidence?: number|null}>} [existingPatterns] - patterns Gaia is already tracking (retrieved by the CALLER); context only, for relationship identification
+ * @property {string} [assistantReply] - Gaia's already-delivered reply for this turn — analysis context only, never edited
  * @property {string} [correlationId]
  * @property {string} [contextId]
  */
 
 /**
- * Evaluates one turn and returns a ReasoningResult. Never throws — a
- * reasoning-model failure or malformed output degrades to an honest
- * `degradedResult`, exactly like intentIQ.js never lets its own failure
- * modes take down a turn.
+ * Evaluates one turn and returns a LogosResult. Never throws — a
+ * model failure or malformed output degrades to an honest
+ * `degradedResult`, never taking down a turn.
  *
- * @param {ReasonIQInput} input
- * @param {{ reasoningModel?: { chat: Function, isConfigured?: Function }, silent?: boolean, logger?: Function }} [options]
- * @returns {Promise<import('./reasonModels').ReasoningResult>}
+ * @param {LogosInput} input
+ * @param {{ model?: { chat: Function, isConfigured?: Function }, reasoningModel?: { chat: Function, isConfigured?: Function }, providerStore?: object, silent?: boolean, logger?: Function }} [options] `reasoningModel` is the legacy option name, accepted during migration.
+ * @returns {Promise<import('./logosSchema').LogosResult>}
  */
 async function evaluate(input, options = {}) {
   const correlationId = input.correlationId || crypto.randomUUID();
-  const model = options.reasoningModel || createReasoningModelClient({
-    ...resolveReasoningModelConfig({ store: createReasoningModelStore(), providerStore: createProviderStore() }),
-    timeoutMs: readReasoningTimeoutMs(),
-  });
+  const injected = options.model || options.reasoningModel || null;
+  let model = injected;
+  if (!model) {
+    const roleConfig = defaultModelConfig(options.providerStore);
+    model = roleConfig
+      ? createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs() })
+      : { chat: async () => { throw new Error('logos model not configured'); }, isConfigured: () => false };
+  }
   const modelConfigured = typeof model.isConfigured === 'function' ? model.isConfigured() : true;
 
-  const depth = decideReasoningDepth(input);
+  const depth = decideLogosDepth(input);
 
   let result;
   if (depth === 'shallow') {
     result = shallowResult(input);
   } else {
-    const messages = buildReasoningPrompt(input);
+    const messages = buildLogosPrompt(input);
     try {
       const raw = await model.chat(messages, {
         logger: options.logger,
@@ -345,7 +353,7 @@ async function evaluate(input, options = {}) {
   }
 
   if (!options.silent) {
-    logReasoningResult(
+    logLogosResult(
       { result, input: input.text, contextId: input.contextId, correlationId },
       options.logger
     );
@@ -354,4 +362,8 @@ async function evaluate(input, options = {}) {
   return result;
 }
 
-module.exports = { evaluate, decideReasoningDepth, explainReasoningDepth, SCHEMA_VERSION };
+// Backward-compat aliases for callers mid-migration.
+const decideReasoningDepth = decideLogosDepth;
+const explainReasoningDepth = explainLogosDepth;
+
+module.exports = { evaluate, decideLogosDepth, explainLogosDepth, decideReasoningDepth, explainReasoningDepth, SCHEMA_VERSION };

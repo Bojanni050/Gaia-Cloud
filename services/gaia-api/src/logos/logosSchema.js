@@ -1,9 +1,11 @@
 'use strict';
 
 /**
- * ReasonIQ v0.1 — shared vocabulary and lightweight model factories.
+ * Logos — shared vocabulary and lightweight model factories (V3 unified
+ * cognitive faculty: intent interpretation + reasoning are prompt-level
+ * faculties, not subsystems).
  *
- * This file defines the fixed vocabularies ReasonIQ's output is built
+ * This file defines the fixed vocabularies Logos's output is built
  * from (epistemic status, evidence verdicts, hypothesis status) and small
  * factory/validation helpers around them. It intentionally mirrors, but
  * does not import, `services/cognition/src/hypotheses.js`'s hypothesis
@@ -11,8 +13,8 @@
  * linkage, and its `VALID_TRANSITIONS` state machine) — that service is a
  * separate deployable with its own database and this phase explicitly
  * does not call it (Hindsight/cognition integration is out of scope; see
- * reasonIQ.js's module comment). Keeping the field names identical is
- * deliberate: it's what lets a later phase hand a ReasonIQ hypothesis to
+ * logos.js's module comment). Keeping the field names identical is
+ * deliberate: it's what lets a later phase hand a Logos hypothesis to
  * `services/cognition`'s `propose()` with no translation layer.
  *
  * architecture.md §6.2's line runs through this file: Logos (this module)
@@ -23,7 +25,7 @@
  * epistemic conclusion for this turn, not a completed state transition.
  */
 
-const SCHEMA_VERSION = 'reasoniq.v1';
+const SCHEMA_VERSION = 'logos.v1';
 // 0.2: evidence-aware reasoning — hypotheses/conclusions/contradictions now
 // carry provenance links into the assembled evidence list (by stable
 // evidence ID). Additive on v0.1's schema; nothing was removed.
@@ -45,9 +47,9 @@ const SCHEMA_VERSION = 'reasoniq.v1';
 // Part 4 axes: directionChange (where the conversation turned) and
 // patternImpact (which patterns emerged/changed). Still additive; nothing
 // was removed, and openQuestions keep their never-asked posture.
-const REASONER_VERSION = 'reasoniq-v1.1';
+const REASONER_VERSION = 'logos-v1';
 
-/** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions ReasonIQ must never collapse (§11). */
+/** FACT/INFERENCE/HYPOTHESIS/UNKNOWN — the epistemic distinctions Logos must never collapse (§11). */
 const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unknown']);
 
 /** Stash's four-way evidence verdict, adopted as-is (design research, §10). */
@@ -63,7 +65,7 @@ const HYPOTHESIS_STATUSES = Object.freeze(['proposed', 'testing', 'confirmed', '
 
 const REASONING_DEPTHS = Object.freeze(['shallow', 'deep']);
 
-/** How much a contradiction matters — ReasonIQ reports it, Gaia weighs it. */
+/** How much a contradiction matters — Logos reports it, Gaia weighs it. */
 const CONTRADICTION_SIGNIFICANCE = Object.freeze(['low', 'medium', 'high']);
 
 /**
@@ -127,7 +129,7 @@ function isValidHypothesisStatus(v) {
  * @typedef {Object} HypothesisUpdate
  * 0.3 (brief §6): one explicit, reasoning-backed evidence update for a
  * hypothesis. Applied only through reasoning/hypothesisManager.js — never
- * by the model itself, never by ReasonIQ writing anywhere.
+ * by the model itself, never by Logos writing anywhere.
  * @property {string} hypothesisId - which existing hypothesis this updates (validated against the supplied list)
  * @property {string|null} statement - the matched statement, for auditability when present
  * @property {string|null} evidenceId - the assembled evidence id driving it (provenance-filtered like every id)
@@ -167,7 +169,7 @@ function isValidHypothesisStatus(v) {
  * of existing knowledge. Endpoints are VALIDATED against what was actually
  * supplied this turn (evidence ids, observation statements, existing
  * hypothesis ids, existing pattern ids) — an invented reference is dropped
- * at the endpoint, never passed upstream. ReasonIQ identifies the
+ * at the endpoint, never passed upstream. Logos identifies the
  * relationship; it never acts on it (no lifecycle, no confidence change
  * here). Persistence rides existing structures: gaia:relationship world
  * facts via the cognition adapter — there is no relationship database.
@@ -187,7 +189,7 @@ function isValidHypothesisStatus(v) {
  * v1.0 (Cognitive Analysis Model §7): background self-assessment of the
  * completed conversation. Internal cognitive material — observability
  * only, never persisted as a memory object, and it can never modify the
- * already-delivered response (ReasonIQ runs after the reply exists).
+ * already-delivered response (Logos runs after the reply exists).
  * v1.1 (Part 4 §Reflection) adds two axes: directionChange (where the
  * conversation changed direction) and patternImpact (which patterns
  * emerged or changed). Both stay optional nullable strings — honest
@@ -220,7 +222,7 @@ function isValidHypothesisStatus(v) {
  * @property {string[]} uncertainties
  * @property {string[]} informationGaps
  * @property {Observation[]} observations - v1.0: concrete derived information (fact-shaped, never hypotheses)
- * @property {string[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; ReasonIQ NEVER asks the user about them
+ * @property {string[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; Logos NEVER asks the user about them
  * @property {KnowledgeRelationship[]} relationships - v1.1: explicit relationships between existing knowledge — endpoint-validated, persisted via the cognition adapter as gaia:relationship world facts
  * @property {Reflection|null} reflection - v1.0: background self-assessment; observability-only, never persisted as memory
  * @property {Conclusion[]} conclusions

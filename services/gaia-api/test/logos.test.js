@@ -5,27 +5,27 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const reasonModels = require('../src/logos/reasonModels');
-const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('../src/logos/reasonValidate');
-const { buildReasoningPrompt } = require('../src/logos/reasonPrompt');
-const { createReasoningModelClient } = require('../src/logos/reasoningModelClient');
-const reasonIQ = require('../src/logos/reasonIQ');
+const logosSchema = require('../src/logos/logosSchema');
+const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('../src/logos/logosValidate');
+const { buildLogosPrompt } = require('../src/logos/logosPrompt');
+const { createLogosModelClient } = require('../src/logos/logosModelClient');
+const reasonIQ = require('../src/logos/logos');
 const { evaluate, explainReasoningDepth, decideReasoningDepth } = reasonIQ;
-const { logReasoningGate } = require('../src/logos/reasonLog');
+const { logLogosGate } = require('../src/logos/logosLog');
 const { runLogos } = require('../src/logos/index');
 
 const silent = { silent: true };
 
-// --- reasonModels -----------------------------------------------------
+// --- logosSchema -----------------------------------------------------
 
-test('reasonModels: vocabularies are the exact fixed sets', () => {
-  assert.deepEqual(reasonModels.EPISTEMIC_STATUS, ['fact', 'inference', 'hypothesis', 'unknown']);
-  assert.deepEqual(reasonModels.EVIDENCE_VERDICTS, ['supports', 'weakens', 'contradicts', 'irrelevant']);
-  assert.deepEqual(reasonModels.HYPOTHESIS_STATUSES, ['proposed', 'testing', 'confirmed', 'rejected']);
+test('logosSchema: vocabularies are the exact fixed sets', () => {
+  assert.deepEqual(logosSchema.EPISTEMIC_STATUS, ['fact', 'inference', 'hypothesis', 'unknown']);
+  assert.deepEqual(logosSchema.EVIDENCE_VERDICTS, ['supports', 'weakens', 'contradicts', 'irrelevant']);
+  assert.deepEqual(logosSchema.HYPOTHESIS_STATUSES, ['proposed', 'testing', 'confirmed', 'rejected']);
 });
 
-test('reasonModels: makeHypothesis defaults to proposed and gets a local id', () => {
-  const h = reasonModels.makeHypothesis({ statement: 'x' });
+test('logosSchema: makeHypothesis defaults to proposed and gets a local id', () => {
+  const h = logosSchema.makeHypothesis({ statement: 'x' });
   assert.equal(h.status, 'proposed');
   assert.ok(h.id);
   assert.equal(h.confidence, 0.5);
@@ -105,8 +105,8 @@ test('parseAndValidateReasoningOutput: missing optional arrays default to empty,
 
 // --- reasonPrompt -----------------------------------------------------
 
-test('buildReasoningPrompt: embeds text, intent, and evidence in the user message', () => {
-  const messages = buildReasoningPrompt({
+test('buildLogosPrompt: embeds text, intent, and evidence in the user message', () => {
+  const messages = buildLogosPrompt({
     text: 'Why is my website crashing?',
     intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
     conversationContext: [],
@@ -122,12 +122,12 @@ test('buildReasoningPrompt: embeds text, intent, and evidence in the user messag
 // --- reasoningModelClient -----------------------------------------------
 
 test('reasoningModelClient: reports unconfigured with no baseUrl/model', () => {
-  const client = createReasoningModelClient({});
+  const client = createLogosModelClient({});
   assert.equal(client.isConfigured(), false);
 });
 
 test('reasoningModelClient: chat() rejects when unconfigured, without a network call', async () => {
-  const client = createReasoningModelClient({});
+  const client = createLogosModelClient({});
   await assert.rejects(() => client.chat([]), /not configured/);
 });
 
@@ -139,14 +139,14 @@ test('reasoningModelClient: chat() parses a happy-path OpenAI-compatible respons
       json: async () => ({ choices: [{ message: { content: '{"interpretation":"ok"}' } }] }),
     };
   };
-  const client = createReasoningModelClient({ baseUrl: 'http://fake:1234', model: 'test-model', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'test-model', fetchImpl: fakeFetch });
   const content = await client.chat([{ role: 'user', content: 'hi' }]);
   assert.equal(content, '{"interpretation":"ok"}');
 });
 
 test('reasoningModelClient: chat() maps a failing fetch to a generic error, no URL leaked', async () => {
   const fakeFetch = async () => { throw new Error('connect ECONNREFUSED 10.0.0.1:1234'); };
-  const client = createReasoningModelClient({ baseUrl: 'http://fake:1234', model: 'test-model', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'test-model', fetchImpl: fakeFetch });
   await assert.rejects(() => client.chat([]), (err) => {
     assert.ok(!err.message.includes('10.0.0.1'));
     assert.match(err.message, /unreachable/);
@@ -160,7 +160,7 @@ test('reasoningModelClient: chat() defaults to forcing json_object (ReasonIQ\'s 
     capturedBody = JSON.parse(init.body);
     return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' } }] }) };
   };
-  const client = createReasoningModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
   await client.chat([{ role: 'user', content: 'hi' }]);
   assert.deepEqual(capturedBody.response_format, { type: 'json_object' });
 });
@@ -171,7 +171,7 @@ test('reasoningModelClient: chat() omits response_format entirely when explicitl
     capturedBody = JSON.parse(init.body);
     return { ok: true, json: async () => ({ choices: [{ message: { content: 'a plain description' } }] }) };
   };
-  const client = createReasoningModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
   await client.chat([{ role: 'user', content: 'describe this' }], { responseFormat: null });
   assert.ok(!('response_format' in capturedBody));
 });
@@ -182,7 +182,7 @@ test('reasoningModelClient: chat() carries multimodal content-block arrays throu
     capturedBody = JSON.parse(init.body);
     return { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
   };
-  const client = createReasoningModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
   const messages = [{ role: 'user', content: [{ type: 'text', text: 'x' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AA==' } }] }];
   await client.chat(messages, { responseFormat: null });
   assert.deepEqual(capturedBody.messages, messages);
@@ -315,7 +315,7 @@ test('reasonIQ: deep path returns a fully-shaped ReasoningResult', async () => {
     { text: 'Why is my website crashing?', evidence: [{ content: 'server logs show OOM errors' }] },
     { reasoningModel: model, ...silent }
   );
-  assert.equal(result.schemaVersion, 'reasoniq.v1');
+  assert.equal(result.schemaVersion, 'logos.v1');
   assert.equal(result.reasoningDepth, 'deep');
   assert.equal(result.hypotheses.length, 1);
   assert.equal(result.meta.reasoningModelConfigured, true);
@@ -348,7 +348,7 @@ test('reasonIQ: an unreachable model degrades gracefully, never throws', async (
 test('reasonIQ: with no reasoning model configured at all, a deep-worthy turn still degrades gracefully', async () => {
   const result = await reasonIQ.evaluate(
     { text: 'Why is my website crashing?', evidence: [{ content: 'x' }] },
-    { reasoningModel: createReasoningModelClient({}), ...silent }
+    { reasoningModel: createLogosModelClient({}), ...silent }
   );
   assert.equal(result.meta.reasoningModelConfigured, false);
   assert.equal(result.meta.fallbackReason, 'reasoning_model_unavailable');
@@ -421,42 +421,42 @@ test('reasonIQ: logs a result line unless silent', async () => {
   await reasonIQ.evaluate({ text: 'ok' }, { reasoningModel: model, logger: (l) => lines.push(l) });
   assert.equal(lines.length, 1);
   const parsed = JSON.parse(lines[0]);
-  assert.equal(parsed.kind, 'reasoniq.result');
+  assert.equal(parsed.kind, 'logos.result');
 });
 
-// --- IntentIQ -> ReasonIQ handoff (logos/index.js) ------------------------
+// --- Logos facade (logos/index.js) --------------------------------------
 
-test('runLogos: passes IntentIQ\'s real decision into ReasonIQ\'s prompt, not a re-derived one', async () => {
+test('runLogos: passes an intent hint into the prompt without re-deriving it', async () => {
   let capturedMessages;
   const model = {
     chat: async (messages) => { capturedMessages = messages; return JSON.stringify({ interpretation: 'ok' }); },
     isConfigured: () => true,
   };
 
-  const { intentDecision, reasoningResult } = await runLogos(
+  const { intentHint, logosResult } = await runLogos(
     [{ role: 'user', content: 'Why is my website crashing?' }],
-    { evidence: [{ content: 'server logs show OOM errors' }], reasoningModel: model, silent: true }
+    { evidence: [{ content: 'server logs show OOM errors' }], intentHint: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 }, model, silent: true }
   );
 
-  assert.equal(intentDecision.intent, 'inform.explain');
-  assert.equal(reasoningResult.reasoningDepth, 'deep');
+  assert.equal(intentHint.intent, 'inform.explain');
+  assert.equal(logosResult.reasoningDepth, 'deep');
   const userMessage = capturedMessages.find((m) => m.role === 'user');
   assert.match(userMessage.content, /"intent":\s*"inform\.explain"/);
 });
 
-test('runLogos: a shallow-worthy turn never calls the reasoning model, but still runs IntentIQ', async () => {
+test('runLogos: a shallow-worthy turn never calls the model and needs no hint', async () => {
   let called = false;
   const model = { chat: async () => { called = true; return '{}'; }, isConfigured: () => true };
-  const { intentDecision, reasoningResult } = await runLogos([{ role: 'user', content: 'ok' }], { reasoningModel: model, silent: true });
+  const { intentHint, logosResult } = await runLogos([{ role: 'user', content: 'ok' }], { model, silent: true });
   assert.equal(called, false);
-  assert.equal(intentDecision.status, 'unknown');
-  assert.equal(reasoningResult.reasoningDepth, 'shallow');
+  assert.equal(intentHint, null);
+  assert.equal(logosResult.reasoningDepth, 'shallow');
 });
 
 // --- boundary: ReasonIQ is a cognitive component, never an agent ---------
 
 test('boundary: reasonIQ.js and logos/index.js never import Hermes, Hindsight, or MCP clients', () => {
-  for (const file of ['../src/logos/reasonIQ.js', '../src/logos/index.js', '../src/logos/reasoningModelClient.js']) {
+  for (const file of ['../src/logos/logos.js', '../src/logos/index.js', '../src/logos/logosModelClient.js']) {
     const source = fs.readFileSync(path.join(__dirname, file), 'utf-8');
     assert.ok(!/require\(.*hermesClient/.test(source), `${file} must not import hermesClient`);
     assert.ok(!/require\(.*hindsightClient/.test(source), `${file} must not import hindsightClient`);
@@ -645,7 +645,7 @@ test("0.2 brief case B/C/D/E/F: one memory+document turn exercises use, referenc
   assert.equal(result.contradictions[0].significance, 'medium');
   assert.equal(result.evidenceSufficient, false);
   const logRecord = JSON.parse(lines[0]);
-  assert.equal(logRecord.kind, 'reasoniq.result');
+  assert.equal(logRecord.kind, 'logos.result');
   assert.equal(logRecord.reasoningDepth, 'deep');
   assert.equal(logRecord.evidenceCount, 2);
   assert.deepEqual(logRecord.evidenceSources.sort(), ['hindsight', 'upload']);
@@ -658,7 +658,7 @@ test("0.2 brief case B/C/D/E/F: one memory+document turn exercises use, referenc
 const EXISTING = [{ id: 'hyp-123', statement: 'Concurrent cancellation causes the streaming race.', status: 'testing', confidence: 0.64 }];
 
 test('0.3 prompt: existing hypotheses ride along as context with their ids and status', () => {
-  const messages = buildReasoningPrompt({
+  const messages = buildLogosPrompt({
     text: 'Nog meer bewijs voor de streaming-race?',
     intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
     evidence: [{ id: 'upload-2', source: 'upload', content: 'new log material' }],
@@ -753,7 +753,7 @@ test("0.3 shallow path carries an empty hypothesisUpdates list", async () => {
 });
 
 test('boundary: reasonIQ never requires Hindsight or any capability module', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../src/logos/reasonIQ.js'), 'utf-8');
+  const source = fs.readFileSync(path.join(__dirname, '../src/logos/logos.js'), 'utf-8');
   for (const forbidden of ['hindsightClient', 'hermesClient', 'braveSearch']) {
     assert.ok(!new RegExp(`require\\([^)]*${forbidden}`).test(source), `reasonIQ requires ${forbidden}`);
   }
@@ -854,7 +854,7 @@ test('v1.0 evaluate: deep results carry the new fields; shallow results default 
 });
 
 test('v1.0 prompt: the schema asks for observations/openQuestions/reflection and carries the delivered reply as context', () => {
-  const messages = buildReasoningPrompt({
+  const messages = buildLogosPrompt({
     text: 'We decided ReasonIQ stays in the background.',
     intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
     evidence: [],
@@ -1063,7 +1063,7 @@ test('v1.1 evaluate: deep results carry relationships and the extended reflectio
 });
 
 test('v1.1 prompt: the schema asks for relationships and carries existing patterns as context', () => {
-  const messages = buildReasoningPrompt({
+  const messages = buildLogosPrompt({
     text: 'Link the knowledge.',
     intentDecision: { intent: 'inform.explain', status: 'accepted', confidence: 0.8 },
     evidence: [],
@@ -1077,7 +1077,7 @@ test('v1.1 prompt: the schema asks for relationships and carries existing patter
   const payload = JSON.parse(messages[1].content.split('```json\n')[1].split('\n```')[0]);
   assert.equal(payload.existingPatterns[0].id, 'ptn-1');
   // No patterns supplied → an empty list rides along, never a fabricated one.
-  const bare = buildReasoningPrompt({ text: 'x', intentDecision: null, evidence: [] });
+  const bare = buildLogosPrompt({ text: 'x', intentDecision: null, evidence: [] });
   const barePayload = JSON.parse(bare[1].content.split('```json\n')[1].split('\n```')[0]);
   assert.deepEqual(barePayload.existingPatterns, []);
 });
@@ -1136,9 +1136,9 @@ test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason
   }
 });
 
-test('logReasoningGate writes a cheap per-turn trace without user text', () => {
+test('logLogosGate writes a cheap per-turn trace without user text', () => {
   const lines = [];
-  const record = logReasoningGate(
+  const record = logLogosGate(
     {
       depth: 'shallow',
       reason: 'no_evidence',
@@ -1151,7 +1151,7 @@ test('logReasoningGate writes a cheap per-turn trace without user text', () => {
     (l) => lines.push(l)
   );
   assert.equal(lines.length, 1);
-  assert.equal(record.kind, 'reasoniq.gate');
+  assert.equal(record.kind, 'logos.gate');
   assert.equal(record.depth, 'shallow');
   assert.equal(record.reason, 'no_evidence');
   assert.equal(record.intent, 'converse');

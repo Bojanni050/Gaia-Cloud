@@ -16,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { maskKey } = require('./reasoningModelStore');
+const { maskKey } = require('../providerStore');
 
 function resolveStorePath(env = process.env) {
   if (env.INTENTIQ_CONFIG_PATH) return env.INTENTIQ_CONFIG_PATH;

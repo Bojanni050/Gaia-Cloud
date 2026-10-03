@@ -2,30 +2,27 @@
 
 /**
  * OCR/vision resolution — turns image bytes into text BEFORE anything
- * reaches performTurn or ReasonIQ.
+ * reaches performTurn or Logos.
  *
- * Deliberately not ReasonIQ's job: ReasonIQ reasons over what it's given
+ * Deliberately not Logos's job: Logos reasons over what it's given
  * — it must never retrieve, fetch, or transform a raw attachment itself
- * (its own v0.1 brief, §3: never "retrieve from Hindsight" or otherwise
- * act as a fetcher; reading an image is the same category of violation).
- * All information has to be available *before* anything hits ReasonIQ,
- * so this lives beside library.js's other attachment resolution, and
- * runs as a step ahead of the turn, not inside Logos.
+ * (never "retrieve from Hindsight" or otherwise act as a fetcher;
+ * reading an image is the same category of violation). All information
+ * has to be available *before* anything hits Logos, so this lives
+ * beside library.js's other attachment resolution, and runs as a step
+ * ahead of the turn, not inside Logos.
  *
- * Uses the same OpenRouter account as ReasonIQ's reasoning model
- * (logos/reasoningModelClient.js) — same provider/baseUrl/apiKey — but a
- * separately choosable model id (`/admin`'s "Vision model" field,
- * resolveVisionModelConfig), since a good reasoning model and a good
- * vision model aren't always the same model. Falls back to ReasonIQ's own
- * model when no vision-specific one has been set. If the resolved model
+ * Uses the unified provider roles (providerStore.js): role 'vision' for
+ * the vision model id, falling back to role 'reasoning', then to the
+ * REASONIQ_MODEL_* env vars — since a good reasoning model and a good
+ * vision model aren't always the same model. If the resolved model
  * isn't multimodal, or isn't configured at all, this degrades to "could
  * not be read" — the same honest fallback library.js already used for
  * every image before this file existed. Never throws into the turn.
  */
 
-const { createReasoningModelClient } = require('./logos/reasoningModelClient');
-const { resolveVisionModelConfig } = require('./logos/reasoningModelConfigResolver');
-const { createReasoningModelStore } = require('./logos/reasoningModelStore');
+const { createLogosModelClient } = require('./logos/logosModelClient');
+const { resolveRoleConfig } = require('./providerConfigResolver');
 const { createProviderStore } = require('./providerStore');
 
 const IMAGE_MIME_PREFIX = 'image/';
@@ -55,7 +52,9 @@ function isImageMime(mimeType) {
  * @returns {Promise<string|null>} disclaimer-prefixed extracted text, or null if unavailable
  */
 async function resolveImageText(buffer, mimeType, options = {}) {
-  const model = options.model || createReasoningModelClient(resolveVisionModelConfig({ store: createReasoningModelStore(), providerStore: createProviderStore() }));
+  const model = options.model || createLogosModelClient(
+    resolveRoleConfig('vision', createProviderStore()) || resolveRoleConfig('reasoning', createProviderStore()) || {}
+  );
 
   if (typeof model.isConfigured === 'function' && !model.isConfigured()) {
     return null;
@@ -76,7 +75,7 @@ async function resolveImageText(buffer, mimeType, options = {}) {
   let text;
   try {
     // responseFormat: null — this is a freeform-text request, not
-    // ReasonIQ's structured-JSON one; forcing json_object here would be
+    // Logos's structured-JSON one; forcing json_object here would be
     // both semantically wrong and, on some providers, incompatible with
     // an image_url content block.
     text = await model.chat(messages, { responseFormat: null });

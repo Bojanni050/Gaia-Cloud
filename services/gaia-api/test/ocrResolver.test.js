@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { resolveImageText, isImageMime, VISION_DISCLAIMER } = require('../src/ocrResolver');
-const { createReasoningModelStore } = require('../src/logos/reasoningModelStore');
+const { createProviderStore } = require('../src/providerStore');
 
 function fakeModel(chatImpl, configured = true) {
   return { chat: chatImpl, isConfigured: () => configured };
@@ -64,21 +64,19 @@ test('resolveImageText degrades to null on an empty/whitespace-only response', a
   assert.equal(result, null);
 });
 
-// --- default model construction uses resolveVisionModelConfig, not the plain ReasonIQ resolver --
+// --- default model construction uses the unified provider roles (vision → reasoning) ---
 
-test('resolveImageText\'s default model uses the store\'s visionModel, not the main model, when no model is injected', async () => {
+test('resolveImageText\'s default model uses the provider vision role model when no model is injected', async () => {
   const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ocr-resolver-')), 'config.json');
-  const store = createReasoningModelStore({ storePath });
-  store.saveConfig({
-    provider: 'openrouter', baseUrl: 'http://fake-openrouter.test',
-    apiKey: 'sk-or-x', model: 'anthropic/claude-3.5-sonnet', visionModel: 'openai/gpt-4o-mini',
-  });
+  const store = createProviderStore({ storePath });
+  store.saveProviderConfig({ provider: 'openrouter', baseUrl: 'http://fake-openrouter.test', apiKey: 'sk-or-x' });
+  store.saveRoleSelection('vision', { mode: 'manual', model: 'openai/gpt-4o-mini' });
 
-  // REASONIQ_CONFIG_PATH is what reasoningModelStore.js's own default
-  // construction reads — point it at our temp store so
-  // resolveImageText's internal createReasoningModelStore() picks it up.
-  const previous = process.env.REASONIQ_CONFIG_PATH;
-  process.env.REASONIQ_CONFIG_PATH = storePath;
+  // GAIA_PROVIDER_CONFIG_PATH is what the internal createProviderStore()
+  // default construction reads — point it at our temp store so
+  // resolveImageText's internal resolution picks it up.
+  const previous = process.env.GAIA_PROVIDER_CONFIG_PATH;
+  process.env.GAIA_PROVIDER_CONFIG_PATH = storePath;
 
   const originalFetch = global.fetch;
   let capturedBody;
@@ -92,7 +90,7 @@ test('resolveImageText\'s default model uses the store\'s visionModel, not the m
     assert.equal(capturedBody.model, 'openai/gpt-4o-mini');
   } finally {
     global.fetch = originalFetch;
-    if (previous === undefined) delete process.env.REASONIQ_CONFIG_PATH;
-    else process.env.REASONIQ_CONFIG_PATH = previous;
+    if (previous === undefined) delete process.env.GAIA_PROVIDER_CONFIG_PATH;
+    else process.env.GAIA_PROVIDER_CONFIG_PATH = previous;
   }
 });

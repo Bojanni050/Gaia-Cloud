@@ -1,8 +1,7 @@
 'use strict';
 
 /**
- * Admin surface for configuring ReasonIQ's reasoning model and the unified
- * model provider at runtime. Deliberately separate from Gaia Desktop's
+ * Admin surface for configuring the unified model provider at runtime. Deliberately separate from Gaia Desktop's
  * Settings panel — this is operator/admin tooling for Gaia Cloud itself,
  * gated behind the same bearer token as every other authenticated route.
  *
@@ -11,11 +10,6 @@
  * Routes (all mounted under /admin, all except the static page require
  * the standard Bearer auth):
  *   GET  /admin                       -> the static admin page
- *
- *   ReasonIQ:
- *   GET  /admin/api/reasoniq/config   -> masked current config
- *   PUT  /admin/api/reasoniq/config   -> { provider?, baseUrl?, model?, visionModel?, apiKey? }
- *   GET  /admin/api/reasoniq/models   -> fetch models from configured provider
  *
  *   Provider Settings:
  *   GET  /admin/api/provider/config   -> masked provider config + roles + catalog
@@ -31,13 +25,13 @@
  *   GET  /admin/api/tts/voices        -> list saved voices from the TTS provider (Mistral only)
  *   GET  /admin/api/tts/log           -> recent speech-synthesis attempts, newest first
  *
- *   IntentIQ (semantic classification model — same shape as ReasonIQ's):
+ *   IntentIQ (semantic classification model — legacy seam):
  *   GET  /admin/api/intentiq/config   -> masked current config + env fallback
  *   PUT  /admin/api/intentiq/config   -> { provider?, baseUrl?, model?, apiKey? }
  *   GET  /admin/api/intentiq/models   -> fetch models from configured provider
  *
  *   Logos:
- *   GET  /admin/api/logos/decisions   -> durable IntentIQ/ReasonIQ decision log
+ *   GET  /admin/api/logos/decisions   -> durable Logos decision log
  */
 const express = require('express');
 const path = require('path');
@@ -50,7 +44,6 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
 
 /**
  * @param {{
- *   store: ReturnType<import('./logos/reasoningModelStore').createReasoningModelStore>,
  *   providerStore?: ReturnType<import('./providerStore').createProviderStore>,
  *   decisionStore?: ReturnType<import('./logos/decisionStore').createDecisionStore>,
  *   intentModelStore?: ReturnType<import('./logos/intentModelStore').createIntentModelStore>,
@@ -63,7 +56,7 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  * }} deps
  */
 function createAdminRouter({
-  store, providerStore, decisionStore, intentModelStore, auth, ttsLog,
+  providerStore, decisionStore, intentModelStore, auth, ttsLog,
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
@@ -97,12 +90,10 @@ function createAdminRouter({
     }
   });
 
-  // --- ReasonIQ routes (provider-agnostic) ---
-
   // Resolves the provider/baseUrl/apiKey actually usable for a live models
   // fetch: the role's own saved config, or — when useMainProvider is set —
   // the shared Provider config's (providerStore) credentials/catalog. Used
-  // by both /api/reasoniq/models and /api/intentiq/models.
+  // by /api/intentiq/models.
   function resolveEffectiveProviderConfig(config) {
     if (config && config.useMainProvider) {
       const main = providerStore ? providerStore.getConfig() : null;
@@ -122,59 +113,7 @@ function createAdminRouter({
     return Boolean(main && main.apiKey);
   }
 
-  router.get('/api/reasoniq/config', auth, (req, res) => {
-    res.json({ ...store.getMaskedConfig(), mainProviderConfigured: mainProviderConfigured() });
-  });
-
-  router.put('/api/reasoniq/config', auth, (req, res) => {
-    const body = req.body || {};
-    const allowed = {};
-    if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
-    if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
-    if (typeof body.model === 'string') allowed.model = body.model.trim();
-    if (typeof body.visionModel === 'string') allowed.visionModel = body.visionModel.trim();
-    if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
-    if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
-
-    if (Object.keys(allowed).length === 0) {
-      return res.status(400).json({ error: 'no valid fields supplied' });
-    }
-
-    store.saveConfig(allowed);
-    res.json({ ...store.getMaskedConfig(), mainProviderConfigured: mainProviderConfigured() });
-  });
-
-  router.get('/api/reasoniq/models', auth, async (req, res) => {
-    const config = store.getConfig();
-    const effective = resolveEffectiveProviderConfig(config);
-    if (!effective) {
-      return res.status(400).json({ error: config && config.useMainProvider ? 'configure the main provider first' : 'save an API key first' });
-    }
-    if (effective.catalog) {
-      // Already retrieved for the main provider — reuse it, no extra call.
-      return res.json({ models: effective.catalog });
-    }
-    if (!effective.baseUrl) {
-      return res.status(400).json({ error: 'set a base URL for the provider' });
-    }
-
-    try {
-      const models = await retrieveModelsFn({
-        provider: effective.provider,
-        baseUrl: effective.baseUrl,
-        apiKey: effective.apiKey,
-      });
-      res.json({ models });
-    } catch (err) {
-      const message = err && err.message ? err.message : 'unknown error';
-      if (message.includes('authentication failed')) {
-        return res.status(401).json({ error: 'authentication failed — check your API key' });
-      }
-      res.status(502).json({ error: 'could not fetch models from provider' });
-    }
-  });
-
-  // --- IntentIQ routes (same shape as ReasonIQ's: save provider/key,
+  // --- IntentIQ routes (legacy seam: save provider/key,
   // fetch the live model catalog, pick one) ---
 
   router.get('/api/intentiq/config', auth, (req, res) => {
@@ -252,21 +191,6 @@ function createAdminRouter({
     const limit = Number(req.query.limit);
     const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
     res.json({ decisions: decisionStore.list({ limit: Number.isFinite(limit) ? limit : undefined, kind }) });
-  });
-
-  // ReasonIQ's own activity log — the same decisionStore records, but
-  // filtered server-side to ReasonIQ's three kinds (gate, result, and the
-  // reasoning llm.call) and sorted newest first. Gives the admin page one
-  // dedicated surface for "what did ReasonIQ do with my turns?" without
-  // mixing in IntentIQ/native decisions.
-  router.get('/api/reasoniq/log', auth, (req, res) => {
-    if (!decisionStore) {
-      return res.json({ entries: [] });
-    }
-    const limit = Number(req.query.limit);
-    const entries = decisionStore.list({ limit: Number.isFinite(limit) ? limit : 1000 })
-      .filter((r) => r.kind === 'reasoniq.gate' || r.kind === 'reasoniq.result' || (r.kind === 'llm.call' && r.system === 'reasoniq'));
-    res.json({ entries });
   });
 
   // --- Provider Settings routes ---

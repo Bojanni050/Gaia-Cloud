@@ -658,7 +658,7 @@ test('performStreamingTurn persists background reflection records when a decisio
   assert.equal(appended.filter((r) => r.kind === 'decision.plan').length, 0);
   assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0);
   assert.ok(appended.some((r) => r.kind === 'memory.worthiness'), 'every turn gets a memory judgment record');
-  assert.ok(appended.some((r) => r.kind === 'reasoniq.gate'), 'every turn logs its reasoning gate');
+  assert.ok(appended.some((r) => r.kind === 'logos.gate'), 'every turn logs its reasoning gate');
   assert.ok(appended.some((r) => r.kind === 'decision.review'), 'every turn gets a DecisionIQ review');
 });
 
@@ -2934,7 +2934,7 @@ test('v1.0 background analysis: non-streaming transport behaves identically — 
 
 // === ReasonIQ gate log (turn integration) =================================
 
-test('deferred reasoning: every turn logs exactly one reasoniq.gate record with its reason', async () => {
+test('deferred reasoning: every turn logs exactly one logos.gate record with its reason', async () => {
   const appended = [];
   const decisionStore = { append: (r) => { appended.push(r); return true; } };
   const generator = { stream: async (m, { onDelta }) => { onDelta('Hoi!', false); return 'Hoi!'; } };
@@ -2949,7 +2949,7 @@ test('deferred reasoning: every turn logs exactly one reasoniq.gate record with 
   });
   await flushBackground();
 
-  const gates = appended.filter((r) => r.kind === 'reasoniq.gate');
+  const gates = appended.filter((r) => r.kind === 'logos.gate');
   assert.equal(gates.length, 1, 'exactly one gate record per turn');
   assert.equal(gates[0].depth, 'shallow');
   assert.equal(gates[0].reason, 'no_evidence');
@@ -2990,7 +2990,7 @@ test('deferred reasoning: a deep turn shares one correlationId across gate, resu
   });
   await flushBackground();
 
-  const gate = appended.find((r) => r.kind === 'reasoniq.gate');
+  const gate = appended.find((r) => r.kind === 'logos.gate');
   const result = appended.find((r) => r.kind === 'reasoniq.result');
   assert.ok(gate, 'a deep turn logs its gate record');
   assert.equal(gate.depth, 'deep');

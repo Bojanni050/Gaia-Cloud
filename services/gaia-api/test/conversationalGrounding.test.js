@@ -92,8 +92,8 @@ test('memory still works: established context about Anton reaches the prompt as 
   assert.match(memoryBlock.content, /Anton is a close friend/);
 });
 
-test('reasonIQ no longer computes or attaches a conversational-opportunity classification', async () => {
-  const { evaluate } = require('../src/logos/reasonIQ');
+test('logos no longer computes or attaches a conversational-opportunity classification', async () => {
+  const { evaluate } = require('../src/logos/logos');
   const result = await evaluate({ text: 'Ik ben eindelijk klaar met mijn website.', conversationContext: [] }, { silent: true });
   assert.equal(result.conversationalOpportunity, undefined);
 });

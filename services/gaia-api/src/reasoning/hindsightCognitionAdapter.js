@@ -46,7 +46,7 @@ const OPEN_QUESTION_TAG = 'gaia:open-question';
 const OPEN_QUESTION_CONTEXT = 'gaia open question';
 const RELATIONSHIP_TAG = 'gaia:relationship';
 const RELATIONSHIP_CONTEXT = 'gaia relationship';
-const UPDATED_BY = 'gaia-reasoniq';
+const UPDATED_BY = 'gaia-logos';
 
 /**
  * @param {{ client: ReturnType<import('../hindsightClient').createHindsightClient> }} options
