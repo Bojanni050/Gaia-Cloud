@@ -2,7 +2,7 @@
 title: Gaia — Architecture
 document: architecture
 version: 2.4.0
-status: foundation
+status: retired
 last_updated: 2026-08-20
 owner: Gaia Product Foundation
 framing: "Gaia is a lifelong personal intelligence designed to grow through understanding."
