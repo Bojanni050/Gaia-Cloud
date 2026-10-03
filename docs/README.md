@@ -20,6 +20,8 @@ This is the long-term foundation for Gaia. Every document reinforces the same pr
 |---|----------|---------|
 | 1 | [vision.md](./vision.md) | What/why/who Gaia is, philosophy, values, success criteria, what she must never become |
 | 2 | [architecture.md](./architecture.md) | System boundaries (SOUL · Logos · Hindsight · Capabilities [Hermes, Melodiq, SongCompanion, MCP, …] · Gaia Desktop), flows, streaming lifecycle, storage abstraction, model agnosticism |
+| 2a | [foundation-v3.md](./foundation-v3.md) | **Proposal:** V3 foundation for identity, human authorship, understanding, model independence, and epistemic principles; not yet the canonical foundation |
+| 2b | [architecture-v3.md](./architecture-v3.md) | **Proposal:** V3 target architecture with repository implementation status and unresolved architecture decisions; does not supersede `architecture.md` yet |
 | 3 | [design-language.md](./design-language.md) | How Gaia feels daily; visual, spatial, motion, and communication philosophy |
 | 4 | [personality.md](./personality.md) | Gaia as a person-like presence; style, initiative, boundaries, trust, consistency |
 | 5 | [roadmap.md](./roadmap.md) | V1→V3→Long-term, MoSCoW, intentionally small V1, maturity path |
@@ -27,6 +29,8 @@ This is the long-term foundation for Gaia. Every document reinforces the same pr
 | 7 | [ui-principles.md](./ui-principles.md) | Conversation-first, calm, silence, motion-as-meaning, legible growth |
 | 8 | [split-plan.md](./split-plan.md) | Boundaries between Gaia Cloud / Web / Desktop in the current monorepo and the phased plan to split them into three independent repositories |
 | 9 | [operations.md](./operations.md) | *(not a foundation document — a living reference)* Where things actually run: the admin interface, deployment addresses, how to reach each service |
+
+The V3 documents are proposals while their open decisions remain unresolved. Until they are explicitly adopted, the existing foundation set above remains authoritative; V3 status notes distinguish the target architecture from what is present in this repository.
 
 ## Gaia's Structure
 

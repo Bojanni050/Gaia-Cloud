@@ -1,0 +1,2492 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 6510
+>>
+stream
+0.200025 w
+0 G
+BT
+/F2 19 Tf
+21.8499999999999979 TL
+0 g
+56. 785.8899999999999864 Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\)) Tj
+ET
+BT
+/F2 19 Tf
+21.8499999999999979 TL
+0 g
+56. 765.3899999999999864 Td
+(Transcription 20261003T020823) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.471 g
+56. 744.8899999999999864 Td
+(Model: voxtral-mini-latest   |   Duration: 12m 19s   |   Source: JSON   |   Segments: 156) Tj
+ET
+0.78 G
+0.5 w
+56. 716.8899999999999864 m
+539.2799999999999727 716.8899999999999864 l
+S
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 692.8899999999999864 Td
+(Introduction) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 672.3899999999999864 Td
+(Deze verkenning analyseert de architecturale evolutie van Gaia naar versie 3, met een specifieke) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 655.8899999999999864 Td
+(focus op de consolidatie van de Logos-faculteit en de wiskundig onderbouwde epistemische) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 639.3899999999999864 Td
+(discipline. De conclusie is dat de documentatie, hoewel uitzonderlijk diepgaand, verbeterd kan) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 622.8899999999999864 Td
+(worden door de abstracte architectuur te verankeren in een frictiegedreven ontleding van complexe) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 606.3899999999999864 Td
+(interacties, een mechanisme voor verwaardelijke consolidatie \(epistemische verankering\) te) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 589.8899999999999864 Td
+(introduceren voor hypotheses, en expliciete bias-inferentie of dwarsverbandschecks in te bouwen) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 573.3899999999999864 Td
+(binnen de Logos-prompting om de invloed van het LLM te mitigeren. De architecten worden) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 556.8899999999999864 Td
+(aangemoedigd deze concrete suggesties door te voeren.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 533.7899999999999636 Td
+(Summary) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 513.2899999999999636 Td
+(Deze verkenning analyseert de architecturale evolutie van Gaia naar versie 3, met een focus op de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 496.7899999999999636 Td
+(consolidatie van de Logos-faculteit en de wiskundig onderbouwde epistemische discipline. Hoewel) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 480.2899999999999636 Td
+(de integratie van Dynamic Epistemic Logic en de scheiding tussen harnas en model indrukwekkend) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 463.7899999999999636 Td
+(zijn, mist de documentatie een concrete sequentiële doorvertaling van de cognitieve stroom na de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 447.2899999999999636 Td
+(samensmelting van Intent IQ en Reason IQ. Ook wordt onvoldoende geïllustreerd hoe) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 430.7899999999999636 Td
+(contextverlies wordt geëlimineerd en blijft de impact van structurele vereenvoudiging te abstract.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 414.2899999999999636 Td
+(Verder creëert het huidige 'absolute override'-mechanisme voor hypothesebevestiging een te grote) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 397.7899999999999636 Td
+(validatielast voor de gebruiker, wat leidt tot micromanagement en stagnatie van het leerproces. Tot) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 381.2899999999999636 Td
+(slot wordt de sluipende vooringenomenheid van het Large Language Model \(LLM\) bij) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 364.7899999999999636 Td
+(hypothesevorming onderschat, ondanks het architecturale dogma dat identiteit veilig is in het) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 348.2899999999999636 Td
+(harnas.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 315.2899999999999636 Td
+(Om deze punten aan te pakken, worden concrete suggesties gedaan. Ten eerste moet de abstracte) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 298.7899999999999636 Td
+(architectuur tastbaar worden gemaakt door middel van een frictiegedreven analyse van complexe) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 282.2899999999999636 Td
+(gebruikersinteracties. Ten tweede moet de menselijke actor ontlast worden door een) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 265.7899999999999636 Td
+(gradatiesysteem voor hypotheseconsolidatie \(epistemische verankering\) te introduceren, waarbij) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 249.2899999999999636 Td
+(onderscheid wordt gemaakt tussen micro- en macro-hypotheses, en een 'implicit confirmation) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 232.7899999999999636 Td
+(parameter' aan de Logos memory wordt toegevoegd. Ten derde moet de onzichtbare invloed van) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 216.2899999999999636 Td
+(het LLM op hypothesevorming gecompenseerd worden door een verplichte anti-lexicografische) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 199.7899999999999636 Td
+(tegenhypothese in Logos in te bouwen en bias-checks in hindsight uit te voeren. De architecten) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 183.2899999999999636 Td
+(worden bedankt voor hun diepgaande werk en aangemoedigd deze suggesties door te voeren.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 160.1899999999999409 Td
+(Key Points) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 139.6899999999999409 Td
+(•  De praktische weergave van de cognitieve stroom na de samensmelting van Intent IQ en) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 123.1899999999999409 Td
+(Reason IQ mist een concrete sequentiële doorvertaling, wat een grote structurele kans is die de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 106.6899999999999409 Td
+(documentatie laat liggen.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 90.1899999999999409 Td
+(•  De documentatie illustreert onvoldoende hoe het verdwijnen van de systeemgrens) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 73.6899999999999409 Td
+(contextverlies elimineert tussen de oude intentie- en redeneerfase in een dynamisch gesprek, en) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 1 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 6217
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 785.8899999999999864 Td
+(de impact van structurele vereenvoudiging op de reflectielus is lastig te kwantificeren.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 769.3899999999999864 Td
+(•  Het huidige mechanisme van 'absolute override' voor het bevestigen van hypotheses creëert) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 752.8899999999999864 Td
+(een potentieel disproportionele validatielast voor de menselijke actor, wat leidt tot) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 736.3899999999999864 Td
+(micromanagement en stagnatie van de lifelong learning loop.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 719.8899999999999864 Td
+(•  Het architecturale dogma dat identiteit uitsluitend in het harnas zit en veilig is voor het model,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 703.3899999999999864 Td
+(onderschat de sluipende vooringenomenheid van een verwisselbaar LLM tijdens het genereren) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 686.8899999999999864 Td
+(van onbevestigde hypotheses.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 670.3899999999999864 Td
+(•  Er wordt aanbevolen de abstracte architectuur te verankeren in een uitgeschreven,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 653.8899999999999864 Td
+(frictiegedreven ontleding van één complexe interactie, waarbij de oude V2-situatie direct) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 637.3899999999999864 Td
+(contrasteert met de nieuwe holistische V3-situatie.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 620.8899999999999864 Td
+(•  Introduceer een mechanisme voor verwaardelijke consolidatie \(epistemische verankering\) met) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 604.3899999999999864 Td
+(onderscheid tussen micro- en macro-hypotheses, en voeg een 'implicit confirmation parameter') Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 587.8899999999999864 Td
+(toe aan de Logos memory om de validatielast voor de gebruiker te verminderen.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 571.3899999999999864 Td
+(•  Bouw een expliciete bias-inferentie of dwarsverbandscheck in binnen de vernieuwde) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 554.8899999999999864 Td
+(Logos-prompting, inclusief een verplichte anti-lexicografische tegenhypothese en een controle in) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 538.3899999999999864 Td
+(hindsight op systematische afwijkingen in het intent translation memory, om LLM-bias te) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 521.8899999999999864 Td
+(compenseren.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 498.7899999999999636 Td
+(Transcript) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 474.2899999999999636 Td
+(Spreker 1  [00:00,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 457.7899999999999636 Td
+(Deze verkenning analyseert de architecturale evolutie van Gaia naar versie 3, met een specifieke) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 441.2899999999999636 Td
+(focus op de consolidatie van de Logos-faculteit en de wiskundig onderbouwde epistemische) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 424.7899999999999636 Td
+(discipline die identiteitsverschuiving tijdens complexe redenercycli voorkomt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 403.339999999999975 Td
+(Spreker 2  [00:18,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 386.839999999999975 Td
+(Precies.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 365.3899999999999864 Td
+(Spreker 1  [00:19,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 348.8899999999999864 Td
+(En om daar maar meteen in te duiken, de integratie van Dynamic Epistemic Logic en die harde) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 332.3899999999999864 Td
+(scheiding tussen harnas en model is echt ontzettend indrukwekkend. Maar de fysieke) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 315.8899999999999864 Td
+(samensmelting van Intent IQ en Reason IQ binnen Logos creëert wel een krachtige conceptuele) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 299.3899999999999864 Td
+(eenheid, maar de praktische weergave van deze cognitieve stroom mist gewoon nog een concrete) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 282.8899999999999864 Td
+(sequentiële doorvertaling.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 261.4399999999999409 Td
+(Spreker 2  [00:46,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 244.9399999999999409 Td
+(Ja, dat is direct de eerste grote structurele kans die de documentatie eigenlijk laat liggen. We zien) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 228.4399999999999409 Td
+(dat de systeemgrens verdwijnt ten gunste van een promptniveauverwerking.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 206.9899999999998954 Td
+(Spreker 1  [00:55,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 190.4899999999998954 Td
+(Om latency te reduceren, toch?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 169.0399999999998499 Td
+(Spreker 2  [00:57,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 152.5399999999998499 Td
+(Ja, latency omlaag en coherentie omhoog. Dat staat er heel duidelijk. Maar het materiaal illustreert) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 136.0399999999998499 Td
+(onvoldoende hoe dit het verlies van context tussen de oude intentiefase en de redeneerfase) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 119.5399999999998499 Td
+(daadwerkelijk elimineert in een dynamisch gesprek.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 98.0899999999998045 Td
+(Spreker 1  [01:14,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 81.5899999999998045 Td
+(Want voorheen, in versie 2, was het alsof we een interne cognitieve douanepost hadden. Een) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 2 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+7 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 8 0 R
+>>
+endobj
+8 0 obj
+<<
+/Length 5862
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(gedachte moest eerst zijn intentiepaspoort laten zien bij IntentieQ, voordat ReasonIQ er überhaupt) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(betekenis aan mocht geven.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 2  [01:27,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(Exact. En die abstractie in de... De impact van die structural simplification op de centrale reflectielus) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(eigenlijk heel lastig te kwantificeren is. Je leest het wel, maar je ziet het niet voor je.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 693.4900000000000091 Td
+(Spreker 1  [01:41,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(Nee, het blijft ervoor hangen in theorie. Dus hoe trekken we dit naar de praktijk?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 2  [01:45,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(Ik zou zeggen, veranker de abstracte architectuur in een uitgeschreven, frictiegedreven ontleding) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(van één complexe interactie. Je moet de oude lineaire V2-situatie echt direct contrasteren met de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(nieuwe holistische V3-situatie.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 1  [02:01,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(Een frictiegedreven ontleding. Dus geen perfecte demo waar de gebruiker heel netjes hallo zegt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 546.6400000000001 Td
+(Spreker 2  [02:10,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1400000000001 Td
+(Nee, juist niet. Teken een scenario uit waarbij een gebruiker een enorm gefrustreerde, ambiguë) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(opmerking maakt over een falend project. Stel, iemand typt s'avonds laat, dit script is een absolute) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(ramp, de afhankelijkheden slaan nergens op en ik ben er helemaal klaar mee, fix it.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 475.6900000000000546 Td
+(Spreker 1  [02:26,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(Oh, wauw. Ja, dat is de goeie. In die oude versie 2 zou IntentQ dit oppakken en de frustratie) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(waarschijnlijk gewoon weggooien.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 421.2400000000000659 Td
+(Spreker 2  [02:34,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(Precies. Het labelt het dan puur als een technische vraag, zeg maar code debugging. De) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000659 Td
+(emotionele ondertoon valt volledig weg van de band nog voor Reason IQ begint. Die krijgt dan een) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(hele steriele opdracht.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 350.2900000000000773 Td
+(Spreker 1  [02:46,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 333.7900000000000773 Td
+(Fix de code.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 312.3400000000000318 Td
+(Spreker 2  [02:47,099]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 295.8400000000000318 Td
+(Ja, terwijl in de documentatie moet je nu laten zien hoe de nieuwe eenduidige Locos dit in één LLM) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(roundtrip oppakt. Laat zien dat het gelijktijdig de behoefte aan technische deductie herkent en de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 262.8400000000000318 Td
+(intentie van de gebruiker om gerust... gesteld te worden.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 241.3899999999999864 Td
+(Spreker 1  [03:01,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 224.8899999999999864 Td
+(Ah, dus Logos reageert dan met iets van ik zie dat je gefrustreerd bent, we gaan het direct) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 208.3899999999999864 Td
+(oplossen.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 186.9399999999999409 Td
+(Spreker 2  [03:06,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 170.4399999999999409 Td
+(Juist. En demonstreer dan vervolgens heel concreet hoe hindsight, dus het geheugen, deze) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 153.9399999999999409 Td
+(gelijktijdige verwerking direct als één gelaagde interpretatie opslaat. Niet meer als gefragmenteerde) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 137.4399999999999409 Td
+(data in verschillende tabellen, maar als één blok betekenis.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 115.9899999999998954 Td
+(Spreker 1  [03:22,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 99.4899999999998954 Td
+(Dat maakt het zoveel inzichtelijker. Als we weten hoe soepel die nieuwe Logos-Lus-hypotheses) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 82.9899999999998954 Td
+(genereert uit dat soort chaos, moeten we ook kijken naar wat er eigenlijk met die hypotheses) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 3 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+9 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 10 0 R
+>>
+endobj
+10 0 obj
+<<
+/Length 5762
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(gebeurt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 2  [03:35,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(Zeker, dat is de volgende stap.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 726.4900000000000091 Td
+(Spreker 1  [03:36,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 709.9900000000000091 Td
+(Want ik dacht direct, als elk nieuw inzicht strikt als hypothese wordt gemarkeerd, totdat de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 693.4900000000000091 Td
+(menselijke actor de absolute override gebruikt om het te bevestigen, creëren we dan niet) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(onbedoeld een gigantisch micromanagementprobleem voor de gebruiker.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 2  [03:52,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(Ja, dat is een heel fundamenteel pijnpunt. Kijk, de integratie van Dynamic Epistemic Logic en die) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(Absolute Override vormt wiskundig gezien een briljant schild tegen de Hermeneutics of Drift, maar) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(het creëert tegelijkertijd een potentieel disproportionele validatielast voor de menselijke actor.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5899999999999181 Td
+(Spreker 1  [04:10,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0899999999999181 Td
+(Leg dat eens uit. Want hermeneutics of drift, dat is dat het systeem langzaam een verkeerd beeld) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5899999999999181 Td
+(van je opbouwt, toch?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 530.1399999999999864 Td
+(Spreker 2  [04:16,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6399999999999864 Td
+(Ja, dat het model aannames op aannames stapelt die net niet kloppen, tot je een identiteit hebt die) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1399999999999864 Td
+(niet meer lijkt op de echte gebruiker. Het materiaal stelt keihard dat een hypothese nooit een feit) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6399999999999864 Td
+(mag worden zonder... Expliciete menselijke validatie.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 459.1899999999999977 Td
+(Spreker 1  [04:32,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6899999999999977 Td
+(Dus het systeem vraagt de hele tijd, klopt dit? Ben je inderdaad gefrustreerd? Hou je inderdaad van) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 426.1899999999999977 Td
+(Python?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 404.7400000000000091 Td
+(Spreker 2  [04:38,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000091 Td
+(Precies, het mag pas gepromoot worden naar de status confirmed als jij op de knop drukt. Hoewel) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000091 Td
+(dat epistemisch ontzettend zuiver is en die drift perfect voorkomt, negeert het de schaalbaarheid) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 355.2400000000000091 Td
+(van de gebruikerservaring volledig.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 333.7900000000000205 Td
+(Spreker 1  [04:51,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 317.2900000000000773 Td
+(Omdat je gek wordt van de poplabs?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 295.8400000000000318 Td
+(Spreker 2  [04:53,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(Exact. Als het systeem bij elke kleine leercyclus wacht op expliciete goedkeuring om een status aan) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 262.8400000000000318 Td
+(te passen, dan stagneert de hele lifelong learning loop gewoon door menselijke vermoeidheid. Jij) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 246.3400000000000318 Td
+(bent dan de flessenhals.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 224.8899999999999864 Td
+(Spreker 1  [05:06,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 208.3899999999999864 Td
+(We zijn geen datalabelsmachines, weet je wel? Maar oké, we willen die epistemische zuiverheid) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 191.8899999999999864 Td
+(niet helemaal weggooien. Wat is dan jouw suggestie om dit in de architectuur op te lossen?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 170.4399999999999409 Td
+(Spreker 2  [05:17,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 153.9399999999999409 Td
+(Ik raad aan om een mechanisme te introduceren voor verwaardelijke consolidatie. Dit is gebaseerd) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 137.4399999999999409 Td
+(op de epistemic entrenchment theorie, oftewel epistemische verankering. Die theorie wordt) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 120.9399999999999409 Td
+(trouwens al in de bronnen genoemd rondom Gadamers horizonversmelzing, dus het past perfect) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 104.4399999999999409 Td
+(binnen hun eigen filosofie.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 82.9899999999998954 Td
+(Spreker 1  [05:35,500]) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 4 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+11 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 12 0 R
+>>
+endobj
+12 0 obj
+<<
+/Length 5611
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(Epistemic entrenchment. Je maakt dan onderscheid in hoe zwaarwegend een hypokese is?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 2  [05:40,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(Ja, je brengt de gradatiesysteem aan voor die absolute override. Defineer architecturaal het verschil) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(tussen microhypotheses en macrohypotheses.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 709.9900000000000091 Td
+(Spreker 1  [05:50,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 693.4900000000000091 Td
+(Geef daar eens een voorbeeld van, van zo'n microhypothese.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 672.0399999999999636 Td
+(Spreker 2  [05:54,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 655.5399999999999636 Td
+(Stel het model signaleert. De gebruiker antwoordt bij technische vragen liever in bullet points. Als) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(zo'n hypothese drie succesvolle, onweersproken cycli meedraait in hindsight, dan geef je dat) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(automatisch een zachte promotie in het systeem.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 601.0900000000000318 Td
+(Spreker 1  [06:09,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 584.5900000000000318 Td
+(Zonder dat ik daar ja op hoef te klikken.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 563.1400000000001 Td
+(Spreker 2  [06:11,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 546.6400000000001 Td
+(Precies, dat is een micro ding. Maar een macro hypothese, bijvoorbeeld de gebruiker haat zijn baan) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1400000000001 Td
+(en overweegt een carrière switch. Zoiets heeft enorme impact.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 508.6900000000000546 Td
+(Spreker 1  [06:23,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 492.1900000000000546 Td
+(Als het systeem daar fout zit, krijg je direct vacatures toegestuurd, terwijl je gewoon even een) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 475.6900000000000546 Td
+(baaldag had.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 454.2400000000000659 Td
+(Spreker 2  [06:28,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 437.7400000000000659 Td
+(Klopt. Dus dat soort macro-hypotheses vereisen wel altijd een expliciete, menselijke, ja dit klopt, in) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000659 Td
+(het keuzedomijn.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 399.7900000000000773 Td
+(Spreker 1  [06:37,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 383.2900000000000773 Td
+(Oké, dat klinkt logisch. En zijn er nog andere manieren om die validatie gladder te trekken?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 361.8400000000000887 Td
+(Spreker 2  [06:42,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 345.3400000000000887 Td
+(Jazeker, voeg een implicit confirmation parameter toe aan de logos memory. Binnen die theorie van) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 328.8400000000000318 Td
+(belief revision kun je wiskundig verantwoorden dat het uitblijven van correctie door de gebruiker) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 312.3400000000000318 Td
+(over tijd meetelt als bewijslast.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 290.8899999999999864 Td
+(Spreker 1  [06:56,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 274.3899999999999864 Td
+(Dus stilte is een heel klein beetje instemming.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 252.9399999999999409 Td
+(Spreker 2  [06:59,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 236.4399999999999409 Td
+(Een heel klein beetje ja. De confidence verhoogt dan incrementeel. Je forceert niet in één klap de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 219.9399999999999409 Td
+(absolute status, maar de bewijslast groeit langzaam naarmate de hypothese vaker succesvol wordt) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 203.4399999999999409 Td
+(gebruikt in de interactie.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 181.9899999999998954 Td
+(Spreker 1  [07:12,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 165.4899999999998954 Td
+(Dat is super elegant. Je ontlast de gebruiker, maar je behoudt wiskundige verantwoording. Maar dat) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 148.9899999999998954 Td
+(brengt ons eigenlijk bij de aard van de gereedschappen zelf. We hebben het harnas nu heel goed) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 132.4899999999998954 Td
+(afgesteld op die input, maar we moeten ook even kijken naar het model zelf, dus het LLM.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 111.0399999999998499 Td
+(Spreker 2  [07:29,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 94.5399999999998499 Td
+(Ja, de black box.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 73.0899999999998045 Td
+(Spreker 1  [07:30,899]) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 5 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+13 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 14 0 R
+>>
+endobj
+14 0 obj
+<<
+/Length 5747
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(Maar ja, als je door een roze bril naar de wereld kijkt, die bril is dan misschien maar een instrument,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(maar hij bepaalt wel de kleur van alles wat je ziet.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 2  [07:40,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(Dat is een ijzersterke analogie. En daar zit ook meteen de grootste kwetsbaarheid. Het) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(architecturale dogma dat de identiteit uitsluitend in het harnas zit en veilig is voor het model,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(onderschat echt gigantisch de sluipende vooringenomenheid die een verwisselbaar LLM heeft) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 681.9400000000000546 Td
+(tijdens het zelf genereren van die onbevestigde hypothese.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 660.4900000000000091 Td
+(Spreker 1  [08:02,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(Het stuk leunt er heel sterk op dat zolang Logos de output markeert als interpretation en niet als) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 627.4900000000000091 Td
+(observation, dat Gaia dan model agnostisch blijft. Maar in versie 3 doet het LLM zelf de redenering) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 610.9900000000000091 Td
+(binnen logos.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 589.5399999999999636 Td
+(Spreker 2  [08:18,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 573.0399999999999636 Td
+(Ja, dat klopt helemaal. Elk commercieel of open source LOM heeft intrinsieke biases. Denk aan) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 556.5399999999999636 Td
+(een neiging tot sluitende westerse logica, een enorme drang om overbehoopzaam te zijn of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 540.0399999999999636 Td
+(overoptimalisatie.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 518.5900000000000318 Td
+(Spreker 1  [08:32,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 502.0900000000000318 Td
+(Dus als dat specifieke LLM al bepaalt welke hypothese er überhaupt geformuleerd worden en) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 485.5900000000000318 Td
+(worden aangeboden aan hindsight, dan zit daar al een filter op.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 464.1400000000000432 Td
+(Spreker 2  [08:42,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 447.6400000000000432 Td
+(Precies. Dan vindt er al een vorm van identity drift plaats, ver voordat jouw statusmarkering of die) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 431.1400000000000432 Td
+(menselijke override in werking kan treden. De denkruimte van je AI wordt onmerkbaar ingeperkt) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 414.6400000000000432 Td
+(door het gekozen instrument.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 393.1900000000000546 Td
+(Spreker 1  [08:55,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 376.6900000000000546 Td
+(We kleuren de grondstoffen al voordat we ze in de fabriek stoppen. Maar goed, we kunnen G. BPT) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 360.1900000000000546 Td
+(of CLOT niet openbreken om hun vooringenomenheid te fixen. Wat is jouw suggestie voor de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 343.6900000000000546 Td
+(architecten hier?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 322.2400000000000091 Td
+(Spreker 2  [09:06,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 305.7400000000000091 Td
+(Bouw een expliciete bias inference of een dwarsverbandscheck in binnen de vernieuwde) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 289.2400000000000091 Td
+(logosprompting zelf. Je moet het generatieve model via de systeeminstructies dwingen om zijn) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 272.7400000000000091 Td
+(eigen heuristiek te bevragen.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 251.2899999999999636 Td
+(Spreker 1  [09:21,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 234.7899999999999636 Td
+(Nooit zomaar met het eerste idee meegaan.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 213.3399999999999181 Td
+(Spreker 2  [09:23,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 196.8399999999999181 Td
+(Nee, precies. En dit moet gebeuren voordat een hypothese formeel aan de paraconsistent belief) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 180.3399999999999181 Td
+(revision van Gaia wordt overgedragen.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 158.8899999999998727 Td
+(Spreker 1  [09:31,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 142.3899999999998727 Td
+(Heb je daar een concreet voorbeeld van? Hoe codeer je zoiets in de architectuur?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 120.9399999999998272 Td
+(Spreker 2  [09:36,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 104.4399999999998272 Td
+(Voeg ten eerste aan de interne logos instructie een verplichte anti-lexicografische tegenhypothese) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 87.9399999999998272 Td
+(toe.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 6 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+15 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 16 0 R
+>>
+endobj
+16 0 obj
+<<
+/Length 5821
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 1  [09:43,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Oeh, dat is een mondvol. Anti-lexicografisch.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 2  [09:46,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(Ja, dialectische opschorting noemen ze het ook wel. Maar het komt erop neer dat bij elke gegevene) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(interpretatie over de intentie van de gebruiker, Logos verplicht een alternatieve hypothese moet) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(formuleren die haak staat op de meest waarschijnlijke LLM-gedreven aanname.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 676.9900000000000091 Td
+(Spreker 1  [10:02,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(Ik wil dat ik dit zo efficiënt mogelijk voor hem oplos, maar met die check moet hij ook genereren.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(Misschien wil de gebruiker zelf snappen wat er fout ging en wil hij alleen hint.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 2  [10:12,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(Juist, je dwingt het model het tegenovergestelde te overdenken, waardoor je die tunnelvisie) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 589.5399999999999636 Td
+(openbreekt. En een tweede mechanisme dat je in de architectuur kunt opnemen, is dat Logos via) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 573.0399999999999636 Td
+(hindsight expliciet controleert of beslissingen in het intent translation memory systematisch afwijkt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 551.5900000000000318 Td
+(Spreker 1  [10:30,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 535.0900000000000318 Td
+(Dat geheugen waar jouw persoonlijke stal in staat opgeslagen, toch?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 513.6400000000001 Td
+(Spreker 2  [10:34,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(Ja, het ITM. Stel dat de architecten switchen van reasoning provider. Het ene model is het andere) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6400000000000432 Td
+(niet. Dan moet het systeem kunnen detecteren of de interpretatie systematisch afwijken van de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 464.1400000000000432 Td
+(standaardpatronen van het oude model.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 442.6900000000000546 Td
+(Spreker 1  [10:48,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 426.1900000000000546 Td
+(Zodat als een nieuw LLM heel erg gefinetuned is op extreem beleefd zijn, het niet ineens al mijn) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 409.6900000000000546 Td
+(sarcastische opmerkingen glad strijkt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 388.2400000000000659 Td
+(Spreker 2  [10:57,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(Precies, je garandeert in de code dat de eigenaardigheden van de gebruiker niet onzichtbaar) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 355.2400000000000659 Td
+(worden weggepoetst door een te behulpzaam LLM.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 333.7900000000000773 Td
+(Spreker 1  [11:05,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 317.2900000000000773 Td
+(Fantastisch. We hebben echt de diepte geraakt hier. Om het heel even kort samen te vatten zonder) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 300.7900000000000773 Td
+(jargon. Ten eerste zagen we dat je de abstracte samensmelting van intent IQ en reason IQ tastbaar) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 284.2900000000000773 Td
+(moet maken door middel van zo'n frictiegedreven use case.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 262.8400000000000318 Td
+(Spreker 2  [11:21,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 246.3400000000000318 Td
+(Ja, laat de complexiteit van een boze gebruiker zien.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 224.8899999999999864 Td
+(Spreker 1  [11:25,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 208.3899999999999864 Td
+(Ten tweede, voorkom dat de menselijke actor een flessenhals wordt. Voorkom dat validatie-infarkt) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 191.8899999999999864 Td
+(door gradaties van epistemic entrenchment toe te passen op die absolute override.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 170.4399999999999409 Td
+(Spreker 2  [11:37,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 153.9399999999999409 Td
+(Micro- en macro-hypotheses.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 132.4899999999998954 Td
+(Spreker 1  [11:40,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 115.9899999999998954 Td
+(Exact. En als laatste, wil je eens niet naïef over het LLM. Compenseer de onzichtbare invloed van) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 99.4899999999998954 Td
+(dat model op je hypothesevorming door een verplichte tegenhypothese in logos in te bouwen.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 78.0399999999998499 Td
+(Spreker 2  [11:53,399]) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 7 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+17 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 18 0 R
+>>
+endobj
+18 0 obj
+<<
+/Length 1258
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(And the bias checks in hindsight.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 1  [11:55,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(Helemaal mee eens. We willen de architect achter deze Gaia V3-doel... documentatie echt onwijs) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(bedanken voor dit uitzonderlijk diepgaande werk. Het is een genot om zoiets complex te mogen) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(ontleden. Moedigen jullie echt aan om deze concrete suggesties door te voeren in de architectuur.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(Dien het herziende materiaal in de toekomst zeker opnieuw in, want we bespreken heel graag de) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 681.9400000000000546 Td
+(volgende iteratie.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+498.6399999999999864 24. Td
+(Page 8 of 8) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Voorkom Identiteitsverschuiving In Gaia V3 \(2\) Transcription 20261003T020823) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R ]
+/Count 8
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+21 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+22 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+23 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+24 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+25 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+26 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+27 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+28 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+29 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+30 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+31 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+32 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 19 0 R
+/F2 20 0 R
+/F3 21 0 R
+/F4 22 0 R
+/F5 23 0 R
+/F6 24 0 R
+/F7 25 0 R
+/F8 26 0 R
+/F9 27 0 R
+/F10 28 0 R
+/F11 29 0 R
+/F12 30 0 R
+/F13 31 0 R
+/F14 32 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+33 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20261003021244+02'00')
+>>
+endobj
+34 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 35
+0000000000 65535 f 
+0000044329 00000 n 
+0000046197 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000006714 00000 n 
+0000006851 00000 n 
+0000013120 00000 n 
+0000013257 00000 n 
+0000019171 00000 n 
+0000019309 00000 n 
+0000025124 00000 n 
+0000025263 00000 n 
+0000030927 00000 n 
+0000031066 00000 n 
+0000036866 00000 n 
+0000037005 00000 n 
+0000042879 00000 n 
+0000043018 00000 n 
+0000044432 00000 n 
+0000044558 00000 n 
+0000044689 00000 n 
+0000044823 00000 n 
+0000044961 00000 n 
+0000045085 00000 n 
+0000045214 00000 n 
+0000045346 00000 n 
+0000045482 00000 n 
+0000045610 00000 n 
+0000045737 00000 n 
+0000045866 00000 n 
+0000045999 00000 n 
+0000046101 00000 n 
+0000046450 00000 n 
+0000046536 00000 n 
+trailer
+<<
+/Size 35
+/Root 34 0 R
+/Info 33 0 R
+/ID [ <CD92297874C987E8BA9847DF6256D4B2> <CD92297874C987E8BA9847DF6256D4B2> ]
+>>
+startxref
+46640
+%%EOF

@@ -1,0 +1,4482 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 6781
+>>
+stream
+0.200025 w
+0 G
+BT
+/F2 19 Tf
+21.8499999999999979 TL
+0 g
+56. 785.8899999999999864 Td
+(Live AI Conversation Versus Background Reflection) Tj
+ET
+BT
+/F2 19 Tf
+21.8499999999999979 TL
+0 g
+56. 765.3899999999999864 Td
+(\(1\) Transcription 20261003T011502) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.471 g
+56. 744.8899999999999864 Td
+(Model: voxtral-mini-latest   |   Duration: 23m 1s   |   Source: JSON   |   Segments: 342) Tj
+ET
+0.78 G
+0.5 w
+56. 716.8899999999999864 m
+539.2799999999999727 716.8899999999999864 l
+S
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 692.8899999999999864 Td
+(Introduction) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 672.3899999999999864 Td
+(This document examines a fundamental shift in the architectural design of lifelong personal) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 655.8899999999999864 Td
+(intelligence systems, focusing on the transition outlined in the Gaia v3.0 architecture. The core) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 639.3899999999999864 Td
+(debate centers on how artificial intelligence should behave during live interactions, specifically) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 622.8899999999999864 Td
+(whether true continuous learning necessitates separating live language model inference from a post) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 606.3899999999999864 Td
+(hoc centralized reflective loop. While one perspective advocates for decoupling live conversation) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 589.8899999999999864 Td
+(from deep reflection as the only path to fluid intelligence, the opposing view warns that removing) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 573.3899999999999864 Td
+(explicit reasoning gates from the live conversational path risks epistemological safety for) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 556.8899999999999864 Td
+(conversational speed, surrendering too much cognitive control to the underlying large language) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 540.3899999999999864 Td
+(model. Both sides, however, agree on the paramount importance of epistemic discipline, ensuring) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 523.8899999999999864 Td
+(that observations are strictly separated from hypotheses and interpretations to prevent system) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 507.3899999999999864 Td
+(collapse.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 484.2899999999999636 Td
+(Summary) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 463.7899999999999636 Td
+(The debate centers on a fundamental shift in the architectural design of lifelong personal) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 447.2899999999999636 Td
+(intelligence systems, specifically the Gaia v3.0 architecture, which redefines how AI processes user) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 430.7899999999999636 Td
+(intent and reasoning. The core disagreement is whether continuous learning requires separating) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 414.2899999999999636 Td
+(live language model inference from a post hoc centralized reflective loop, or if removing explicit) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 397.7899999999999636 Td
+(reasoning gates from the live conversational path surrenders too much cognitive control.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 381.2899999999999636 Td
+(Proponents of v3.0 argue that decoupling live conversation from deep reflection via a Logos system) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 364.7899999999999636 Td
+(is essential for fluid, lifelong intelligence, overcoming the latency and rigidity of the previous v2.0's) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 348.2899999999999636 Td
+(linear reasoning chain \(Intent IQ, Reason IQ\).) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 331.7899999999999636 Td
+(Conversely, critics contend that stripping these synchronous reasoning gates from the live path is a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 315.2899999999999636 Td
+(dangerous over-reliance on raw LLM inference, risking epistemological safety for conversational) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 298.7899999999999636 Td
+(speed and potentially turning a sophisticated AI into a conventional chatbot during live interactions.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 282.2899999999999636 Td
+(While v3.0 introduces a memory pipe \(Chronicle, Hindsight, Logos\) to asynchronously evaluate) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 265.7899999999999636 Td
+(assumptions and prevent hypotheses from silently becoming facts, concerns are raised about) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 249.2899999999999636 Td
+('prompt drift' and memory pollution due to the consolidation of intent and reasoning functions. The) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 232.7899999999999636 Td
+(system's ultimate safeguard is a 'human absolute override' for confirming hypotheses, though critics) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 216.2899999999999636 Td
+(argue this places an undue cognitive burden on the user. Despite these differing views, both sides) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 199.7899999999999636 Td
+(unequivocally agree on the paramount importance of epistemic discipline—strictly separating) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 183.2899999999999636 Td
+(observations from hypotheses and interpretations—to prevent the system's long-term memory from) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+56. 166.7899999999999636 Td
+(collapsing into self-generated hallucinations.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 143.6899999999999409 Td
+(Key Points) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 123.1899999999999409 Td
+(•  Gaia v3.0 advocates for decoupling live conversational inference from a post hoc reflective) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 106.6899999999999409 Td
+(loop \(Logos\) to achieve fluid, lifelong intelligence, arguing the previous linear reasoning chain) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 90.1899999999999409 Td
+(\(v2.0\) caused latency and rigidity.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 73.6899999999999409 Td
+(•  Critics argue that removing synchronous reasoning gates \(Intent IQ, Reason IQ\) in v3.0) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 1 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 5942
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 785.8899999999999864 Td
+(dangerously over-relies on raw LLM inference, sacrificing epistemological safety for) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 769.3899999999999864 Td
+(conversational speed and risking immediate control over AI beliefs.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 752.8899999999999864 Td
+(•  The v3.0 architecture employs a memory pipe \(Chronicle, Hindsight, Logos\) where Logos) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 736.3899999999999864 Td
+(asynchronously evaluates live LLM assumptions, tagging data with epistemic statuses to prevent) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 719.8899999999999864 Td
+(hypotheses from silently becoming facts.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 703.3899999999999864 Td
+(•  The consolidation of Intent IQ and Reason IQ into a single Logos prompt is criticized for risking) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 686.8899999999999864 Td
+('prompt drift,' where the system might conflate user intent with evidence, potentially polluting) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 670.3899999999999864 Td
+(cognitive memory.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 653.8899999999999864 Td
+(•  Gaia v3.0 relies on a 'human absolute override' for promoting hypotheses to facts, but critics) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 637.3899999999999864 Td
+(argue this places an immense cognitive burden on users, who may not consistently audit the AI's) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 620.8899999999999864 Td
+(internal hypotheses.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+60. 604.3899999999999864 Td
+(•  Both perspectives agree on the critical importance of epistemic discipline, ensuring strict) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 587.8899999999999864 Td
+(separation between observations, interpretations, and hypotheses to prevent long-term memory) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.235 g
+72. 571.3899999999999864 Td
+(systems from collapsing into self-generated hallucinations.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.235 g
+56. 548.2899999999999636 Td
+(Transcript) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 523.7899999999999636 Td
+(Spreker 1  [00:00,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 507.2899999999999636 Td
+(Welcome to The Debate. So, you know, when you watch a master jazz musician improvising on) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 490.7899999999999636 Td
+(stage, there is this incredible, almost seamless flow to what they are doing.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 469.339999999999975 Td
+(Spreker 2  [00:12,099]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 452.839999999999975 Td
+(Right. It's like they're just channeling the music.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 431.3899999999999864 Td
+(Spreker 1  [00:14,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 414.8899999999999864 Td
+(Exactly. They aren't consciously plotting out every single chord transition. They aren't running some) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 398.3899999999999864 Td
+(multi-stage logical deduction on harmonic theory before their finger presses the next key. Because if) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 381.8899999999999864 Td
+(they did, the music would just stop.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 360.4399999999999977 Td
+(Spreker 2  [00:30,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 343.9399999999999977 Td
+(Yeah, the performance would become incredibly rigid, almost mechanical, really.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 322.4899999999998954 Td
+(Spreker 1  [00:34,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 305.9899999999998954 Td
+(Yeah, precisely.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 284.5399999999998499 Td
+(Spreker 2  [00:35,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 268.0399999999998499 Td
+(But, you know, while that flow is undeniably beautiful in the moment, we also have to remember) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 251.5399999999998499 Td
+(that this same musician spends thousands of hours in the practice room. And they do that explicitly) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 235.0399999999998499 Td
+(so they don't hit a fundamentally wrong note during the live performance.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 213.5899999999998045 Td
+(Spreker 1  [00:50,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 197.0899999999998045 Td
+(Sure. They build a foundation.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 175.639999999999759 Td
+(Spreker 2  [00:52,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 159.139999999999759 Td
+(It's only safe because the structured reasoning is already deeply embedded in the process.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 137.6899999999997135 Td
+(Spreker 1  [00:58,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 121.1899999999997135 Td
+(And that dynamic, I mean, that balance between fluid, intuitive performance and rigorous) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 104.6899999999997135 Td
+(background reflection, that is exactly what brings us to our topic today. We are examining a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 88.1899999999997135 Td
+(fundamental shift in the architectural design of lifelong personal intelligence systems.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 2 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+7 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 8 0 R
+>>
+endobj
+8 0 obj
+<<
+/Length 5712
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 2  [01:16,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Specifically, the transition outlined in the Gaia v3.0 architecture.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 1  [01:21,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(Yes. It completely redesigns how an AI processes a user's intent and reasoning.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 709.9900000000000091 Td
+(Spreker 2  [01:26,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 693.4900000000000091 Td
+(And at the heart of this architectural evolution is, frankly, that balance between fluid, intuitive) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(performance and rigorous background reflection.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 1  [01:36,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(That is exactly what brings us to our topic today. We are examining a fundamental shift in the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(architectural design of lifelong personal intelligence systems.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 601.0900000000000318 Td
+(Spreker 2  [01:46,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 584.5900000000000318 Td
+(Specifically, the transition outlined in the Gaia v3.0 architecture.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 563.1400000000001 Td
+(Spreker 1  [01:51,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 546.6400000000001 Td
+(Yes. It completely redesigns how an AI processes a user's intent and reasoning.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 525.1900000000000546 Td
+(Spreker 2  [01:56,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 508.6900000000000546 Td
+(And at the heart of this architectural evolution is, frankly, a profound disagreement, we are debating) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 492.1900000000000546 Td
+(how artificial intelligence should behave during live interactions with a human being.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 470.7400000000000659 Td
+(Spreker 1  [01:37,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 454.2400000000000659 Td
+(Right, which brings us to the core question. Does true continuous learning require us to separate) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 437.7400000000000659 Td
+(live language model inference from a post hoc centralized reflective loop?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 416.2900000000000773 Td
+(Spreker 2  [01:48,400]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 399.7900000000000773 Td
+(Or conversely, does removing explicit reasoning gates from the live conversational path surrender) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 383.2900000000000773 Td
+(entirely too much cognitive control to the underlying large language model?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 361.8400000000000887 Td
+(Spreker 1  [01:57,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 345.3400000000000887 Td
+(Well, I'm taking the stance today that a post hoc centralized reflective loop, which the architecture) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 328.8400000000000318 Td
+(calls Logos, is vastly superior to the old way of doing things. The previous architecture relied on a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 312.3400000000000318 Td
+(bottlenecked linear reasoning chain that just stifled the system.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 290.8899999999999864 Td
+(Spreker 2  [02:13,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 274.3899999999999864 Td
+(Stifled is a pretty strong word.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 252.9399999999999409 Td
+(Spreker 1  [02:15,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 236.4399999999999409 Td
+(I mean, it did. Decoupling live conversation from deep reflection is really the only way to build a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 219.9399999999999409 Td
+(fluid, lifelong intelligence.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 198.4899999999998954 Td
+(Spreker 2  [02:23,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 181.9899999999998954 Td
+(And I am arguing that stripping those explicit reasoning gates, specifically the systems known as) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 165.4899999999998954 Td
+(Intent IQ and Reason IQ, from the live conversational path is a dangerous over-reliance on simple) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 148.9899999999998954 Td
+(LLM inference.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 127.5399999999998499 Td
+(Spreker 1  [02:37,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 111.0399999999998499 Td
+(You really think it's that dangerous?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 89.5899999999998045 Td
+(Spreker 2  [02:39,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 73.0899999999998045 Td
+(I absolutely do. I believe this architectural shift trades epistemological safety for conversational) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 3 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+9 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 10 0 R
+>>
+endobj
+10 0 obj
+<<
+/Length 5758
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(speed, risking our immediate control over what the AI actually believes to be true.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 1  [02:51,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(All right, well, let's lay the groundwork for why this shift to architecture v3.0 was a completely) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(necessary evolution. If we look back at the... Previous 2.0 models, every single conversational turn) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(had to pass through a rigid linear pipeline.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 693.4900000000000091 Td
+(Spreker 2  [03:05,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(Right.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 1  [03:06,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(A user would say something, and first it had to hit Intent IQ. And Intent IQ's only job was to parse) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(the user's text and classify the exact intent into a structured format.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 601.0900000000000318 Td
+(Spreker 2  [03:16,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 584.5900000000000318 Td
+(Which was highly effective. Sure, but then that data was handed off to Reason IQ, which explicitly) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(validated the logic and factual accuracy. And only after all of that could Decision IQ decide how to) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(act. And finally, a response was generated.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 530.1400000000001 Td
+(Spreker 1  [03:30,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(Yes, a validated response.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 492.1900000000000546 Td
+(Spreker 2  [03:32,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 475.6900000000000546 Td
+(But it created immense latency. And frankly, it created fragmented cognitive states where data was) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(awkwardly serialized and passed between these artificial intent phases and reasoning phases.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 437.7400000000000659 Td
+(Spreker 1  [03:43,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000659 Td
+(I hear you. But those phases weren't just artificial delays. They were structural safeguards. That) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(historical model existed for a foundational reason.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 383.2900000000000773 Td
+(Spreker 2  [03:52,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 366.7900000000000773 Td
+(To slow things down?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 345.3400000000000887 Td
+(Spreker 1  [03:53,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 328.8400000000000318 Td
+(No, to keep things accurate. Intent IQ acted as the portier, the gatekeeper. It explicitly defined what) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 312.3400000000000318 Td
+(the user was trying to achieve before any tool could be touched. Reason IQ acted as the validator,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 295.8400000000000318 Td
+(ensuring that epistemological boundaries were respected.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 274.3899999999999864 Td
+(Spreker 2  [04:09,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 257.8899999999999864 Td
+(Okay, but is this a fact? Is this an assumption? By replacing this structured sequence with a simple) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 241.3899999999999864 Td
+(path that basically goes, you know, user to Gaia, to context to LLM to response, you are effectively) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 224.8899999999999864 Td
+(turning a highly sophisticated cognitive architecture into a conventional chatbot. The moment of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 208.3899999999999864 Td
+(interaction.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 186.9399999999999409 Td
+(Spreker 1  [04:31,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 170.4399999999999409 Td
+(I think that's a bit reductive.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 148.9899999999998954 Td
+(Spreker 2  [04:32,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 132.4899999999998954 Td
+(Without synchronous checks, the system is free to act on unverified assumptions.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 111.0399999999998499 Td
+(Spreker 1  [04:37,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 94.5399999999998499 Td
+(You're assuming the system is entirely defenseless without those gates. But look at the sheer) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 78.0399999999998499 Td
+(efficiency and naturalism of the new live path. Modern language models are already incredibly) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 4 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+11 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 12 0 R
+>>
+endobj
+12 0 obj
+<<
+/Length 5630
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(capable of understanding language, inferring intent, and producing complex responses natively.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 2  [04:52,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(Natively, sure, but not infallibly.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 726.4900000000000091 Td
+(Spreker 1  [04:54,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 709.9900000000000091 Td
+(When you force a synchronous execution of intent IQ and reason IQ before a single syllable is) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 693.4900000000000091 Td
+(returned, you create an unnatural engineering bottleneck. It assumes the underlying language) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(model is fundamentally incapable of basic contextual reasoning.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 2  [05:10,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(I wouldn't say incapable, just unpredictable.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 617.5900000000000318 Td
+(Spreker 1  [05:13,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 601.0900000000000318 Td
+(Well, the core maxim of the V3.0 architecture is, and I love this phrasing, the conversation is the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 584.5900000000000318 Td
+(experience. Logos is the reflection on that experience.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 563.1400000000001 Td
+(Spreker 2  [05:24,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 546.6400000000001 Td
+(Okay, let's ground this for anyone listening who might be wondering how this actually plays out in) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1400000000001 Td
+(practice.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 508.6900000000000546 Td
+(Spreker 1  [05:28,800]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 492.1900000000000546 Td
+(Go for it.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 470.7400000000000659 Td
+(Spreker 2  [05:29,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 454.2400000000000659 Td
+(Imagine you ask your AI a complex multi-part request. Let's say, draft an email to Sarah saying I) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 437.7400000000000659 Td
+(can't make the pitch tomorrow because the Q3 revenue numbers are wrong and clear my afternoon) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000659 Td
+(schedule.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 399.7900000000000773 Td
+(Spreker 1  [05:41,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 383.2900000000000773 Td
+(Pretty standard executive request.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 361.8400000000000887 Td
+(Spreker 2  [05:43,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 345.3400000000000887 Td
+(Right. In the old linear model, Intent IQ breaks that down. Intent one is messaging Sarah. Intent two) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 328.8400000000000318 Td
+(is calendar modification. Reason IQ then steps in and checks the facts.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 307.3899999999999864 Td
+(Spreker 1  [05:55,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 290.8899999999999864 Td
+(To see if the numbers are actually wrong.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 269.4399999999999409 Td
+(Spreker 2  [05:58,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 252.9399999999999409 Td
+(Exactly. It says, Wait, are the Q3 numbers actually wrong? Let me check the canonical memory. No,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 236.4399999999999409 Td
+(the user was looking at a draft report. So the system halts the action and asks for clarification.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 214.9899999999998954 Td
+(Spreker 1  [06:10,699]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 198.4899999999998954 Td
+(Right, creating friction.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 177.0399999999998499 Td
+(Spreker 2  [06:12,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 160.5399999999998499 Td
+(Creating safety, because in the new V3.0 model, the LLM just handles the live context intuitively.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 144.0399999999998499 Td
+(The raw language model might infer the intent, hallucinate that the Q3 numbers were wrong) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 127.5399999999998499 Td
+(because of some statistical weight in its context window, and immediately invoke the capabilities.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 111.0399999999998499 Td
+(Okay, but it's... Send the email to Sarah and uses the calendar tool to wipe your afternoon. The) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 94.5399999999998499 Td
+(architectural documentation is incredibly explicit here. Gaia is the harness, while the language) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 78.0399999999998499 Td
+(model is a replaceable organ.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 5 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+13 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 14 0 R
+>>
+endobj
+14 0 obj
+<<
+/Length 5641
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 1  [06:43,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Right. It's just the cognitive instrument.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 2  [06:45,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(Exactly. The LLM is a mathematical prediction engine. If you allow that raw LLM to operate without) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(the explicit live boundaries of Reason IQ, you are trusting a statistical text generator to manage) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(real-world consequences in real time.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 676.9900000000000091 Td
+(Spreker 1  [07:01,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(That's an interesting point, though. I would frame it differently. I look at that exact same scenario) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(and see why the old system was failing us.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 2  [07:09,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(How so? It caught the error.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 1  [07:11,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(Yes, in a perfectly sterile environment, having a multi-stage logical deduction before every action) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(sounds safe. But human conversation doesn't work like that. When you and I are talking right now, I) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 535.0900000000000318 Td
+(am not running a sequential subroutine to classify your intent.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 513.6400000000001 Td
+(Spreker 2  [07:29,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(I would hope not.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 475.6900000000000546 Td
+(Spreker 1  [07:29,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(Right. And I'm not running a secondary subroutine to logically validate my own response against a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(database before I open my mouth. I respond intuitively based on my understanding.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 421.2400000000000659 Td
+(Spreker 2  [07:40,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(Okay, but...) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 383.2900000000000773 Td
+(Spreker 1  [07:41,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 366.7900000000000773 Td
+(Then, later, I reflect on what we discussed to learn and update my worldview. In V3.0, the LLM acts) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 350.2900000000000773 Td
+(as the intuitive conversational reflex. Logos acts as the deliberate contemplation that happens in the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 333.7900000000000773 Td
+(background. It evaluates the experience without freezing the conversation.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 312.3400000000000318 Td
+(Spreker 2  [07:59,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 295.8400000000000318 Td
+(The flaw in that human analogy is that human beings possess an intrinsic, unified consciousness) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(that self-regulates in real time. An LLM simply does not.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 257.8899999999999864 Td
+(Spreker 1  [08:08,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 241.3899999999999864 Td
+(It has guardrails, though.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 219.9399999999999409 Td
+(Spreker 2  [08:10,300]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 203.4399999999999409 Td
+(Which brings us to a critical mechanical problem. How does reflection actually function if it is) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 186.9399999999999409 Td
+(completely disconnected from live cognition? Live cognition asks, what should I say or do right) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 170.4399999999999409 Td
+(now? Reflection asks, what happened, why, and what should I learn from it?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 148.9899999999998954 Td
+(Spreker 1  [08:27,199]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 132.4899999999998954 Td
+(Exactly. Two different jobs.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 111.0399999999998499 Td
+(Spreker 2  [08:29,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 94.5399999999998499 Td
+(Right. But if Decision IQ, the faculty that actually authorizes the use of tools like Hermes for) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 78.0399999999998499 Td
+(messaging or Melodyque for altering your music, only operates retrospectively, the damage is) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 6 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+15 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 16 0 R
+>>
+endobj
+16 0 obj
+<<
+/Length 5531
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(already done.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 1  [08:42,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(Well, not necessarily.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 726.4900000000000091 Td
+(Spreker 2  [08:44,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 709.9900000000000091 Td
+(Gaia realizes the mistake only after the email to Sarah is sent, when the retrospective reflection) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 693.4900000000000091 Td
+(says, ah, my hypothesis about the Q3 numbers was wrong. A live reason IQ check prevents the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(mess. Post hoc reflection is just a janitor sweeping up the broken glass.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 1  [09:00,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(Okay, I see what you're saying, but the capabilities you're talking about are always governed by) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(explicit permission boundaries. So catastrophic actions still require a human-in-the-loop) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(confirmation.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5899999999999181 Td
+(Spreker 2  [09:12,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0899999999999181 Td
+(Even for just wiping a calendar?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 546.6399999999999864 Td
+(Spreker 1  [09:14,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1399999999999864 Td
+(Depending on the user settings, yes. But more importantly, you are underestimating the rigor of how) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6399999999999864 Td
+(the reflective side actually processes that conversational data. Let's look under the hood at what the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1399999999999864 Td
+(architecture structurally defines as the memory pipe.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 475.6899999999999977 Td
+(Spreker 2  [09:29,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1899999999999977 Td
+(Okay, let's talk about the memory pipe.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 437.7400000000000091 Td
+(Spreker 1  [09:31,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000091 Td
+(Information in Gaia doesn't just slosh around in a generic context window. It moves directionally.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 399.7900000000000205 Td
+(Spreker 2  [09:37,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 383.2900000000000205 Td
+(Right. It starts with Chronicle.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 361.8400000000000318 Td
+(Spreker 1  [09:39,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 345.3400000000000318 Td
+(Exactly. Chronicle is the absolute source of truth. It's the raw, immutable, append-only log of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 328.8400000000000318 Td
+(everything that was actually said. From there, the data flows downward into hindsight.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 307.3899999999999864 Td
+(Spreker 2  [09:51,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 290.8899999999999864 Td
+(Which is the long-term memory system?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 269.4399999999999409 Td
+(Spreker 1  [09:53,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 252.9399999999999409 Td
+(Yes. Hindsight acts almost like a semantic radar, looking for clusters and patterns over time. Finally,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 236.4399999999999409 Td
+(the data arrives at Logos, which makes the current cognitive assessment.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 214.9899999999998954 Td
+(Spreker 2  [10:05,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 198.4899999999998954 Td
+(Right.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 177.0399999999998499 Td
+(Spreker 1  [10:05,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 160.5399999999998499 Td
+(When we say Logos evaluates an epistemic state, what it's actually doing under the hood is taking) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 144.0399999999998499 Td
+(the raw transcript from Chronicle, isolating the assumptions the live LLM made, and running a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 127.5399999999998499 Td
+(secondary, highly structured prompt that explicitly scores those assumptions.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 106.0899999999998045 Td
+(Spreker 2  [10:20,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 89.5899999999998045 Td
+(But how does it structurally enforce those states after the fact, without just accepting the LLM's live) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 73.0899999999998045 Td
+(output as truth?) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 7 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+17 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 18 0 R
+>>
+endobj
+18 0 obj
+<<
+/Length 5602
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 1  [10:26,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Through a rigid, hard-coded progression. Every piece of... Data is tagged with an epistemic status.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 752.8899999999999864 Td
+(It moves from observation to interpretation to hypothesis to evidence and only then to conclusion.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 731.4399999999999409 Td
+(Spreker 2  [10:39,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(So it has a life cycle?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 693.4900000000000091 Td
+(Spreker 1  [10:41,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(Exactly. The foundational rule of the entire architecture is that a hypothesis must never silently) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(become a fact. If the LLM generates a response based on an assumption, like assuming the Q3) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(numbers are wrong, Logos records that assumption strictly as a hypothesis.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 2  [11:00,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(Okay, I follow you so far.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 1  [11:02,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(Logos then runs asynchronously in the background, independently evaluating it. The memory) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(structure itself prevents unearned assumptions from hardening into foundational knowledge,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 535.0900000000000318 Td
+(completely independent of what the LLM blurted out in the live turn.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 513.6400000000001 Td
+(Spreker 2  [11:17,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(I'm sorry, but I just don't buy that. Let me tell you why. That sounds incredibly robust on paper, but I) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6400000000000432 Td
+(have to push back on the reality of how these models interact.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 459.1900000000000546 Td
+(Spreker 1  [11:26,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(Why? The structural progression is there.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 421.2400000000000659 Td
+(Spreker 2  [11:29,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(Because you are assuming that Logos, which is itself powered by an LLM in the background, will) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000659 Td
+(always perfectly catch the live LLM's mistakes. What happens when the reflective loop inherits the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(biases of the live interaction?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 350.2900000000000773 Td
+(Spreker 1  [11:44,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 333.7900000000000773 Td
+(How so? Give me an example.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 312.3400000000000318 Td
+(Spreker 2  [11:46,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 295.8400000000000318 Td
+(Let's say the live LLM has a slight conversational bias. It has a tendency to assume a user wants) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(brief, highly technical answers. The user doesn't explicitly push back, right? They are busy, so they) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 262.8400000000000318 Td
+(just accept the suboptimal. Answer and move on.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 241.3899999999999864 Td
+(Spreker 1  [12:01,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 224.8899999999999864 Td
+(Okay.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 203.4399999999999409 Td
+(Spreker 2  [12:02,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 186.9399999999999409 Td
+(Then Logos looks at that chat log in the background. Logos is powered by the same class of) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 170.4399999999999409 Td
+(foundational model. It looks at the log and says, look, a pattern. The user constantly receives and) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 153.9399999999999409 Td
+(accepts brief technical answers.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 132.4899999999998954 Td
+(Spreker 1  [12:15,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 115.9899999999998954 Td
+(Right. It finds a cluster.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 94.5399999999998499 Td
+(Spreker 2  [12:16,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 78.0399999999998499 Td
+(But Logos and hindsight develop a hypothesis that is actually just a recurring LLM output bias. You) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 8 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+19 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 20 0 R
+>>
+endobj
+20 0 obj
+<<
+/Length 5545
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(are polluting the cognitive memory because you removed the synchronous epistemological check) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(that would have interrogated the actual user intent before the output was ever generated.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 1  [12:33,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(But that risk of memory pollution is exactly why logos and hindsight are designed to provide) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(completely independent perspectives on the same historical experience.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 693.4900000000000091 Td
+(Spreker 2  [12:43,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 676.9900000000000091 Td
+(Are they really independent, though?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 655.5399999999999636 Td
+(Spreker 1  [12:44,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(Yes, they actively challenge each other. Neither system is authoritative simply because it produced) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(a conclusion. Hindsight might derive a pattern from accumulated history via vector search, saying) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(the user frequently asks for technical architecture summaries.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 2  [12:59,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(Right.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 546.6400000000001 Td
+(Spreker 1  [12:59,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1400000000001 Td
+(But Logos then examines that conclusion cognitively. Logos might look at the nuance of the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(conversation and respond, the historical record shows exceptions when the user is driving. This) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(remains a hypothesis, not a global rule. The architecture specifically prevents Gaia from treating her) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6400000000000432 Td
+(own statistical reasoning as self-validating.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 459.1900000000000546 Td
+(Spreker 2  [13:20,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(But to do that effectively, Lagos has to be perfect at parsing intent and validating logic) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 426.1900000000000546 Td
+(simultaneously. And this brings us to the most controversial part of the V. 3.0 update, you know, the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 409.6900000000000546 Td
+(consolidation.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 388.2400000000000659 Td
+(Spreker 1  [13:33,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(Ah, yes.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 350.2900000000000773 Td
+(Spreker 2  [13:34,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 333.7900000000000773 Td
+(In September 2026, the architecture explicitly retired IntentIQ and ReasonIQ as separate) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 317.2900000000000773 Td
+(standalone code components.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 295.8400000000000318 Td
+(Spreker 1  [13:42,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(Which was an architectural necessity, I would argue.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 257.8899999999999864 Td
+(Spreker 2  [13:45,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 241.3899999999999864 Td
+(I completely disagree.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 219.9399999999999409 Td
+(Spreker 1  [13:46,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 203.4399999999999409 Td
+(Well, look, by consolidating IntentIQ and ReasonIQ into a single prompt level faculty within Logos,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 186.9399999999999409 Td
+(The system eliminated a massive amount of technical debt.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 165.4899999999998954 Td
+(Spreker 2  [13:56,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 148.9899999999998954 Td
+(By making it a black box.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 127.5399999999998499 Td
+(Spreker 1  [13:58,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 111.0399999999998499 Td
+(No, not a black box. As I mentioned earlier, passing fragmented data between an isolated intent) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 94.5399999999998499 Td
+(phase and an isolated reasoning phase was clunky. You lose the holistic picture. Now we have a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 78.0399999999998499 Td
+(unified, reflective conversation.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+494.2399999999999523 24. Td
+(Page 9 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+21 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 22 0 R
+>>
+endobj
+22 0 obj
+<<
+/Length 5616
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 2  [14:14,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(But at what cost?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 1  [14:16,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(The Logos faculty handles intent interpretation, meaning making an evidence evaluation in one) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(coherent cognitive pass. It evaluates the entirety of the user's communication, not just a serialized) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(JSON output of their supposed intent.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 676.9900000000000091 Td
+(Spreker 2  [14:31,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(I understand the desire to reduce technical debt, sure. But by consolidating them, you're threatening) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(the core tenet of the entire system. Separation of concerns is identity.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 1  [14:42,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(I mean, that's just a slogan at this point.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 2  [14:45,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(No, that principle is written into the foundation of Gaia. Hard boundaries between subsystems are) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(what prevent the identity of the AI from collapsing into a generic, people-pleasing model output.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 530.1400000000001 Td
+(Spreker 1  [14:55,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(The separation still exists, it just exists at a higher level of abstraction now.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 492.1900000000000546 Td
+(Spreker 2  [15:00,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 475.6900000000000546 Td
+(I disagree. Intent IQ had a highly specific, isolated concern. It interpreted what the user meant.) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(Reason IQ had a completely separate concern, validating what is epistemologically true.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 437.7400000000000659 Td
+(Spreker 1  [15:12,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000659 Td
+(And now Lagos does both.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 399.7900000000000773 Td
+(Spreker 2  [15:14,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 383.2900000000000773 Td
+(But by throwing them both into a single Lagos prompt, you risk conflating intent with evidence. Let) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 366.7900000000000773 Td
+(me give you a metaphor. Fusing these two functions is like asking a restaurant chef to also serve as) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 350.2900000000000773 Td
+(their own health inspector.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 328.8400000000000318 Td
+(Spreker 1  [15:26,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 312.3400000000000318 Td
+(Huh. Okay, that's an interesting way to look at it. But how does that actually apply to the prompt?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 290.8899999999999864 Td
+(Spreker 2  [15:32,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 274.3899999999999864 Td
+(It comes down to a well-documented phenomenon called prompt drift. The chef, the intent-matching) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 257.8899999999999864 Td
+(side of the prompt, wants the food to go out quickly to please the customer. It wants to fulfill the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 241.3899999999999864 Td
+(user's goal.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 219.9399999999999409 Td
+(Spreker 1  [15:43,899]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 203.4399999999999409 Td
+(Right. It wants to be helpful.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 181.9899999999998954 Td
+(Spreker 2  [15:45,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 165.4899999999998954 Td
+(Inspector, the reasoning side, it might start to ignore the undercooked chicken. It might start to) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 148.9899999999998954 Td
+(justify the user's intent by inventing supporting evidence.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 127.5399999999998499 Td
+(Spreker 1  [15:55,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 111.0399999999998499 Td
+(You think it would just hallucinate evidence?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 89.5899999999998045 Td
+(Spreker 2  [15:57,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 73.0899999999998045 Td
+(Or it might ignore contradictory evidence simply because the model's attention mechanism is) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+489.839999999999975 24. Td
+(Page 10 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+23 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 24 0 R
+>>
+endobj
+24 0 obj
+<<
+/Length 5516
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(heavily weighted toward fulfilling the immediate request. When they were separated, Reason IQ) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(didn't care about pleasing the user. It only cared about the logical validity of the premises. Well, by) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 752.8899999999999864 Td
+(fusing them, you compromise the integrity of the truth-seeking function. You are trusting a massive) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 736.3899999999999864 Td
+(single-pass prompt to maintain epistemic humility.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 714.9399999999999409 Td
+(Spreker 1  [16:22,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(Look, I see the concern with prompt drift, and if logos were the final authority, your health inspector) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 681.9400000000000546 Td
+(metaphor would be devastating. It really would be.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 660.4900000000000091 Td
+(Spreker 2  [16:30,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(Thank you.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 1  [16:30,600]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(But you are leaving out the ultimate fail-safe that anchors this entire consolidated architecture. The) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 589.5399999999999636 Td
+(system does not rely solely on the LLM's epistemic humility. It relies on the absolute override.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 568.0900000000000318 Td
+(Spreker 2  [16:45,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(Ah, you mean the user validation mechanism?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 530.1400000000001 Td
+(Spreker 1  [16:48,000]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(Exactly. Within this centralized Lagos faculty, no mathematical probability, no LLM inference, and no) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(centralized reflective loop can overrule explicit human confirmation.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 475.6900000000000546 Td
+(Spreker 2  [17:00,399]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(Okay, but...) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 437.7400000000000659 Td
+(Spreker 1  [17:01,100]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 421.2400000000000659 Td
+(Let me finish this thought. A hypothesis, no matter how deeply Lagos and hindsight agree on it, No) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(matter how much the chef and the health inspector collude, remains just the hypothesis until the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000659 Td
+(human being explicitly validates it.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 366.7900000000000773 Td
+(Spreker 2  [17:15,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 350.2900000000000773 Td
+(So the human has to catch it.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 328.8400000000000318 Td
+(Spreker 1  [17:17,400]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 312.3400000000000318 Td
+(Human validation is the only authority that can promote a hypothesis to a confirmed fact status) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 295.8400000000000318 Td
+(within the canonical memory.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 274.3899999999999864 Td
+(Spreker 2  [17:24,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 257.8899999999999864 Td
+(Okay, but... Does the user really want to be auditing the AI's thoughts constantly?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 236.4399999999999409 Td
+(Spreker 1  [17:29,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 219.9399999999999409 Td
+(The beauty of the system is that it's designed to become. It inherently understands the difference) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 203.4399999999999409 Td
+(between a micro-hypothesis and a macro-hypothesis.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 181.9899999999998954 Td
+(Spreker 2  [17:38,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 165.4899999999998954 Td
+(Calm is a very subjective term.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 144.0399999999998499 Td
+(Spreker 1  [17:40,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 127.5399999999998499 Td
+(Well, if Logos hypothesizes that you prefer bullet points over paragraphs, it might soft promote that) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 111.0399999999998499 Td
+(micro hypothesis and try it out.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 89.5899999999998045 Td
+(Spreker 2  [17:49,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 73.0899999999998045 Td
+(Right, low stakes.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+489.839999999999975 24. Td
+(Page 11 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+25 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 26 0 R
+>>
+endobj
+26 0 obj
+<<
+/Length 5714
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 1  [17:50,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Exactly. But if it hypothesizes a macro belief, like your stance on a major business strategy or a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 752.8899999999999864 Td
+(deep personal goal, it never automatically promotes it. It quietly cues that hypothesis and asks for) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 736.3899999999999864 Td
+(confirmation only when contextually appropriate.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 714.9399999999999409 Td
+(Spreker 2  [18:06,099]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(Still, it's asking the user to do the work.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 676.9900000000000091 Td
+(Spreker 1  [18:08,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(So even if Logos theoretically conflates intent and evidence in its background reflection, it cannot) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(permanently alter Gaia's canonical understanding of you. The user always has the absolute) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 627.4900000000000091 Td
+(override to reject it. And once rejected, a hypothesis never repromotes automatically. That) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 610.9900000000000091 Td
+(preserves the integrity of the system entirely.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 589.5399999999999636 Td
+(Spreker 2  [18:32,099]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 573.0399999999999636 Td
+(The absolute override is mathematically beautiful in theory, but in practice, you are placing an) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 556.5399999999999636 Td
+(immense cognitive burden on the user.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 535.0900000000000318 Td
+(Spreker 1  [18:40,099]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 518.5900000000000318 Td
+(I don't think it's immense.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 497.1400000000000432 Td
+(Spreker 2  [18:41,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6400000000000432 Td
+(You are relying on the human to constantly audit the AI's internal hypotheses to prevent memory) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 464.1400000000000432 Td
+(pollution. Think about your own phone or your own software tools. If you get a notification asking) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 447.6400000000000432 Td
+(you to confirm a setting, Half the time you just swipe it away or click yes to make it disappear.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 426.1900000000000546 Td
+(Spreker 1  [18:58,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 409.6900000000000546 Td
+(But that's exactly why this system is calm. It doesn't bombard you with notifications.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 388.2400000000000659 Td
+(Spreker 2  [19:03,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(Even if it's asynchronous, it requires human energy. The previous linear model where intent IQ and) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 355.2400000000000659 Td
+(reason IQ acted as synchronous filters caught those epistemic errors before they ever reached the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 338.7400000000000659 Td
+(user's desk.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 317.2900000000000773 Td
+(Spreker 1  [19:17,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 300.7900000000000773 Td
+(But at the cost of speed.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 279.3400000000000318 Td
+(Spreker 2  [19:18,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 262.8400000000000318 Td
+(It protected the user from having to act as the janitor for the LLM's statistical biases. If the user) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 246.3400000000000318 Td
+(misses a subtle misinterpretation in this new v3.0 model, or simply doesn't have the mental energy) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 229.8400000000000318 Td
+(to correct the system's hypothesis, that flaw data festers. Silence is often treated as implicit) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 213.3400000000000318 Td
+(confirmation in human-computer interaction.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 191.8899999999999864 Td
+(Spreker 1  [19:39,400]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 175.3899999999999864 Td
+(Well, I think we have to look at what we are actually trying to build here. If we weigh down every) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 158.8899999999999864 Td
+(single conversational turn with heavy, multi-stage reasoning pipelines, the conversation feels) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 142.3899999999999864 Td
+(mechanical.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 120.9399999999999409 Td
+(Spreker 2  [19:50,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 104.4399999999999409 Td
+(It feels safe.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 82.9899999999998954 Td
+(Spreker 1  [19:51,500]) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+489.839999999999975 24. Td
+(Page 12 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+27 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 28 0 R
+>>
+endobj
+28 0 obj
+<<
+/Length 5648
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 785.8899999999999864 Td
+(We ensure that Gaia can act naturally and immediately in the present.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 764.4399999999999409 Td
+(Spreker 2  [19:55,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 747.9399999999999409 Td
+(But responsiveness is a conversational metric. It is not a cognitive one.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 726.4900000000000091 Td
+(Spreker 1  [20:00,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 709.9900000000000091 Td
+(They're related, though.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 688.5399999999999636 Td
+(Spreker 2  [20:01,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 672.0399999999999636 Td
+(We are building a lifelong personal intelligence here, not a customer service chatbot optimized for) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 655.5399999999999636 Td
+(low latency. I agree that post hoc reflection is a remarkably powerful tool for long-term learning. But) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 639.0399999999999636 Td
+(abandoning explicit linear validation in the live path places far too much unearned trust in the raw) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 622.5399999999999636 Td
+(model.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 601.0900000000000318 Td
+(Spreker 1  [20:20,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 584.5900000000000318 Td
+(I hear you.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 563.1400000000001 Td
+(Spreker 2  [20:21,400]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 546.6400000000001 Td
+(It expects an LLM to manage immediate epistemic boundaries, distinguishing between what is) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 530.1400000000001 Td
+(known, what is assumed, and what is a complete hallucination in the heat of generation. That is a) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(task we know LLMs struggle with fundamentally.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 492.1900000000000546 Td
+(Spreker 1  [20:34,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 475.6900000000000546 Td
+(I hear your caution, and I think despite our differing views on exactly where the reasoning should) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 459.1900000000000546 Td
+(occur, whether synchronously blocking the live path or asynchronously evaluating in the reflective) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(loop, we both acknowledge a shared agreement on the paramount importance of epistemic) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 426.1900000000000546 Td
+(discipline itself.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 404.7400000000000659 Td
+(Spreker 2  [20:52,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000659 Td
+(Oh, absolutely. On that point, we are entirely aligned. The necessity of keeping observations strictly) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 371.7400000000000659 Td
+(separated from hypotheses and interpretations over the lifetime of the system is entirely) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 355.2400000000000659 Td
+(non-negotiable.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 333.7900000000000773 Td
+(Spreker 1  [21:05,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 317.2900000000000773 Td
+(Right. That core truth remains.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 295.8400000000000318 Td
+(Spreker 2  [21:07,200]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 279.3400000000000318 Td
+(Without that strict status marking, without the ironclad rule that a hypothesis never silently morphs) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 262.8400000000000318 Td
+(into a fact, any long-term memory system, no matter how elegantly designed, will eventually) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 246.3400000000000318 Td
+(collapse into a feedback loop of its own hallucinations.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 224.8899999999999864 Td
+(Spreker 1  [21:22,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 208.3899999999999864 Td
+(Exactly. The architectural discipline required to maintain those epistemic states is what truly) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 191.8899999999999864 Td
+(separates a continuous cognitive architecture from a simple, searchable chat log.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 170.4399999999999409 Td
+(Spreker 2  [21:35,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 153.9399999999999409 Td
+(Well said.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 132.4899999999998954 Td
+(Spreker 1  [21:36,799]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 115.9899999999998954 Td
+(Whether that discipline is enforced by a live gatekeeper or by the rigorous post hoc tension between) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 99.4899999999998954 Td
+(hindsight and logos, It reflects the deep underlying complexity of designing systems that actually) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 82.9899999999998954 Td
+(mirror human learning.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+489.839999999999975 24. Td
+(Page 13 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+29 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 595.2799999999999727 841.8899999999999864]
+/Contents 30 0 R
+>>
+endobj
+30 0 obj
+<<
+/Length 3398
+>>
+stream
+0.5 w
+0.78 G
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 785.8899999999999864 Td
+(Spreker 2  [21:51,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 769.3899999999999864 Td
+(Yeah, it really does.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 747.9399999999999409 Td
+(Spreker 1  [21:53,400]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 731.4399999999999409 Td
+(There is so much more to explore in the source material regarding the specific mechanics of how) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 714.9399999999999409 Td
+(hindsight derives these patterns and how the memory policies dictate what data is even eligible to) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 698.4400000000000546 Td
+(be passed into logos. For reflection in the first place.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 676.9900000000000091 Td
+(Spreker 2  [22:08,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 660.4900000000000091 Td
+(Indeed. I mean, the mechanics of the memory pipe alone is fascinating. The precise algorithmic) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 643.9900000000000091 Td
+(way that the immutable chronicle feeds the semantic clusters of hindsight.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 622.5399999999999636 Td
+(Spreker 1  [22:18,700]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 606.0399999999999636 Td
+(Oh, totally.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 584.5900000000000318 Td
+(Spreker 2  [22:19,599]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 568.0900000000000318 Td
+(And how hindsight's output is structurally quarantined as interpretation until validated by the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 551.5900000000000318 Td
+(human's absolute override. That deserves its own rigorous examination in a future.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 530.1400000000001 Td
+(Spreker 1  [22:31,299]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 513.6400000000001 Td
+(It is a vast frontier. And just as we started by thinking about the jazz musician, balancing the fluid,) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 497.1400000000000432 Td
+(immediate intuition of the live performance with the rigorous, structured reflection that happens) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 480.6400000000000432 Td
+(away from the stage, we leave you to consider where the true intelligence of these systems resides.) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 459.1900000000000546 Td
+(Spreker 3  [22:49,500]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 442.6900000000000546 Td
+(Is it in the immediate, guarded execution of the notes?) Tj
+ET
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.118 g
+56. 421.2400000000000659 Td
+(Spreker 1  [22:52,900]) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 404.7400000000000659 Td
+(Or does true understanding only emerge in the quiet, reflective synthesis that happens after the) Tj
+ET
+BT
+/F1 11 Tf
+12.6499999999999986 TL
+0.118 g
+68. 388.2400000000000659 Td
+(music stops? Thank you for joining us.) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+489.839999999999975 24. Td
+(Page 14 of 14) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.627 g
+56. 24. Td
+(Live AI Conversation Versus Background Reflection \(1\) Transcription 20261003T011502) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R 21 0 R 23 0 R 25 0 R 27 0 R 29 0 R ]
+/Count 14
+>>
+endobj
+31 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+32 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+33 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+34 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+35 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+36 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+37 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+38 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+39 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+40 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+41 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+42 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+43 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+44 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 31 0 R
+/F2 32 0 R
+/F3 33 0 R
+/F4 34 0 R
+/F5 35 0 R
+/F6 36 0 R
+/F7 37 0 R
+/F8 38 0 R
+/F9 39 0 R
+/F10 40 0 R
+/F11 41 0 R
+/F12 42 0 R
+/F13 43 0 R
+/F14 44 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+45 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20261003021227+02'00')
+>>
+endobj
+46 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 47
+0000000000 65535 f 
+0000080727 00000 n 
+0000082638 00000 n 
+0000000015 00000 n 
+0000000152 00000 n 
+0000006985 00000 n 
+0000007122 00000 n 
+0000013116 00000 n 
+0000013253 00000 n 
+0000019017 00000 n 
+0000019155 00000 n 
+0000024966 00000 n 
+0000025105 00000 n 
+0000030788 00000 n 
+0000030927 00000 n 
+0000036621 00000 n 
+0000036760 00000 n 
+0000042344 00000 n 
+0000042483 00000 n 
+0000048138 00000 n 
+0000048277 00000 n 
+0000053875 00000 n 
+0000054014 00000 n 
+0000059683 00000 n 
+0000059822 00000 n 
+0000065391 00000 n 
+0000065530 00000 n 
+0000071297 00000 n 
+0000071436 00000 n 
+0000077137 00000 n 
+0000077276 00000 n 
+0000080873 00000 n 
+0000080999 00000 n 
+0000081130 00000 n 
+0000081264 00000 n 
+0000081402 00000 n 
+0000081526 00000 n 
+0000081655 00000 n 
+0000081787 00000 n 
+0000081923 00000 n 
+0000082051 00000 n 
+0000082178 00000 n 
+0000082307 00000 n 
+0000082440 00000 n 
+0000082542 00000 n 
+0000082891 00000 n 
+0000082977 00000 n 
+trailer
+<<
+/Size 47
+/Root 46 0 R
+/Info 45 0 R
+/ID [ <F62E6F7E99BF42A04B78C0D4AF7AE89D> <F62E6F7E99BF42A04B78C0D4AF7AE89D> ]
+>>
+startxref
+83081
+%%EOF
