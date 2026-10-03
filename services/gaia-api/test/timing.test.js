@@ -201,13 +201,16 @@ test('timing: runTurnCore produces timing events', async () => {
     assert.ok(turnDone, 'turn.done event should exist');
     assert.equal(turnDone.traceId, 'test-trace');
     assert.ok(turnDone.totalDurationMs >= 0);
-    assert.ok(typeof turnDone.intentMs === 'number');
+    // v3.0 live path: direct generation — retrieval + generation only.
+    // No intent/decision/capability/reasoning stages on the live path
+    // (ReasonIQ is background cognition; its deferred.* events land
+    // after turn.done, never inside it).
     assert.ok(typeof turnDone.retrievalMs === 'number');
-    // ReasonIQ is background cognition: the conversational pipeline has no
-    // reasoning stage at all, so turn.done carries no reasoningMs field.
+    assert.ok(typeof turnDone.generationMs === 'number');
+    assert.equal(turnDone.intentMs, undefined);
     assert.equal(turnDone.reasoningMs, undefined);
-    assert.ok(typeof turnDone.decisionMs === 'number');
-    assert.ok(typeof turnDone.capabilityMs === 'number');
+    assert.equal(turnDone.decisionMs, undefined);
+    assert.equal(turnDone.capabilityMs, undefined);
   } finally {
     console.log = originalLog;
   }

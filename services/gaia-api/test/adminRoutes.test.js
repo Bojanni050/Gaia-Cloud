@@ -826,3 +826,82 @@ test('GET /admin/api/reasoniq/log returns an empty list without a decisionStore'
     await ctx.close();
   }
 });
+
+// --- Backup generation provider (v3.0 failover) ---
+
+test('GET /admin/api/provider/backup/config requires auth', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`);
+    assert.equal(res.status, 401);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/backup/config returns empty defaults before anything is saved', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, '');
+    assert.equal(body.baseUrl, '');
+    assert.equal(body.model, '');
+    assert.equal(body.hasApiKey, false);
+    assert.equal(body.maskedApiKey, null);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/backup/config saves backup provider, response never contains raw key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'backup-model', apiKey: 'sk-backup-super-secret' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.provider, 'openrouter');
+    assert.equal(body.model, 'backup-model');
+    assert.equal(body.hasApiKey, true);
+    assert.ok(!JSON.stringify(body).includes('sk-backup-super-secret'));
+    assert.equal(ctx.providerStore.getConfig().generationBackup.apiKey, 'sk-backup-super-secret');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/backup/config with an empty apiKey keeps the previously saved key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'openrouter', model: 'm1', apiKey: 'sk-backup-key' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ model: 'm2', apiKey: '' }),
+    });
+    const body = await res.json();
+    assert.equal(body.model, 'm2');
+    assert.equal(body.hasApiKey, true);
+    assert.equal(ctx.providerStore.getConfig().generationBackup.apiKey, 'sk-backup-key');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/backup/config rejects an empty body', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/backup/config`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});

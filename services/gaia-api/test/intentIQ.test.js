@@ -1399,34 +1399,32 @@ test('compound conversation does not classify an informational question as conve
   assert.equal(d.needsClarification, false);
 });
 
-test('compound conversational turns preserve the IntentIQ result through both transports', async () => {
+test('compound conversational turns go direct on both transports — no live IntentIQ, identical replies', async () => {
+  // v3.0: the live turn never calls IntentIQ (Logos reflects after
+  // delivery). Both transports hand the same assembled prompt straight
+  // to the configured generation route.
   const { performTurn, performStreamingTurn } = require('../src/turn');
   const input = [{ role: 'user', content: 'dank je. hoe is het?' }];
-  const decisions = [];
-  const intent = classify(input, silent);
-  const reasoning = { reasoningDepth: 'shallow' };
-  const decisionEngine = (args) => {
-    decisions.push(args.intent);
-    return { action: 'native', reason: 'test', capability_execute: false };
+  let intentIQCalls = 0;
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'ok'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('ok', false); return 'ok'; },
   };
-  const orchestrate = async () => ({ action: 'native', output: 'ok' });
   const common = {
     messages: input,
     documents: {},
-    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
     hindsight: { recall: async () => [], reflect: async () => {} },
-    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
-    intentIQ: async () => intent,
-    reasonIQ: async () => reasoning,
-    decisionEngine,
-    orchestrate,
+    generator,
+    intentIQ: async () => { intentIQCalls += 1; return { intent: 'converse', status: 'accepted' }; },
   };
-  await performTurn(common);
-  await performStreamingTurn({ ...common, res: {
-    writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
-  } });
-  assert.equal(decisions.length, 2);
-  assert.deepEqual(decisions[0], decisions[1]);
+  const nonStream = await performTurn(common);
+  const res = { written: [], ended: false, writeHead() {}, write(c) { this.written.push(c); }, end() { this.ended = true; }, status() { return this; }, json() {} };
+  await performStreamingTurn({ ...common, res });
+  assert.equal(nonStream.body.reply, 'ok');
+  assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(seenPrompts.length, 2);
+  assert.deepEqual(seenPrompts[1], seenPrompts[0]);
 });
 
 // --- self-directed investigation statements vs assistant-directed requests --
@@ -1507,34 +1505,30 @@ test('assistant-directed: bare imperatives and voor-me requests are never self-d
   }
 });
 
-test('self-directed decisions preserve the IntentIQ result through both transports', async () => {
+test('self-directed turns go direct on both transports — identical generator prompts, no live IntentIQ', async () => {
   const { performTurn, performStreamingTurn } = require('../src/turn');
   const input = [{ role: 'user', content: 'Ik ga nu uitzoeken waarom jij traag reageert.' }];
-  const decisions = [];
-  const intent = classify(input, silent);
-  const reasoning = { reasoningDepth: 'shallow' };
-  const decisionEngine = (args) => {
-    decisions.push(args.intent);
-    return { action: 'native', reason: 'test', capability_execute: false };
+  let intentIQCalls = 0;
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'ok'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('ok', false); return 'ok'; },
   };
-  const orchestrate = async () => ({ action: 'native', output: 'ok' });
   const common = {
     messages: input,
     documents: {},
-    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
     hindsight: { recall: async () => [], reflect: async () => {} },
-    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
-    intentIQ: async () => intent,
-    reasonIQ: async () => reasoning,
-    decisionEngine,
-    orchestrate,
+    generator,
+    intentIQ: async () => { intentIQCalls += 1; return { intent: 'converse', status: 'accepted' }; },
   };
-  await performTurn(common);
+  const nonStream = await performTurn(common);
   await performStreamingTurn({ ...common, res: {
     writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
   } });
-  assert.equal(decisions.length, 2);
-  assert.deepEqual(decisions[0], decisions[1]);
+  assert.equal(nonStream.body.reply, 'ok');
+  assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(seenPrompts.length, 2);
+  assert.deepEqual(seenPrompts[0], seenPrompts[1]);
 });
 
 // --- creative artifact requests vs concept explanations ---------------------
@@ -1636,71 +1630,57 @@ test('research requests keep self-directed phrasing out — "ik zoek/onderzoek" 
   }
 });
 
-test('creative artifact decisions preserve the IntentIQ result through both transports', async () => {
+test('creative artifact turns go direct on both transports — identical generator prompts, no live IntentIQ', async () => {
   const { performTurn, performStreamingTurn } = require('../src/turn');
   const input = [{ role: 'user', content: 'ik wil mijn stem uploaden in Suno, wat is een goede songtekst om te zingen daarvoor?' }];
-  const decisions = [];
-  const intent = classify(input, silent);
-  const reasoning = { reasoningDepth: 'shallow' };
-  const decisionEngine = (args) => {
-    decisions.push(args.intent);
-    return { action: 'native', reason: 'test', capability_execute: false };
+  let intentIQCalls = 0;
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'ok'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('ok', false); return 'ok'; },
   };
-  const orchestrate = async () => ({ action: 'native', output: 'ok' });
   const common = {
     messages: input,
     documents: {},
-    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
     hindsight: { recall: async () => [], reflect: async () => {} },
-    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
-    intentIQ: async () => intent,
-    reasonIQ: async () => reasoning,
-    decisionEngine,
-    orchestrate,
+    generator,
+    intentIQ: async () => { intentIQCalls += 1; return { intent: 'create.generate', status: 'accepted' }; },
   };
-  await performTurn(common);
+  const nonStream = await performTurn(common);
   await performStreamingTurn({ ...common, res: {
     writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
   } });
-assert.equal(decisions.length, 2);
-  assert.deepEqual(decisions[0], decisions[1]);
+  assert.equal(nonStream.body.reply, 'ok');
+assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(seenPrompts.length, 2);
+  assert.deepEqual(seenPrompts[0], seenPrompts[1]);
 });
 
-test('ambiguity calibration decisions preserve the IntentIQ result through both transports', async () => {
+test('ambiguity calibration turns go direct on both transports — identical generator prompts, no live IntentIQ', async () => {
   const { performTurn, performStreamingTurn } = require('../src/turn');
-  // A semantic-tier decision that is accepted (clear winner) must produce
-  // the identical IntentIQ result on both transports.
-  const intent = {
-    schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted',
-    confidence: 0.85, ambiguous: false, needsClarification: false,
-    speechAct: 'statement', sourceOfTruth: 'conversation', entities: [],
-    candidates: [{ intent: 'converse', score: 0.85 }, { intent: 'meta.relational', score: 0.6 }],
-    referents: [], needsSemanticCheck: false,
+  // A turn that IntentIQ would accept with a clear winner still goes
+  // direct on both transports: Logos reflects after delivery.
+  let intentIQCalls = 0;
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'ok'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('ok', false); return 'ok'; },
   };
-  const decisions = [];
-  const reasoning = { reasoningDepth: 'shallow' };
-  const decisionEngine = (args) => {
-    decisions.push(args.intent);
-    return { action: 'native', reason: 'test', capability_execute: false };
-  };
-  const orchestrate = async () => ({ action: 'native', output: 'ok' });
   const common = {
     messages: [{ role: 'user', content: 'dank je, je bent nog slimmer als het goed is' }],
     documents: {},
-    hermes: { chat: async () => 'unused', stream: async () => 'unused' },
     hindsight: { recall: async () => [], reflect: async () => {} },
-    nativeGenerator: { generate: async () => 'ok', stream: async () => 'ok' },
-    intentIQ: async () => intent,
-    reasonIQ: async () => reasoning,
-    decisionEngine,
-    orchestrate,
+    generator,
+    intentIQ: async () => { intentIQCalls += 1; return { intent: 'converse', status: 'accepted' }; },
   };
-  await performTurn(common);
+  const nonStream = await performTurn(common);
   await performStreamingTurn({ ...common, res: {
     writeHead() {}, write() {}, end() {}, status() { return this; }, json() {},
   } });
-assert.equal(decisions.length, 2);
-  assert.deepEqual(decisions[0], decisions[1]);
+  assert.equal(nonStream.body.reply, 'ok');
+  assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(seenPrompts.length, 2);
+  assert.deepEqual(seenPrompts[0], seenPrompts[1]);
 });
 
 test('v0.4: the frame survives trailing clauses and multi-sentence reports', () => {
@@ -1870,49 +1850,48 @@ test('fast-path: research request keeps existing inform.explain semantics', () =
   assert.equal(d.status, 'accepted');
 });
 
-test('fast-path: parity — performTurn and performStreamingTurn get same IntentIQ output', async () => {
+test('fast-path: parity — performTurn and performStreamingTurn both go direct without live IntentIQ', async () => {
+  // v3.0: neither transport runs IntentIQ live. Both deliver the
+  // configured generator's reply from the identical assembled prompt.
   const { performTurn, performStreamingTurn } = require('../src/turn');
-  const intentLogs = [];
-  const logger = (line) => intentLogs.push(line);
-
-  const mockIntentIQ = async (messages, opts) => {
-    const { interpret } = require('../src/logos/intentIQ');
-    return interpret(messages, { ...opts, logger });
+  let intentIQCalls = 0;
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'ok'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('ok', false); return 'ok'; },
   };
+  const mockIntentIQ = async () => { intentIQCalls += 1; return { intent: 'converse', status: 'accepted' }; };
 
   // Non-streaming
-  intentLogs.length = 0;
-  await performTurn({
+  const nonStream = await performTurn({
     messages: [{ role: 'user', content: 'ja geeft een voldaan gevoel' }],
     documents: {},
-    hermes: { chat: async () => 'ok' },
+    generator,
     intentIQ: mockIntentIQ,
   });
-  const nonStreamingLog = JSON.parse(intentLogs[0]);
 
   // Streaming
-  intentLogs.length = 0;
   const res = {
+    written: [],
     status: () => ({ json: () => res, send: () => res }),
     setHeader: () => {},
-    write: () => {},
+    write: (c) => { res.written.push(c); },
     end: () => {},
     get headersSent() { return false; },
   };
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'ja geeft een voldaan gevoel' }],
     documents: {},
-    hermes: { stream: async (msgs, { onDelta }) => { onDelta('ok', false); return 'ok'; } },
+    generator,
     res,
     intentIQ: mockIntentIQ,
   });
-  const streamingLog = JSON.parse(intentLogs[0]);
 
-  // Same semanticCalled and semanticSkipReason on both transports
-  assert.equal(nonStreamingLog.semanticCalled, streamingLog.semanticCalled);
-  assert.equal(nonStreamingLog.semanticSkipReason, streamingLog.semanticSkipReason);
-  assert.equal(nonStreamingLog.intent, streamingLog.intent);
-  assert.equal(nonStreamingLog.status, streamingLog.status);
+  // Same reply on both transports, IntentIQ never ran live.
+  assert.equal(nonStream.body.reply, 'ok');
+  assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(seenPrompts.length, 2);
+  assert.deepEqual(seenPrompts[0], seenPrompts[1]);
 });
 
 test('fast-path: "ik ben er blij mee" skips semantic', async () => {

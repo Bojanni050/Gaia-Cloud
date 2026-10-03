@@ -18,14 +18,14 @@
  *   GET  /speech/info        → voice description    (auth required; { configured, provider, languages } — so clients
  *                              know whether a non-English reply is worth speaking; judges no text)
  *
- * Everything cognitive lives here or behind a capability (Hermes, or Gaia's
- * own native generator — src/generation/gaiaGenerator.js, wired in below via
- * `nativeGenerator` when GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are set);
- * clients send plain turns and render plain replies. Model-agnostic by
- * construction: the reply shape carries no provider information whatsoever.
- * Which capability actually answers a turn is turn.js's Decision Engine's
- * call, never this file's — server.js only constructs and hands over what
- * is available.
+ * Everything cognitive lives here or behind generation (Gaia's own
+ * configured primary/backup inference providers —
+ * src/generation/gaiaGenerator.js + generationFailover.js, resolved per
+ * turn via `generator`/`backupGenerator`); clients send plain turns and
+ * render plain replies. Model-agnostic by construction: the reply shape
+ * carries no provider information whatsoever. The live turn is direct
+ * generation only — no Decision Engine, no orchestration in this path
+ * (server.js only constructs and hands over what is available).
  */
 const express = require('express');
 const { parseTokens, createAuthMiddleware } = require('./auth');
@@ -38,17 +38,14 @@ const { createHindsightCognitionAdapter } = require('./reasoning/hindsightCognit
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
-const { createFromEnv: createWebSearchFromEnv } = require('./tools/braveSearch');
-const { createConversationSearchTool } = require('./tools/conversationSearch');
-const { createHindsightRetrievalCapability } = require('./tools/hindsightRetrieval');
-const { createFromEnv: createFoundationFromEnv } = require('./tools/foundationSearch');
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
 const { createReasoningModelStore } = require('./logos/reasoningModelStore');
 const { createProviderStore } = require('./providerStore');
-const { resolveRoleConfig, resolveTtsConfig } = require('./providerConfigResolver');
+const { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig } = require('./providerConfigResolver');
+const { createChronicleClient } = require('./chronicleClient');
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
@@ -56,9 +53,6 @@ const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { createTtsLog } = require('./speech/ttsLog');
 const { createIntentModelStore } = require('./logos/intentModelStore');
-const { resolveIntentModelConfig } = require('./logos/intentModelConfigResolver');
-const { createIntentModelClient, isConfigured: isIntentModelConfigured } = require('./logos/intentModelClient');
-const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { getUserIdentity } = require('./identity');
 const { createVersionRouter } = require('./versionRoutes');
 
@@ -67,11 +61,14 @@ const PORT = Number(process.env.PORT || 8891);
 function createApp(env = process.env) {
   const soul = loadSoulWithEnv(env);
   const documents = loadFoundationDocumentsWithEnv(env);
+  // Hermes stays constructed for explicit future HADES use only — it is
+  // never passed into the live turn and never an inference fallback.
   const hermes = createHermesClient({
     baseUrl: env.HERMES_BASE_URL,
     model: env.HERMES_MODEL || 'hermes-agent',
     authToken: env.HERMES_AUTH_TOKEN,
   });
+  void hermes;
   const hindsight = createHindsightClient({
     baseUrl: env.HINDSIGHT_URL || 'http://100.65.0.15:8888',
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
@@ -159,11 +156,6 @@ function createApp(env = process.env) {
   // separate from nativeGenerator above: this never influences what Gaia
   // says, only how an already-decided reply sounds.
   const tts = createTtsFromEnv(env);
-  // Gaia's web tool (src/tools/braveSearch.js) — undefined when
-  // GAIA_WEB_SEARCH_API_KEY is unset, in which case the Decision Engine
-  // never sees a "web" capability and external-knowledge turns route
-  // through Hermes exactly as before this existed (see .env.example).
-  const webSearch = createWebSearchFromEnv(env);
   const auth = createAuthMiddleware(parseTokens(env.GAIA_API_TOKEN));
 
   const app = express();
@@ -201,20 +193,8 @@ function createApp(env = process.env) {
   const ttsLog = createTtsLog();
   app.use('/admin', createAdminRouter({ store: reasoningModelStore, providerStore, decisionStore, intentModelStore, auth, ttsLog }));
 
-  // IntentIQ's semantic-classification model client, re-resolved on every
-  // call (not once at startup) — same reasoning as getEffectiveNativeGenerator
-  // below: an admin-saved model override must take effect on the very next
-  // turn, not after a restart. Falls back to undefined (heuristic-only
-  // classification) exactly when intentModelClient.js's own createFromEnv
-  // would, i.e. no base URL configured at all.
-  function getEffectiveIntentModel() {
-    const resolved = resolveIntentModelConfig({ store: intentModelStore, providerStore, env });
-    return isIntentModelConfigured(resolved) ? createIntentModelClient(resolved) : undefined;
-  }
-
-  function intentIQWithEffectiveModel(messages, options = {}) {
-    return classifyIntent(messages, { ...options, model: getEffectiveIntentModel() });
-  }
+  // v3.0: no live IntentIQ — Logos reflects after delivery. The intent
+  // model store stays for the admin surface only.
 
   // Provider store role overrides — when a role has a model selected via
   // the admin surface, it takes precedence over env vars. This is
@@ -240,6 +220,27 @@ function createApp(env = process.env) {
         })
       : nativeGenerator;
   }
+
+  // Backup inference provider (v3.0 failover): the independently stored
+  // backup config first, GAIA_BACKUP_* env vars as fallback. A plain
+  // inference provider — never Hermes, never tools, never memory.
+  // Re-resolved per turn like the primary above so admin changes apply
+  // without a restart.
+  function getEffectiveBackupGenerator() {
+    const backupConfig = resolveBackupConfig(providerStore, env);
+    return backupConfig && backupConfig.baseUrl && backupConfig.model
+      ? require('./generation/gaiaGenerator').createGaiaGenerator({
+          baseUrl: backupConfig.baseUrl,
+          model: backupConfig.model,
+          authToken: backupConfig.apiKey,
+          logger: llmCallLogger,
+        })
+      : undefined;
+  }
+
+  // Chronicle archive (v3.0 source of truth): completed turns register
+  // here with status `observation`, fire-and-forget after delivery.
+  const chronicle = createChronicleClient({ env });
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
@@ -306,26 +307,10 @@ function createApp(env = process.env) {
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
 
-  // conversation_search — a real capability/tool over the EXISTING
-  // conversation persistence (no second store). Registered like any other
-  // tool; the Decision Engine decides when it runs, never the capability.
-  const conversationSearchTool = createConversationSearchTool({ historyStore });
-  // hindsight — read-only retrieval capability for Decision Engine 3.0
-  // plans. Same client instance every other Hindsight use shares; it can
-  // never write (Memoryworthiness owns ingestion).
-  const hindsightRetrieval = createHindsightRetrievalCapability({ hindsight });
-  // foundation — read-only retrieval over Bo's epistemische geheugen
-  // (Bojanni050/Foundation, GET /api/memory/search). undefined when
-  // FOUNDATION_MEMORY_URL is unset → the key never enters turnTools → the
-  // Decision Engine never sees a "foundation" capability and recorded-
-  // knowledge turns fall through to the existing cascade (same uniform
-  // posture as web above).
-  const foundationRetrieval = createFoundationFromEnv(env);
-  const turnTools = {
-    conversation_search: conversationSearchTool,
-    hindsight: hindsightRetrieval,
-    ...(foundationRetrieval ? { foundation: foundationRetrieval } : {}),
-  };
+  // v3.0: no live tools. conversation_search / hindsight-retrieval /
+  // foundation-search stay available as modules for explicit future
+  // HADES use, but nothing registers them into the live turn — the turn
+  // is direct generation with policy-gated Hindsight recall only.
 
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;
@@ -373,17 +358,15 @@ function createApp(env = process.env) {
       await performStreamingTurn({
         messages,
         documents,
-        hermes,
         hindsight,
         hypothesisRuntime,
+        chronicle,
         res,
         conversationId,
-        nativeGenerator: getEffectiveNativeGenerator(),
-        intentIQ: intentIQWithEffectiveModel,
-        webSearch,
+        generator: getEffectiveNativeGenerator(),
+        backupGenerator: getEffectiveBackupGenerator(),
         historyStore,
         decisionStore,
-        tools: turnTools,
         attachments: resolvedAttachments,
         traceId,
         userDisplayName,
@@ -415,27 +398,23 @@ function createApp(env = process.env) {
       })),
     }));
 
-    // COGNITIVE PARITY: the non-streaming route runs the SAME cognitive
-    // pipeline as the streaming one (IntentIQ, Hindsight recall,
-    // Memoryworthiness, ReasonIQ, hypotheses/patterns, Decision Engine,
-    // reflection) — turn.js's runTurnCore is shared verbatim. Only delivery
-    // differs: one JSON body instead of SSE. Chat history stays a
-    // fire-and-forget save in this handler after the response, mirroring
-    // performStreamingTurn's inline save.
+    // v3.0 LIVE PATH: direct generation (primary → backup failover) via
+    // the shared runTurnCore pipeline. Only delivery differs: one JSON
+    // body instead of SSE. Chat history stays a fire-and-forget save in
+    // this handler after the response, mirroring performStreamingTurn's
+    // inline save.
     const result = await performTurn({
       messages,
       documents,
-      hermes,
       hindsight,
       hypothesisRuntime,
+      chronicle,
       attachments,
-      nativeGenerator: getEffectiveNativeGenerator(),
-      intentIQ: intentIQWithEffectiveModel,
-      webSearch,
+      generator: getEffectiveNativeGenerator(),
+      backupGenerator: getEffectiveBackupGenerator(),
       traceId,
       conversationId,
       decisionStore,
-      tools: turnTools,
       userDisplayName,
     });
     res.status(result.status).json(result.body);

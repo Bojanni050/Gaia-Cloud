@@ -35,6 +35,42 @@ const { logLlmCall } = require('../logos/llmCallLog');
 const DEFAULT_TIMEOUT_MS = 60000;
 
 /**
+ * Typed generation error — internal only, never reaches the client
+ * (responseEngine.toCalmError owns the client wording). Carries the HTTP
+ * status and a retryable flag so the failover seam
+ * (generationFailover.js) can decide primary → backup without leaking
+ * provider details.
+ */
+class GenerationError extends Error {
+  constructor(message, { status = null, retryable = false, code = null } = {}) {
+    super(message);
+    this.name = 'GenerationError';
+    this.status = status;
+    this.retryable = retryable;
+    this.code = code;
+  }
+}
+
+function isTimeoutError(error) {
+  return Boolean(
+    error
+    && (error.name === 'TimeoutError' || error.name === 'AbortError')
+  );
+}
+
+/**
+ * Failover policy: retry on the backup for timeouts, network failures,
+ * 429 and 5xx. Never for config errors or other 4xx.
+ * @param {Error} error
+ * @returns {boolean}
+ */
+function isRetryableGenerationError(error) {
+  if (!error) return false;
+  if (error instanceof GenerationError) return error.retryable === true;
+  return false;
+}
+
+/**
  * Reads native generator configuration from environment variables.
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ baseUrl: string, model: string, authToken: string }}
@@ -138,13 +174,18 @@ function createGaiaGenerator(options = {}) {
     } catch (error) {
       console.error(`[gaia:native] unreachable at ${baseUrl}: ${error.message}`);
       logCall(false, 'unreachable', Date.now() - startedAt, 'generate');
-      throw new Error('native generator unreachable');
+      if (isTimeoutError(error)) {
+        throw new GenerationError('native generator timed out', { retryable: true, code: 'timeout' });
+      }
+      throw new GenerationError('native generator unreachable', { retryable: true, code: 'network' });
     }
 
     if (!response.ok) {
+      const status = typeof response.status === 'number' ? response.status : null;
       console.error(`[gaia:native] responded ${response.status} at ${baseUrl}`);
       logCall(false, `HTTP ${response.status}`, Date.now() - startedAt, 'generate');
-      throw new Error('native generator responded with an error');
+      const retryable = status === 429 || (typeof status === 'number' && status >= 500);
+      throw new GenerationError('native generator responded with an error', { status, retryable });
     }
 
     let data;
@@ -153,7 +194,7 @@ function createGaiaGenerator(options = {}) {
     } catch (_) {
       console.error(`[gaia:native] unreadable response at ${baseUrl}`);
       logCall(false, 'unreadable response', Date.now() - startedAt, 'generate');
-      throw new Error('native generator returned an unreadable response');
+      throw new GenerationError('native generator returned an unreadable response', { retryable: false, code: 'unreadable' });
     }
 
     // Raw response logging — always visible in docker logs, never to the client.
@@ -170,7 +211,7 @@ function createGaiaGenerator(options = {}) {
     if (typeof content !== 'string' || content.length === 0) {
       console.error(`[gaia:native] no content in response at ${baseUrl}`);
       logCall(false, 'no content in response', Date.now() - startedAt, 'generate');
-      throw new Error('native generator returned no content');
+      throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
     }
     logCall(true, null, Date.now() - startedAt, 'generate');
     return content;
@@ -199,13 +240,18 @@ function createGaiaGenerator(options = {}) {
     } catch (error) {
       console.error(`[gaia:native] stream unreachable at ${baseUrl}: ${error.message}`);
       logCall(false, 'unreachable', Date.now() - startedAt, 'stream');
-      throw new Error('native generator unreachable');
+      if (isTimeoutError(error)) {
+        throw new GenerationError('native generator timed out', { retryable: true, code: 'timeout' });
+      }
+      throw new GenerationError('native generator unreachable', { retryable: true, code: 'network' });
     }
 
     if (!response.ok || !response.body) {
+      const status = typeof response.status === 'number' ? response.status : null;
       console.error(`[gaia:native] stream responded ${response.status} at ${baseUrl}`);
       logCall(false, `HTTP ${response.status}`, Date.now() - startedAt, 'stream');
-      throw new Error('native generator responded with an error');
+      const retryable = status === 429 || (typeof status === 'number' && status >= 500);
+      throw new GenerationError('native generator responded with an error', { status, retryable });
     }
 
     const reader = response.body.getReader();
@@ -239,13 +285,13 @@ function createGaiaGenerator(options = {}) {
       if (signal?.aborted) throw error;
       console.error(`[gaia:native] stream read failed at ${baseUrl}: ${error.message}`);
       logCall(false, 'stream read failed', Date.now() - startedAt, 'stream');
-      throw new Error('native generator stream failed');
+      throw new GenerationError('native generator stream failed', { retryable: true, code: 'stream_read' });
     }
 
     if (fullText.length === 0) {
       console.error(`[gaia:native] stream produced no content at ${baseUrl}`);
       logCall(false, 'no content in response', Date.now() - startedAt, 'stream');
-      throw new Error('native generator returned no content');
+      throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
     }
     logCall(true, null, Date.now() - startedAt, 'stream');
     return fullText;
@@ -294,4 +340,4 @@ function createFromEnv(env = process.env, logger) {
   return isConfigured(config) ? createGaiaGenerator({ ...config, logger }) : undefined;
 }
 
-module.exports = { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv };
+module.exports = { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv, GenerationError, isRetryableGenerationError };

@@ -4,55 +4,32 @@
  * Turn handling — the server side of the desktop's `conversation/turn`
  * contract (desktop/src/state/contract.js).
  *
- * COGNITIVE PARITY (this module's load-bearing rule): the non-streaming and
- * streaming paths share ONE cognitive pipeline — `runTurnCore` below — and
- * differ ONLY in delivery/transport. IntentIQ, Hindsight recall, evidence
- * assembly, Pattern Awareness, the Decision Engine, the prompt assembly
- * and the Response Engine are byte-for-byte the same judgment calls
- * whichever transport a client uses. What may differ:
+ * GAIA v3.0 LIVE PATH ("De conversatie is de ervaring"): a live turn is
+ * direct generation — validate → SOUL/context prompt → gated memory
+ * recall → ONE inference call (primary LLM, backup on retryable
+ * pre-output failure) → Response Engine. No synchronous IntentIQ/ReasonIQ
+ * pre-flight, no Decision Engine, no Orchestrator, no plan/tool/
+ * capability routing in the live flow. Hermes is never a fallback and is
+ * never called here.
  *
- *   - wire shape: SSE deltas + typed step/error frames (streaming) vs one
- *     JSON body (non-streaming) — progress is transport, so the JSON path
- *     reports none of it
- *   - hermes invocation: stream(msgs,{onDelta}) vs chat(msgs)
- *   - reply finalization: deliverReply's emitter dance vs
- *     formatReply — the streaming/non-streaming twins of the same
- *     responseEngine.resolveReplyText judgment
- *   - history-save timing: inline after the stream finishes (streaming)
- *     vs a fire-and-forget save in the route handler (non-streaming)
+ * Both transports share ONE pipeline — `runTurnCore` — and differ ONLY in
+ * delivery: SSE deltas + typed step/error frames (streaming) vs one JSON
+ * body (non-streaming). The reply is always resolved through
+ * responseEngine.resolveReplyText and delivered via formatReply (JSON) or
+ * deliverReply/emitter (SSE). Provider names, model names, transport
+ * details and stacks never cross this seam (toCalmError).
  *
- * The reply returned is plain text — no model names, no provider details,
- * no chain-of-thought ever cross this seam. Whatever a capability produces
- * is always handed to responseEngine.js, which is the only place that
- * decides what actually reaches the client.
+ * BACKGROUND (Logos is the reflection on the experience): Chronicle
+ * observation registration, Memoryworthiness, hypothesis lifecycle,
+ * background ReasonIQ, gated pattern formation, Hindsight reflection and
+ * DecisionIQ review run in `runDeferredCognition` — started AFTER the
+ * reply is delivered, never awaited, never touching the transport, never
+ * altering the reply. Derived knowledge stays `interpretation`/
+ * `hypothesis`; only a human confirms (Absolute Override).
  *
  * Chat history (conversationStore.js) is saved as a fire-and-forget side
- * effect AFTER a turn succeeds — deliberately not part of producing the
- * reply. Conversation history remembers everything; Hindsight receives
- * only what Memoryworthiness judged worth remembering.
- *
- * DEFERRED COGNITION (the conversational path stays short): everything that
- * is learning/reflection rather than response production — Memoryworthiness,
- * hypothesis recall and persistence, background ReasonIQ (Gaia's asynchronous
- * cognitive analysis: hypotheses, patterns, interpretations), gated pattern
- * formation and the post-turn Hindsight reflection — lives in
- * `runDeferredCognition` below. runTurnCore starts that promise once the
- * reply is produced and NEVER awaits it: deferred work may not delay,
- * determine or alter the already-produced response, never touches the
- * client transport, and swallows its own failures. It is Gaia's internal
- * knowledge/memory lifecycle, not a second response engine.
- *
- * BACKGROUND COGNITION (ReasonIQ's architectural role): ReasonIQ is NOT a
- * step in the conversational response pipeline. The conversational path is
- * User → IntentIQ → context recall → Decision Engine → Orchestrator →
- * Response, full stop. ReasonIQ analyzes the completed turn in the
- * background (inside runDeferredCognition): it may generate/evaluate
- * hypotheses, discover patterns and form interpretations, and persist them
- * (via the hypothesis/pattern managers into Hindsight) where a FUTURE
- * turn's normal context recall may find them. It never decides what Gaia
- * says or does, never reroutes the turn that produced the analysis, and
- * never re-enters the Decision Engine — the two paths are loosely coupled
- * exactly because only stored cognitive material crosses between them.
+ * effect AFTER a turn succeeds. Conversation history remembers everything;
+ * Hindsight receives only what Memoryworthiness judged worth remembering.
  */
 
 const { buildSystemPrompt } = require('./foundation');
@@ -63,18 +40,15 @@ const {
   evaluateMemoryWorthiness, shouldRetainToHindsight, applyCapabilityOutcomeOverride,
   metadataForMemoryDecision, logMemoryWorthiness,
 } = require('./memoryWorthiness');
-const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness } = require('./reasoning/patternAwareness');
+const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness, evaluatePatternUsage } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
-const { interpret: classifyIntent } = require('./logos/intentIQ');
 const { evaluate: evaluateReasoning, decideReasoningDepth, explainReasoningDepth } = require('./logos/reasonIQ');
 const { logReasoningGate } = require('./logos/reasonLog');
 const crypto = require('crypto');
 const {
-  formatReply, createStreamEmitter, resolveReplyText, deliverReply,
+  formatReply, createStreamEmitter, resolveReplyText, deliverReply, toCalmError,
 } = require('./responseEngine');
-const { decide: decideAction } = require('./decision/decisionEngine');
-const { execute: executeDecision } = require('./orchestration/orchestrator');
-const { createHermesCapability } = require('./capabilities/hermesAdapter');
+const { generateWithFailover, streamWithFailover, isNotConfiguredError } = require('./generation/generationFailover');
 const { createTurnTiming, trackFirstToken } = require('./timing');
 
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
@@ -102,12 +76,11 @@ function validateMessages(messages) {
 }
 
 /**
- * Assembles the message list sent to a capability: system messages first,
- * then the client's history verbatim (role + content only — any client-side
- * fields are already stripped by the desktop contract and dropped again
- * here, so nothing local ever reaches the reasoning path).
+ * Assembles the message list sent to generation: system messages first,
+ * then the client's history verbatim (role + content only — any
+ * client-side fields are already stripped by the desktop contract and
+ * dropped again here, so nothing local ever reaches the inference path).
  *
- * PATCH: Native Vision Support
  * When multimodalAttachments are present, the last user message is
  * converted to multimodal content format:
  *   content: [
@@ -116,19 +89,16 @@ function validateMessages(messages) {
  *   ]
  */
 function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
-  // Build base messages, handling null/undefined systemPrompt
   const baseMessages = [];
   if (systemPrompt) {
     baseMessages.push({ role: 'system', content: systemPrompt });
   }
   baseMessages.push(...messages.map(({ role, content }) => ({ role, content })));
 
-  // PATCH: If no multimodal attachments, return plain text messages
   if (!Array.isArray(multimodalAttachments) || multimodalAttachments.length === 0) {
     return baseMessages;
   }
 
-  // Find the last user message to attach images to
   let lastUserIdx = -1;
   for (let i = baseMessages.length - 1; i >= 0; i--) {
     if (baseMessages[i].role === 'user') {
@@ -141,13 +111,11 @@ function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
     return baseMessages;
   }
 
-  // Convert to multimodal content format
   const userText = baseMessages[lastUserIdx].content;
   const contentBlocks = [
     { type: 'text', text: userText },
   ];
 
-  // Add each image as a content block
   for (const attachment of multimodalAttachments) {
     if (attachment.imageBytes && attachment.imageMimeType) {
       const dataUrl = `data:${attachment.imageMimeType};base64,${attachment.imageBytes.toString('base64')}`;
@@ -156,7 +124,6 @@ function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
         image_url: { url: dataUrl },
       });
 
-      // Diagnostic logging (temporary)
       console.log(JSON.stringify({
         kind: 'turn.multimodal',
         multimodalMessageCreated: true,
@@ -168,7 +135,6 @@ function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
     }
   }
 
-  // Replace the last user message with multimodal content
   const result = [...baseMessages];
   result[lastUserIdx] = { role: 'user', content: contentBlocks };
   return result;
@@ -186,7 +152,6 @@ function assembleMessages(systemPrompt, messages, multimodalAttachments = []) {
  */
 function renderTextAttachmentContext(attachments) {
   if (!attachments || attachments.length === 0) return null;
-  // Filter out multimodal attachments (those with imageBytes)
   const textAttachments = attachments.filter((a) => !a.imageBytes);
   if (textAttachments.length === 0) return null;
 
@@ -220,173 +185,129 @@ function latestUserText(messages) {
 }
 
 /**
- * Adapts a raw web-search client (src/tools/braveSearch.js's
- * `{ search, searchResults }`) into the generic `{ invoke }` capability
- * shape the Orchestrator expects (orchestration/orchestrator.js).
- *
- * Two modes, determined by the input convention:
- *
- *   PLAN MODE (retrieval step): buildPlan uses `input.query`. Returns
- *   structured { results, total } for downstream generation steps. Raw
- *   web results never stream to the client — the native generation step
- *   speaks for Gaia.
- *
- *   LEGACY MODE (documented single-action fallback): input has
- *   `userInput`. Used when the plan was discarded (e.g. native not
- *   registered). Returns formatted text and streams it via onDelta —
- *   the best available output without a generation path.
- *
- * Observability: emits web.search JSON lines (completed/failed + latency)
- * to docker logs — never user content, never capability internals.
- *
- * @param {{ search: Function, searchResults?: Function }} webSearch
- * @returns {{ invoke: (messages: Array, options?: object) => Promise<*> }}
+ * Adapts a legacy Hermes client (`{ chat, stream }`) to the generator
+ * shape (`{ generate, stream }`) the live path speaks. Backward
+ * compatibility for existing callers/tests only — production wiring
+ * passes configured primary/backup generators and never Hermes. Hermes
+ * is an explicit HADES execution instrument, never an inference fallback.
+ * @param {{ chat?: Function, stream?: Function }|null|undefined} hermes
+ * @returns {{ generate: Function, stream?: Function }|null}
  */
-function webCapability(webSearch) {
-  return {
-    invoke: async (messages, { onDelta, input } = {}) => {
-      const startedAt = Date.now();
-      try {
-        // PLAN MODE: buildPlan convention uses `input.query`.
-        // Returns structured { results, total } for downstream generation;
-        // no onDelta — raw web results never stream to the client.
-        if (typeof input && typeof input.query === 'string') {
-          if (typeof webSearch.searchResults !== 'function') {
-            // Fallback for older webSearch clients without searchResults:
-            // degrade to formatted text wrapped in structured shape.
-            const text = await webSearch.search(input.query);
-            return { results: [{ text, source: 'web', relevance: 0.5 }], total: 1 };
-          }
-          const out = await webSearch.searchResults(input.query);
-          console.log(JSON.stringify({ kind: 'web.search', stage: 'completed', resultCount: out.total, latencyMs: Date.now() - startedAt }));
-          return out;
-        }
-        // LEGACY MODE (documented single-action fallback): input has
-        // `userInput`. Terminal capability; streams formatted text directly.
-        const query = (input && input.userInput) || '';
-        const text = await webSearch.search(query);
-        console.log(JSON.stringify({ kind: 'web.search', stage: 'completed', resultCount: 0, latencyMs: Date.now() - startedAt }));
-        if (onDelta) onDelta(text, false);
-        return text;
-      } catch (err) {
-        console.log(JSON.stringify({ kind: 'web.search', stage: 'failed', latencyMs: Date.now() - startedAt }));
-        throw err;
-      }
-    },
-  };
+function adaptHermesToGenerator(hermes) {
+  if (!hermes) return null;
+  const adapter = {};
+  if (typeof hermes.chat === 'function') {
+    adapter.generate = (messages) => hermes.chat(messages);
+  }
+  if (typeof hermes.stream === 'function') {
+    adapter.stream = (messages, { onDelta } = {}) => hermes.stream(messages, { onDelta });
+  }
+  return typeof adapter.generate === 'function' || typeof adapter.stream === 'function' ? adapter : null;
 }
 
 /**
- * Logs the Decision Engine's plan for this turn — action, the context
- * sources it drew on, its reasoning level, and which capability(ies) it
- * needs (decisionSchema.js's additive plan fields) — never the user's own
- * input text. When `logger` is given (the decisionStore twin), it both
- * console.logs and persists to decisionStore, exactly like IntentIQ/
- * ReasonIQ's own decision lines; otherwise this just console.logs, for
- * live `docker logs` visibility on paths that have no decisionStore wired
- * in. Never allowed to affect the turn.
+ * Resolves the live generation pair: explicit primary/backup first,
+ * legacy `nativeGenerator` as primary, legacy `hermes` adapted as
+ * primary only when nothing else is configured (never as a fallback
+ * behind a configured primary).
  */
-function logDecisionPlan(decision, logger) {
+function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes }) {
+  const primary = generator || nativeGenerator || adaptHermesToGenerator(hermes) || null;
+  const backup = backupGenerator || null;
+  return { primary, backup };
+}
+
+/**
+ * Derives the capability-awareness entries from the live generation pair
+ * so Gaia's self-knowledge stays truthful without a Decision Engine.
+ */
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator } = {}) {
+  if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
+    return [{ id: 'native' }];
+  }
+  if (hermes) return [{ id: 'hermes' }];
+  return [];
+}
+
+/**
+ * DecisionIQ as post-turn reflection (v3.0 Logos, third dimension): judges
+ * AFTER delivery whether this turn could have used a specialized
+ * capability. Observability only — never reroutes or rewrites the turn.
+ */
+function reflectDecisionIQ({ userText, decisionLogger }) {
   try {
+    const text = String(userText || '');
+    const signals = [];
+    if (/\b(analyseer|analyze|analyse|race condition|architectuur|architecture|refactor|debug)\b/i.test(text)) signals.push('analysis');
+    if (/\b(onthoud|remember|weet je nog|vorige|eerder)\b/i.test(text)) signals.push('memory');
+    if (/https?:\/\//.test(text)) signals.push('external_reference');
     const line = JSON.stringify({
-      kind: 'decision.plan',
-      action: decision.action,
-      capability: decision.capability || null,
-      context: decision.context || [],
-      reasoning: decision.reasoning || 'none',
-      capabilities: decision.capabilities || [],
-      generationMode: decision.generationMode || null,
-      reason: decision.reason || null,
+      kind: 'decision.review',
+      couldHaveUsedCapability: signals.length > 0 ? signals : null,
+      note: 'post-turn reflection only — the delivered reply stands',
     });
-    if (logger) {
-      logger(line);
-    } else {
-      console.log(line);
-    }
+    if (decisionLogger) decisionLogger(line);
+    else console.log(line);
   } catch (_) {
-    // Observability must never take down a real conversational turn.
+    // Observability must never take down a turn.
   }
 }
 
 /**
- * THE SHARED COGNITIVE PIPELINE — one implementation, two transports.
+ * THE SHARED DIRECT-GENERATION PIPELINE — one implementation, two
+ * transports.
  *
- * Everything from IntentIQ to the post-turn reflection lives here exactly
- * once. The only transport knob is `onDelta`: present ⇒ capabilities may
- * stream (hermes.stream) and the caller renders SSE; absent ⇒ capabilities
- * return final strings (hermes.chat) and the caller renders one JSON body.
- * Cognitive outputs (intentDecision, memoryDecision, recalledPatterns,
- * reasoningResult, decision, assembled prompt, replyText, reflection) are
- * identical for identical requests regardless of that knob.
+ * validate → SOUL/context prompt → gated memory recall → ONE inference
+ * call (primary, backup on retryable pre-output failure) → Response
+ * Engine. The only transport knob is `onDelta`: present ⇒ streaming
+ * generation with SSE delivery; absent ⇒ one JSON body. No IntentIQ, no
+ * ReasonIQ, no Decision Engine, no Orchestrator, no plan/tool/capability
+ * routing in this path.
  *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
  *   documents: Record<string, string>,
- *   hermes: { chat?: Function, stream?: Function },
  *   hindsight?: object|null,
  *   attachments?: Array<{ filename: string, content: string|null, imageBytes?: Buffer, imageMimeType?: string }>,
  *   traceId?: string,
  *   conversationId?: string,
- *   nativeGenerator?: { generate: Function, stream?: Function },
- *   webSearch?: { search: Function },
- *   intentIQ?: Function,
- *   reasonIQ?: Function,
- *   hypothesisRuntime?: { manager: object, recallHypotheses?: Function,
- *                         recallPatterns?: Function, ensureLoaded?: Function }|null,
- *   historyStore?: { saveConversation: Function },
+ *   generator?: { generate: Function, stream?: Function }|null,
+ *   backupGenerator?: { generate: Function, stream?: Function }|null,
+ *   nativeGenerator?: { generate: Function, stream?: Function }|null,
+ *   hermes?: { chat?: Function, stream?: Function }|null,
+ *   chronicle?: { append: Function }|null,
+ *   hypothesisRuntime?: object|null,
  *   decisionStore?: { append: (record: object) => boolean },
- *   tools?: Record<string, { invoke: Function }>,
- *   decisionEngine?: Function,
- *   orchestrate?: Function,
+ *   reasonIQ?: Function,
  *   onDelta?: Function,
- *   onStep?: Function,
+ *   userDisplayName?: string,
  * }} input
- * @returns {Promise<{ decision: object, executionResult: object|null, replyText: string|null, timing: object, startDeferredCognition: () => Promise<void> }>}
- *   replyText is null exactly when there is nothing to say (capability
- *   produced nothing usable, or execution failed) — the CALLER decides how
- *   its transport reports that (calm 502 body vs emitter.fail()).
- *   startDeferredCognition hands the caller the deferred learning/
- *   reflection lifecycle for the completed turn: it is STARTED by the
- *   transport once the reply is delivered and NEVER awaited.
- *
- *   onStep is plan progress (orchestrator's reportStep) — transport, not
- *   cognition: the streaming path wires it to the Response Engine's step
- *   frame, the non-streaming path passes nothing and gets no frames. The
- *   plan itself, its order and its result are identical either way.
+ * @returns {Promise<{ executionResult: object|null, replyText: string|null, timing: object, notConfigured: boolean, startDeferredCognition: () => Promise<void> }>}
  */
 async function runTurnCore({
   messages,
   documents,
-  hermes,
   hindsight,
   attachments,
   traceId,
   conversationId,
+  generator,
+  backupGenerator,
   nativeGenerator,
-  webSearch,
-  intentIQ = classifyIntent,
-  reasonIQ = evaluateReasoning,
+  hermes,
+  chronicle,
   hypothesisRuntime,
   decisionStore,
-  tools,
-  decisionEngine = decideAction,
-  orchestrate = executeDecision,
+  reasonIQ = evaluateReasoning,
   onDelta,
-  onStep,
   userDisplayName,
 }) {
   const userText = latestUserText(messages);
+  const { primary, backup } = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes });
 
-  // Pipeline latency tracing — one timing context per turn, shared across
-  // all stages. Zero overhead when no log function is available.
   const timing = createTurnTiming(traceId || `trace-${Date.now()}`);
   timing.start('turn');
 
-  // Both console.log (unchanged, for live `docker logs` tailing) and, when
-  // a decisionStore is given, a durable JSONL line (decisionStore.js) —
-  // console output alone doesn't survive past Docker's own log retention.
-  // Store-write failures are swallowed; observability must never affect a
-  // real turn. Identical on both transports.
   const decisionLogger = decisionStore
     ? (line) => {
       console.log(line);
@@ -398,32 +319,14 @@ async function runTurnCore({
     }
     : undefined;
 
-  // Logos: IntentIQ observes the turn and produces an IntentDecision. Its
-  // output genuinely drives what Gaia does next (via the Decision Engine
-  // below). Awaited: the semantic tier, when configured, is a real model
-  // call. Never allowed to throw into the turn path; a failure degrades to
-  // `intentDecision: null`, which downstream treats conservatively.
-  let intentDecision = null;
-  timing.start('intent');
-  try {
-    intentDecision = await intentIQ(messages, { contextId: conversationId, logger: decisionLogger });
-  } catch (_) {
-    // Observability must never take down a real conversational turn.
-  }
-  timing.end('intent');
+  // No live interpretation: language understanding happens inside the
+  // single inference call. The gate below therefore runs on lexical
+  // policy only (memoryPolicy.shouldRecall with no intent decision).
+  const intentDecision = null;
 
-  // Gaia context layer: recall happens BEFORE ReasonIQ so its output can be
-  // assembled into evidence — Hindsight stays the only retriever (memory.js's
-  // policy-gated, never-throws seam); ReasonIQ never calls it.
-  //
-  // Pattern Awareness 0.1 rides the same recall moment: a GATED (cheap,
-  // IntentIQ-signal-driven) scoped Hindsight pattern recall through the
-  // existing hypothesisRuntime's adapter seam — never a second search
-  // engine, never an unconditional call ("Hoi Gaia" opens no gate).
-  //
-  // Hypothesis recall does NOT run here (deferred cognition): knowing which
-  // hypotheses Gaia is already tracking is learning context, not response
-  // context — see runDeferredCognition below.
+  // Gated recall — Hindsight only on explicit requests or content
+  // triggers, never by default. Pattern recall rides the same gated
+  // moment through the hypothesisRuntime adapter seam.
   const wantPatterns = Boolean(
     hypothesisRuntime
     && typeof hypothesisRuntime.recallPatterns === 'function'
@@ -442,114 +345,63 @@ async function runTurnCore({
         return [];
       })
       : Promise.resolve([]),
-    // Knowledge Pages (knowledgePages.js): current CONSOLIDATED understanding,
-    // distinct from the raw-memory recall above — gated separately
-    // (shouldSearchKnowledgeBase), never throws, never blocks the turn.
     hindsight
       ? searchRelevantKnowledgePages(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
 
-  // Categorize attachments: text files become evidence/context, images are
-  // model-native input handled at assembly time.
   const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
   const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
 
-  // Evidence Assembly (reasoning/evidenceAssembler.js): organize what this
-  // turn already has in hand into normalized evidence with stable ids. Pure
-  // and local; no retrieval happens here.
+  // Evidence Assembly: organizes what this turn already has in hand into
+  // normalized evidence for the BACKGROUND analysis below. Pure, local.
   let evidence = [];
   timing.start('evidence_assembly');
   try {
     evidence = assembleEvidence({ reflections, mentalModels, attachments: textAttachments });
   } catch (_) {
-    // Assembly must never take down a turn; an empty list just means
-    // ReasonIQ runs shallow, exactly as it always has without evidence.
+    // Assembly must never take down a turn.
   }
   timing.end('evidence_assembly');
 
-  // ReasonIQ IS BACKGROUND COGNITION — it is not part of the conversational
-  // response pipeline at all. The conversational path is exactly:
-  // IntentIQ → context recall → Decision Engine → Orchestrator → reply.
-  // No ReasonIQ judgment, routing result or model call happens here; the
-  // Decision Engine receives reasoning: null (level 'none') for every turn.
-  // The completed turn's ingredients (user text, IntentDecision, assembled
-  // evidence) are handed to runDeferredCognition, which runs the reasoning
-  // AFTER the reply — see the module comment and runDeferredCognition below.
-  // Analysis/skill turns still reach Hermes through the IntentIQ-driven
-  // decision paths (plan reasoning steps, skill tasks, hermes fallback) —
-  // no reasoning signal from the current turn reroutes the current turn.
-
-  // Gaia decides (decision/decisionEngine.js); the Orchestrator executes
-  // exactly that decision (orchestration/orchestrator.js) — the Orchestrator
-  // itself makes no judgment call about which capability a turn "seems to
-  // need". Hermes is registered as one capability among any `tools` the
-  // caller supplied, never a hidden default.
-  const availableCapabilities = [
-    { id: 'hermes' },
-    ...Object.keys(tools || {}).map((id) => ({ id })),
-  ];
-  if (nativeGenerator) availableCapabilities.push({ id: 'native' });
-  if (webSearch) availableCapabilities.push({ id: 'web' });
-
-  let decision;
-  timing.start('decision');
+  // Pattern usage is pure policy over the recalled candidates — no
+  // Decision Engine involved. Nothing pattern-shaped enters the prompt
+  // on ignore/absent usage.
+  let patternUsage = null;
   try {
-    decision = decisionEngine({
-      userInput: userText,
-      intent: intentDecision,
-      context: { reflections, mentalModels, patterns: recalledPatterns },
-      // ReasonIQ is background cognition (this phase): the decision for the
-      // CURRENT turn is made without any reasoning result. Cognitive
-      // material ReasonIQ produced for EARLIER turns reaches later turns
-      // through context (recalled patterns/hypotheses), never through this
-      // field.
-      reasoning: null,
-      availableCapabilities,
-    });
+    const evaluation = evaluatePatternUsage(recalledPatterns, { userInput: userText });
+    if (evaluation) {
+      patternUsage = {
+        mode: evaluation.mode,
+        patterns: evaluation.patterns,
+        contextPatternIds: evaluation.contextPatternIds,
+        mentions: evaluation.mentions,
+        decisions: evaluation.decisions,
+      };
+    }
   } catch (_) {
-    // The Decision Engine must never take down a turn either — degrade to
-    // the same safe default a missing/failed IntentIQ decision gets.
-    decision = {
-      action: 'capability',
-      capability: 'hermes',
-      task: 'respond',
-      input: { userInput: userText },
-      reason: 'decision engine failed; defaulting to the hermes capability',
-    };
+    patternUsage = null;
   }
-  timing.end('decision');
-  logDecisionPlan(decision, decisionLogger);
-
-  // Pattern Awareness observability: what was recalled and what the
-  // Decision Engine chose to do with it — ids and scores only, never user
-  // content or pattern statements. Emitted only when the gated retrieval
-  // actually RAN this turn.
   if (wantPatterns) {
-    logPatternAwareness(recalledPatterns, decision.patternUsage || null, decisionLogger);
+    logPatternAwareness(recalledPatterns, patternUsage, decisionLogger);
   }
 
-  // Prompt assembly happens AFTER decide(): whether any pattern guidance
-  // reaches the capability at all is decided by decision.patternUsage —
-  // nothing pattern-shaped enters the prompt on ignore/absent usage
-  // (patterns are never automatically user-facing). Both transports build
-  // the exact same system messages from the exact same inputs.
+  // Prompt assembly: canonical SOUL/context documents first, then live
+  // capability awareness, standing knowledge, memory, attachments and
+  // (gated) pattern guidance. Both transports build the exact same prompt.
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
-
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
-    decision.patternUsage || null,
+    patternUsage,
     new Map(recalledPatterns.filter((c) => c && c.id != null).map((c) => [String(c.id), c]))
   );
 
   const systemMessages = [{ role: 'system', content: systemPrompt }];
-  // Capability awareness — Gaia's factual self-knowledge about what she can
-  // do comes from the LIVE registry, not from (lagging) foundation prose, so
-  // she never denies an ability she actually has.
   const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
   if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
@@ -558,16 +410,11 @@ async function runTurnCore({
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
 
-  // Conversational tone, empathy, follow-up judgment, and "how to respond"
-  // reasoning are left entirely to the LLM, guided by SOUL (identity.md) —
-  // see docs/architecture-conversational-guidance.md for why the former
-  // per-turn opportunity/quality-bar/conversational-state injection here
-  // was removed rather than kept as app-level orchestration.
-
-  // Use assembleMessages to handle multimodal content
+  // Conversational tone, empathy and follow-up judgment are left entirely
+  // to the inference model, guided by SOUL — no per-turn opportunity /
+  // quality-bar / conversational-state injection.
   const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);
 
-  // Diagnostic logging (temporary) — identical shape on both transports.
   const lastUserMsg = assembled.find((m) => m.role === 'user');
   if (lastUserMsg) {
     console.log(JSON.stringify({
@@ -585,120 +432,50 @@ async function runTurnCore({
     }));
   }
 
-  // Capability wiring — P0 runtime integration: Hermes runs behind its
-  // capability adapter (capabilities/hermesAdapter.js), the single place
-  // that translates the generic contract to the Hermes interface
-  // (chat/stream, skill instruction). Transport still shows up here once:
-  // with an onDelta the adapter streams through it, without one chat()
-  // returns a final string. All other capabilities keep their existing
-  // `{ invoke }` shape and reach the same outcome loop via the neutral
-  // legacy bridge — nothing else is rewired.
-  const capabilities = {
-    hermes: createHermesCapability({ hermes }),
-    ...(webSearch ? { web: webCapability(webSearch) } : {}),
-    ...(tools || {}),
-  };
-
-  let executionResult;
-  timing.start('capability');
+  // Direct generation with primary/backup failover. Hermes is never
+  // involved unless a legacy caller adapted it as the primary above.
+  let output = null;
+  let notConfigured = false;
+  timing.start('generation');
   try {
-    // Capability-level timing: wrap each capability's P0 entry point to
-    // measure individual capability duration without changing behavior.
-    // P0 adapters expose invokeCapability; legacy `{ invoke }` entries
-    // (injected tools, test doubles) keep working through the same wrapper.
-    const timedCapabilities = {};
-    for (const [capId, cap] of Object.entries(capabilities)) {
-      if (cap && typeof cap.invokeCapability === 'function') {
-        const inner = cap.invokeCapability.bind(cap);
-        timedCapabilities[capId] = {
-          ...cap,
-          invokeCapability: async (request, opts = {}) => {
-            timing.start(`capability.${capId}`);
-            try {
-              const result = await inner(request, opts);
-              timing.end(`capability.${capId}`, { capability: capId });
-              return result;
-            } catch (err) {
-              timing.fail(`capability.${capId}`, err.constructor.name || 'Error', { capability: capId });
-              throw err;
-            }
-          },
-        };
-      } else if (cap && typeof cap.invoke === 'function') {
-        timedCapabilities[capId] = {
-          invoke: async (msgs, opts = {}) => {
-            timing.start(`capability.${capId}`);
-            try {
-              const result = await cap.invoke(msgs, opts);
-              timing.end(`capability.${capId}`, { capability: capId });
-              return result;
-            } catch (err) {
-              timing.fail(`capability.${capId}`, err.constructor.name || 'Error', { capability: capId });
-              throw err;
-            }
-          },
-        };
-      } else {
-        timedCapabilities[capId] = cap;
-      }
+    if (onDelta) {
+      output = await streamWithFailover(assembled, { primary, backup, onDelta });
+    } else {
+      output = await generateWithFailover(assembled, { primary, backup });
     }
-
-    executionResult = await orchestrate(decision, { capabilities: timedCapabilities, nativeGenerator, messages: assembled, onDelta, onStep, conversationId });
-  } catch (_) {
-    executionResult = null;
+    timing.end('generation');
+  } catch (err) {
+    try { timing.end('generation'); } catch (_) { /* never break a turn */ }
+    if (isNotConfiguredError(err)) {
+      notConfigured = true;
+    }
+    output = null;
   }
-  timing.end('capability');
 
-  // Response Engine seam: both transports share resolveReplyText's judgment
-  // of what the ExecutionResult means as text. Null ⇒ the caller's transport
-  // reports the calm failure (502 body / emitter.fail()) and no Hindsight
-  // reflection runs — identical memory semantics on failure. Deferred
-  // hypothesis work still runs below: the analysis is Gaia-knowledge, not
-  // part of the reply.
+  // Response Engine seam: the one judgment of what generation output
+  // means as reply text. Null ⇒ the caller's transport reports the calm
+  // failure and no Hindsight reflection runs.
+  const executionResult = (typeof output === 'string' && output.length > 0)
+    ? { action: 'native', output }
+    : null;
   const replyText = resolveReplyText(executionResult);
 
-  // Pipeline latency breakdown — log turn.done with aggregated timings.
-  // Capability durations are extracted from individual capability.X events
-  // and summarized. No double-counting: each stage measures only its own
-  // wall-clock time, not nested stages. The deferred phase emits its own
-  // timing events (deferred.*) after turn.done; the conversational
-  // breakdown stays byte-identical for both transports.
   timing.end('turn');
-  const capabilityEvents = timing.getEvents().filter((e) => e.stage && e.stage.startsWith('capability.') && e.stage !== 'capability');
-  const capabilitiesSummary = capabilityEvents.map((e) => ({
-    name: e.capability || e.stage.replace('capability.', ''),
-    durationMs: e.durationMs,
-  }));
   timing.done({
-    intentMs: timing.getDuration('intent'),
     retrievalMs: timing.getDuration('memory_recall'),
-    decisionMs: timing.getDuration('decision'),
-    capabilityMs: timing.getDuration('capability'),
-    capabilities: capabilitiesSummary.length > 0 ? capabilitiesSummary : undefined,
+    generationMs: timing.getDuration('generation'),
   });
 
-  // DEFERRED COGNITION — the architectural boundary. Everything learning/
-  // reflection (Memoryworthiness, hypothesis lifecycle, deferred deep
-  // ReasonIQ, gated pattern formation, Hindsight reflection) is captured in
-  // this starter, handed to the CALLER, and started only AFTER the transport
-  // has delivered the reply — never awaited on the conversational path. The
-  // defensive .catch is the last-resort guard — runDeferredCognition already
-  // swallows its own failures, so this only prevents an unhandled rejection
-  // if a future edit breaks that contract. Deferred failures must never
-  // affect the already-produced reply.
+  // Deferred cognition starts AFTER delivery and is never awaited.
   const startDeferredCognition = () => runDeferredCognition({
     hypothesisRuntime,
     hindsight,
+    chronicle,
     reasonIQ,
-    // The completed turn's raw ingredients — background cognition builds
-    // its own reasoning input from these (loosely coupled: nothing from the
-    // conversational decision flows in, nothing from the analysis flows
-    // back into it).
     evidence,
     intentDecision,
     recalledReflections: reflections,
     executionResult,
-    decision,
     messages,
     userText,
     replyText: typeof replyText === 'string' && replyText.length > 0 ? replyText : null,
@@ -713,74 +490,49 @@ async function runTurnCore({
   });
 
   return {
-    decision,
     executionResult,
     replyText: typeof replyText === 'string' && replyText.length > 0 ? replyText : null,
     timing,
+    notConfigured,
     startDeferredCognition,
   };
 }
 
 /**
  * THE DEFERRED COGNITION PHASE — Gaia's internal learning/reflection
- * lifecycle for one COMPLETED turn, started by runTurnCore after the reply
- * exists and never awaited on the conversational path.
+ * lifecycle for one COMPLETED turn, started after the reply exists and
+ * never awaited on the response path.
  *
- * Hard boundary (see the module comment): this phase only processes the
- * completed turn and updates Gaia's internal knowledge/memory state. It
- * must never decide, alter or re-render what Gaia already said, never call
- * the client transport (no SSE, no HTTP response writes), and never reject
- * — every failure is caught and logged here so the already-delivered reply
- * is untouched and no unhandled promise rejection can escape.
+ * Hard boundary: this phase only processes the completed turn and updates
+ * Gaia's internal knowledge/memory state. It must never decide, alter or
+ * re-render what Gaia already said, never call the client transport, and
+ * never reject — every failure is caught and logged here.
  *
  * What runs here, in order:
- *   1. Memoryworthiness evaluation (cheap, deterministic, never
-  *     user-facing) — including the capability-outcome override, which
-  *      needs the finished ExecutionResult and therefore cannot run before
-  *      the reply.
- *   2. Hypothesis lifecycle preparation: ensureLoaded() + existing
- *      hypothesis preparation (manager state + best-effort recall), which
- *      only ever fed ReasonIQ's analysis products.
- *   3. Background ReasonIQ: the depth heuristic (decideReasoningDepth — a
- *      free, local judgment) is evaluated HERE, in the background phase,
- *      as the "is there something to reason over" gate. When it says deep,
- *      the real model call runs here; a shallow turn makes no ReasonIQ call
- *      at all. Nothing ReasonIQ produces can reach the user or the current
- *      turn's decision — the reply was produced before this phase started,
- *      and results feed only the hypothesis lifecycle.
- *   4. hypothesisRuntime.manager.applyReasoningResult() — the one place
- *      reasoning products enter the manager.
- *   5. Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15).
- *   6. Post-turn Hindsight reflection, gated by Memoryworthiness.
+ *   1. Chronicle observation registration (status `observation`).
+ *   2. Memoryworthiness evaluation (cheap, deterministic).
+ *   3. Hypothesis lifecycle preparation (manager state + best-effort
+ *      recall) and background ReasonIQ (depth heuristic gate; deep ⇒ one
+ *      model call here, shallow ⇒ none). Feeds only the hypothesis
+ *      lifecycle for FUTURE turns.
+ *   4. hypothesisRuntime.manager.applyReasoningResult().
+ *   5. Gated pattern formation.
+ *   6. Cognitive observations / open questions / relationships retention.
+ *   7. Post-turn Hindsight reflection, gated by Memoryworthiness.
+ *   8. DecisionIQ review (did this turn need a specialized capability?)
+ *      — observability only.
  *
- * @param {{
- *   hypothesisRuntime?: object|null,
- *   hindsight?: object|null,
- *   reasonIQ?: Function,
- *   evidence?: Array,
- *   intentDecision?: object|null,
- *   recalledReflections?: Array,
- *   executionResult: object|null,
- *   decision: object,
- *   messages: Array<{role: string, content: string}>,
- *   userText: string,
- *   replyText: string,
- *   conversationId?: string,
- *   userDisplayName?: string,
- *   decisionLogger?: Function,
- *   timing: object,
- * }} input
  * @returns {Promise<void>} never rejects
  */
 async function runDeferredCognition({
   hypothesisRuntime,
   hindsight,
+  chronicle,
   reasonIQ = evaluateReasoning,
   evidence,
   intentDecision,
   recalledReflections,
   executionResult,
-  decision,
   messages,
   userText,
   replyText,
@@ -789,21 +541,23 @@ async function runDeferredCognition({
   decisionLogger,
   timing,
 }) {
-  // Memoryworthiness 0.1 (memoryWorthiness.js): a cheap DETERMINISTIC
-  // judgment — no LLM, never user-facing — of whether this turn deserves a
-  // Hindsight memory at all. It runs in the deferred phase: on `discard`
-  // this turn produces no Hindsight memory and closes the pattern-formation
-  // trigger below; conversation history keeps the turn either way — only
-  // MEMORY is being judged here.
-  //
-  // Capability-outcome override: Memoryworthiness 0.1 scores the user's
-  // INPUT text before the capability runs, so it can never see a retry, a
-  // failure, or an ask_user escalation — exactly the non-routine outcomes
-  // whose PASS/FAIL verdict must not be lost just because the request that
-  // triggered them read as lexically mundane (see
-  // memoryWorthiness.isNotableCapabilityOutcome for why a routine
-  // single-attempt success does NOT trigger this). The override needs the
-  // finished ExecutionResult, which only exists after the reply.
+  // 1. Chronicle: the completed turn as a source fact. Fire-and-forget
+  //    inside the deferred phase; a missing client is silently skipped.
+  if (chronicle && typeof chronicle.append === 'function' && replyText) {
+    try {
+      await chronicle.append({
+        status: 'observation',
+        conversationId,
+        userText,
+        assistantText: replyText,
+      });
+    } catch (_) {
+      // The archive must never break the deferred phase.
+    }
+  }
+
+  // 2. Memoryworthiness 0.1: cheap deterministic judgment of whether this
+  //    turn deserves a Hindsight memory at all.
   let memoryDecision = null;
   timing.start('deferred.memory_worthiness');
   try {
@@ -817,26 +571,17 @@ async function runDeferredCognition({
     memoryDecision = applyCapabilityOutcomeOverride(memoryDecision, executionResult);
     logMemoryWorthiness(memoryDecision, Date.now() - mwStartMs, decisionLogger);
   } catch (_) {
-    // A classification failure degrades to null → pre-0.1 behavior (the
-    // legacy shouldReflect gate still guards the reflection).
+    // A classification failure degrades to null → reflection gated off.
   }
   timing.end('deferred.memory_worthiness');
 
-  // Memoryworthiness §15 boundary: a DISCARDED turn closes the PATTERN
-  // FORMATION trigger below — memory-unworthy conversation must not push
-  // pattern analysis. Hypothesis APPLICATION deliberately still runs: its
-  // lifecycle belongs to HypothesisManager policy (which already ignores
-  // empty/shallow results via its own gates), and Memoryworthiness may not
-  // judge hypothesis matters — a memory-unworthy REQUEST can still yield
-  // legitimate analysis products, which are Gaia-knowledge, not
-  // conversational memory.
+  // A DISCARDED turn closes the PATTERN FORMATION trigger below.
+  // Hypothesis APPLICATION still runs: its lifecycle belongs to
+  // HypothesisManager policy, and Memoryworthiness may not judge
+  // hypothesis matters.
   const patternGateOpen = !memoryDecision || shouldRetainToHindsight(memoryDecision);
 
-  // Hypothesis Persistence 0.1 (optional runtime, wired by server.js): seed
-  // the deferred ReasonIQ call with Gaia's tracked hypotheses — manager
-  // state first, then a best-effort native recall scoped to gaia:hypothesis
-  // for anything not loaded yet. Every failure here is non-fatal; without a
-  // runtime this is exactly the pre-0.1 behavior.
+  // 3a. Hypothesis lifecycle preparation.
   let existingHypotheses = [];
   if (hypothesisRuntime) {
     timing.start('deferred.hypothesis_prep');
@@ -872,10 +617,6 @@ async function runDeferredCognition({
     }
     timing.end('deferred.hypothesis_prep');
   }
-  // v1.1 (Part 4 §Relationships): existing patterns are CONTEXT for
-  // relationship identification (hypothesis↔pattern, pattern↔pattern)
-  // — manager state first, same seeding posture as hypotheses. Never a
-  // second pattern store; failures are non-fatal.
   let existingPatterns = [];
   if (hypothesisRuntime && hypothesisRuntime.patternManager) {
     try {
@@ -888,37 +629,20 @@ async function runDeferredCognition({
     } catch (_) { /* context seeding must never break the deferred phase */ }
   }
 
-  // Background ReasonIQ — ONE clear background path. The depth heuristic
-  // (reasonIQ.js's decideReasoningDepth, free and local) is evaluated HERE
-  // as the "is there something to reason over" gate — exactly the signal
-  // that has always decided whether a reasoning model call is warranted.
-  // Deep → the real model call runs here; shallow → no ReasonIQ call at all.
-  // Nothing ReasonIQ produces can reach the user or re-enter the Decision
-  // Engine: the reply was produced before this phase started, and results
-  // feed only the hypothesis lifecycle below — Gaia's FUTURE turns may see
-  // them through the normal context recall, the current one cannot.
+  // 3b. Background ReasonIQ — the depth heuristic (free, local) gates one
+  //     model call HERE. Nothing produced can reach the user: the reply
+  //     was delivered before this phase started.
   const backgroundReasoningInput = {
     text: userText,
     intentDecision,
     conversationContext: messages,
     evidence: Array.isArray(evidence) ? evidence : [],
     contextId: conversationId,
-    // One correlationId shared by this turn's gate record, reasoning result
-    // and reasoning LLM call — the admin log can then show one line of
-    // sight from "did the gate open?" to "what did the model do?".
     correlationId: crypto.randomUUID(),
-    // v1.0: the analysis sees the whole completed conversation — Gaia's
-    // delivered reply is CONTEXT for the analysis, never something it can
-    // edit (the reply was produced before this phase started).
     assistantReply: typeof replyText === 'string' ? replyText : null,
     ...(hypothesisRuntime ? { existingHypotheses } : {}),
-    // v1.1: existing patterns as analysis context (Part 4 relationships).
     ...(hypothesisRuntime ? { existingPatterns } : {}),
   };
-  // The gate's own trace: one cheap, local record per turn, written before
-  // the depth decision is acted on. Shallow turns leave a reason here
-  // instead of no trace at all; deep turns pair it with the result and llm
-  // call records below under the same correlationId.
   const reasoningDepth = decideReasoningDepth(backgroundReasoningInput);
   try {
     logReasoningGate(
@@ -946,15 +670,10 @@ async function runDeferredCognition({
     }
   }
 
-  // The structured result flows into the manager (lifecycle/policy/promotion
-  // via its injected sink → Hindsight adapter). Best-effort: persistence or
-  // policy failures are logged and never affect the already-produced reply.
+  // 4. The structured result flows into the manager.
   if (hypothesisRuntime && reasoningResult) {
     let durableSignaturesBefore = null;
     try {
-      // Pattern-formation gate input (0.4): which durable hypotheses existed
-      // BEFORE applying this turn's updates — a plain conversational turn
-      // with no durable change must never trigger pattern analysis.
       durableSignaturesBefore = new Set(
         hypothesisRuntime.manager.list()
           .filter((h) => h.persistence === 'durable')
@@ -966,10 +685,8 @@ async function runDeferredCognition({
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
     }
-    // Gated pattern formation (ReasonIQ 0.4 + Memoryworthiness §15): needs
-    // ≥1 DURABLE hypothesis created/changed by THIS turn AND a turn that
-    // was not discarded as memory-unworthy. PatternManager owns the rest
-    // of the gate (≥2 durable members etc.) and stays conservative.
+    // 5. Gated pattern formation: needs ≥1 DURABLE hypothesis
+    //    created/changed by THIS turn AND a non-discarded turn.
     if (hypothesisRuntime.patternManager && durableSignaturesBefore && patternGateOpen) {
       try {
         const changedIds = hypothesisRuntime.manager.list()
@@ -985,25 +702,14 @@ async function runDeferredCognition({
         console.warn(`[gaia:patterns] formation failed (non-fatal): ${err.message}`);
       }
     }
-    // Cognitive Analysis Model v1.0 — durable cognitive results that are
-    // NOT hypotheses/patterns: concrete observations and open questions
-    // flow to Hindsight through the cognition adapter as ordinary world
-    // facts (tags gaia:observation / gaia:open-question), where a FUTURE
-    // turn's normal recall can find them. The reflection block is
-    // observability-only and is deliberately NOT persisted. Best-effort:
-    // a storage failure is logged and never touches the reply. Like
-    // hypothesis application above (and unlike reflection/pattern
-    // formation), this deliberately IGNORES the Memoryworthiness gate:
-    // observations and open questions are Gaia-knowledge, not
-    // conversational memory — a memory-unworthy request can still yield
-    // legitimate analysis products (same §15 rule as hypotheses).
+    // 6. Cognitive Analysis Model v1.0 — durable observations, open
+    //    questions and relationships persist as ordinary world facts.
+    //    Deliberately IGNORES the Memoryworthiness gate: Gaia-knowledge,
+    //    not conversational memory.
     if (hypothesisRuntime.cognition && reasoningResult) {
       const { retainObservation, retainOpenQuestion, retainRelationship } = hypothesisRuntime.cognition;
       const observations = Array.isArray(reasoningResult.observations) ? reasoningResult.observations : [];
       const openQuestions = Array.isArray(reasoningResult.openQuestions) ? reasoningResult.openQuestions : [];
-      // v1.1 (Part 4 §Relationships): endpoint-validated relationships
-      // persist as gaia:relationship world facts — Hindsight IS the
-      // relationship mechanism; there is no separate relationship store.
       const relationships = Array.isArray(reasoningResult.relationships) ? reasoningResult.relationships : [];
       if (typeof retainObservation === 'function' && observations.length > 0) {
         timing.start('deferred.cognition_observations');
@@ -1041,16 +747,10 @@ async function runDeferredCognition({
     }
   }
 
-  // Post-turn Hindsight reflection — gated by Memoryworthiness 0.1: only
-  // turns judged memory-worthy are retained, tagged with the gaia_memory_*
-  // ingest-decision metadata (retain_low_priority keeps priority 'low').
-  // A turn that produced no reply is never reflected (nothing was said);
-  // conversation history saves EVERY turn regardless (in the route /
-  // performStreamingTurn) — history is everything; Hindsight is what Gaia
-  // chooses to remember. Fire-and-forget; a null decision (module failure)
-  // degrades to the legacy shouldReflect-only gate.
+  // 7. Post-turn Hindsight reflection — gated by Memoryworthiness. A turn
+  //    that produced no reply is never reflected. Conversation history
+  //    saves EVERY turn regardless; Hindsight is what Gaia remembers.
   if (hindsight && replyText && (!memoryDecision || shouldRetainToHindsight(memoryDecision))) {
-    const capabilityExecutor = decision && decision.capability ? decision.capability : null;
     try {
       reflectOnTurn(hindsight, {
         conversationId,
@@ -1058,60 +758,43 @@ async function runDeferredCognition({
         assistantText: replyText,
         metadata: metadataForMemoryDecision(memoryDecision),
         userDisplayName,
-        capabilityExecutor,
+        capabilityExecutor: 'generation',
       });
     } catch (_) {
-      // reflectOnTurn already never lets a Hindsight failure escape; this
-      // guards the call itself, which must never reject the deferred phase.
+      // reflectOnTurn never lets a Hindsight failure escape; this guards
+      // the call itself.
     }
   }
+
+  // 8. DecisionIQ review — post-turn only, observability only.
+  try {
+    reflectDecisionIQ({ userText, decisionLogger });
+  } catch (_) { /* never break the deferred phase */ }
 }
 
 /**
  * Performs one conversational turn — NON-STREAMING transport.
  *
- * Same cognitive pipeline as performStreamingTurn (runTurnCore above);
- * delivery is Desktop's exact contract: plain messages in, one plain JSON
- * `{ reply }` out, non-streaming, always the full context-aware foundation
- * prompt. Hermes is invoked via chat() (final string, no deltas).
- *
- * @param {{
- *   messages: Array<{role: string, content: string}>,
- *   documents: Record<string, string>,
- *   hermes: { chat: (messages: Array) => Promise<string> },
- *   hindsight?: object,
- *   attachments?: Array<{ filename: string, content: string|null, imageBytes?: Buffer, imageMimeType?: string }>,
- *   traceId?: string,
- *   conversationId?: string,
- *   nativeGenerator?: { generate: Function, stream?: Function },
- *   webSearch?: { search: Function },
- *   intentIQ?: Function,
- *   reasonIQ?: Function,
- *   hypothesisRuntime?: object|null,
- *   decisionStore?: { append: Function },
- *   tools?: Record<string, { invoke: Function }>,
- *   decisionEngine?: Function,
- *   orchestrate?: Function,
- * }} input
- * @returns {Promise<{status: number, body: object}>} an HTTP-shaped result
+ * Same direct-generation pipeline as performStreamingTurn (runTurnCore);
+ * delivery is one plain JSON `{ reply }`. No generation configured ⇒
+ * calm 503; configured providers failing ⇒ calm 502 via the Response
+ * Engine. Hermes is never called.
  */
 async function performTurn({
   messages,
   documents,
-  hermes,
   hindsight,
   attachments,
   traceId,
   conversationId,
+  generator,
+  backupGenerator,
   nativeGenerator,
-  webSearch,
-  intentIQ,
-  reasonIQ,
+  hermes,
+  chronicle,
   hypothesisRuntime,
   decisionStore,
-  tools,
-  decisionEngine = decideAction,
-  orchestrate = executeDecision,
+  reasonIQ,
   userDisplayName,
 }) {
   const problem = validateMessages(messages);
@@ -1119,101 +802,64 @@ async function performTurn({
     return { status: 400, body: { error: problem } };
   }
 
-  // deferred cognition is deliberately NOT awaited here — Gaia's learning/
-  // reflection runs in the background once the response is on its way (see
-  // runDeferredCognition). It never rejects; failures are logged inside.
-  const { replyText, timing, startDeferredCognition } = await runTurnCore({
+  const { replyText, timing, notConfigured, startDeferredCognition } = await runTurnCore({
     messages,
     documents,
-    hermes,
     hindsight,
     attachments,
     traceId,
     conversationId,
+    generator,
+    backupGenerator,
     nativeGenerator,
-    webSearch,
-    ...(intentIQ ? { intentIQ } : {}),
-    ...(reasonIQ ? { reasonIQ } : {}),
+    hermes,
+    chronicle,
     hypothesisRuntime,
     decisionStore,
-    tools,
-    decisionEngine,
-    orchestrate,
+    ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
   });
+  void timing;
+
+  // Deferred cognition is deliberately NOT awaited — learning/reflection
+  // runs in the background once the response is on its way.
   const deferredCognition = startDeferredCognition();
   void deferredCognition;
 
-  // Non-streaming generation timing: log generation.start/done
-  // (streaming timing is handled by first_token tracking above)
-  if (timing) {
-    const genEvents = timing.getEvents().filter((e) => e.stage && e.stage.startsWith('capability.native') || e.stage && e.stage.startsWith('capability.hermes'));
-    if (genEvents.length > 0) {
-      try {
-        console.log(JSON.stringify({
-          kind: 'gaia.timing',
-          traceId,
-          stage: 'generation.done',
-          durationMs: genEvents.reduce((sum, e) => sum + e.durationMs, 0),
-          mode: 'non-streaming',
-        }));
-      } catch (_) { /* never break a turn */ }
+  if (typeof replyText !== 'string' || replyText.length === 0) {
+    if (notConfigured) {
+      return { status: 503, body: { error: toCalmError() } };
     }
+    return formatReply(replyText);
   }
 
   return formatReply(replyText);
 }
 
 /**
- * Performs one conversational turn, STREAMED — the Phase B parity path.
- * Same cognitive pipeline as performTurn (runTurnCore above); delivery is
- * SSE: headers sent lazily on the first frame, plan progress reported as
- * `step` frames while the plan runs, capability content streamed as it
- * arrives, clarify/refuse rendered by the Response Engine's emitter, and —
- * when nothing was said — either a clean JSON error (nothing shipped yet)
- * or a calm `error` frame on the already-open stream (the Response Engine
- * owns both halves of that choice).
- *
- * @param {{
- *   messages: Array<{role: string, content: string}>,
- *   documents: Record<string, string>,
- *   hermes: { stream: Function },
- *   hindsight: object,
- *   res: import('express').Response,
- *   conversationId?: string,
- *   nativeGenerator?: { generate: Function, stream?: Function },
- *   webSearch?: { search: Function },
- *   attachments?: Array,
- *   traceId?: string,
- *   intentIQ?: Function,
- *   reasonIQ?: Function,
- *   hypothesisRuntime?: object|null,
- *   historyStore?: { saveConversation: Function },
- *   decisionStore?: { append: Function },
- *   tools?: Record<string, { invoke: Function }>,
- *   decisionEngine?: Function,
- *   orchestrate?: Function,
- * }} input
+ * Performs one conversational turn, STREAMED. Same direct-generation
+ * pipeline as performTurn; delivery is SSE through the Response Engine's
+ * emitter. Failover to the backup runs only before the first visible
+ * content token — afterwards a failure is reported calmly on the open
+ * stream and no second generation starts.
  */
 async function performStreamingTurn({
   messages,
   documents,
-  hermes,
   hindsight,
   res,
   conversationId,
+  generator,
+  backupGenerator,
   nativeGenerator,
-  webSearch,
+  hermes,
+  chronicle,
   attachments,
   traceId,
-  intentIQ,
   reasonIQ,
   hypothesisRuntime,
   historyStore,
   decisionStore,
-  tools,
-  decisionEngine = decideAction,
-  orchestrate = executeDecision,
   userDisplayName,
 }) {
   const problem = validateMessages(messages);
@@ -1222,21 +868,8 @@ async function performStreamingTurn({
     return;
   }
 
-  // A capability (Hermes, a tool) streams internal reasoning/content
-  // deltas; it never touches `res`. Every delta is handed to the Response
-  // Engine's stream emitter, which is the only thing that owns the wire
-  // frame shape, the lazy header-send, and the completion/failure
-  // lifecycle (responseEngine.js).
   const emitter = createStreamEmitter(res);
 
-  // First-token tracking: wraps onDelta to capture time-to-first-token
-  // for streaming generation. The same wrapper also records the FACT of
-  // delivery: `contentEmitted` becomes true once user-facing content (not
-  // a reasoning-trace delta) has actually been written to this response.
-  // runTurnCore's execution may or may not produce such deltas — a
-  // capability that returns text without streaming never calls onDelta —
-  // so the Response Engine is told what happened instead of assuming it
-  // (responseEngine.deliverReply).
   let timeToFirstTokenMs = null;
   let contentEmitted = false;
   const onDelta = trackFirstToken(
@@ -1247,55 +880,34 @@ async function performStreamingTurn({
     { onFirstToken: (ms) => { timeToFirstTokenMs = ms; } }
   );
 
-  // PLAN PROGRESS — the stream's second, content-free channel. A plan used
-  // to be silent until its last step answered (intermediate steps must not
-  // stream: their output is context, not Gaia's reply). onStep gives the
-  // client something honest to show meanwhile — "step 2 of 3, still
-  // working" — through the Response Engine's step frame, so progress and
-  // answer stay separate frames and progress can never be read as text
-  // Gaia said. Deliberately NOT wrapped in the contentEmitted tracking: a
-  // step frame emits no content, so it can never make a reply look
-  // delivered.
-  const onStep = (payload) => emitter.step(payload);
-
   let coreResult;
   try {
     coreResult = await runTurnCore({
       messages,
       documents,
-      hermes,
       hindsight,
       attachments,
       traceId,
       conversationId,
+      generator,
+      backupGenerator,
       nativeGenerator,
-      webSearch,
-      ...(intentIQ ? { intentIQ } : {}),
-      ...(reasonIQ ? { reasonIQ } : {}),
+      hermes,
+      chronicle,
       hypothesisRuntime,
-      historyStore,
       decisionStore,
-      tools,
-      decisionEngine,
-      orchestrate,
+      ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,
-      onStep,
       userDisplayName,
     });
   } catch (_) {
-    // The core must never take down a turn — degrade to the same safe
-    // default a missing/failed IntentIQ decision gets.
     emitter.fail();
     return;
   }
 
-  // Deferred cognition is STARTED below, after the stream is finished —
-  // never awaited. Gaia's learning/reflection runs in the background once
-  // the conversational response is delivered (see runDeferredCognition).
-  // It never rejects and never touches `res`.
-  const { replyText, timing, startDeferredCognition } = coreResult;
+  const { replyText, timing, notConfigured, startDeferredCognition } = coreResult;
+  void timing;
 
-  // Log first_token for streaming generation
   if (timeToFirstTokenMs !== null) {
     try {
       console.log(JSON.stringify({
@@ -1307,42 +919,34 @@ async function performStreamingTurn({
     } catch (_) { /* never break a turn */ }
   }
 
-  // Nothing usable was said (execution failed / empty output): report the
-  // calm failure through the emitter — before any frame shipped this is a
-  // normal JSON error, on an already-open stream it is a calm `error`
-  // frame followed by the end of the stream (no [DONE], so the client
-  // never mistakes the failure for a finished reply). Deferred cognition
-  // still runs: a deep turn's analysis is Gaia-knowledge, not part of the
-  // reply — but no Hindsight reflection (nothing was said, see
-  // runDeferredCognition's replyText gate).
+  // Nothing usable was said: calm failure. Unconfigured generation with
+  // nothing shipped yet is a 503 JSON; otherwise the Response Engine
+  // owns the shape (JSON before headers, error frame after).
   if (typeof replyText !== 'string' || replyText.length === 0) {
-    emitter.fail();
+    if (notConfigured && !contentEmitted) {
+      try {
+        res.status(503).json({ error: toCalmError() });
+      } catch (_) {
+        emitter.fail();
+      }
+    } else {
+      emitter.fail();
+    }
     const deferredCognition = startDeferredCognition();
     void deferredCognition;
     return;
   }
 
-  // Response Engine owns this judgment (responseEngine.deliverReply): the
-  // reply either already reached the client as deltas during orchestrate()
-  // — streamed capability/native/plan output — or it is written here as one
-  // final delta. Clarify/refuse wording always lands here, and so does any
-  // execution whose text never streamed (retrieval tools, a plan ending on
-  // a terminal result, a non-streaming generator fallback) — those turns
-  // used to finish with an empty stream while history kept the full reply.
+  // The reply either already streamed as deltas or is written here as one
+  // final delta — exactly once (responseEngine.deliverReply).
   deliverReply(emitter, replyText, { contentEmitted });
   emitter.finish();
 
-  // The conversational response path is complete — start the deferred
-  // cognition lifecycle now (not before), and never await it: the client
-  // already has the full reply.
   const deferredCognition = startDeferredCognition();
   void deferredCognition;
 
-  // Chat history — the raw transcript, never Hindsight's job (see the
-  // module comment). Never allowed to affect the already-sent response; a
-  // missing/invalid conversationId or a storage failure is silently
-  // skipped. (The non-streaming route performs the identical save in its
-  // own handler — same semantics, different delivery timing.)
+  // Chat history — the raw transcript, never Hindsight's job. Never
+  // allowed to affect the already-sent response.
   if (historyStore && conversationId) {
     try {
       historyStore.saveConversation(conversationId, [...messages, { role: 'assistant', content: replyText }]);

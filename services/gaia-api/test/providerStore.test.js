@@ -218,3 +218,73 @@ test('getMaskedConfig reports TTS defaults when nothing saved', () => {
   assert.equal(masked.tts.provider, '');
   assert.equal(masked.tts.hasApiKey, false);
 });
+
+// --- generationBackup (v3.0 failover) ---
+
+test('saveBackupConfig persists the backup provider config', async () => {
+  const { createProviderStore } = require('../src/providerStore');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
+  store.saveBackupConfig({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'backup-model', apiKey: 'backup-key' });
+  const config = store.getConfig();
+  assert.equal(config.generationBackup.provider, 'openrouter');
+  assert.equal(config.generationBackup.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(config.generationBackup.model, 'backup-model');
+  assert.equal(config.generationBackup.apiKey, 'backup-key');
+});
+
+test('saveBackupConfig with an empty apiKey keeps the previously stored key', async () => {
+  const { createProviderStore } = require('../src/providerStore');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
+  store.saveBackupConfig({ provider: 'openrouter', model: 'm1', apiKey: 'backup-key' });
+  store.saveBackupConfig({ model: 'm2', apiKey: '' }); // empty key is never an implicit change
+  store.saveBackupConfig({ provider: 'edenai' }); // omitted key keeps it too
+  const config = store.getConfig();
+  assert.equal(config.generationBackup.apiKey, 'backup-key');
+  assert.equal(config.generationBackup.model, 'm2');
+  assert.equal(config.generationBackup.provider, 'edenai');
+});
+
+test('saveBackupConfig does not affect the main provider, roles or TTS', async () => {
+  const { createProviderStore } = require('../src/providerStore');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
+  store.saveProviderConfig({ provider: 'edenai', apiKey: 'main-key' });
+  store.saveBackupConfig({ provider: 'openrouter', apiKey: 'backup-key', model: 'b1' });
+  const config = store.getConfig();
+  assert.equal(config.apiKey, 'main-key');
+  assert.equal(config.generationBackup.apiKey, 'backup-key');
+});
+
+test('getMaskedConfig includes the masked backup key, never the raw one', async () => {
+  const { createProviderStore } = require('../src/providerStore');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
+  store.saveBackupConfig({ provider: 'openrouter', apiKey: 'backup-super-secret', model: 'm1' });
+  const masked = store.getMaskedConfig();
+  assert.equal(masked.generationBackup.provider, 'openrouter');
+  assert.equal(masked.generationBackup.model, 'm1');
+  assert.equal(masked.generationBackup.hasApiKey, true);
+  assert.ok(!JSON.stringify(masked).includes('backup-super-secret'));
+});
+
+test('getMaskedConfig reports backup defaults when nothing saved', async () => {
+  const { createProviderStore } = require('../src/providerStore');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
+  const masked = store.getMaskedConfig();
+  assert.equal(masked.generationBackup.provider, '');
+  assert.equal(masked.generationBackup.hasApiKey, false);
+  assert.equal(masked.generationBackup.maskedApiKey, null);
+});

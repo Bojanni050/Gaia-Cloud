@@ -214,3 +214,46 @@ test('deriveCapabilities: reflects env vars when no store', () => {
   assert.equal(caps.vision, false);
   assert.equal(caps.tts, true);
 });
+
+// --- resolveBackupConfig (v3.0 failover) ---
+
+const { resolveBackupConfig } = require('../src/providerConfigResolver');
+
+test('resolveBackupConfig: uses the stored backup config when baseUrl and model are set', () => {
+  const store = createMockStore({
+    generationBackup: { provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'backup-model', apiKey: 'bk' },
+  });
+  const config = resolveBackupConfig(store, {});
+  assert.equal(config.provider, 'openrouter');
+  assert.equal(config.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(config.model, 'backup-model');
+  assert.equal(config.apiKey, 'bk');
+});
+
+test('resolveBackupConfig: returns null when the stored backup has no model', () => {
+  const store = createMockStore({ generationBackup: { provider: 'openrouter', baseUrl: 'https://x', model: '', apiKey: '' } });
+  assert.equal(resolveBackupConfig(store, {}), null);
+});
+
+test('resolveBackupConfig: returns null when nothing is stored and no env fallback exists', () => {
+  assert.equal(resolveBackupConfig(createMockStore({}), {}), null);
+  assert.equal(resolveBackupConfig(null, {}), null);
+});
+
+test('resolveBackupConfig: falls back to GAIA_BACKUP_* env vars', () => {
+  const env = { GAIA_BACKUP_BASE_URL: 'https://backup.internal/v1', GAIA_BACKUP_MODEL: 'b1', GAIA_BACKUP_AUTH_TOKEN: 'bt' };
+  const config = resolveBackupConfig(null, env);
+  assert.equal(config.baseUrl, 'https://backup.internal/v1');
+  assert.equal(config.model, 'b1');
+  assert.equal(config.apiKey, 'bt');
+});
+
+test('resolveBackupConfig: stored backup wins over env vars', () => {
+  const store = createMockStore({
+    generationBackup: { provider: 'stored', baseUrl: 'https://stored/v1', model: 's1', apiKey: '' },
+  });
+  const env = { GAIA_BACKUP_BASE_URL: 'https://env/v1', GAIA_BACKUP_MODEL: 'e1' };
+  const config = resolveBackupConfig(store, env);
+  assert.equal(config.baseUrl, 'https://stored/v1');
+  assert.equal(config.model, 's1');
+});

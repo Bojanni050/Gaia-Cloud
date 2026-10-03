@@ -333,6 +333,31 @@ function createAdminRouter({
       res.json(providerStore.getMaskedConfig());
     });
 
+    // --- Backup generation provider (independent inference fallback) ---
+    // GET returns the masked backup config; PUT accepts
+    // { provider?, baseUrl?, model?, apiKey? }. An empty apiKey never
+    // clears or changes the stored key.
+
+    router.get('/api/provider/backup/config', auth, (req, res) => {
+      res.json(providerStore.getMaskedConfig().generationBackup);
+    });
+
+    router.put('/api/provider/backup/config', auth, (req, res) => {
+      const body = req.body || {};
+      const allowed = {};
+      if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
+      if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
+      if (typeof body.model === 'string') allowed.model = body.model.trim();
+      if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+
+      if (Object.keys(allowed).length === 0) {
+        return res.status(400).json({ error: 'no valid fields supplied' });
+      }
+
+      providerStore.saveBackupConfig(allowed);
+      res.json(providerStore.getMaskedConfig().generationBackup);
+    });
+
     router.get('/api/provider/capabilities', auth, (req, res) => {
       const config = providerStore.getConfig();
       const roles = config && config.roles ? config.roles : {};

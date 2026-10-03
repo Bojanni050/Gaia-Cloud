@@ -119,6 +119,37 @@ function resolveEnvFallback(role, env) {
 }
 
 /**
+ * Resolve the backup generation provider: the independently stored
+ * `generationBackup` config first, GAIA_BACKUP_* env vars as fallback.
+ * Returns null when no backup is configured. The backup is a plain
+ * inference provider — provider priority is config order, never content.
+ * @param {{ getConfig: Function }} providerStore
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string }|null}
+ */
+function resolveBackupConfig(providerStore, env = process.env) {
+  const stored = providerStore ? providerStore.getConfig() : null;
+  const backup = stored && stored.generationBackup ? stored.generationBackup : null;
+  if (backup && backup.baseUrl && backup.model) {
+    return {
+      provider: backup.provider || 'backup',
+      baseUrl: backup.baseUrl,
+      model: backup.model,
+      apiKey: backup.apiKey || '',
+    };
+  }
+  if (env.GAIA_BACKUP_BASE_URL && env.GAIA_BACKUP_MODEL) {
+    return {
+      provider: env.GAIA_BACKUP_PROVIDER || 'env-backup',
+      baseUrl: env.GAIA_BACKUP_BASE_URL,
+      model: env.GAIA_BACKUP_MODEL,
+      apiKey: env.GAIA_BACKUP_AUTH_TOKEN || '',
+    };
+  }
+  return null;
+}
+
+/**
  * Derive capability availability from the provider store's role selections.
  * @param {{ getConfig: Function }} providerStore
  * @param {NodeJS.ProcessEnv} [env]
@@ -133,4 +164,4 @@ function deriveCapabilities(providerStore, env = process.env) {
   };
 }
 
-module.exports = { resolveRoleConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities };
+module.exports = { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities };

@@ -185,7 +185,7 @@ test('non-streaming: a native-routable turn reaches GaiaGenerator\'s real HTTP c
   );
 });
 
-test('non-streaming: without GAIA_NATIVE_* configured, the same turn falls back to Hermes (backward compatible)', async () => {
+test('non-streaming: without generation configured, the turn answers a calm 503 and never touches Hermes', async () => {
   let nativeCalls = 0;
   let hermesCalls = 0;
 
@@ -201,10 +201,12 @@ test('non-streaming: without GAIA_NATIVE_* configured, the same turn falls back 
         });
         const body = await res.json();
 
-        assert.equal(res.status, 200);
-        assert.equal(body.reply, 'Hermes reply');
+        // v3.0: Hermes is never an inference fallback. Unconfigured
+        // generation is an honest 503 in Gaia's calm words.
+        assert.equal(res.status, 503);
+        assert.equal(body.error, 'gaia could not answer right now');
         assert.equal(nativeCalls, 0);
-        assert.equal(hermesCalls, 1);
+        assert.equal(hermesCalls, 0);
       });
     }
   );
@@ -242,7 +244,7 @@ test('streaming: a native-routable turn reaches GaiaGenerator\'s real HTTP call,
   );
 });
 
-test('streaming: without GAIA_NATIVE_* configured, the same turn falls back to Hermes (backward compatible)', async () => {
+test('streaming: without generation configured, the turn answers a calm 503 JSON and never touches Hermes', async () => {
   let nativeCalls = 0;
   let hermesCalls = 0;
 
@@ -256,12 +258,14 @@ test('streaming: without GAIA_NATIVE_* configured, the same turn falls back to H
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
           body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }], stream: true }),
         });
-        const text = await res.text();
+        const body = await res.json();
 
-        assert.equal(res.status, 200);
-        assert.match(text, /Hermes reply/);
+        // Nothing ever streamed, so the failure is still a clean JSON
+        // body — 503, calm, and Hermes was never consulted.
+        assert.equal(res.status, 503);
+        assert.equal(body.error, 'gaia could not answer right now');
         assert.equal(nativeCalls, 0);
-        assert.equal(hermesCalls, 1);
+        assert.equal(hermesCalls, 0);
       });
     }
   );
@@ -602,23 +606,30 @@ test('GET /speech/info reports the stored Mistral voice with Dutch among its lan
 // --- webSearch wiring (src/tools/braveSearch.js) ---------------------------
 //
 // No non-streaming ("performTurn") equivalent of the streaming test below:
-// performTurn always hands the Decision Engine `intent: null` (Desktop's
-// contract carries no IntentIQ — see turn.js's own comment), and the web
-// tool's branch requires an actual `sourceOfTruth: 'external_knowledge'`
-// from IntentIQ to ever fire. So performTurn can never naturally reach the
-// web tool via real classification — only performStreamingTurn (real
-// IntentIQ) or an explicitly injected decision (turn.test.js's unit-level
-// wiring test) can. That's an accurate architectural fact, not a gap: the
-// non-streaming path is documented as never running Logos at all.
+// v3.0: the live path never routes to tools. Web search results shape
+// (braveSearch.js's HTTP contract) is covered in braveSearch.test.js;
+// turn-level delivery of direct generation is covered in
+// planDelivery.test.js and turn.test.js.
 
-test('streaming: an external-knowledge turn reaches the Brave Search real HTTP call, never Hermes', async () => {
+// v3.0 LIVE PATH: direct generation only. There is no live web routing —
+// an external-knowledge phrasing is answered by the configured
+// generation route from its own knowledge, and web search is never
+// consulted mid-turn. Hermes is never involved either.
+
+test('streaming: an external-knowledge turn is answered by configured generation, never web search or Hermes', async () => {
   let webCalls = 0;
   let hermesCalls = 0;
+  let nativeCalls = 0;
 
   await withMockedFetch(
-    mockFetch({ onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
+    mockFetch({ onNative: () => { nativeCalls += 1; }, onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_WEB_SEARCH_API_KEY: 'test-key', GAIA_WEB_SEARCH_BASE_URL: WEB_BASE }));
+      const app = createApp(baseEnv({
+        GAIA_NATIVE_BASE_URL: NATIVE_BASE,
+        GAIA_NATIVE_MODEL: 'test-model',
+        GAIA_WEB_SEARCH_API_KEY: 'test-key',
+        GAIA_WEB_SEARCH_BASE_URL: WEB_BASE,
+      }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -628,35 +639,36 @@ test('streaming: an external-knowledge turn reaches the Brave Search real HTTP c
         const text = await res.text();
 
         assert.equal(res.status, 200);
-        assert.match(text, /OpenAI API Reference/);
+        assert.match(text, /Gaia native voice reply/);
         assert.match(text, /data: \[DONE\]/);
-        assert.equal(webCalls, 1);
+        assert.equal(nativeCalls, 1);
+        assert.equal(webCalls, 0);
         assert.equal(hermesCalls, 0);
       });
     }
   );
 });
 
-test('streaming: without GAIA_WEB_SEARCH_API_KEY configured, an external-knowledge turn falls back to Hermes (backward compatible)', async () => {
+test('streaming: without generation configured, an external-knowledge turn is a calm 503 — no web search, no Hermes', async () => {
   let webCalls = 0;
   let hermesCalls = 0;
 
   await withMockedFetch(
     mockFetch({ onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv()); // no GAIA_WEB_SEARCH_* at all
+      const app = createApp(baseEnv()); // no GAIA_NATIVE_*, no GAIA_WEB_SEARCH_* at all
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
           body: JSON.stringify({ messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }], stream: true }),
         });
-        const text = await res.text();
+        const body = await res.json();
 
-        assert.equal(res.status, 200);
-        assert.match(text, /Hermes reply/);
+        assert.equal(res.status, 503);
+        assert.equal(body.error, 'gaia could not answer right now');
         assert.equal(webCalls, 0);
-        assert.equal(hermesCalls, 1);
+        assert.equal(hermesCalls, 0);
       });
     }
   );

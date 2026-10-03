@@ -225,73 +225,66 @@ test('orchestrator rejects an injected plan with an invalid skill combo before a
 });
 
 test('hermes adapter: selected skill becomes an explicit instruction; no skill leaves the payload untouched', async () => {
-  // Exercise the adapter exactly as runTurnCore wires it, via a minimal
-  // performStreamingTurn with a plan decision injected.
-  const { performStreamingTurn } = require('../src/turn');
-  const seen = [];
-  const hermes = {
-    stream: async (messages, { onDelta } = {}) => {
-      seen.push(messages);
-      if (onDelta) onDelta('klaar', false);
-      return 'klaar';
-    },
-  };
-  const res = { writeHead() {}, write() {}, end() {}, status() { return this; }, json() {} };
-  const planDecision = {
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes', skill: 'systematic-debugging', input: {} },
-      { id: 'step-2', type: 'generation', mode: 'native', sources: ['step-1'] },
-    ],
-    reason: 'debug',
-  };
+  // v3.0: the live turn never routes to Hermes, so the adapter is
+  // exercised directly — the same defaultBuildMessages translation the
+  // explicit HADES path uses.
+  const { defaultBuildMessages } = require('../src/capabilities/hermesAdapter');
 
+  const baseMessages = [
+    { role: 'system', content: 'SOUL' },
+    { role: 'user', content: 'waarom faalt dit?' },
+  ];
   // With skill: an explicit instruction system message is present.
-  await performStreamingTurn({
-    messages: [{ role: 'user', content: 'waarom faalt dit?' }],
-    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
-    hermes,
-    hindsight: { recall: async () => [], reflect: async () => {} },
-    res,
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: null, status: 'unknown' }),
-    reasonIQ: async () => ({}),
-    decisionEngine: () => planDecision,
-    orchestrate: async (decision, ctx) => {
-      ctx.nativeGenerator = { generate: async () => 'antwoord' };
-      const { execute } = require('../src/orchestration/orchestrator');
-      return execute(decision, ctx);
-    },
+  const withSkill = defaultBuildMessages({
+    objective: 'respond',
+    instruction: 'waarom faalt dit?',
+    expected_outcome: { description: 'x', minLength: 1 },
+    context: { messages: baseMessages, skill: 'systematic-debugging' },
   });
-  const withSkill = seen[0];
   const instruction = withSkill.find((m) => m.role === 'system' && /Use the Hermes skill "systematic-debugging"/.test(m.content));
   assert.ok(instruction, 'explicit skill instruction reaches Hermes');
   assert.match(instruction.content, /Load and execute that skill yourself/);
 
   // Without skill: payload untouched — no skill instruction anywhere.
-  seen.length = 0;
-  await performStreamingTurn({
-    messages: [{ role: 'user', content: 'analyseer dit even' }],
-    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
-    hermes,
-    hindsight: { recall: async () => [], reflect: async () => {} },
-    res: { writeHead() {}, write() {}, end() {}, status() { return this; }, json() {} },
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: null, status: 'unknown' }),
-    reasonIQ: async () => ({}),
-    decisionEngine: () => ({
-      action: 'plan',
-      steps: [
-        { id: 'step-1', type: 'reasoning', capability: 'hermes' },
-        { id: 'step-2', type: 'generation', mode: 'native', sources: ['step-1'] },
-      ],
-      reason: 'plain',
-    }),
-    orchestrate: async (decision, ctx) => {
-      ctx.nativeGenerator = { generate: async () => 'antwoord' };
-      const { execute } = require('../src/orchestration/orchestrator');
-      return execute(decision, ctx);
-    },
+  const withoutSkill = defaultBuildMessages({
+    objective: 'respond',
+    instruction: 'analyseer dit even',
+    expected_outcome: { description: 'x', minLength: 1 },
+    context: { messages: baseMessages },
   });
-  assert.ok(!seen[0].some((m) => /Use the Hermes skill/.test(m.content)), 'no forced skill instruction without selection');
+  assert.ok(!withoutSkill.some((m) => /Use the Hermes skill/.test(m.content)), 'no forced skill instruction without selection');
+});
+
+test('v3.0 Hermes isolation: a configured generator never calls Hermes on the live path', async () => {
+  // Hermes is an explicit HADES instrument, never an inference fallback:
+  // even when a hermes client is passed alongside a generator, the live
+  // turn speaks only through the configured generation route.
+  const { performTurn, performStreamingTurn } = require('../src/turn');
+  let hermesCalls = 0;
+  const hermes = {
+    chat: async () => { hermesCalls += 1; return 'hermes reply'; },
+    stream: async () => { hermesCalls += 1; return 'hermes reply'; },
+  };
+  const generator = { generate: async () => 'generation reply' };
+  const documents = { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' };
+
+  const nonStream = await performTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents,
+    hermes,
+    generator,
+  });
+  assert.equal(nonStream.body.reply, 'generation reply');
+
+  const res = { writeHead() {}, write() {}, end() {}, status() { return this; }, json() {} };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents,
+    hermes,
+    generator: { generate: async () => 'generation reply', stream: async (m, { onDelta }) => { onDelta('generation reply', false); return 'generation reply'; } },
+    res,
+  });
+  assert.equal(hermesCalls, 0, 'Hermes must never be called when generation is configured');
 });
 
 // --- §14/§16/§19: Decision Engine skill selection -----------------------------------

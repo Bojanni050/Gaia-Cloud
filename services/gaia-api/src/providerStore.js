@@ -20,6 +20,7 @@
  *       reasoning:  { mode: "catalog"|"manual", model: "..." },
  *       vision:     { mode: "catalog"|"manual", model: "..." },
  *     },
+ *     generationBackup: { provider, baseUrl, model, apiKey },
  *     tts: {
  *       provider: "...",
  *       baseUrl: "...",
@@ -62,6 +63,13 @@ const DEFAULT_TTS = Object.freeze({
   model: '',
   voiceId: '',
   useMainProvider: false,
+});
+
+const DEFAULT_BACKUP = Object.freeze({
+  provider: '',
+  baseUrl: '',
+  apiKey: '',
+  model: '',
 });
 
 /**
@@ -169,6 +177,33 @@ function createProviderStore(options = {}) {
     return next;
   }
 
+  /**
+   * Save the independent backup generation provider
+   * ({ provider, baseUrl, model, apiKey }). apiKey is optional — omitting
+   * it or sending an empty string keeps the previously stored key (an
+   * empty key is never an implicit change).
+   * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string }} partial
+   */
+  function saveBackupConfig(partial) {
+    const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
+    const currentBackup = current.generationBackup || { ...DEFAULT_BACKUP };
+    const nextApiKey = partial.apiKey !== undefined && String(partial.apiKey).trim() !== ''
+      ? partial.apiKey
+      : currentBackup.apiKey;
+    const next = {
+      ...current,
+      generationBackup: {
+        provider: partial.provider !== undefined ? partial.provider : currentBackup.provider,
+        baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentBackup.baseUrl,
+        model: partial.model !== undefined ? partial.model : currentBackup.model,
+        apiKey: nextApiKey || '',
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    writeRaw(next);
+    return next;
+  }
+
   /** Safe to return to a client — raw key never leaves this module. */
   function getMaskedConfig() {
     const config = readRaw();
@@ -177,11 +212,13 @@ function createProviderStore(options = {}) {
         provider: null, baseUrl: null, hasApiKey: false, maskedApiKey: null,
         catalog: [], catalogRetrievedAt: null,
         roles: { ...DEFAULT_ROLES },
+        generationBackup: { ...DEFAULT_BACKUP, hasApiKey: false, maskedApiKey: null },
         tts: { ...DEFAULT_TTS, hasApiKey: false, maskedApiKey: null },
         updatedAt: null,
       };
     }
     const tts = config.tts || { ...DEFAULT_TTS };
+    const backup = config.generationBackup || { ...DEFAULT_BACKUP };
     return {
       provider: config.provider || null,
       baseUrl: config.baseUrl || null,
@@ -190,6 +227,13 @@ function createProviderStore(options = {}) {
       catalog: Array.isArray(config.catalog) ? config.catalog : [],
       catalogRetrievedAt: config.catalogRetrievedAt || null,
       roles: { ...DEFAULT_ROLES, ...(config.roles || {}) },
+      generationBackup: {
+        provider: backup.provider || '',
+        baseUrl: backup.baseUrl || '',
+        model: backup.model || '',
+        hasApiKey: Boolean(backup.apiKey),
+        maskedApiKey: maskKey(backup.apiKey),
+      },
       tts: {
         provider: tts.provider || '',
         baseUrl: tts.baseUrl || '',
@@ -209,7 +253,7 @@ function createProviderStore(options = {}) {
     } catch (_) { /* already gone */ }
   }
 
-  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveTtsConfig, getMaskedConfig, clear, storePath };
+  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveTtsConfig, saveBackupConfig, getMaskedConfig, clear, storePath };
 }
 
-module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS };
+module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS, DEFAULT_BACKUP };

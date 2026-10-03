@@ -365,9 +365,12 @@ test('10: Hermes translation lives only in the Hermes adapter', () => {
   assert.ok(/\.stream\s*\(/.test(adapter), 'adapter translates to the Hermes stream interface');
   assert.ok(/Use the Hermes skill/.test(adapter), 'adapter owns the skill instruction');
 
-  // turn.js wires the adapter but translates nothing itself anymore.
+  // v3.0: turn.js has no live capability path at all — no Decision
+  // Engine, no Orchestrator, no Hermes adapter wiring. Hermes is an
+  // explicit HADES instrument, never part of the live turn.
   const turn = codeOf('../src/turn.js');
-  assert.ok(/createHermesCapability/.test(turn), 'turn.js runs Hermes behind its adapter');
+  assert.ok(!/createHermesCapability/.test(turn), 'turn.js must not wire the Hermes adapter into the live path');
+  assert.ok(!/executeDecision/.test(turn), 'turn.js must not orchestrate capabilities live');
+  assert.ok(!/decideAction|decisionEngine/.test(turn), 'turn.js must not decide capabilities live');
   assert.ok(!/Use the Hermes skill/.test(turn), 'turn.js must not duplicate the skill instruction');
-  assert.ok(!/hermes\.chat|hermes\.stream/.test(turn), 'turn.js must not call the Hermes interface directly');
 });

@@ -188,73 +188,43 @@ test('performTurn routes through the real Decision Engine by default, choosing t
   assert.equal(result.body.reply, 'hi there');
 });
 
-test('performTurn feeds real IntentIQ output into the Decision Engine, exactly like streaming', async () => {
-  let hermesCalls = 0;
+test('performTurn hands both transports the identical assembled prompt, direct to generation', async () => {
+  // v3.0: no IntentIQ/Decision live. Both transports hand the same
+  // assembled prompt straight to the configured generation route.
+  let intentIQCalls = 0;
   let reasonIQCalls = 0;
-  const hermes = { chat: async () => { hermesCalls += 1; return 'hi there'; } };
-  const decisionEngineCalls = [];
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { seenPrompts.push(messages); return 'hi there'; },
+    stream: async (messages, { onDelta } = {}) => { seenPrompts.push(messages); if (onDelta) onDelta('hi there', false); return 'hi there'; },
+  };
 
   const intentDecision = { schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted', entities: [], sourceOfTruth: 'conversation', needsClarification: false };
   const result = await performTurn({
     messages: [{ role: 'user', content: 'hello' }],
     documents: DOCUMENTS,
-    hermes,
-    intentIQ: async () => intentDecision,
+    generator,
+    intentIQ: async () => { intentIQCalls += 1; return intentDecision; },
     reasonIQ: async () => { reasonIQCalls += 1; return { reasoningDepth: 'shallow' }; },
-    decisionEngine: (input) => {
-      decisionEngineCalls.push(input);
-      return { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' };
-    },
   });
 
-  assert.equal(hermesCalls, 1);
-  assert.equal(decisionEngineCalls.length, 1);
-  // COGNITIVE PARITY: the Decision Engine consumed the same IntentIQ product
-  // the streaming path would have produced for the same turn. ReasonIQ is
-  // optional (Phase 2): a normal turn is decided without any reasoning
-  // result (null — the Decision Engine maps that to level 'none') and the
-  // injected reasonIQ seam is never called.
-  assert.deepEqual(decisionEngineCalls[0].intent, intentDecision);
-  assert.equal(decisionEngineCalls[0].reasoning, null);
-  assert.equal(reasonIQCalls, 0);
-  assert.equal(decisionEngineCalls[0].userInput, 'hello');
+  assert.equal(seenPrompts.length, 1);
+  // The prompt carries the SOUL context and history for direct
+  // generation — no interpretation layer ran first.
+  assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
+  assert.equal(reasonIQCalls, 0, 'ReasonIQ must not run on the live path');
+  assert.ok(seenPrompts[0].some((m) => m.role === 'system' && /SOUL/.test(m.content)));
+  assert.ok(seenPrompts[0].some((m) => m.role === 'user' && m.content === 'hello'));
   assert.equal(result.status, 200);
   assert.equal(result.body.reply, 'hi there');
 });
 
-test('performTurn: a clarify decision never calls Hermes and still returns a calm 200 reply', async () => {
-  const hermes = { chat: async () => { throw new Error('must not be called'); } };
-  const result = await performTurn({
-    messages: [{ role: 'user', content: 'draft it and send it' }],
-    documents: DOCUMENTS,
-    hermes,
-    decisionEngine: () => ({ action: 'clarify', reason: 'compound turn detected' }),
-  });
-  assert.equal(result.status, 200);
-  assert.match(result.body.reply, /could you say a bit more/);
-});
-
-test('performTurn: a refuse decision never calls Hermes and still returns a calm 200 reply', async () => {
-  const hermes = { chat: async () => { throw new Error('must not be called'); } };
-  const result = await performTurn({
-    messages: [{ role: 'user', content: 'do something disallowed' }],
-    documents: DOCUMENTS,
-    hermes,
-    decisionEngine: () => ({ action: 'refuse', reason: 'policy' }),
-  });
-  assert.equal(result.status, 200);
-  assert.match(result.body.reply, /isn't able to help with that/);
-});
-
-test('performTurn: a native decision has nothing to generate and degrades to a calm 502, without ever reaching Hermes', async () => {
-  const hermes = { chat: async () => { throw new Error('must not be called'); } };
+test('performTurn: without any generation configured the turn answers a calm 503, never leaking internals', async () => {
   const result = await performTurn({
     messages: [{ role: 'user', content: 'hi' }],
     documents: DOCUMENTS,
-    hermes,
-    decisionEngine: () => ({ action: 'native' }),
   });
-  assert.equal(result.status, 502);
+  assert.equal(result.status, 503);
   assert.equal(result.body.error, 'gaia could not answer right now');
 });
 
@@ -399,24 +369,28 @@ test('performStreamingTurn recalls only when the policy fires; Hindsight reflect
 
 // --- Logos.IntentIQ integration (interpretation-only seam) -----------------
 
-test('performStreamingTurn invokes IntentIQ but never lets its output change the assembled turn', async () => {
-  const intentIQCalls = [];
-  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+test('performStreamingTurn never invokes IntentIQ on the live path — the assembled prompt is direct', async () => {
+  let intentIQCalls = 0;
+  let seenMessages = null;
+  const generator = {
+    generate: async (messages) => { seenMessages = messages; return 'A reply.'; },
+    stream: async (messages, { onDelta }) => { seenMessages = messages; onDelta('ok', false); return 'A reply.'; },
+  };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: (messages, options) => {
-      intentIQCalls.push({ messages, options });
+    intentIQ: (messages) => {
+      intentIQCalls += 1;
       return { schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' };
     },
   });
 
-  assert.equal(intentIQCalls.length, 1);
-  assert.equal(intentIQCalls[0].messages[0].content, 'Why is my website crashing?');
+  assert.equal(intentIQCalls, 0, 'IntentIQ is Logos reflection now, never a live pre-flight');
+  assert.ok(seenMessages.some((m) => m.role === 'user' && m.content === 'Why is my website crashing?'));
 });
 
 test('performStreamingTurn completes normally even if IntentIQ throws', async () => {
@@ -467,31 +441,32 @@ async function flush() {
 
 // PHASE 2: ReasonIQ is optional, not mandatory. A normal turn (no evidence
 // to weigh) must complete end-to-end without calling ReasonIQ at all.
-test('a normal turn does NOT call ReasonIQ — the Decision Engine decides without it', async () => {
+// v3.0: a normal turn calls nothing but the configured generation route
+// — no ReasonIQ, no Decision Engine, no pre-flight of any kind.
+test('a normal turn calls only the configured generation route — once, with the assembled prompt', async () => {
   const reasonIQCalls = [];
   const callOrder = [];
-  const decisionInputs = [];
-  const hermes = { stream: async (messages, { onDelta }) => { callOrder.push('hermes'); onDelta('ok', false); return 'A reply.'; } };
-  const { decide } = require('../src/decision/decisionEngine');
+  const seenPrompts = [];
+  const generator = {
+    generate: async (messages) => { callOrder.push('generate'); seenPrompts.push(messages); return 'A reply.'; },
+    stream: async (messages, { onDelta }) => { callOrder.push('generate'); seenPrompts.push(messages); onDelta('ok', false); return 'A reply.'; },
+  };
 
   const res = fakeRes();
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: SILENT_HINDSIGHT,
     res,
     intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async (input) => { callOrder.push('reasonIQ'); reasonIQCalls.push(input); return {}; },
-    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
   });
   await flush();
 
-  assert.equal(reasonIQCalls.length, 0, 'ReasonIQ must not run for a normal turn');
-  assert.equal(callOrder.includes('reasonIQ'), false);
-  assert.deepEqual(callOrder, ['hermes']);
-  assert.equal(decisionInputs.length, 1, 'exactly one decision for the turn');
-  assert.equal(decisionInputs[0].reasoning, null, 'no reasoning result is consumed');
+  assert.equal(reasonIQCalls.length, 0, 'ReasonIQ must not run on the live path');
+  assert.deepEqual(callOrder, ['generate']);
+  assert.equal(seenPrompts.length, 1, 'exactly one generation call for the turn');
   assert.match(res.written.at(-1), /data: \[DONE\]/);
 });
 
@@ -651,22 +626,20 @@ test('performStreamingTurn completes normally even if historyStore.saveConversat
 
 // --- decisionStore (durable IntentIQ/ReasonIQ log) --------------------
 
-test('performStreamingTurn persists the IntentIQ decision and the decision plan when a decisionStore is given (a normal turn writes no reasoniq.record)', async () => {
+test('performStreamingTurn persists background reflection records when a decisionStore is given (no live decisions)', async () => {
   const appended = [];
   const decisionStore = { append: (record) => { appended.push(record); return true; } };
-  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+  const generator = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
   let reasonIQCalls = 0;
+  let intentIQCalls = 0;
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: (messages, options) => {
-      options.logger(JSON.stringify({ kind: 'intentiq.decision', intent: 'inform.explain' }));
-      return { schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' };
-    },
+    intentIQ: () => { intentIQCalls += 1; return { schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }; },
     reasonIQ: async (input, options) => {
       reasonIQCalls += 1;
       options.logger(JSON.stringify({ kind: 'reasoniq.result', reasoningDepth: 'shallow' }));
@@ -676,14 +649,17 @@ test('performStreamingTurn persists the IntentIQ decision and the decision plan 
   });
   await flush();
 
-  // PHASE 2: ReasonIQ is optional. A normal turn produces NO reasoniq.result
-  // record at all — only the intent decision, the plan and the deferred
-  // memory judgment are persisted, in that order.
+  // v3.0: nothing live is decided — no intentiq.decision, no
+  // decision.plan. Only background reflection records are persisted:
+  // the memory judgment, the reasoning gate and the DecisionIQ review.
+  assert.equal(intentIQCalls, 0, 'IntentIQ never runs live');
   assert.equal(reasonIQCalls, 0);
-  assert.equal(appended[0].kind, 'intentiq.decision');
-  assert.equal(appended[1].kind, 'decision.plan');
-  assert.equal(appended[2].kind, 'memory.worthiness'); // 0.1: every turn gets a memory judgment record
+  assert.equal(appended.filter((r) => r.kind === 'intentiq.decision').length, 0);
+  assert.equal(appended.filter((r) => r.kind === 'decision.plan').length, 0);
   assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0);
+  assert.ok(appended.some((r) => r.kind === 'memory.worthiness'), 'every turn gets a memory judgment record');
+  assert.ok(appended.some((r) => r.kind === 'reasoniq.gate'), 'every turn logs its reasoning gate');
+  assert.ok(appended.some((r) => r.kind === 'decision.review'), 'every turn gets a DecisionIQ review');
 });
 
 test('performStreamingTurn never calls decisionStore.append when no decisionStore is given (backward compatible)', async () => {
@@ -779,63 +755,10 @@ test('capability (hermes) turn: Gaia decides, orchestrator calls hermes exactly 
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
 
-test('tool turn: the orchestrator executes the capability the Decision selected, without choosing it itself', async () => {
-  const res = fakeRes();
-  const toolCalls = [];
-  const tool = {
-    invoke: async (messages, { onDelta, task, input }) => {
-      toolCalls.push({ task, input });
-      onDelta('tool result', false);
-      return 'tool result';
-    },
-  };
-
-  await performStreamingTurn({
-    messages: [{ role: 'user', content: 'send this to Bo' }],
-    documents: DOCUMENTS,
-    hermes: hermesThatMustNotBeCalled(),
-    hindsight: SILENT_HINDSIGHT,
-    res,
-    tools: { tool },
-    decisionEngine: () => ({ action: 'tool', capability: 'tool', task: 'act.perform', input: { userInput: 'send this to Bo' }, reason: 'test' }),
-  });
-
-  assert.equal(toolCalls.length, 1);
-  assert.equal(toolCalls[0].task, 'act.perform');
-  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
-});
-
-test('clarify turn: Gaia can choose to clarify without ever calling Hermes', async () => {
-  const res = fakeRes();
-  await performStreamingTurn({
-    messages: [{ role: 'user', content: 'draft it and send it' }],
-    documents: DOCUMENTS,
-    hermes: hermesThatMustNotBeCalled(),
-    hindsight: SILENT_HINDSIGHT,
-    res,
-    decisionEngine: () => ({ action: 'clarify', reason: 'compound turn detected' }),
-  });
-
-  assert.equal(res.headers['Content-Type'], 'text/event-stream');
-  assert.match(res.written[0], /could you say a bit more/);
-  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
-});
-
-test('refuse turn: a refusal path never causes a Hermes call', async () => {
-  const res = fakeRes();
-  await performStreamingTurn({
-    messages: [{ role: 'user', content: 'do something disallowed' }],
-    documents: DOCUMENTS,
-    hermes: hermesThatMustNotBeCalled(),
-    hindsight: SILENT_HINDSIGHT,
-    res,
-    decisionEngine: () => ({ action: 'refuse', reason: 'policy' }),
-  });
-
-  assert.equal(res.headers['Content-Type'], 'text/event-stream');
-  assert.match(res.written[0], /isn't able to help with that/);
-  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
-});
+// v3.0: no tools, plans, clarify/refuse routing on the live path — the
+// turn is direct generation, and Gaia's own calm clarify/refuse wording
+// stays covered at the Response Engine seam (responseEngine.test.js).
+// Hermes is never reached except as a legacy-adapted primary below.
 
 test('no capability leakage: Hermes output only ever reaches the client through the Response Engine\'s emitter', async () => {
   const res = fakeRes();
@@ -1023,10 +946,10 @@ test('architecture: a personal-memory question retrieves Hindsight context and i
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
 
-test('architecture: a complex analysis question routes through Hermes, with Hindsight context folded in when relevant', async () => {
+test('architecture: a complex analysis question goes direct to generation, with Hindsight context folded in when relevant', async () => {
   const res = fakeRes();
   let recallQuery = null;
-  const hindsightReflection = "Bo's Gaia architecture uses a Decision Engine and an Orchestrator";
+  const hindsightReflection = "Bo's Gaia architecture uses direct generation with a background reflection phase";
   const hindsight = {
     recall: async (query) => {
       recallQuery = query;
@@ -1034,97 +957,91 @@ test('architecture: a complex analysis question routes through Hermes, with Hind
     },
     reflect: async () => {},
   };
-  const hermesMessages = [];
-  const hermes = {
+  const generationMessages = [];
+  const generator = {
+    generate: async (messages) => { generationMessages.push(messages); return 'Here is the analysis of your architecture.'; },
     stream: async (messages, { onDelta }) => {
-      hermesMessages.push(messages);
+      generationMessages.push(messages);
       onDelta('Here is the analysis of your architecture.', false);
       return 'Here is the analysis of your architecture.';
     },
   };
-  const nativeGenerator = { generate: async () => { throw new Error('native must not be used for this turn'); } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Analyseer mijn Gaia-project op mogelijke race conditions in de architecture.' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight,
-    nativeGenerator,
     res,
   });
 
   assert.ok(recallQuery, 'Hindsight recall should have been attempted for this architecture question');
-  assert.equal(hermesMessages.length, 1);
-  // The Hindsight reflection that was actually retrieved reached Hermes's
-  // own prompt — "combined with Hermes", not discarded.
-  const seenText = hermesMessages[0].map((m) => m.content).join('\n');
+  assert.equal(generationMessages.length, 1);
+  // The retrieved reflection reached generation's own prompt.
+  const seenText = generationMessages[0].map((m) => m.content).join('\n');
   assert.ok(seenText.includes(hindsightReflection));
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
 
-// --- webSearch wiring (src/tools/braveSearch.js) --------------------------
+// --- webSearch is never consulted on the live path (v3.0) ------------------
 //
-// These pin turn.js's own adapter (webCapability) rather than
-// braveSearch.js's HTTP contract (covered in braveSearch.test.js): given a
-// decision that selects the "web" tool, does the Orchestrator actually
-// reach a provided webSearch client, does its answer reach the client on
-// both the streaming and non-streaming paths, and is Hermes left alone.
+// turn.js speaks only to the configured generation route. A passed
+// webSearch client is ignored live — no retrieval step, no plan, no
+// capability routing. (braveSearch.js's own HTTP contract stays covered
+// in braveSearch.test.js.)
 
-test('performStreamingTurn: a webSearch client is wired as the "web" capability and its answer streams to the client', async () => {
+test('performStreamingTurn: a passed webSearch client is ignored — generation answers directly', async () => {
   const res = fakeRes();
-  let seenQuery = null;
-  const webSearch = { search: async (query) => { seenQuery = query; return 'Here is what I found: ...'; } };
-  const hermes = { stream: async () => { throw new Error('Hermes must not be called for a web-tool decision'); } };
+  let searchCalls = 0;
+  const webSearch = { search: async () => { searchCalls += 1; return 'Here is what I found: ...'; } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator: { stream: async (m, { onDelta }) => { onDelta('A direct answer.', false); return 'A direct answer.'; } },
     hindsight: SILENT_HINDSIGHT,
     res,
     webSearch,
-    decisionEngine: () => ({ action: 'tool', capability: 'web', task: 'lookup', input: { userInput: 'what is the current OpenAI API documentation?' }, reason: 'test' }),
   });
 
-  assert.equal(seenQuery, 'what is the current OpenAI API documentation?');
-  assert.match(res.written[0], /Here is what I found/);
+  assert.equal(searchCalls, 0, 'web search must never run on the live path');
+  assert.match(res.written[0], /A direct answer/);
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
 
-test('performTurn: a webSearch client is wired as the "web" capability on the non-streaming path too', async () => {
-  let seenQuery = null;
-  const webSearch = { search: async (query) => { seenQuery = query; return 'Here is what I found: ...'; } };
-  const hermes = { chat: async () => { throw new Error('Hermes must not be called for a web-tool decision'); } };
+test('performTurn: a passed webSearch client is ignored on the non-streaming path too', async () => {
+  let searchCalls = 0;
+  const webSearch = { search: async () => { searchCalls += 1; return 'Here is what I found: ...'; } };
 
   const result = await performTurn({
     messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator: { generate: async () => 'A direct answer.' },
     webSearch,
-    decisionEngine: () => ({ action: 'tool', capability: 'web', task: 'lookup', input: { userInput: 'what is the current OpenAI API documentation?' }, reason: 'test' }),
   });
 
-  assert.equal(seenQuery, 'what is the current OpenAI API documentation?');
+  assert.equal(searchCalls, 0, 'web search must never run on the live path');
   assert.equal(result.status, 200);
-  assert.match(result.body.reply, /Here is what I found/);
+  assert.match(result.body.reply, /A direct answer/);
 });
 
-test('performStreamingTurn: without a webSearch client, the Decision Engine never sees a "web" capability and falls back to Hermes', async () => {
+test('performStreamingTurn: external phrasing without generation configured is a calm 503, never a web lookup', async () => {
   const res = fakeRes();
-  let hermesCalls = 0;
-  const hermes = { stream: async (messages, { onDelta }) => { hermesCalls += 1; onDelta('ok', false); return 'A reply.'; } };
+  let searchCalls = 0;
+  const webSearch = { search: async () => { searchCalls += 1; return 'x'; } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'what is the current OpenAI API documentation?' }],
     documents: DOCUMENTS,
-    hermes,
     hindsight: SILENT_HINDSIGHT,
     res,
-    // webSearch omitted entirely
+    webSearch,
+    // no generator at all
   });
 
-  assert.equal(hermesCalls, 1);
-  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+  assert.equal(searchCalls, 0);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.jsonBody.error, 'gaia could not answer right now');
 });
 
 // === PATCH: Native Vision — Multimodal Attachments ========================
@@ -1797,37 +1714,23 @@ test("0.1 memory: low-priority turns are still retained but tagged priority=low"
   }
 });
 
-test("0.1 memory: a lexically mundane capability request that needed a retry is retained anyway (capability-outcome override)", async () => {
+test("0.1 memory: direct generation carries no capability outcome — a mundane request is discarded", async () => {
+  // v3.0: the live path is direct generation, so there are no capability
+  // retries/escalations to rescue a lexically mundane turn. A plain
+  // acknowledgement is discarded from Hindsight either way; conversation
+  // history keeps it.
   const { reflectCalls, hindsight } = memoryHindsight();
-  let calls = 0;
-  const testTool = {
-    invokeCapability: async () => {
-      calls += 1;
-      if (calls === 1) return { ok: false, error: 'transient glitch, try again' };
-      return { ok: true, output: 'GAIA P0 TEST bestand aangemaakt.' };
-    },
-  };
 
   await performStreamingTurn({
-    // Lexically mundane on its own — no preference, fact, correction or
-    // explicit "onthoud dit" — so Memoryworthiness alone would discard it.
     messages: [{ role: "user", content: "Test P0 nu in de echte Gaia-runtime." }],
     documents: DOCUMENTS,
-    hermes: { stream: async (m, { onDelta }) => { onDelta("x", false); return "x"; } },
+    generator: { stream: async (m, { onDelta }) => { onDelta("x", false); return "x"; } },
     hindsight,
     res: fakeRes(),
-    tools: { testtool: testTool },
-    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
-    reasonIQ: async () => ({}),
-    decisionEngine: () => ({ action: "capability", capability: "testtool", task: "run P0 test", input: {}, reason: "test" }),
   });
 
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls, 2, "sanity check: the capability actually needed a retry");
-  assert.equal(reflectCalls.length, 1, "a retried capability outcome must not be silently discarded");
-  const meta = reflectCalls[0].metadata;
-  assert.equal(meta.gaia_memory_decision, "retain");
-  assert.match(meta.gaia_memory_reason, /notable_capability_outcome/);
+  assert.equal(reflectCalls.length, 0, "a lexically mundane turn is discarded — generation alone cannot rescue it");
 });
 
 test("0.1 memory: a routine one-shot successful capability call is still discarded on a mundane request", async () => {
@@ -1943,43 +1846,16 @@ test("0.1 memory: retained turns keep the hypothesis/pattern pipeline fully oper
 // the Decision Engine consumed and returned, what the capability received,
 // and what Hindsight retained.
 
-test("parity: identical turns through both transports produce identical cognitive products", async () => {
-  const INTENT = { schemaVersion: "intentiq.v1", intent: "converse", status: "accepted", entities: [], sourceOfTruth: "conversation", needsClarification: false };
-  const REASONING = { interpretation: "x", reasoningDepth: "shallow", hypotheses: [], hypothesisUpdates: [], contradictions: [], uncertainties: [], informationGaps: [], conclusions: [], sufficientForConclusion: true, confidence: 0.8 };
-
+test("parity: identical turns through both transports hit generation with the identical prompt", async () => {
   function makeSeams() {
     const seams = {
-      decisionInputs: [],
-      decisions: [],
-      capabilityMessages: null,
+      generationMessages: null,
       reflectCalls: [],
     };
     seams.hindsight = { recall: async () => [{ text: "Bo prefers async updates", scores: { final: 0.9 } }], reflect: async (item) => { seams.reflectCalls.push(item); } };
-    seams.hermes = {
-      chat: async (messages) => { seams.capabilityMessages = messages; return "Een inhoudelijk antwoord."; },
-      stream: async (messages, { onDelta }) => { seams.capabilityMessages = messages; onDelta("Een inhoudelijk ", false); onDelta("antwoord.", false); return "Een inhoudelijk antwoord."; },
-    };
-    seams.intentIQ = async () => JSON.parse(JSON.stringify(INTENT));
-    seams.reasonIQ = async () => JSON.parse(JSON.stringify(REASONING));
-    seams.decisionEngine = (input) => {
-      seams.decisionInputs.push(input);
-      // Route identically in both transports: native conversational turn.
-      return {
-        action: "native",
-        capability_candidate: null,
-        capability_execute: false,
-        reason: "parity test routing",
-        context: ["hindsight"],
-        reasoning: "light",
-        capabilities: [],
-      };
-    };
-    seams.orchestrate = async (decision, ctx) => {
-      seams.decisions.push(decision);
-      // Mirror orchestrator.execute: pass onDelta through so streaming
-      // transports can stream.
-      const output = await ctx.capabilities.hermes.invoke(ctx.messages, { onDelta: ctx.onDelta });
-      return { action: decision.action, output };
+    seams.generator = {
+      generate: async (messages) => { seams.generationMessages = messages; return "Een inhoudelijk antwoord."; },
+      stream: async (messages, { onDelta }) => { seams.generationMessages = messages; onDelta("Een inhoudelijk ", false); onDelta("antwoord.", false); return "Een inhoudelijk antwoord."; },
     };
     return seams;
   }
@@ -1993,12 +1869,8 @@ test("parity: identical turns through both transports produce identical cognitiv
   const resA = await performTurn({
     messages,
     documents: DOCUMENTS,
-    hermes: a.hermes,
+    generator: a.generator,
     hindsight: a.hindsight,
-    intentIQ: a.intentIQ,
-    reasonIQ: a.reasonIQ,
-    decisionEngine: a.decisionEngine,
-    orchestrate: a.orchestrate,
   });
 
   // --- streaming transport ---
@@ -2006,33 +1878,20 @@ test("parity: identical turns through both transports produce identical cognitiv
   await performStreamingTurn({
     messages,
     documents: DOCUMENTS,
-    hermes: b.hermes,
+    generator: b.generator,
     hindsight: b.hindsight,
     res: fakeRes(),
-    intentIQ: b.intentIQ,
-    reasonIQ: b.reasonIQ,
-    decisionEngine: b.decisionEngine,
-    orchestrate: b.orchestrate,
   });
-
-  // The Decision Engine consumed IDENTICAL inputs on both transports.
-  assert.equal(a.decisionInputs.length, 1);
-  assert.equal(b.decisionInputs.length, 1);
-  assert.deepEqual(b.decisionInputs[0].intent, a.decisionInputs[0].intent);
-  assert.deepEqual(b.decisionInputs[0].reasoning, a.decisionInputs[0].reasoning);
-  assert.deepEqual(b.decisionInputs[0].context.reflections, a.decisionInputs[0].context.reflections);
-  assert.deepEqual(b.decisionInputs[0].availableCapabilities, a.decisionInputs[0].availableCapabilities);
 
   // Identical reply text reached both clients.
   assert.equal(resA.status, 200);
   assert.equal(resA.body.reply, "Een inhoudelijk antwoord.");
-  assert.equal(resA.body.reply, "Een inhoudelijk antwoord.");
 
-  // The capability saw the EXACT same assembled prompt on both transports.
-  assert.deepEqual(b.capabilityMessages, a.capabilityMessages);
+  // Generation saw the EXACT same assembled prompt on both transports.
+  assert.deepEqual(b.generationMessages, a.generationMessages);
   // ...including the same memory context block built from the same recall.
-  const sysA = a.capabilityMessages.filter((m) => m.role === "system");
-  const sysB = b.capabilityMessages.filter((m) => m.role === "system");
+  const sysA = a.generationMessages.filter((m) => m.role === "system");
+  const sysB = b.generationMessages.filter((m) => m.role === "system");
   assert.ok(sysA.some((m) => /long-term memory/.test(m.content)), "memory context present");
   assert.deepEqual(sysB, sysA);
 
@@ -2077,8 +1936,12 @@ test("parity: a greeting is discarded from memory on BOTH transports", async () 
   assert.equal(await greetingReflectCount("non-stream"), 0);
 });
 
-// --- Assistant-originated referents: full IntentIQ -> context -> Hindsight
-// -> Decision flow, identical on both transports --------------------------------
+// --- Assistant-originated referents: lexical recall gate only, identical on both transports --
+//
+// v3.0: there is no live IntentIQ, so assistant-anchored referent
+// resolution is retrospective Logos work, not a live recall trigger.
+// The live recall gate is lexical policy only (memoryPolicy.shouldRecall)
+// — identical on both transports.
 
 const ASSISTANT_JUNI_HISTORY = [
   { role: "user", content: "Vertel eens hoe het afgelopen jaar ging." },
@@ -2089,8 +1952,7 @@ const JUNI_FOLLOWUP = "wat was er in juni ook alweer?";
 function juniSeams() {
   const seams = {
     recallQueries: [],
-    decisionInputs: [],
-    capabilityMessages: null,
+    generationMessages: null,
   };
   seams.hindsight = {
     recall: async (q) => {
@@ -2099,28 +1961,21 @@ function juniSeams() {
     },
     reflect: async () => {},
   };
-  seams.decisionEngine = (input) => {
-    seams.decisionInputs.push(input);
-    return { action: "capability", capability: "hermes", task: "respond", input: {}, reason: "parity" };
-  };
-  seams.orchestrate = async (decision, ctx) => {
-    seams.capabilityMessages = ctx.messages;
-    const output = await ctx.capabilities.hermes.invoke(ctx.messages, { onDelta: ctx.onDelta });
-    return { action: decision.action, output };
+  seams.generator = {
+    generate: async (messages) => { seams.generationMessages = messages; return "In juni gebeurde dit-en-dit."; },
+    stream: async (messages, { onDelta }) => { seams.generationMessages = messages; onDelta("In juni ", false); return "In juni gebeurde dit-en-dit."; },
   };
   return seams;
 }
 
-test("follow-up grounding: Gaia's own 'juni' mention opens Hindsight recall and informs the Decision (both transports)", async () => {
+test("follow-up grounding: the lexical recall gate behaves identically on both transports", async () => {
   // --- non-streaming ---
   const a = juniSeams();
   const resA = await performTurn({
     messages: [...ASSISTANT_JUNI_HISTORY, { role: "user", content: JUNI_FOLLOWUP }],
     documents: DOCUMENTS,
-    hermes: { chat: async () => "In juni gebeurde dit-en-dit." },
+    generator: a.generator,
     hindsight: a.hindsight,
-    decisionEngine: a.decisionEngine,
-    orchestrate: a.orchestrate,
   });
 
   // --- streaming ---
@@ -2128,40 +1983,28 @@ test("follow-up grounding: Gaia's own 'juni' mention opens Hindsight recall and 
   await performStreamingTurn({
     messages: [...ASSISTANT_JUNI_HISTORY, { role: "user", content: JUNI_FOLLOWUP }],
     documents: DOCUMENTS,
-    hermes: { stream: async (m, { onDelta }) => { onDelta("In juni ", false); return "In juni gebeurde dit-en-dit."; } },
+    generator: b.generator,
     hindsight: b.hindsight,
     res: fakeRes(),
-    decisionEngine: b.decisionEngine,
-    orchestrate: b.orchestrate,
   });
 
   for (const s of [a, b]) {
-    // Recall RAN — the gate opened even though the query carries no lexical
-    // past-reference cue ("ook alweer" matches nothing).
-    assert.equal(s.recallQueries.length, 1);
-    assert.match(s.recallQueries[0], /juni/);
+    // The lexical gate decides alone now: "ook alweer" matches no
+    // past-reference cue, so recall stays closed — on BOTH transports.
+    assert.equal(s.recallQueries.length, 0, "no lexical cue: recall stays closed");
 
-    // The Decision Engine consumed an assistant-anchored interpretation.
-    assert.equal(s.decisionInputs.length, 1);
-    const intent = s.decisionInputs[0].intent;
-    assert.equal(intent.sourceOfTruth, "memory");
-    assert.match(intent.meta.reason, /^assistant_anchored_follow_up/);
-    assert.ok(intent.referents.some((r) => r.expression === "juni"));
-    // The recalled June memory reached the Decision as real context.
-    assert.ok(s.decisionInputs[0].context.reflections.some((r) => /juni/i.test(r.text)));
-
-    // The capability saw the recalled context in the assembled prompt.
-    const sysMsgs = s.capabilityMessages.filter((m) => m.role === "system");
-    assert.ok(sysMsgs.some((m) => /juni/.test(m.content)), "recalled memory rendered into the prompt");
+    // Generation saw the assembled prompt with the full history.
+    const sysMsgs = s.generationMessages.filter((m) => m.role === "system");
+    assert.ok(sysMsgs.length > 0, "system context present");
   }
 
-  // COGNITIVE PARITY: both transports produced byte-identical judgments.
-  assert.deepEqual(b.decisionInputs[0], a.decisionInputs[0]);
-  assert.deepEqual(b.capabilityMessages, a.capabilityMessages);
+  // Transport parity: byte-identical prompts, identical replies.
+  assert.deepEqual(b.generationMessages, a.generationMessages);
   assert.equal(resA.status, 200);
+  assert.equal(resA.body.reply, "In juni gebeurde dit-en-dit.");
 });
 
-test("follow-up grounding: without the assistant antecedent neither transport recalls or anchors", async () => {
+test("follow-up grounding: without the assistant antecedent neither transport recalls either", async () => {
   const coldHistory = [
     { role: "user", content: "Vertel eens hoe het afgelopen jaar ging." },
     { role: "assistant", content: "Hoi! Leuk dat je er bent." }, // mentions nothing substantive
@@ -2172,14 +2015,13 @@ test("follow-up grounding: without the assistant antecedent neither transport re
     const common = {
       messages: [...coldHistory, { role: "user", content: "wat was er in oktober ook alweer?" }],
       documents: DOCUMENTS,
+      generator: seams.generator,
       hindsight: seams.hindsight,
-      decisionEngine: seams.decisionEngine,
-      orchestrate: seams.orchestrate,
     };
     if (transport === "stream") {
-      await performStreamingTurn({ ...common, hermes: { stream: async (m, { onDelta }) => { onDelta("x", false); return "x"; } }, res: fakeRes() });
+      await performStreamingTurn({ ...common, res: fakeRes() });
     } else {
-      await performTurn({ ...common, hermes: { chat: async () => "x" } });
+      await performTurn(common);
     }
     return seams;
   }
@@ -2189,259 +2031,46 @@ test("follow-up grounding: without the assistant antecedent neither transport re
 
   for (const s of [a, b]) {
     assert.equal(s.recallQueries.length, 0, "no anchor, no past-reference cue: recall stays closed");
-    const intent = s.decisionInputs[0].intent;
-    assert.equal(intent.sourceOfTruth, "unknown");
-    assert.deepEqual(intent.referents, []);
-    assert.equal(intent.meta.reason, "no_signal_matched");
   }
-  assert.deepEqual(b.decisionInputs[0], a.decisionInputs[0]);
+  assert.deepEqual(b.generationMessages, a.generationMessages);
 });
 
-// --- conversation_search capability: Decision -> Orchestrator -> Response ------
+// --- v3.0: no live retrieval capabilities ----------------------------------
+//
+// conversation_search, hindsight-retrieval and foundation tools are never
+// consulted on the live path — the turn is direct generation with
+// policy-gated Hindsight recall as its only memory source. (The tools
+// themselves stay unit-covered in conversationSearch.test.js and friends.)
 
-function conversationSearchFixture() {
-  const os = require("os");
-  const fs = require("fs");
-  const path = require("path");
-  const { createConversationStore } = require("../src/conversationStore");
-  const { createConversationSearchTool } = require("../src/tools/conversationSearch");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-live-"));
-  const historyStore = createConversationStore({ historyDir: dir });
-  // An OLD saved conversation only reachable via scope saved/all.
-  historyStore.saveConversation("old-juni", [
-    { role: "user", content: "Vorige maand: ik wil de juni-release naar het einde van de maand schuiven." },
-    { role: "assistant", content: "Bewaard: juni-release verplaatst naar maandendeadline." },
-  ]);
-  const tool = createConversationSearchTool({ historyStore });
-  return { historyStore, tools: { conversation_search: tool } };
-}
-
-const ANCHORED_INTENTIQ = () => ({
-  schemaVersion: "intentiq.v1",
-  intent: null,
-  status: "unknown",
-  sourceOfTruth: "memory",
-  needsClarification: false,
-  entities: [],
-  referents: [{ expression: "juni", resolvedTo: "previous_assistant_turn:juni", confidence: 0.6, source: "previous_assistant_turn" }],
-  meta: { reason: "assistant_anchored_follow_up_unresolved_intent" },
-});
-
-test("live flow: anchored follow-up routes Decision->conversation_search->native and Gaia answers naturally (non-streaming)", async () => {
-  const fixture = conversationSearchFixture();
-  const decisionInputs = [];
-  const hermesChats = [];
-  const result = await performTurn({
-    messages: [
-      { role: "user", content: "Vertel eens hoe het afgelopen jaar ging." },
-      { role: "assistant", content: "Ik zie vooral veel sessies rond juni — zeker gezien de context rond juni destijds." },
-      { role: "user", content: "wat was er in juni ook alweer?" },
-    ],
-    documents: DOCUMENTS,
-    hermes: { chat: async (m) => { hermesChats.push(m); return "antwoord"; } },
-    hindsight: SILENT_HINDSIGHT,
-    res: fakeRes(),
-    conversationId: "live-conv-1",
-    intentIQ: ANCHORED_INTENTIQ,
-    reasonIQ: async () => ({}),
-    tools: fixture.tools,
-    decisionEngine: (input) => {
-      decisionInputs.push(input);
-      const { decide } = require("../src/decision/decisionEngine");
-      return decide(input);
-    },
-  });
-
-  assert.equal(result.status, 200);
-  // The Decision Engine saw the registered capability.
-  assert.ok(decisionInputs[0].availableCapabilities.some((c) => c.id === "conversation_search"));
-  // The plan must end with native generation — conversation_search is
-  // retrieval PRESENTATION, not answer generation. The native generator
-  // receives the search results as context and speaks in Gaia's voice.
-  const decision = decisionInputs[0];
-  // After decide() with the plan, the decision is a plan.
-  // The reply is the native generator's output, not raw passages.
-  assert.equal(typeof result.body.reply, 'string');
-  assert.ok(result.body.reply.length > 0);
-});
-
-test("live flow parity: both transports make the identical conversation_search decision and get identical results", async () => {
-  function run() {
-    const fixture = conversationSearchFixture();
-    const captured = {};
-    const common = {
-      messages: [
-        { role: "user", content: "Vertel eens hoe het afgelopen jaar ging." },
-        { role: "assistant", content: "Ik zie vooral veel sessies rond juni — zeker gezien de context rond juni destijds." },
-        { role: "user", content: "wat was er in juni ook alweer?" },
-      ],
-      documents: DOCUMENTS,
-      hindsight: SILENT_HINDSIGHT,
-      conversationId: "live-conv-1",
-      intentIQ: ANCHORED_INTENTIQ,
-      reasonIQ: async () => ({}),
-      tools: fixture.tools,
-      decisionEngine: (input) => {
-        captured.input = input;
-        const { decide } = require("../src/decision/decisionEngine");
-        return decide(input);
-      },
-      orchestrate: async (decision, ctx) => {
-        captured.capabilityMessages = ctx.messages;
-        const { execute } = require("../src/orchestration/orchestrator");
-        return execute(decision, ctx);
-      },
-    };
-    return { fixture, common, captured };
-  }
-
-  const a = run();
-  const resA = await performTurn({ ...a.common, hermes: { chat: async () => "antwoord" } });
-
-  const b = run();
-  await performStreamingTurn({
-    ...b.common,
-    hermes: { stream: async (m, { onDelta }) => { onDelta("antwoord", false); return "antwoord"; } },
-    res: fakeRes(),
-  });
-
-  // Identical cognitive decisions across transports.
-  assert.deepEqual(b.captured.input.intent, a.captured.input.intent);
-  // Identical transcript presented to the search (same assembled conversation).
-  assert.deepEqual(
-    b.captured.capabilityMessages.filter((m) => m.role !== "system"),
-    a.captured.capabilityMessages.filter((m) => m.role !== "system")
-  );
-  assert.equal(resA.status, 200);
-});
-
-// --- Decision Engine 3.0 parity: planned turns are cognitively identical ------
-
-test("3.0 parity: a planned turn produces an identical plan, steps and reply on both transports", async () => {
-  const os = require("os");
-  const fs = require("fs");
-  const path = require("path");
-  const { createConversationStore } = require("../src/conversationStore");
-  const { createConversationSearchTool } = require("../src/tools/conversationSearch");
-
-  function buildHarness() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plan-parity-"));
-    const historyStore = createConversationStore({ historyDir: dir });
-    historyStore.saveConversation("archief", [
-      { role: "user", content: "Vorige maand zei ik dat de juni-release naar het einde van de maand mocht." },
-    ]);
-    const captured = { decisions: [], hermesCalls: [], nativeMessages: null };
-    const tools = {
-      conversation_search: createConversationSearchTool({ historyStore }),
-      hindsight: { invoke: async () => ({ results: [{ text: "Gaia herinnert zich: release verwacht in juni", relevance: 0.85 }], total: 1 }) },
-    };
-    // Anchored follow-up + exact-history phrasing => real buildPlan triggers:
-    // [conversation_search -> hindsight -> native].
-    // nativeGenerator is provided at top-level so native is in availableCapabilities
-    // when decide() runs — matching production server.js wiring.
-    const nativeGen = {
-      generate: async (messages) => { captured.nativeMessages = messages; return "GAIA-Antwoord A"; },
-    };
-    const intentIQ = () => ({
-      schemaVersion: "intentiq.v1", intent: null, status: "unknown",
-      sourceOfTruth: "memory", needsClarification: false, entities: [],
-      meta: { reason: "assistant_anchored_follow_up_unresolved_intent" },
-    });
-    return { historyStore, tools, captured, intentIQ, nativeGen };
-  }
-
-  const USER_TURN = "Wat weet je nog van mijn plannen en wat zei ik vorige maand precies over de juni-release?";
-
-  // --- non-streaming ---
-  const a = buildHarness();
-  a.captured.decisionEngine = (input) => {
-    const { decide } = require("../src/decision/decisionEngine");
-    const d = decide(input);
-    a.captured.decisions.push(d);
-    return d;
-  };
-  const resA = await performTurn({
-    messages: [{ role: "user", content: USER_TURN }],
-    documents: DOCUMENTS,
-    hermes: { chat: async (m) => { a.captured.hermesCalls.push(m); return "fallback"; } },
-    hindsight: SILENT_HINDSIGHT,
-    nativeGenerator: a.nativeGen,
-    conversationId: "parity-conv",
-    intentIQ: a.intentIQ,
-    reasonIQ: async () => ({}),
-    tools: a.tools,
-    decisionEngine: a.captured.decisionEngine,
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
-  });
-
-  // --- streaming ---
-  const b = buildHarness();
-  b.captured.decisionEngine = (input) => {
-    const { decide } = require("../src/decision/decisionEngine");
-    const d = decide(input);
-    b.captured.decisions.push(d);
-    return d;
-  };
-  await performStreamingTurn({
-    messages: [{ role: "user", content: USER_TURN }],
-    documents: DOCUMENTS,
-    hermes: { stream: async (m, { onDelta }) => { b.captured.hermesCalls.push(m); onDelta("fallback", false); return "fallback"; } },
-    hindsight: SILENT_HINDSIGHT,
-    nativeGenerator: b.nativeGen,
-    res: fakeRes(),
-    conversationId: "parity-conv",
-    intentIQ: b.intentIQ,
-    reasonIQ: async () => ({}),
-    tools: b.tools,
-    decisionEngine: b.captured.decisionEngine,
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
-  });
-
-  // Identical PLAN with identical steps & inputs.
-  assert.equal(a.captured.decisions[0].action, "plan");
-  assert.deepEqual(b.captured.decisions[0], a.captured.decisions[0]);
-  assert.deepEqual(
-    b.captured.decisions[0].steps.map((s) => s.capability || s.mode),
-    ["conversation_search", "hindsight", "native"]
-  );
-
-  // Identical generation input: same rendered step-results block reached
-  // native on both transports.
-  const sysA = a.captured.nativeMessages.find((m) => m.role === "system" && /earlier plan steps/.test(m.content));
-  const sysB = b.captured.nativeMessages.find((m) => m.role === "system" && /earlier plan steps/.test(m.content));
-  assert.ok(sysA && sysB, "step results reached native generation on both transports");
-  // Normalize the per-store meta timestamps (test fixtures differ, cognition does not).
-  const norm = (t) => t.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, 'TS');
-  assert.deepEqual(norm(sysB.content), norm(sysA.content));
-});
+// --- v3.0: no live plans ----------------------------------------------------
+//
+// Decision Engine 3.0 plans (multi-step retrieval → reasoning →
+// generation) no longer run on the live path. Direct generation delivers
+// the reply; reflection runs after it. (Plan composition stays
+// unit-covered in decisionPlanning.test.js and decisionEngine.test.js.)
 
 // --- Capability awareness: Gaia's self-knowledge comes from the live registry --
 
-test("capability awareness: registered capabilities are named in the prompt so Gaia never denies them", async () => {
+test("capability awareness: the configured generation voice is named in the prompt so Gaia never denies it", async () => {
+  // v3.0: the only live capability is the configured generation route.
+  // Tools passed by legacy callers are never claimed.
   let capturedMessages = null;
-  const hermes = { stream: async (m, { onDelta }) => { capturedMessages = m; onDelta("ok", false); return "ok"; } };
+  const generator = {
+    generate: async (m) => { capturedMessages = m; return "ok"; },
+    stream: async (m, { onDelta }) => { capturedMessages = m; onDelta("ok", false); return "ok"; },
+  };
   await performStreamingTurn({
     messages: [{ role: "user", content: "kun je eigenlijk zoeken in mijn chats?" }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
-    reasonIQ: async () => ({}),
     tools: { conversation_search: { invoke: async () => "x" }, hindsight: { invoke: async () => "x" } },
   });
   const block = capturedMessages.find((m) => m.role === "system" && /Capabilities you genuinely have THIS turn/.test(m.content));
   assert.ok(block, "capability awareness block present");
-  assert.match(block.content, /conversation_search/);
-  assert.match(block.content, /literal text of current and past conversations/);
-  assert.match(block.content, /hindsight/);
   assert.match(block.content, /Never deny them/);
+  assert.doesNotMatch(block.content, /conversation_search/, "unregistered tools are never claimed");
 });
 
 test("capability awareness: unregistered capabilities are never claimed", async () => {
@@ -2460,214 +2089,127 @@ test("capability awareness: unregistered capabilities are never claimed", async 
   assert.doesNotMatch(block.content, /conversation_search/);
 });
 
-// --- Capability Registry 1.0 parity: a Hermes skill-plan is identical on both transports ---
+// --- v3.0: no live skill plans -------------------------------------------------
+//
+// Hermes skill routing (systematic-debugging et al.) was a Decision Engine
+// plan concern and no longer runs on the live path. Skill matching stays
+// unit-covered in capabilityRegistry.test.js and decisionEngine.test.js;
+// the adapter translation stays covered in the hermes-adapter test above.
 
-test("1.0 parity: a skill plan produces identical decision+skill and the same Hermes instruction on both transports", async () => {
+test("1.0 parity: a debugging-shaped turn goes direct on both transports — identical prompts, no Hermes skill", async () => {
   const USER_TURN = "Zoek uit waarom deze race condition optreedt.";
   function harness() {
-    const captured = { decisions: [], hermesMessages: null };
+    const captured = { generationMessages: null };
     return {
       captured,
-      hermes: {
-        chat: async (m) => { captured.hermesMessages = m; return "analyse"; },
-        stream: async (m, { onDelta } = {}) => { captured.hermesMessages = m; if (onDelta) onDelta("analyse", false); return "analyse"; },
-      },
-      intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: null, status: "unknown" }),
-      decisionEngine: (input) => {
-        const { decide } = require("../src/decision/decisionEngine");
-        const d = decide(input);
-        captured.decisions.push(d);
-        return d;
+      generator: {
+        generate: async (m) => { captured.generationMessages = m; return "GAIA debug-antwoord"; },
+        stream: async (m, { onDelta } = {}) => { captured.generationMessages = m; if (onDelta) onDelta("GAIA debug-antwoord", false); return "GAIA debug-antwoord"; },
       },
     };
   }
 
   const a = harness();
-  await performTurn({
+  const resA = await performTurn({
     messages: [{ role: "user", content: USER_TURN }],
     documents: DOCUMENTS,
-    hermes: a.hermes,
+    generator: a.generator,
     hindsight: SILENT_HINDSIGHT,
-    nativeGenerator: { generate: async () => "GAIA debug-antwoord" },
-    intentIQ: a.intentIQ,
-    reasonIQ: async () => ({}),
-    decisionEngine: a.decisionEngine,
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
   });
 
   const b = harness();
   await performStreamingTurn({
     messages: [{ role: "user", content: USER_TURN }],
     documents: DOCUMENTS,
-    hermes: b.hermes,
+    generator: b.generator,
     hindsight: SILENT_HINDSIGHT,
-    nativeGenerator: { generate: async () => "GAIA debug-antwoord" },
     res: fakeRes(),
-    intentIQ: b.intentIQ,
-    reasonIQ: async () => ({}),
-    decisionEngine: b.decisionEngine,
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
   });
 
-  // Identical plan with identical skill selection.
-  assert.equal(a.captured.decisions[0].action, "plan");
-  assert.deepEqual(b.captured.decisions[0], a.captured.decisions[0]);
-  const hermesStepA = a.captured.decisions[0].steps.find((s) => s.capability === "hermes");
-  assert.equal(hermesStepA.skill, "systematic-debugging");
-
-  // Hermes received the SAME explicit skill instruction on both transports.
-  const instrA = a.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
-  const instrB = b.captured.hermesMessages.find((m) => /Use the Hermes skill "systematic-debugging"/.test(m.content));
-  assert.ok(instrA && instrB, "skill instruction reached Hermes on both transports");
+  // Identical direct prompts, identical replies — no skill instruction,
+  // no Hermes, no plan on either transport.
+  assert.deepEqual(b.captured.generationMessages, a.captured.generationMessages);
+  assert.ok(!b.captured.generationMessages.some((m) => /Use the Hermes skill/.test(m.content)));
+  assert.equal(resA.body.reply, "GAIA debug-antwoord");
 });
 
-// --- web → native retrieval flow (Generation Policy 0.1: web as knowledge retrieval) --
+// --- v3.0: no live web retrieval ------------------------------------------------
+//
+// Web search is never consulted on the live path — external-knowledge
+// phrasing is answered by the configured generation route from its own
+// knowledge. (braveSearch.js's HTTP contract stays covered in
+// braveSearch.test.js.)
 
-test("web → native: simple external-knowledge turn produces a plan [web, native] and Gaia formulates the answer", async () => {
-  let webQuery = null;
+test("web → generation: an external-knowledge turn is answered directly, web search untouched", async () => {
+  let webCalls = 0;
   const webSearch = {
-    search: async (q) => { webQuery = q; return "raw formatted results"; },
-    searchResults: async (q) => { webQuery = q; return { results: [{ title: "Suno Voice Upload", url: "https://suno.com/upload", text: "Upload your voice via Settings > Voice Clone", source: "web", relevance: 1.0 }], total: 1 }; },
+    search: async () => { webCalls += 1; return "raw formatted results"; },
+    searchResults: async () => { webCalls += 1; return { results: [], total: 0 }; },
   };
-  const nativeMessages = [];
   const res = await performTurn({
     messages: [{ role: "user", content: "Hoe werkt de huidige Suno voice upload?" }],
     documents: DOCUMENTS,
-    hermes: { chat: async () => { throw new Error("Hermes must not be called for web→native"); } },
+    generator: { generate: async () => "Gaia: je kunt je stem uploaden via Settings > Voice Clone bij Suno." },
     hindsight: SILENT_HINDSIGHT,
     webSearch,
-    nativeGenerator: { generate: async (m) => { nativeMessages.push(m); return "Gaia: je kunt je stem uploaden via Settings > Voice Clone bij Suno."; } },
-    decisionEngine: (input) => {
-      const { decide } = require("../src/decision/decisionEngine");
-      return decide(input);
-    },
   });
-  // Plan was [web, native] — web retrieved, native generated.
-  assert.ok(webQuery, "web search must have been called");
+  assert.equal(webCalls, 0, "web search must never run on the live path");
   assert.equal(res.status, 200);
   assert.match(res.body.reply, /Gaia/);
-  // Native received context containing provenance from the web step.
-  const nativeSys = nativeMessages.flat().find((m) => m.role === "system" && /step-\d+ · web/.test(m.content));
-  assert.ok(nativeSys, "native must receive the web results as context");
-  assert.match(nativeSys.content, /Suno Voice Upload/, "context must include the result title");
-  assert.match(nativeSys.content, /suno\.com/, "context must include the URL provenance");
-  assert.match(nativeSys.content, /background only/, "context must include generation guidance");
 });
 
-test("web failure: optional web step does not kill the plan — native still answers", async () => {
+test("generation failure: a failing primary without backup is a calm 502 — never a web lookup", async () => {
+  let webCalls = 0;
   const webSearch = {
-    search: async () => { throw new Error("Brave unreachable"); },
-    searchResults: async () => { throw new Error("Brave unreachable"); },
+    search: async () => { webCalls += 1; return "x"; },
+    searchResults: async () => { webCalls += 1; throw new Error("Brave unreachable"); },
   };
   const res = await performTurn({
     messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
     documents: DOCUMENTS,
-    hermes: { chat: async () => { throw new Error("Hermes must not be called"); } },
+    generator: { generate: async () => { throw new Error("primary down"); } },
     hindsight: SILENT_HINDSIGHT,
     webSearch,
-    nativeGenerator: { generate: async () => "Gaia: ik kon helaas geen actuele informatie vinden over de Suno API." },
-    decisionEngine: (input) => {
-      const { decide } = require("../src/decision/decisionEngine");
-      return decide(input);
-    },
   });
-  assert.equal(res.status, 200);
-  assert.match(res.body.reply, /Gaia/);
+  assert.equal(webCalls, 0, "an outage must never trigger a web lookup");
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error, "gaia could not answer right now");
 });
 
-test("empty web results: native receives '(geen resultaten)' context and can answer honestly", async () => {
-  const nativeMessages = [];
-  const webSearch = {
-    search: async () => "I looked, but couldn't find anything relevant.",
-    searchResults: async () => ({ results: [], total: 0 }),
+test("generation failover: a failing primary with a backup still answers 200 on both transports", async () => {
+  // Retryable primary failure (typed like gaiaGenerator's own errors) →
+  // backup answers.
+  const { GenerationError } = require("../src/generation/gaiaGenerator");
+  const primary = {
+    generate: async () => { throw new GenerationError("primary 503", { status: 503, retryable: true }); },
+    stream: async () => { throw new GenerationError("primary 503", { status: 503, retryable: true }); },
   };
-  const res = await performTurn({
+  const backup = {
+    generate: async () => "backup antwoord",
+    stream: async (m, { onDelta }) => { onDelta("backup antwoord", false); return "backup antwoord"; },
+  };
+
+  const resA = await performTurn({
     messages: [{ role: "user", content: "Wat is de nieuwste Suno feature?" }],
     documents: DOCUMENTS,
-    hermes: { chat: async () => { throw new Error("Hermes must not be called"); } },
+    generator: primary,
+    backupGenerator: backup,
     hindsight: SILENT_HINDSIGHT,
-    webSearch,
-    nativeGenerator: { generate: async (m) => { nativeMessages.push(m); return "Gaia: er is onvoldoende externe informatie gevonden."; } },
-    decisionEngine: (input) => {
-      const { decide } = require("../src/decision/decisionEngine");
-      return decide(input);
-    },
   });
-  assert.equal(res.status, 200);
-  // Native received context with "(geen resultaten)" marker.
-  const nativeSys = nativeMessages.flat().find((m) => m.role === "system" && /step-\d+ · web/.test(m.content));
-  assert.ok(nativeSys, "native must receive web context even when empty");
-  assert.match(nativeSys.content, /geen resultaten/);
-});
+  assert.equal(resA.status, 200);
+  assert.equal(resA.body.reply, "backup antwoord");
 
-test("web→native streaming/non-streaming parity: same plan, same web query, same step inputs on both transports", async () => {
-  function harness() {
-    const captured = { webQueries: [], nativeMessages: null, decisions: [] };
-    const webSearch = {
-      search: async (q) => { captured.webQueries.push(q); return "formatted"; },
-      searchResults: async (q) => { captured.webQueries.push(q); return { results: [{ title: "test", url: "https://example.com", text: "info", source: "web", relevance: 1.0 }], total: 1 }; },
-    };
-    return {
-      captured,
-      webSearch,
-      decisionEngine: (input) => {
-        const { decide } = require("../src/decision/decisionEngine");
-        const d = decide(input);
-        captured.decisions.push(d);
-        return d;
-      },
-    };
-  }
-
-  const a = harness();
-  await performTurn({
-    messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
-    documents: DOCUMENTS,
-    hermes: { chat: async () => { throw new Error("no"); } },
-    hindsight: SILENT_HINDSIGHT,
-    webSearch: a.webSearch,
-    nativeGenerator: { generate: async (m) => { a.captured.nativeMessages = m; return "answer A"; } },
-    decisionEngine: a.decisionEngine,
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
-  });
-
-  const b = harness();
+  const resB = fakeRes();
   await performStreamingTurn({
-    messages: [{ role: "user", content: "Wat is de huidige API van Suno?" }],
+    messages: [{ role: "user", content: "Wat is de nieuwste Suno feature?" }],
     documents: DOCUMENTS,
-    hermes: { stream: async () => { throw new Error("no"); } },
+    generator: primary,
+    backupGenerator: backup,
     hindsight: SILENT_HINDSIGHT,
-    nativeGenerator: { generate: async (m) => { b.captured.nativeMessages = m; return "answer A"; }, stream: async (m, { onDelta }) => { b.captured.nativeMessages = m; onDelta("a", false); return "answer A"; } },
-    webSearch: b.webSearch,
-    decisionEngine: b.decisionEngine,
-    res: fakeRes(),
-    orchestrate: async (decision, ctx) => {
-      const { execute } = require("../src/orchestration/orchestrator");
-      return execute(decision, ctx);
-    },
+    res: resB,
   });
-
-  // Same plan on both transports.
-  assert.equal(a.captured.decisions[0].action, "plan");
-  assert.deepEqual(b.captured.decisions[0], a.captured.decisions[0]);
-  // Same web query.
-  assert.deepEqual(a.captured.webQueries, b.captured.webQueries);
-  // Same step inputs.
-  const stepsA = a.captured.decisions[0].steps;
-  const stepsB = b.captured.decisions[0].steps;
-  assert.equal(stepsA.length, stepsB.length);
-  for (let i = 0; i < stepsA.length; i++) {
-    assert.deepEqual(stepsA[i].input, stepsB[i].input, `step ${i} input must match`);
-  }
+  assert.ok(resB.written.join("").includes("backup antwoord"));
+  assert.equal(resB.written.at(-1), "data: [DONE]\n\n");
 });
 
 // --- Deferred deep reasoning: the model call runs AFTER the reply ------------
@@ -2689,38 +2231,30 @@ function deepReasoningResult() {
 }
 
 test('deferred reasoning: an evidence-bearing analysis turn replies without waiting for ReasonIQ, and applies hypotheses afterwards', async () => {
-  const { decide } = require('../src/decision/decisionEngine');
   const manager = (require('../src/reasoning/hypothesisManager')).createHypothesisManager({
     hypotheses: [{ id: 'hyp-seed', statement: 'Cancellation races teardown.', status: 'testing', confidence: 0.6, evidenceFor: ['e1'] }],
   });
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const reasonIQCalls = [];
-  const decisionInputs = [];
   const res = fakeRes();
-  let hermesCalls = 0;
-  const hermes = { stream: async (messages, { onDelta }) => { hermesCalls += 1; onDelta('ok', false); return 'A reply.'; } };
+  let generationCalls = 0;
+  const generator = { stream: async (messages, { onDelta }) => { generationCalls += 1; onDelta('ok', false); return 'A reply.'; } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res,
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async (input) => { reasonIQCalls.push(input); await gate; return deepReasoningResult(); },
-    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
     hypothesisRuntime: { manager },
   });
 
   // The turn is finished while the reasoning call is still pending. The
-  // CURRENT turn's decision carries NO reasoning result at all — background
-  // cognition cannot influence the turn that produced it (Phase: ReasonIQ as
-  // background cognition). The analysis wording still routes to Hermes via
-  // the IntentIQ analysis cue.
-  assert.equal(hermesCalls, 1, 'the analysis turn still routes to Hermes (IntentIQ analysis cue)');
-  assert.equal(decisionInputs.length, 1);
-  assert.equal(decisionInputs[0].reasoning, null, 'no reasoning result in the current turn\'s decision');
+  // live path is direct generation — background cognition cannot
+  // influence the turn that produced it.
+  assert.equal(generationCalls, 1, 'the analysis turn goes direct to generation');
   assert.equal(manager.get('hyp-seed').confidence, 0.6, 'not applied before the background call resolves');
 
   release();
@@ -2772,46 +2306,42 @@ test('deferred reasoning: a shallow turn makes no ReasonIQ call and never waits 
   assert.deepEqual(order, ['hermes'], 'no ReasonIQ call anywhere — inline or deferred');
 });
 
-// PHASE 2: ReasonIQ cannot trigger another Decision Engine cycle — its result
-// feeds the hypothesis lifecycle only, and a failing ReasonIQ can never loop
-// back into a second decision for the same turn.
-test('deferred reasoning: a deep turn makes exactly one decision and at most one ReasonIQ call — no decision loop', async () => {
-  const decisionInputs = [];
+// v3.0: background cognition can never loop back into the live turn —
+// there is no decision to re-enter. Its result feeds the hypothesis
+// lifecycle only, and a failing ReasonIQ can never trigger a second
+// generation for the same turn.
+test('deferred reasoning: a deep turn makes exactly one generation call and at most one ReasonIQ call — no loop', async () => {
   let reasonIQCalls = 0;
-  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
-  const { decide } = require('../src/decision/decisionEngine');
+  let generationCalls = 0;
+  const generator = { stream: async (messages, { onDelta }) => { generationCalls += 1; onDelta('ok', false); return 'A reply.'; } };
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async () => { reasonIQCalls += 1; return deepReasoningResult(); },
-    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
     hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
   });
   await flushBackground();
-  assert.equal(decisionInputs.length, 1, 'exactly ONE Decision Engine call for the turn');
+  assert.equal(generationCalls, 1, 'exactly ONE generation call for the turn');
   assert.equal(reasonIQCalls, 1, 'ReasonIQ runs at most once');
 });
 
-test('deferred reasoning: a failing deferred ReasonIQ call never triggers a second decision', async () => {
-  const decisionInputs = [];
-  const hermes = { stream: async (messages, { onDelta }) => { onDelta('still fine', false); return 'still fine'; } };
+test('deferred reasoning: a failing deferred ReasonIQ call never triggers a second generation', async () => {
+  let generationCalls = 0;
+  const generator = { stream: async (messages, { onDelta }) => { generationCalls += 1; onDelta('still fine', false); return 'still fine'; } };
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async () => { throw new Error('reasoning model down'); },
-    decisionEngine: (input) => { decisionInputs.push(input); return { action: 'capability', capability: 'hermes', task: 'respond', input: {}, reason: 'test' }; },
     hypothesisRuntime: { manager: { list: () => [], applyReasoningResult: () => {} } },
   });
   await flushBackground();
-  assert.equal(decisionInputs.length, 1, 'a ReasonIQ failure cannot cause another decision cycle');
+  assert.equal(generationCalls, 1, 'a ReasonIQ failure cannot cause another generation cycle');
 });
 
 // --- REASONIQ AS BACKGROUND COGNITION ----------------------------------------
@@ -2915,18 +2445,15 @@ test('background cognition: ReasonIQ cannot invoke itself recursively — one ca
 test('background cognition: cognitive material produced by turn N reaches turn N+1 through normal context recall', async () => {
   const { createHypothesisManager } = require('../src/reasoning/hypothesisManager');
   const manager = createHypothesisManager({});
-  const hermes = { stream: async (m, { onDelta }) => { onDelta('ok', false); return 'A Reply.'; } };
-  const { decide } = require('../src/decision/decisionEngine');
-  const decisionInputs = [];
+  const generator = { stream: async (m, { onDelta }) => { onDelta('ok', false); return 'A Reply.'; } };
 
   // Turn 1: analysis produces a durable cognitive observation.
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: DEEP_EVIDENCE_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
     reasonIQ: async () => ({
       interpretation: 'weighing',
       hypotheses: [{ statement: 'User appears to prefer architectural separation between agency, reasoning, and memory.', confidence: 0.7, evidenceFor: ['hindsight-1'], persistence: 'durable' }],
@@ -2938,18 +2465,18 @@ test('background cognition: cognitive material produced by turn N reaches turn N
   await flushBackground();
   assert.equal(manager.list().length, 1, 'turn N produced a durable hypothesis');
 
-  // Turn 2: the SAME runtime is wired for the next turn — the normal context
-  // recall path (hypothesis/pattern recall → Decision Engine context) makes
-  // the stored cognitive material available; Gaia decides what to do with it.
+  // Turn 2: the SAME runtime is wired for the next turn — the normal
+  // context recall path (pattern recall → prompt context) makes the
+  // stored cognitive material available to direct generation.
+  let turn2Prompt = null;
+  const generator2 = { stream: async (m, { onDelta }) => { turn2Prompt = m; onDelta('ok', false); return 'A Reply.'; } };
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'Wat vind je van mijn aanpak voor de cognitive architecture?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator: generator2,
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
     reasonIQ: async () => ({}),
-    decisionEngine: (input) => { decisionInputs.push(input); return decide(input); },
     hypothesisRuntime: {
       manager,
       recallPatterns: async () => [{
@@ -2962,10 +2489,8 @@ test('background cognition: cognitive material produced by turn N reaches turn N
     },
   });
   await flushBackground();
-  assert.equal(decisionInputs.length, 1, 'turn N+1 makes exactly one decision of its own');
-  const recalled = decisionInputs[0].context.patterns || [];
-  assert.equal(recalled.length, 1, 'turn N\'s cognitive material reached turn N+1\'s context');
-  assert.match(recalled[0].statement, /architectural separation/);
+  const patternBlock = turn2Prompt.find((m) => m.role === 'system' && /architectural separation/.test(m.content));
+  assert.ok(patternBlock, "turn N's cognitive material reached turn N+1's generation prompt as pattern context");
 });
 
 test('deferred cognition: a normal streaming reply completes without awaiting deferred cognition', async () => {
@@ -3412,15 +2937,14 @@ test('v1.0 background analysis: non-streaming transport behaves identically — 
 test('deferred reasoning: every turn logs exactly one reasoniq.gate record with its reason', async () => {
   const appended = [];
   const decisionStore = { append: (r) => { appended.push(r); return true; } };
-  const hermes = { stream: async (m, { onDelta }) => { onDelta('Hoi!', false); return 'Hoi!'; } };
+  const generator = { stream: async (m, { onDelta }) => { onDelta('Hoi!', false); return 'Hoi!'; } };
 
   await performStreamingTurn({
     messages: [{ role: 'user', content: 'hoi, alles goed?' }],
     documents: DOCUMENTS,
-    hermes,
+    generator,
     hindsight: SILENT_HINDSIGHT,
     res: fakeRes(),
-    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted', confidence: 0.9 }),
     decisionStore,
   });
   await flushBackground();
@@ -3429,7 +2953,8 @@ test('deferred reasoning: every turn logs exactly one reasoniq.gate record with 
   assert.equal(gates.length, 1, 'exactly one gate record per turn');
   assert.equal(gates[0].depth, 'shallow');
   assert.equal(gates[0].reason, 'no_evidence');
-  assert.equal(gates[0].intent, 'converse');
+  // v3.0: no live IntentIQ feeds the gate — the record carries no intent.
+  assert.equal(gates[0].intent, null);
   assert.equal(gates[0].evidenceCount, 0);
   assert.ok(gates[0].correlationId, 'the gate record carries a correlationId');
   assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0, 'shallow still writes no result record');
