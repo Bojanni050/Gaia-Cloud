@@ -23,6 +23,11 @@ services:
     networks:
       - default
       - hermes_net
+      # Cognition runs in its own compose stack (gaia-cognition +
+      # gaia-cognition-db, networks: gaia_cognition_default). Joining that
+      # external network lets gaia-api reach it by container name —
+      # COGNITION_URL=http://gaia-cognition:8890 — exactly like Hermes.
+      - cognition_net
 
 networks:
   hermes_net:
@@ -31,3 +36,8 @@ networks:
     # gaia-hermes-proxy does. Attach to that same external network.
     external: true
     name: hermes-agent_default
+  cognition_net:
+    external: true
+    # Compose names a stack's default network <project>_default; the
+    # cognition stack is deployed as project "gaia_cognition".
+    name: gaia_cognition_default
