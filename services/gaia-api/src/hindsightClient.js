@@ -9,7 +9,7 @@
  * CORS support on Hindsight's side). gaia-api is already Tailscale-bound,
  * so it calls Hindsight directly — no proxy trick needed. Hindsight
  * currently has no auth of its own (Tailscale membership is the only
- * access control, same posture as services/cognition).
+ * access control, same posture as the other Tailscale-bound services).
  */
 function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fetch, timeoutMs = 4000 }) {
   const root = String(baseUrl || '').replace(/\/+$/, '');

@@ -6,7 +6,7 @@
  *   which capabilities exist,
  *   what they are for,
  *   which skills they expose,
- *   which of those skills are Decision-Engine routing targets.
+ *   which of those skills are selection-relevant routing targets.
  *
  * Hermes remains ONE capability; its skills are metadata about specialized
  * ways Hermes can operate. Skill IDs are the OFFICIAL Hermes Bundled Skills
@@ -19,7 +19,7 @@
  * recorded as honest metadata but must not be used as routing targets.
  *
  * Boundary: pure frozen data + pure lookup helpers. Zero requires, zero I/O,
- * zero decisions — selection stays with the Decision Engine.
+ * zero decisions — this module only records metadata.
  */
 
 const CAPABILITY_REGISTRY = Object.freeze({
@@ -149,9 +149,8 @@ function getSkill(capabilityId, skillId) {
 }
 
 /**
- * Validation used by the Decision schema and the Orchestrator BEFORE
- * execution: a plan step may only carry a skill its capability actually
- * exposes. Returns null when valid, else a human-readable problem.
+ * Validation helper: a plan step may only carry a skill its capability
+ * actually exposes. Returns null when valid, else a human-readable problem.
  * @param {string} capabilityId
  * @param {string} skillId
  * @returns {string|null}
@@ -165,7 +164,7 @@ function validateCapabilitySkill(capabilityId, skillId) {
   if (!hasSkill(capabilityId, skillId)) {
     return `capability "${capabilityId}" does not expose skill "${skillId}"`;
   }
-  // Note: the routing flag governs SELECTION (Decision Engine attaches only
+  // Note: the routing flag governs SELECTION (selection attaches only
   // routing:true skills), not VALIDITY — a recorded non-routing skill stays
   // a real skill of the capability (spec §10 validates existence).
   return null;

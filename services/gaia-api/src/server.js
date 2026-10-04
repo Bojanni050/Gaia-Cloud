@@ -14,7 +14,7 @@
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
  *   POST /speech             → audio/*             (auth required; { text } → Gaia's voice, src/speech/mimoTts.js or
  *                              src/speech/mistralTts.js per the TTS provider — presentation-only, always *after* a text
- *                              reply exists, never part of the Decision Engine)
+ *                              reply exists, never a turn decision)
  *   GET  /speech/info        → voice description    (auth required; { configured, provider, languages } — so clients
  *                              know whether a non-English reply is worth speaking; judges no text)
  *
@@ -94,7 +94,7 @@ function createApp(env = process.env) {
       recallHypotheses: (query) => hypothesisAdapter.recallHypotheses(query),
       // Pattern Awareness 0.1 — per-turn scoped pattern recall through the
       // same adapter that persists patterns (turn.js gates the call on
-      // IntentIQ signals; the Decision Engine owns whatever happens next).
+      // IntentIQ signals and owns whatever happens next).
       recallPatterns: (query) => patternAdapter.recallPatterns(query),
       patternManager,
       // Cognitive Analysis Model v1.0 — durable observations/open questions
@@ -139,13 +139,12 @@ function createApp(env = process.env) {
   };
 
   // Gaia's native voice (src/generation/gaiaGenerator.js) — undefined when
-  // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case the
-  // Decision Engine never sees a "native" capability and every turn routes
-  // through Hermes exactly as before this existed (see .env.example).
-  // Provider store may override env vars when role selections exist.
-  // `llmCallLogger` is bound here (not threaded per-call like Logos's
-  // background reflection) because this client is a singleton invoked from
-  // orchestrator.js, which has no per-turn logger in scope.
+  // GAIA_NATIVE_BASE_URL/GAIA_NATIVE_MODEL are unset, in which case a live
+  // turn answers a calm 503 rather than falling back to Hermes (see
+  // .env.example). Provider store may override env vars when role
+  // selections exist. `llmCallLogger` is bound here (not threaded per-call
+  // like Logos's background reflection) because this client is a singleton
+  // with no per-turn logger in scope.
   const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger);
   // Gaia's voice (src/speech/mimoTts.js, src/speech/mistralTts.js) —
   // undefined when GAIA_TTS_BASE_URL/GAIA_TTS_MODEL are unset, in which
@@ -302,10 +301,8 @@ function createApp(env = process.env) {
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
 
-  // v3.0: no live tools. conversation_search / hindsight-retrieval /
-  // foundation-search stay available as modules for explicit future
-  // HADES use, but nothing registers them into the live turn — the turn
-  // is direct generation with policy-gated Hindsight recall only.
+  // v3.0: no live tools. The turn is direct generation with
+  // policy-gated Hindsight recall only; nothing routes to a tool.
 
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;
@@ -433,8 +430,8 @@ function createApp(env = process.env) {
   // it only ever turns given text into audio. `text` here is expected to
   // be the client's already-received Gaia response (see the desktop's own
   // wiring), not a fresh prompt for Gaia to answer — this route does not
-  // run IntentIQ/the Decision Engine/Orchestrator/Response Engine
-  // at all, by construction (it never imports any of them).
+  // run any turn pipeline at all, by construction (it never imports
+  // turn.js or the generation providers).
   // Gaia's voice info — which provider backs POST /speech and which
   // languages it pronounces, so clients can decide *whether* to speak a
   // given reply (Dutch stays silent on a MiMo-only voice). Describes the

@@ -11,7 +11,7 @@
  *   Evidence → Hypotheses → Pattern candidate
  *
  * Boundary: maintains pattern state only. Never requires/calls Hindsight,
- * ReasonIQ, Hermes, web/MCP capabilities or the Decision Engine; persistence
+ * ReasonIQ, Hermes, web/MCP capabilities or a routing layer; persistence
  * goes through an INJECTED sink ({ save, update }) exactly like
  * hypothesisManager.js. Formation is gated (§9) and conservative: false-
  * positive patterns are worse than missed ones (§20).

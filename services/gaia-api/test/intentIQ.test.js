@@ -1715,20 +1715,6 @@ test('v0.4: requests, questions and non-completion statements stay outside the f
   assert.notEqual(meta.meta.reason, 'declarative_status_update');
 });
 
-test('v0.4: decision integration — status updates route native, never to clarify', () => {
-  const { decide } = require('../src/decision/decisionEngine');
-  const intent = classify(user('ik heb de capability toegevoegd maar kennelijk werkt het nog niet'), silent);
-  const decision = decide({
-    userInput: 'ik heb de capability toegevoegd maar kennelijk werkt het nog niet',
-    intent,
-    context: { reflections: [], mentalModels: [], patterns: [] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
-  });
-  assert.notEqual(decision.action, 'clarify');
-  assert.equal(decision.action, 'native');
-});
-
 // === IntentIQ conversational fast-path =====================================
 //
 // When the heuristic returns unknown with zero candidates and no

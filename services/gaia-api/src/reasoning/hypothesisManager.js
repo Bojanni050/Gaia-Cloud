@@ -7,16 +7,15 @@
  * consumes already-structured reasoning output (ReasonIQ 0.3's
  * hypothesisUpdates / evidence-linked hypotheses) and turns it into
  * explicit, validated state transitions. It never calls Hindsight, Hermes,
- * any web/MCP capability, or the Decision Engine; persistence goes through
+ * any web/MCP capability, or a routing layer; persistence goes through
  * an INJECTED sink ({ save, update }) so Hindsight stays the only place
  * anything ever durably lives (brief §15) — and since hindsightClient has
  * no hypothesis API yet, the default sink is an honest no-op and the
  * manager keeps state in memory for the turn that owns it.
  *
  * Lifecycle (the frozen transitions below mirror the shape documented in
- * logos/logosSchema.js — services/cognition is a separate deployable not
- * present in this repo, so THIS map is this codebase's single source of
- * truth until that service exists):
+ * logos/logosSchema.js — THIS map is this codebase's single source of
+ * truth):
  *
  *   proposed → testing → confirmed
  *                      ↘ rejected

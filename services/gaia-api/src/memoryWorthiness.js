@@ -9,7 +9,7 @@
  * Conversation history keeps everything; this module decides what deserves
  * MEMORY. It is NOT an agent: it never reasons about the user, forms
  * hypotheses or patterns, selects capabilities, calls Hermes/Web, replaces
- * the Decision Engine, touches the Response Engine, or produces user-facing
+ * a routing layer, touches the Response Engine, or produces user-facing
  * output. It classifies one turn and explains itself.
  *
  *   User turn → IntentIQ → Memoryworthiness → { discard | retain_low_priority | retain }
@@ -442,8 +442,8 @@ function shouldRetainToHindsight(memoryDecision) {
  * Whether a capability's outcome is, on its own, notable enough to force
  * retention — independent of evaluateMemoryWorthiness's score.
  *
- * evaluateMemoryWorthiness runs BEFORE the capability executes (turn.js
- * calls it right after recall, well before orchestrate()), so it judges
+ * evaluateMemoryWorthiness runs during the turn immediately after recall,
+ * so it judges
  * only the user's INPUT text and can never see whether the capability
  * needed a retry, failed outright, or escalated to ask_user. Since P0's
  * runtime integration routes every capability — including ordinary

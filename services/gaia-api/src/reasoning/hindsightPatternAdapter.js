@@ -22,7 +22,7 @@
  * only speaks to Hindsight via the injected client's existing primitives.
  * `recallPatterns` (Pattern Awareness 0.1) is the one retrieval-shaped
  * exception, mirroring recallHypotheses: Hindsight ranks, this reconstructs,
- * and every consumption decision stays downstream (Decision Engine).
+ * and every consumption decision stays downstream (in the turn).
  */
 
 const PATTERN_TAG = 'gaia:pattern';

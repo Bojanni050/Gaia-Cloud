@@ -13,7 +13,7 @@
  * the one rule that must never be violated anywhere in this codebase — no
  * provider name, model name, transport detail, or stack trace ever
  * reaches a client. `toCalmError` is the only place that mapping happens,
- * so turn.js's orchestration code never has to remember it.
+ * so the caller never has to remember it.
  *
  * This module does not reason. It does not decide whether a capability
  * was needed, and it does not touch capability internals (Hermes's own
@@ -41,25 +41,24 @@
  * (1) only THIS module introduces a frame type — a capability may never
  * invent one, which is what keeps "what reaches the client" in one place;
  * (2) a frame carries Gaia-level facts only. The step frame reports a plan
- * step's position, its type in the Decision Engine's own vocabulary
+ * step's position, its type in a plan's own vocabulary
  * (retrieval/reasoning/generation/capability) and its status — never the
  * capability id behind it, never content, never the error behind a failure
  * (that is `toCalmError()`'s text and nothing else).
  *
- * generateReply/generateStreamingReply extend this seam to the Decision
- * Engine / Orchestrator flow (decision/decisionEngine.js, orchestration/
- * orchestrator.js) — the non-streaming and streaming twins of the same
- * judgment. For `capability`/`tool`/`plan`, the text either already reached
- * the client as deltas during orchestrator.execute() (streaming — it was
+ * generateReply/generateStreamingReply extend this seam to one generation
+ * result — the non-streaming and streaming twins of the same judgment.
+ * For `capability`/`tool`/`plan`, the text either already reached
+ * the client as deltas during execution (streaming — it was
  * handed this module's own stream emitter as `onDelta`) or it is simply the
  * capability's returned string; in the streaming case the caller reports
  * which of the two happened (`contentEmitted`) and `deliverReply` decides:
  * emit it here when it never streamed, stay silent when it did. That is a
  * reported fact rather than an assumption because streaming is not
- * guaranteed — retrieval tools and other non-streaming capabilities return
- * text without ever calling onDelta. For `clarify`/`refuse` — turns the
- * Orchestrator deliberately executed *without* calling any capability —
- * nothing has been said yet, so this is the one place that renders Gaia's
+ * guaranteed — non-streaming providers return text without ever calling
+ * onDelta. For `clarify`/`refuse` — turns deliberately resolved without
+ * calling any capability — nothing has been said yet, so this is the one
+ * place that renders Gaia's
  * own calm words for them. That is what keeps the invariant true even for
  * capability-free turns: Response Engine, never a capability, speaks for
  * Gaia.
@@ -112,7 +111,7 @@ function formatReply(text) {
 
 /**
  * Creates a streaming emitter bound to one HTTP response. A capability
- * (or Gaia orchestrating one) calls delta()/step()/finish()/fail() — never
+ * calls delta()/step()/finish()/fail() — never
  * res.write()/res.end() directly — so the SSE wire shape and the
  * completion/failure lifecycle live in exactly one place.
  *
@@ -195,9 +194,9 @@ function createStreamEmitter(res) {
 }
 
 /**
- * The one place that judges what an ExecutionResult (orchestration/
- * orchestrator.js) means as reply text. Shared by both generateReply
- * (non-streaming) and generateStreamingReply (streaming) so the two paths
+ * The one place that judges what an execution result means as reply text.
+ * Shared by both generateReply (non-streaming) and generateStreamingReply
+ * (streaming) so the two paths
  * can never quietly diverge on what counts as "nothing to say".
  *
  * - capability/tool: whatever the capability returned, as long as it's a
@@ -216,7 +215,7 @@ function createStreamEmitter(res) {
  * discussion of previous capability use, the Response Engine MUST override
  * the capability candidate and answer directly from conversation context.
  *
- * @param {import('./orchestration/orchestrator').ExecutionResult|null|undefined} executionResult
+ * @param {object|null|undefined} executionResult a resolved execution result ({ action, output })
  * @param {{ intent?: object, decision?: object }} [context] - additional context for override logic
  * @returns {string|null}
  */
@@ -239,7 +238,7 @@ function resolveReplyText(executionResult, context = {}) {
     case 'capability':
     case 'tool':
     case 'native':
-    case 'plan': // Decision Engine 3.0: the last successful step's output (normally Gaia's own generation, or a terminal capability result)
+    case 'plan': // the last successful step's output (normally Gaia's own generation, or a terminal capability result)
       return typeof executionResult.output === 'string' && executionResult.output.length > 0
         ? executionResult.output
         : null;
@@ -271,7 +270,7 @@ function resolveReplyText(executionResult, context = {}) {
  *
  * PATCH 6: Passes intent context for Response Engine override on meta-intents
  *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, intent?: object }} input
+ * @param {{ decision?: object, executionResult: object, intent?: object }} input
  * @returns {string|null}
  */
 function generateReply({ decision, executionResult, intent }) {
@@ -306,7 +305,7 @@ function deliverReply(emitter, replyText, { contentEmitted = false } = {}) {
 }
 
 /**
- * Turns one turn's ExecutionResult (orchestration/orchestrator.js) into the
+ * Turns one turn's execution result into the
  * final reply text, emitting it through the given stream emitter when it has
  * not already reached the client as deltas. Returns the full reply text on
  * success (for the caller's own hindsight-reflection / history-save use), or
@@ -315,7 +314,7 @@ function deliverReply(emitter, replyText, { contentEmitted = false } = {}) {
  * failed non-streaming capability call already does.
  *
  * - capability/tool/native/plan: emitted only when it did NOT already stream
- *   during orchestrator.execute() — pass `contentEmitted` from the caller's
+ *   during execution — pass `contentEmitted` from the caller's
  *   own delta tracking (deliverReply is the single owner of that judgment).
  * - clarify/refuse: no capability was called — Gaia's own calm wording is
  *   rendered and emitted here, through this module's own emitter, never a
@@ -323,7 +322,7 @@ function deliverReply(emitter, replyText, { contentEmitted = false } = {}) {
  *
  * PATCH 6: Passes intent context for Response Engine override on meta-intents
  *
- * @param {{ decision: import('./decision/decisionSchema').Decision, executionResult: import('./orchestration/orchestrator').ExecutionResult, emitter: ReturnType<typeof createStreamEmitter>, intent?: object, contentEmitted?: boolean }} input
+ * @param {{ decision?: object, executionResult: object, emitter: ReturnType<typeof createStreamEmitter>, intent?: object, contentEmitted?: boolean }} input
  * @returns {string|null}
  */
 function generateStreamingReply({ decision, executionResult, emitter, intent, contentEmitted = false }) {

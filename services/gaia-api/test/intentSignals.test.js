@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 
 const { detectSignals, matchesSignal, SIGNAL_NAMES } = require('../src/logos/intentSignals');
 const { interpret } = require('../src/logos/intentIQ');
-const { decide, buildPlan, shouldUseConversationSearch } = require('../src/decision/decisionEngine');
 const { logIntentDecision } = require('../src/logos/intentLog');
 
 const NO_MODEL = { chat: async () => { throw new Error('no semantic model in this test'); } };
@@ -60,55 +59,6 @@ test('matchesSignal: an unknown signal name is simply false', () => {
   assert.equal(matchesSignal('wat zei ik?', 'nope'), false);
 });
 
-const CAPS = [{ id: 'hermes' }, { id: 'native' }, { id: 'conversation_search' }, { id: 'hindsight' }];
-const ANCHORED = { meta: { reason: 'assistant_anchored_follow_up_unresolved_intent' } };
-const stepCaps = (plan) => (plan ? plan.steps.map((st) => st.capability || st.mode) : []);
-
-test('the engine defines no wording patterns of its own any more', () => {
-  const engine = require('../src/decision/decisionEngine');
-  assert.equal(engine.PLANNING_SIGNALS, undefined);
-  assert.equal(engine.hasPlanningSignal, undefined);
-});
-
-test('engine follows intent.signals, not the raw text: a published signal plans a search the text alone would not', () => {
-  const text = 'graag even terug naar dat ding van toen'; // no regex cue in the wording
-  assert.equal(detectSignals(text).exactHistory, false);
-  const plan = buildPlan({ userInput: text, intent: { intent: null, status: 'unknown', signals: { exactHistory: true } } });
-  assert.ok(plan, 'a plan is built from the published signal');
-  assert.ok(stepCaps(plan).includes('conversation_search'));
-});
-
-test('engine follows intent.signals, not the raw text: a published "false" wins over wording that would match', () => {
-  const text = 'wat zei ik daar precies over?'; // the detector would say exactHistory
-  assert.equal(detectSignals(text).exactHistory, true);
-  const plan = buildPlan({ userInput: text, intent: { intent: null, status: 'unknown', signals: { exactHistory: false } } });
-  assert.equal(plan, null);
-});
-
-test('conversation search follows the published lookup signal for anchored turns', () => {
-  assert.equal(shouldUseConversationSearch({ ...ANCHORED, signals: { lookup: true } }, 'het is tijd dat ik eerst chronicle afmaak'), true);
-  assert.equal(shouldUseConversationSearch({ ...ANCHORED, signals: { lookup: false } }, 'wat was er in juni ook alweer?'), false);
-});
-
-test('without published signals (IntentIQ did not run) the engine asks the IntentIQ detector — same answers as before', () => {
-  assert.equal(shouldUseConversationSearch(ANCHORED, 'wat was er in juni ook alweer?'), true);
-  assert.equal(shouldUseConversationSearch(ANCHORED, 'nu weer bezig met de ontwikkeling van chronicle en jou'), false);
-  const plan = buildPlan({ userInput: 'wat zei ik daar precies over?', intent: null });
-  assert.ok(plan && stepCaps(plan).includes('conversation_search'));
-  assert.equal(decide({ userInput: 'hoi', intent: null, availableCapabilities: CAPS }).action, 'native');
-});
-
-test('end to end: interpret() then decide() — the engine consumes what IntentIQ published', async () => {
-  const intent = await interpret(
-    [{ role: 'user', content: 'wat zei ik daar precies over?' }],
-    { silent: true, model: NO_MODEL },
-  );
-  assert.equal(intent.signals.exactHistory, true);
-  const decision = decide({ userInput: 'wat zei ik daar precies over?', intent, availableCapabilities: CAPS });
-  assert.equal(decision.action, 'plan');
-  assert.ok(stepCaps(decision).includes('conversation_search'));
-});
-
 test('interpret() publishes signals on the final IntentDecision', async () => {
   const decision = await interpret(
     [{ role: 'user', content: 'wat was er in juni ook alweer?' }],
@@ -145,23 +95,4 @@ test('detectSkillTasks: task shapes are reported as skill ids, in priority order
 test('the name of a skill never selects it (spec §13)', () => {
   assert.deepEqual(detectSignals('Wat betekent systematic-debugging?').skillTasks, []);
   assert.deepEqual(detectSignals('wat houdt test-driven-development in?').skillTasks, []);
-});
-
-test('engine routes skills from the published task shapes, not the raw text', () => {
-  const { matchSkillTask, matchRequiredSkills } = require('../src/decision/decisionEngine');
-  // wording with no cue, but IntentIQ published a shape
-  assert.equal(matchSkillTask('gewoon een zin', { signals: { skillTasks: ['systematic-debugging'] } }), 'systematic-debugging');
-  // wording that WOULD match, but IntentIQ published none: the published answer wins
-  assert.equal(matchSkillTask('Zoek uit waarom deze race condition optreedt.', { signals: { skillTasks: [] } }), null);
-  const m = matchRequiredSkills({ task: 'x', intent: { signals: { skillTasks: ['requesting-code-review'] } }, availableCapabilities: [{ id: 'hermes' }] });
-  assert.deepEqual(m.requiredSkills, ['requesting-code-review']);
-  assert.equal(m.reason, 'task requires a structured code review workflow');
-  // no published signals at all: same answer as before via IntentIQ's detector
-  assert.equal(matchSkillTask('Zoek uit waarom deze race condition optreedt.'), 'systematic-debugging');
-});
-
-test('the engine no longer owns any skill-shape patterns', () => {
-  const engine = require('../src/decision/decisionEngine');
-  assert.equal(engine.SKILL_TASK_SIGNALS, undefined);
-  assert.ok(engine.SKILL_TASK_REASONS && Object.keys(engine.SKILL_TASK_REASONS).length === 3);
 });

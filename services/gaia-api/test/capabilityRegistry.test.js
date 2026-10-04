@@ -4,10 +4,8 @@
  * Capability Registry 1.0 — skill-aware capabilities tests.
  *
  * Covers: registry contents (official Hermes catalog names, routing flags,
- * no duplicates), skill/capability validation in schema and orchestrator,
- * registry-driven awareness rendering, Hermes adapter skill forwarding
- * (and untouched payload without a skill), Decision Engine skill selection
- * with the no-name-matching invariant, and the registry's own boundary.
+ * no duplicates), skill/capability validation, registry-driven awareness
+ * rendering, and the registry's own purity boundary.
  */
 
 const test = require('node:test');
@@ -25,9 +23,6 @@ const {
   routingSkills,
 } = require('../src/capabilityRegistry');
 const { renderCapabilityAwareness } = require('../src/capabilityAwareness');
-const { validateDecision } = require('../src/decision/decisionSchema');
-const { buildPlan, matchSkillTask, decide } = require('../src/decision/decisionEngine');
-const { execute } = require('../src/orchestration/orchestrator');
 
 // --- §18 Registry --------------------------------------------------------------
 
@@ -104,52 +99,6 @@ test('validateCapabilitySkill: known combo valid; unknown skill / unknown capabi
   assert.equal(validateCapabilitySkill('hermes', null), null); // no skill claimed
 });
 
-test('schema: hermes + known skill → valid plan; hermes + unknown skill → rejected before execution', () => {
-  const valid = {
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes', skill: 'systematic-debugging', input: {} },
-      { id: 'step-2', type: 'generation', mode: 'native' },
-    ],
-    reason: 'debug task',
-  };
-  assert.equal(validateDecision(valid), null);
-
-  const invalid = {
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes', skill: 'totally-fake-skill', input: {} },
-      { id: 'step-2', type: 'generation', mode: 'native' },
-    ],
-    reason: 'bad',
-  };
-  assert.match(validateDecision(invalid), /does not expose skill/);
-});
-
-test('schema: a skill without a capability on the same step is rejected', () => {
-  const invalid = {
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', skill: 'systematic-debugging' },
-      { id: 'step-2', type: 'generation', mode: 'native' },
-    ],
-  };
-  // The generic capability requirement fires first — either way the step is
-  // rejected before execution.
-  assert.match(validateDecision(invalid), /requires a non-empty capability/);
-});
-
-test('schema: a plain hermes step without a skill stays valid (spec §13)', () => {
-  const plain = {
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes' },
-      { id: 'step-2', type: 'generation', mode: 'native' },
-    ],
-  };
-  assert.equal(validateDecision(plain), null);
-});
-
 // --- §18: Awareness is registry-driven (no hardcoding) ----------------------------
 
 test('awareness renders skills dynamically from the registry, compactly', () => {
@@ -167,92 +116,6 @@ test('awareness renders skills dynamically from the registry, compactly', () => 
 test('awareness: unregistered capability ids are never claimed', () => {
   const block = renderCapabilityAwareness([{ id: 'hermes' }, { id: 'mystery_capability' }]);
   assert.ok(!block.includes('mystery_capability'));
-});
-
-// --- §18: Hermes adapter forwards the selected skill -------------------------------
-
-test('orchestrator forwards step.skill to the capability invoke options', async () => {
-  const seenOptions = [];
-  const capabilities = {
-    hermes: { invoke: async (_m, o) => { seenOptions.push(o); return 'analyse klaar'; } },
-  };
-  const decision = {
-    action: 'plan',
-    reason: 'debug',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes', skill: 'systematic-debugging', input: {} },
-      { id: 'step-2', type: 'generation', mode: 'native', sources: ['step-1'] },
-    ],
-  };
-  const result = await execute(decision, {
-    capabilities,
-    nativeGenerator: { generate: async () => 'antwoord' },
-    messages: [],
-  });
-  assert.equal(seenOptions[0].skill, 'systematic-debugging');
-  assert.equal(result.output, 'antwoord');
-});
-
-test('orchestrator: a plain hermes step forwards NO skill (never a forced instruction)', async () => {
-  const seenOptions = [];
-  const capabilities = {
-    hermes: { invoke: async (_m, o) => { seenOptions.push(o); return 'ok'; } },
-  };
-  await execute({
-    action: 'plan',
-    steps: [
-      { id: 'step-1', type: 'reasoning', capability: 'hermes' },
-      { id: 'step-2', type: 'generation', mode: 'native' },
-    ],
-  }, { capabilities, nativeGenerator: { generate: async () => 'x' }, messages: [] });
-  assert.equal(seenOptions[0].skill, undefined);
-});
-
-test('orchestrator rejects an injected plan with an invalid skill combo before any invoke', async () => {
-  let invoked = 0;
-  const capabilities = { hermes: { invoke: async () => { invoked += 1; return 'x'; } } };
-  await assert.rejects(
-    () => execute({
-      action: 'plan',
-      steps: [
-        { id: 'step-1', type: 'reasoning', capability: 'hermes', skill: 'not-a-real-skill' },
-        { id: 'step-2', type: 'generation', mode: 'native' },
-      ],
-    }, { capabilities, nativeGenerator: { generate: async () => 'x' }, messages: [] }),
-    /does not expose skill/
-  );
-  assert.equal(invoked, 0);
-});
-
-test('hermes adapter: selected skill becomes an explicit instruction; no skill leaves the payload untouched', async () => {
-  // v3.0: the live turn never routes to Hermes, so the adapter is
-  // exercised directly — the same defaultBuildMessages translation the
-  // explicit HADES path uses.
-  const { defaultBuildMessages } = require('../src/capabilities/hermesAdapter');
-
-  const baseMessages = [
-    { role: 'system', content: 'SOUL' },
-    { role: 'user', content: 'waarom faalt dit?' },
-  ];
-  // With skill: an explicit instruction system message is present.
-  const withSkill = defaultBuildMessages({
-    objective: 'respond',
-    instruction: 'waarom faalt dit?',
-    expected_outcome: { description: 'x', minLength: 1 },
-    context: { messages: baseMessages, skill: 'systematic-debugging' },
-  });
-  const instruction = withSkill.find((m) => m.role === 'system' && /Use the Hermes skill "systematic-debugging"/.test(m.content));
-  assert.ok(instruction, 'explicit skill instruction reaches Hermes');
-  assert.match(instruction.content, /Load and execute that skill yourself/);
-
-  // Without skill: payload untouched — no skill instruction anywhere.
-  const withoutSkill = defaultBuildMessages({
-    objective: 'respond',
-    instruction: 'analyseer dit even',
-    expected_outcome: { description: 'x', minLength: 1 },
-    context: { messages: baseMessages },
-  });
-  assert.ok(!withoutSkill.some((m) => /Use the Hermes skill/.test(m.content)), 'no forced skill instruction without selection');
 });
 
 test('v3.0 Hermes isolation: a configured generator never calls Hermes on the live path', async () => {
@@ -287,61 +150,7 @@ test('v3.0 Hermes isolation: a configured generator never calls Hermes on the li
   assert.equal(hermesCalls, 0, 'Hermes must never be called when generation is configured');
 });
 
-// --- §14/§16/§19: Decision Engine skill selection -----------------------------------
-
-test('skill selection: debugging task shape attaches systematic-debugging', () => {
-  const p = buildPlan({ userInput: 'Zoek uit waarom deze race condition optreedt.', intent: null });
-  assert.equal(p.action, 'plan');
-  const hermesStep = p.steps.find((s) => s.capability === 'hermes');
-  assert.equal(hermesStep.skill, 'systematic-debugging');
-  assert.equal(validateDecision(p), null);
-});
-
-test('skill selection: test-strategy task shape attaches test-driven-development', () => {
-  const p = buildPlan({ userInput: 'Maak een goede teststrategie voor deze wijziging.', intent: null });
-  const hermesStep = p.steps.find((s) => s.capability === 'hermes');
-  assert.equal(hermesStep.skill, 'test-driven-development');
-});
-
-test('skill selection: code review task shape attaches requesting-code-review', () => {
-  const p = buildPlan({ userInput: 'Kun je mijn code reviewen voor ik hem commit?', intent: null });
-  const hermesStep = p.steps.find((s) => s.capability === 'hermes');
-  assert.equal(hermesStep.skill, 'requesting-code-review');
-});
-
-test('no skill for generic analysis — Hermes without skill stays the norm (spec §13/§14)', () => {
-  const p = buildPlan({ userInput: 'Analyseer deze architectuur op basis van de vorige bevindingen.', intent: null });
-  if (p) {
-    const hermesStep = p.steps.find((s) => s.capability === 'hermes');
-    if (hermesStep) assert.equal(hermesStep.skill, undefined);
-  }
-  assert.equal(matchSkillTask('Analyseer deze architectuur.'), null);
-});
-
-test('INVARIANT: a skill NAME in the prompt never selects the skill', () => {
-  assert.equal(matchSkillTask('Leg uit wat de skill systematic-debugging doet.'), null);
-  assert.equal(matchSkillTask('wat houdt test-driven-development in?'), null);
-  const p = buildPlan({ userInput: 'Leg uit wat de skill systematic-debugging inhoudt.', intent: null });
-  if (p) {
-    const hermesStep = p.steps.find((s) => s.capability === 'hermes');
-    if (hermesStep) assert.equal(hermesStep.skill, undefined);
-  }
-});
-
-test('decision integration: skill plan survives decide() with the full registry available', () => {
-  const d = decide({
-    userInput: 'Zoek uit waarom deze race condition optreedt.',
-    intent: null,
-    context: { reflections: [], mentalModels: [], patterns: [] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }, { id: 'web' }, { id: 'conversation_search' }, { id: 'hindsight' }],
-  });
-  assert.equal(d.action, 'plan');
-  assert.equal(d.steps.find((s) => s.capability === 'hermes').skill, 'systematic-debugging');
-  assert.equal(validateDecision(d), null);
-});
-
-// --- Boundary ------------------------------------------------------------------------
+// --- Boundary ------------------------------------------------------------------
 
 test('boundary: the registry is pure frozen data — zero requires, zero I/O', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../src/capabilityRegistry.js'), 'utf-8')

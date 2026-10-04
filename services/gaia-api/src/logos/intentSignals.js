@@ -4,8 +4,8 @@
  * IntentIQ's routing-relevant turn signals — the ONE place where wording is
  * turned into "what kind of request is this" booleans.
  *
- * Why this lives here: the Decision Engine decides, it does not interpret
- * (see decisionEngine.js's header). Until now it also carried its own regex
+ * Why this lives here: interpretation and signal detection live with
+ * IntentIQ, not in a routing layer. Until now it also carried its own regex
  * vocabulary for exact-history / past-lookup / remembered-knowledge /
  * analysis cues, a second, parallel interpretation layer next to IntentIQ.
  * Phase 1 (this file): the vocabulary is defined once, here, and IntentIQ
@@ -87,7 +87,7 @@ const SIGNAL_PATTERNS = Object.freeze({
  * name->skill keyword router: the frames describe multi-word semantic
  * shapes, a skill's own NAME appearing in the prompt never selects it, and a
  * turn with no matching shape simply reports none (spec §13). Order matters:
- * the first shape the registry can route wins, in the Decision Engine.
+ * the first shape the registry can route wins.
  * Which of these shapes may actually be routed to Hermes is the engine's and
  * the capability registry's call, not IntentIQ's.
  */

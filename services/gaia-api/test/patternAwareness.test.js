@@ -6,7 +6,7 @@
  * Covers the spec's test matrix: greeting gate, established/candidate/low-
  * confidence/irrelevant handling, memory-vs-pattern semantics, explicit
  * mention requirement, silent use_as_context, multiple-pattern ranking &
- * caps, provenance preservation, and the Decision Engine boundary.
+ * caps, and provenance preservation.
  */
 
 const test = require('node:test');
@@ -25,8 +25,6 @@ const {
   renderPatternContextBlock,
   logPatternAwareness,
 } = require('../src/reasoning/patternAwareness');
-const { decide } = require('../src/decision/decisionEngine');
-const { validateDecision, PATTERN_USAGE_MODES } = require('../src/decision/decisionSchema');
 
 function candidate(overrides = {}) {
   return {
@@ -84,7 +82,6 @@ test('policy invariants: every documented threshold exists and orders sanely', (
   assert.ok(DEFAULT_PATTERN_AWARENESS_POLICY.minConfidenceForMention >= DEFAULT_PATTERN_AWARENESS_POLICY.minConfidence);
   assert.deepEqual([...DEFAULT_PATTERN_AWARENESS_POLICY.contextEligibleStatuses].sort(), ['established', 'supported']);
   assert.deepEqual(DEFAULT_PATTERN_AWARENESS_POLICY.mentionEligibleStatuses, ['established']);
-  assert.equal(PATTERN_USAGE_MODES.length, 3);
 });
 
 test('relevance and confidence are judged independently — high relevance cannot rescue low confidence', () => {
@@ -124,64 +121,6 @@ test('relevant established pattern earns use_as_context or mention; relevant sup
     { userInput: 'ik ga zo weer creatief werken aan Melodiq' }
   );
   assert.equal(supported.mode, 'use_as_context'); // never mention at this tier
-});
-
-// --- §15: decision integration ---------------------------------------------
-
-test('decide() attaches patternUsage when patterns were offered and it validates', () => {
-  const decision = decide({
-    userInput: 'ik ga zo weer creatief werken aan Melodiq',
-    intent: { intent: 'converse', status: 'accepted', needsClarification: false, sourceOfTruth: 'conversation' },
-    context: { reflections: [], mentalModels: [], patterns: [candidate()] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'hermes' }, { id: 'native' }],
-  });
-  assert.ok(decision.patternUsage);
-  assert.ok(PATTERN_USAGE_MODES.includes(decision.patternUsage.mode));
-  assert.equal(validateDecision(decision), null);
-});
-
-test('decide() attaches NO patternUsage when no patterns were offered — additive absence', () => {
-  const decision = decide({
-    userInput: 'hoi',
-    intent: null,
-    context: { reflections: [], mentalModels: [] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'native' }],
-  });
-  assert.equal(decision.patternUsage, undefined);
-});
-
-test('ignore-mode patternUsage still rides on the decision when irrelevant patterns were seen', () => {
-  const decision = decide({
-    userInput: 'wat is de hoofdstad van Bolivia?',
-    intent: { intent: 'inform.explain', status: 'accepted', needsClarification: false, sourceOfTruth: 'external_knowledge' },
-    context: { reflections: [], mentalModels: [], patterns: [candidate({ relevance: 0.1 })] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'hermes' }],
-  });
-  assert.equal(decision.patternUsage.mode, 'ignore');
-  assert.deepEqual(decision.context, []); // seeing and setting aside is not drawing on Hindsight
-});
-
-test('usedContextSources reports hindsight only for actually-used patterns', () => {
-  const decisionUsed = decide({
-    userInput: 'weer creatief aan de slag met Melodiq vanavond',
-    intent: null,
-    context: { reflections: [], mentalModels: [], patterns: [candidate()] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'native' }],
-  });
-  assert.deepEqual(decisionUsed.context, ['hindsight']);
-
-  const decisionIgnored = decide({
-    userInput: 'weer creatief aan de slag met Melodiq vanavond',
-    intent: null,
-    context: { reflections: [], mentalModels: [], patterns: [candidate({ status: 'candidate' })] },
-    reasoning: null,
-    availableCapabilities: [{ id: 'native' }],
-  });
-  assert.deepEqual(decisionIgnored.context, []);
 });
 
 // --- §10/§17: mention guidance & Response Engine boundary ----------------------
@@ -300,28 +239,17 @@ test('corrupt recall entries are dropped, never fabricated', () => {
   assert.equal(unscored.confidence, 0);
 });
 
-test('boundary: the Decision Engine imports no Hindsight/PatternManager/Hermes/Web/MCP module', () => {
-  const engineSource = fs.readFileSync(path.resolve(__dirname, '../src/decision/decisionEngine.js'), 'utf-8')
-    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
-  // Routing on capability ids ("hermes", "web") is the engine's job; calling
-  // into their modules would cross the context/persistence boundary. The
-  // capability registry is pure frozen metadata (no I/O) and is the one
-  // sanctioned source for skill-aware routing.
-  const requiredModules = [...engineSource.matchAll(/require\((['"])([^'"]+)\1\)/g)].map((m) => m[2]);
-  assert.deepEqual(requiredModules, ['./decisionSchema', '../reasoning/patternAwareness', './generationPolicy', '../capabilityRegistry', '../logos/intentSignals'],
-    'decisionEngine.js may only require its schema, the pure pattern policy, the generation policy, the capability registry and the pure IntentIQ signal vocabulary');
-
-  // The signal vocabulary is equally pure: no requires at all.
-  const signalsSource = fs.readFileSync(path.resolve(__dirname, '../src/logos/intentSignals.js'), 'utf-8')
-    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
-  assert.deepEqual([...signalsSource.matchAll(/require\(/g)], [], 'intentSignals.js must be pure: no dependencies');
-
-  // The policy module it imports must be equally I/O-free.
+test('boundary: patternAwareness is pure policy — it imports no retrieval or persistence module', () => {
   const awarenessSource = fs.readFileSync(path.resolve(__dirname, '../src/reasoning/patternAwareness.js'), 'utf-8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
   const awarenessRequires = [...awarenessSource.matchAll(/require\((['"])([^'"]+)\1\)/g)].map((m) => m[2]);
   assert.ok(awarenessRequires.every((m) => !/hindsight|patternManager|hermes|braveSearch|mcp|http/i.test(m)),
     'patternAwareness.js must be pure policy — retrieval lives in turn.js via the existing adapter');
+
+  // The signal vocabulary is equally pure: no requires at all.
+  const signalsSource = fs.readFileSync(path.resolve(__dirname, '../src/logos/intentSignals.js'), 'utf-8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+  assert.deepEqual([...signalsSource.matchAll(/require\(/g)], [], 'intentSignals.js must be pure: no dependencies');
 });
 
 // --- observability --------------------------------------------------------------

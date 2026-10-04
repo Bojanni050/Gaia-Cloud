@@ -7,22 +7,17 @@
  *
  * This file defines the fixed vocabularies Logos's output is built
  * from (epistemic status, evidence verdicts, hypothesis status) and small
- * factory/validation helpers around them. It intentionally mirrors, but
- * does not import, `services/cognition/src/hypotheses.js`'s hypothesis
- * shape (`statement`, `confidence`, `status`, `verificationPlan`, evidence
- * linkage, and its `VALID_TRANSITIONS` state machine) — that service is a
- * separate deployable with its own database and this phase explicitly
- * does not call it (Hindsight/cognition integration is out of scope; see
- * logos.js's module comment). Keeping the field names identical is
- * deliberate: it's what lets a later phase hand a Logos hypothesis to
- * `services/cognition`'s `propose()` with no translation layer.
+ * factory/validation helpers around them. It defines the hypothesis shape
+ * (`statement`, `confidence`, `status`, `verificationPlan`, evidence
+ * linkage, and its `VALID_TRANSITIONS` state machine) itself; nothing here
+ * persists.
  *
  * architecture.md §6.2's line runs through this file: Logos (this module)
  * is allowed to *judge* that a hypothesis is confirmed or rejected —
  * that's a reasoning act. It is never allowed to *persist* that judgment
- * anywhere; nothing here writes to a database, calls Hindsight, or calls
- * `services/cognition`. A hypothesis's `status` below is Logos's own
- * epistemic conclusion for this turn, not a completed state transition.
+ * anywhere; nothing here writes to a database or calls Hindsight. A
+ * hypothesis's `status` below is Logos's own epistemic conclusion for this
+ * turn, not a completed state transition.
  */
 
 const SCHEMA_VERSION = 'logos.v1';
@@ -56,10 +51,8 @@ const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unkn
 const EVIDENCE_VERDICTS = Object.freeze(['supports', 'weakens', 'contradicts', 'irrelevant']);
 
 /**
- * Kept identical to services/cognition/src/hypotheses.js's VALID_TRANSITIONS
- * — see this file's module comment for why it is duplicated rather than
- * imported. `status` here is a same-turn epistemic judgment, never a
- * persisted transition.
+ * The hypothesis lifecycle's VALID_TRANSITIONS. `status` here is a same-turn
+ * epistemic judgment, never a persisted transition.
  */
 const HYPOTHESIS_STATUSES = Object.freeze(['proposed', 'testing', 'confirmed', 'rejected']);
 

@@ -82,7 +82,7 @@ function defaultModelConfig(providerStore, env = process.env) {
  * Intents whose turns never need weighed conclusions from evidence — plain
  * conversation and questions about Gaia herself. Even with evidence in
  * hand (a recalled memory riding along), these stay shallow: their answers
- * are conversational, and the Decision Engine already routes them natively.
+ * are conversational, and the turn answers them natively.
  */
 const CONTEXT_ONLY_INTENTS = new Set([
   'converse',

@@ -4,8 +4,8 @@
  * Gaia's native generator — produces a Gaia-voiced reply directly, without
  * Hermes or any other capability.
  *
- * This is Gaia's own voice for turns the Decision Engine routes to `native`
- * (conversational, relational, simple). It talks to an OpenAI-compatible
+ * This is Gaia's own voice on the live path: direct generation of a
+ * conversational, relational, simple reply. It talks to an OpenAI-compatible
  * `/chat/completions` endpoint configured independently of Hermes — same
  * HTTP shape (because that shape is common infrastructure), completely
  * separate wiring (own base URL, own model, own auth token).
@@ -21,8 +21,8 @@
  *   - Run IntentIQ, ReasonIQ, or Hindsight.
  *   - Call Hermes (directly or indirectly).
  *   - Perform orchestration of any kind.
- *   - Decide whether native generation should be used (the Decision Engine
- *     already made that call).
+ *   - Decide whether native generation should be used (the turn always uses
+ *     it on the live path; there is no routing decision to make here).
  *
  * Configuration (independent of HERMES_*):
  *   GAIA_NATIVE_BASE_URL   – OpenAI-compatible base URL.
@@ -104,8 +104,8 @@ function isConfigured(config) {
  * }} options `logger` is bound once here rather than passed per-call: unlike
  *   IntentIQ/ReasonIQ (which get a fresh per-turn logger from turn.js
  *   threaded through their own options), the native generator is a
- *   singleton constructed once at server startup and invoked from
- *   orchestrator.js with no logger in scope there — so server.js supplies
+ *   singleton constructed once at server startup and invoked from the turn
+ *   with no logger in scope there — so server.js supplies
  *   the same console.log+decisionStore sink at construction time instead.
  * @returns {{
  *   generate: (messages: Array<{role: string, content: string}>, options?: object) => Promise<string>,
@@ -220,7 +220,7 @@ function createGaiaGenerator(options = {}) {
   /**
    * Streaming generation — calls `onDelta(chunk, isReasoning)` per token
    * and resolves with the full accumulated text. Same shape as
-   * hermesClient.js's `stream()` so the Orchestrator/Response Engine seam
+   * hermesClient.js's `stream()` so the Response Engine seam
    * treats them identically.
    *
    * @param {Array<{role: string, content: string}>} messages

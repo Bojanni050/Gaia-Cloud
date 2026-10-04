@@ -9,8 +9,7 @@ This repository is **Gaia Cloud** — her identity and server-side services. Her
 ## What lives here
 
 - `docs/` — Gaia's constitution and architecture: `soul.md`'s architectural overview, `architecture.md`, `principles.md`, `evolution.md` (the running history of every real milestone), `split-plan.md`.
-- `services/gaia-api/` — the uniform Gaia API: server-side turn orchestration (`POST conversation/turn`), server-side SOUL (canonical `identity/soul.md`), Bearer auth, Hermes orchestration. Desktop's only backend today; Web migrating onto it is later work.
-- `services/cognition/` — patterns and hypotheses, a Hindsight-adjacent sidecar for epistemic content Hindsight itself has no place for (`proposed → testing → confirmed/rejected`).
+- `services/gaia-api/` — the uniform Gaia API: server-side turn orchestration (`POST conversation/turn`), server-side SOUL (canonical `identity/soul.md`), Bearer auth. Desktop's only backend today; Web migrating onto it is later work.
 - `proxy/` — `gaia-hermes-proxy`: internal nginx fronting `hermes-agent`, injecting its auth token so clients never see it.
 
 ## Core Principles
@@ -29,8 +28,7 @@ Gaia Desktop / Gaia Web
         ▼
    ┌─────────────────────────────┐
    │          GAIA CLOUD          │
-   │   SOUL · Hermes orchestration │
-   │   services/cognition (patterns/hypotheses) │
+   │   SOUL · direct generation    │
    │   proxy/ (hermes auth injection) │
    └─────────────────────────────┘
 ```
@@ -39,4 +37,4 @@ Clients depend only on contracts, never on a concrete provider — see `docs/arc
 
 ## Status
 
-See `docs/evolution.md` for the full, honest history — what's built, what's deliberately not, and why. As of the Phase 1 repo split (2026-08-19): `services/gaia-api` is live and Desktop's only backend; Web still talks to Hermes/Hindsight/cognition directly and runs Logos (`intentIQ`/`reasonIQ`) client-side, both flagged as known interim states, not decided architecture.
+See `docs/evolution.md` for the full, honest history — what's built, what's deliberately not, and why. As of the Phase 1 repo split (2026-08-19): `services/gaia-api` is live and Desktop's only backend; Web still talks to Hermes/Hindsight directly and runs Logos (`intentIQ`/`reasonIQ`) client-side, both flagged as known interim states, not decided architecture.

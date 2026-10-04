@@ -39,9 +39,9 @@
  * IntentIQ 2.0 still only interprets. `sourceOfTruth` describes what a
  * turn's answer likely draws on ("this looks like it needs current
  * external information") — it is never a routing instruction ("therefore
- * call the web tool"), and neither classify() nor interpret() ever
- * imports or references Hermes, the web tool, the Decision Engine, or the
- * Orchestrator (asserted directly in tests, not just described here).
+ * call a capability"), and neither classify() nor interpret() ever
+ * imports or references Hermes, a capability module, a routing layer, or
+ * the Response Engine (asserted directly in tests, not just described here).
  *
  * IntentIQ 2.2 adds calibration on top of the same two tiers, without a
  * third tier, a new agent, or an extra arbitration model call:
@@ -766,7 +766,7 @@ function volunteeredSharingDecision(text) {
 // "Wat is een goede songtekst om te zingen?" asks for something to be
 // PRODUCED; the generic 'wat is' cue alone resolved it as a concept-
 // explanation request (inform.explain @0.95 → sourceOfTruth
-// external_knowledge → the Decision Engine's web branch) — a measured false
+// external_knowledge → a web-retrieval branch) — a measured false
 // positive. The frames below read the OBJECT of the question/wish — a
 // generative artifact noun, optionally with a purpose clause — not the bare
 // cue. "Wat is Hindsight?", "Wat is de hoofdstad van Frankrijk?" and "Wat is
@@ -1940,7 +1940,7 @@ function shouldSkipSemanticFallback(heuristic) {
 
   // The heuristic found nothing — no intent signals, no continuation,
   // no inheritance, no compound. The semantic model would just confirm
-  // "unknown" or resolve to "converse" (which the Decision Engine
+  // "unknown" or resolve to "converse" (which the turn's heuristic
   // already does for unknown intents). Skip the expensive LLM call.
   const reason = (heuristic.meta && heuristic.meta.reason) || 'unknown';
   return { skip: true, reason: `conversational_fast_path:${reason}` };
@@ -2004,7 +2004,7 @@ async function interpret(messages, options = {}) {
 
   const final = combineConsensus(heuristic, semantic.result);
   // Routing-relevant turn signals (exact-history / past-lookup / lookup-shape
-  // / …) are IntentIQ's to publish, so the Decision Engine reads them rather
+  // / …) are IntentIQ's to publish, so downstream reads them rather
   // than re-interpreting the raw text. Additive; tier-independent.
   try { final.signals = detectSignals(text); } catch (_) { /* observability must never break a turn */ }
 

@@ -144,7 +144,7 @@ function createIntentModelClient(options = {}) {
 
 /**
  * Composes readIntentModelConfig + isConfigured + createIntentModelClient
- * — mirrors gaiaGenerator.js's/mimoTts.js's/braveSearch.js's own
+ * — mirrors gaiaGenerator.js's/mimoTts.js's own
  * createFromEnv. Returns `undefined` when GAIA_INTENT_BASE_URL/
  * GAIA_INTENT_MODEL are unset, so IntentIQ can treat "no semantic
  * classifier available" the same uniform way every other optional

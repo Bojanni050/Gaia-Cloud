@@ -10,7 +10,7 @@
  * — see server.js's `/speech` route, the only place this module is ever
  * called from:
  *
- *   Decision Engine -> native/capability/tool -> Response Engine -> text
+ *   direct generation -> Response Engine -> text
  *                                                                     |
  *                                                                     v
  *                                                                   TTS
@@ -21,8 +21,7 @@
  * What this module does NOT do (and must never be asked to do):
  *   - Decide whether/when Gaia should speak.
  *   - Generate or alter response text.
- *   - Call Hermes, the native generator, IntentIQ, ReasonIQ, or the
- *     Decision Engine/Orchestrator.
+ *   - Call Hermes, the native generator, IntentIQ, or ReasonIQ.
  *   - Touch the Response Engine.
  * It has no import of and no reference to any of those — a boundary
  * asserted directly in test/mimoTts.test.js, not just described here.

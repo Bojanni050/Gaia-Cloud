@@ -2,8 +2,9 @@
 
 The Gaia API — the server-side seam every first-class client (Desktop,
 later Web) talks to. This is where Gaia's server-side turn orchestration
-begins: it loads SOUL (identity), calls Hermes (reasoning), and returns a
-plain reply. Clients never see a model name, a provider, or a status code
+begins: it loads SOUL (identity), generates her reply through the
+configured primary/backup provider, and returns a plain reply. Clients
+never see a model name, a provider, or a status code
 they didn't cause themselves.
 
 ## Contract
@@ -156,7 +157,7 @@ HERMES_MODEL=llama3 npm start
 
 ## Deploy (VPS)
 
-Same posture as Hindsight and gaia-cognition: Tailscale-only binding
+Same posture as Hindsight — Tailscale-only binding
 (`100.65.0.15:8891`), token auth, `.env` untracked on the host.
 
 ```bash

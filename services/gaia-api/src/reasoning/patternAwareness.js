@@ -5,7 +5,7 @@
  * exist. This module is NOT pattern formation (PatternManager / ReasonIQ
  * 0.4 owns that) and NOT persistence (hindsightPatternAdapter owns that).
  * It is the pure, model-free policy layer between "Hindsight recalled a
- * pattern" and "the Decision Engine decided what — if anything — Gaia does
+ * pattern" and "the turn decided what — if anything — Gaia does
  * with it":
  *
  *   Hindsight recallPatterns()     (retrieval — turn.js, gated, cheap)
@@ -26,7 +26,7 @@
  *      observation ("Ik krijg de indruk dat je…"), never as fact ("Jij
  *      bent iemand die…").
  *   3. Patterns are never automatically user-facing. The ONLY path to a
- *      user-visible mention is the Decision Engine explicitly selecting
+ *      user-visible mention is the turn explicitly selecting
  *      mode 'mention_as_observation' — and mention carries strictly higher
  *      bars than silent context (established status + high confidence +
  *      high relevance), plus its own per-turn budget and suppression rules.
@@ -245,7 +245,7 @@ module.exports = {
   decidePatternAction,
 };
 
-// --- batch evaluation (the Decision Engine's entry point) -------------------
+// --- batch evaluation (the turn's entry point) -------------------
 
 /**
  * Filters, ranks and decides a whole recall batch. Ranking is relevance
@@ -317,7 +317,7 @@ function evaluatePatternUsage(candidates, options = {}) {
     mode,
     // `patterns` mirrors the strongest usage (§15): the mentioned id(s)
     // when mentioning, else the silently-used ids. Full detail stays in
-    // contextPatternIds/mentions — additive fields the Orchestrator never
+    // contextPatternIds/mentions — additive fields the turn never
     // reads.
     patterns: mode === 'mention_as_observation' ? mentions.map((m) => m.patternId) : [...contextIds],
     contextPatternIds: contextIds,
@@ -330,7 +330,7 @@ function evaluatePatternUsage(candidates, options = {}) {
 // --- Response Engine guidance ------------------------------------------------
 
 /**
- * Renders the guidance block for patterns the Decision Engine actually
+ * Renders the guidance block for patterns the turn actually
  * chose to use. Returns null for ignore/empty usage — nothing pattern-
  * shaped may reach the prompt otherwise (invariant 3). Framing enforces
  * the semantic boundary (§11/§13): derived observations held with explicit
