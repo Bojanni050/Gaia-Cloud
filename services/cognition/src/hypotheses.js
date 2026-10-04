@@ -19,6 +19,8 @@ const { NotFoundError, InvalidTransitionError, ValidationError } = require('./er
 
 const KINDS = ['hypothesis', 'mental_model', 'relationship'];
 const VERWERP_BRONNEN = ['mens', 'consolidatie'];
+const PERSISTENCES = ['ephemeral', 'durable'];
+const METHODS = ['asserted', 'derived', 'tested'];
 
 const VALID_TRANSITIONS = {
   proposed: ['testing', 'rejected'],
@@ -46,25 +48,43 @@ function assertVerwerpBron(bron) {
   }
 }
 
+function assertPersistence(p) {
+  if (p !== undefined && p !== null && !PERSISTENCES.includes(p)) {
+    throw new ValidationError(`unknown persistence: ${p}`);
+  }
+}
+
+function assertMethod(m) {
+  if (m !== undefined && m !== null && !METHODS.includes(m)) {
+    throw new ValidationError(`unknown method: ${m}`);
+  }
+}
+
 const COLUMNS = `
   id, bank_id, kind, statement, confidence, status, verification_plan,
-  evidence_memory_ids, sources, supersedes_id, superseded_by_id,
+  evidence_memory_ids, evidence_for, evidence_against, persistence, method,
+  sources, supersedes_id, superseded_by_id,
   confirmed_document_id, rejection_reason, verwerp_bron,
   tested_at, confirmed_at, rejected_at, created_at, updated_at
 `;
 
 async function propose(bankId, {
   statement, confidence = 0.5, verificationPlan = '', evidenceMemoryIds = [],
+  evidenceFor = [], evidenceAgainst = [], persistence = 'ephemeral', method = 'asserted',
   sources = [], kind = 'hypothesis', supersedesId = null,
 } = {}) {
   if (!statement) throw new ValidationError('statement is required');
   assertKind(kind);
+  assertPersistence(persistence);
+  assertMethod(method);
   const { rows } = await pool.query(
     `INSERT INTO hypotheses
-       (bank_id, statement, confidence, verification_plan, evidence_memory_ids, sources, kind, supersedes_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (bank_id, statement, confidence, verification_plan, evidence_memory_ids,
+        evidence_for, evidence_against, persistence, method, sources, kind, supersedes_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${COLUMNS}`,
-    [bankId, statement, confidence, verificationPlan, evidenceMemoryIds, sources, kind, supersedesId],
+    [bankId, statement, confidence, verificationPlan, evidenceMemoryIds,
+      evidenceFor, evidenceAgainst, persistence, method, sources, kind, supersedesId],
   );
   return rows[0];
 }
@@ -98,8 +118,13 @@ async function get(bankId, id) {
   return rows[0];
 }
 
-/** Update statement/confidence/verification_plan/sources. From `testing` or `corroborated`, this is a refine and resets status to `proposed` (mirrors Stash's RefineHypothesis). */
-async function update(bankId, id, { statement, confidence, verificationPlan, evidenceMemoryIds, sources } = {}) {
+/** Update statement/confidence/verification_plan/sources/evidence/persistence/method. From `testing` or `corroborated`, this is a refine and resets status to `proposed` (mirrors Stash's RefineHypothesis). */
+async function update(bankId, id, {
+  statement, confidence, verificationPlan, evidenceMemoryIds,
+  evidenceFor, evidenceAgainst, persistence, method, sources,
+} = {}) {
+  assertPersistence(persistence);
+  assertMethod(method);
   const current = await get(bankId, id);
   if (current.status === 'confirmed' || current.status === 'rejected') {
     throw new InvalidTransitionError(current.status, 'edited');
@@ -114,12 +139,17 @@ async function update(bankId, id, { statement, confidence, verificationPlan, evi
        verification_plan = COALESCE($5, verification_plan),
        evidence_memory_ids = COALESCE($6, evidence_memory_ids),
        sources = COALESCE($7, sources),
+       evidence_for = COALESCE($9, evidence_for),
+       evidence_against = COALESCE($10, evidence_against),
+       persistence = COALESCE($11, persistence),
+       method = COALESCE($12, method),
        status = $8,
        tested_at = CASE WHEN $8 = 'proposed' THEN NULL ELSE tested_at END,
        updated_at = now()
      WHERE bank_id = $1 AND id = $2
      RETURNING ${COLUMNS}`,
-    [bankId, id, statement ?? null, confidence ?? null, verificationPlan ?? null, evidenceMemoryIds ?? null, sources ?? null, nextStatus],
+    [bankId, id, statement ?? null, confidence ?? null, verificationPlan ?? null, evidenceMemoryIds ?? null, sources ?? null, nextStatus,
+      evidenceFor ?? null, evidenceAgainst ?? null, persistence ?? null, method ?? null],
   );
   return rows[0];
 }

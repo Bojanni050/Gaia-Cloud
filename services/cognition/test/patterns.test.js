@@ -13,6 +13,8 @@ function row(overrides = {}) {
     confidence: 0.6,
     coherence_score: 0.8,
     source_memory_ids: ['m1', 'm2'],
+    status: 'candidate',
+    hypothesis_ids: ['h1'],
     sources: ['chronicle:obs1'],
     created_at: '2026-08-15T00:00:00Z',
     updated_at: '2026-08-15T00:00:00Z',
@@ -33,7 +35,7 @@ test('create() inserts and returns the new row', async () => {
   assert.equal(p.content, row().content);
   assert.deepEqual(p.sources, ['chronicle:obs1']);
   assert.match(fake.calls[0].sql, /INSERT INTO patterns/);
-  assert.deepEqual(fake.calls[0].params[5], ['chronicle:obs1']); // sources
+  assert.deepEqual(fake.calls[0].params[7], ['chronicle:obs1']); // sources
 });
 
 test('get() throws NotFoundError when missing', async () => {

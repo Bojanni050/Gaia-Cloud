@@ -15,6 +15,10 @@ function row(overrides = {}) {
     status: 'proposed',
     verification_plan: '',
     evidence_memory_ids: [],
+    evidence_for: [],
+    evidence_against: [],
+    persistence: 'ephemeral',
+    method: 'asserted',
     sources: [],
     supersedes_id: null,
     superseded_by_id: null,
@@ -50,7 +54,35 @@ test('propose() inserts and returns the new row (defaults kind=hypothesis)', asy
 
   assert.equal(h.kind, 'hypothesis');
   assert.match(fake.calls[0].sql, /INSERT INTO hypotheses/);
-  assert.deepEqual(fake.calls[0].params[5], ['chronicle:abc']); // sources
+  assert.deepEqual(fake.calls[0].params[9], ['chronicle:abc']); // sources
+});
+
+test('propose() carries evidence, persistence and method', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ persistence: 'durable', method: 'derived' })] }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.propose('gaia', {
+    statement: 'x', evidenceFor: ['m1'], evidenceAgainst: ['m2'], persistence: 'durable', method: 'derived',
+  });
+
+  assert.equal(h.persistence, 'durable');
+  assert.equal(h.method, 'derived');
+  assert.deepEqual(fake.calls[0].params[5], ['m1']); // evidence_for
+  assert.deepEqual(fake.calls[0].params[6], ['m2']); // evidence_against
+  assert.equal(fake.calls[0].params[7], 'durable');  // persistence
+  assert.equal(fake.calls[0].params[8], 'derived');  // method
+});
+
+test('propose() rejects an unknown persistence or method', async () => {
+  await assert.rejects(
+    () => hypotheses.propose('gaia', { statement: 'x', persistence: 'forever' }),
+    (err) => err.name === 'ValidationError',
+  );
+  await assert.rejects(
+    () => hypotheses.propose('gaia', { statement: 'x', method: 'guessed' }),
+    (err) => err.name === 'ValidationError',
+  );
 });
 
 test('propose() can store a candidate mental model', async () => {

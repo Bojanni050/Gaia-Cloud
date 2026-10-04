@@ -14,6 +14,10 @@ router.post('/', asyncRoute(async (req, res) => {
     confidence: req.body.confidence,
     verificationPlan: req.body.verification_plan,
     evidenceMemoryIds: req.body.evidence_memory_ids,
+    evidenceFor: req.body.evidence_for,
+    evidenceAgainst: req.body.evidence_against,
+    persistence: req.body.persistence,
+    method: req.body.method,
     sources: req.body.sources,
     kind: req.body.kind,
     supersedesId: req.body.supersedes_id,
@@ -39,6 +43,10 @@ router.patch('/:id', asyncRoute(async (req, res) => {
     confidence: req.body.confidence,
     verificationPlan: req.body.verification_plan,
     evidenceMemoryIds: req.body.evidence_memory_ids,
+    evidenceFor: req.body.evidence_for,
+    evidenceAgainst: req.body.evidence_against,
+    persistence: req.body.persistence,
+    method: req.body.method,
     sources: req.body.sources,
   });
   res.json(h);

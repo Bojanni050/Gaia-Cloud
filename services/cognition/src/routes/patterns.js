@@ -14,6 +14,8 @@ router.post('/', asyncRoute(async (req, res) => {
     confidence: req.body.confidence,
     coherenceScore: req.body.coherence_score,
     sourceMemoryIds: req.body.source_memory_ids,
+    status: req.body.status,
+    hypothesisIds: req.body.hypothesis_ids,
     sources: req.body.sources,
   });
   res.status(201).json(p);
@@ -36,6 +38,8 @@ router.patch('/:id', asyncRoute(async (req, res) => {
     confidence: req.body.confidence,
     coherenceScore: req.body.coherence_score,
     sourceMemoryIds: req.body.source_memory_ids,
+    status: req.body.status,
+    hypothesisIds: req.body.hypothesis_ids,
     sources: req.body.sources,
   });
   res.json(p);

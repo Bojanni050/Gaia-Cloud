@@ -6,18 +6,24 @@
 const { pool } = require('./db/pool');
 const { NotFoundError, ValidationError } = require('./errors');
 
+const PATTERN_STATUSES = ['candidate', 'supported', 'established'];
+
 const COLUMNS = `
   id, bank_id, content, confidence, coherence_score,
-  source_memory_ids, sources, created_at, updated_at
+  source_memory_ids, status, hypothesis_ids, sources, created_at, updated_at
 `;
 
-async function create(bankId, { content, confidence = 0.5, coherenceScore = 0, sourceMemoryIds = [], sources = [] }) {
+async function create(bankId, {
+  content, confidence = 0.5, coherenceScore = 0, sourceMemoryIds = [],
+  status = 'candidate', hypothesisIds = [], sources = [],
+}) {
   if (!content) throw new ValidationError('content is required');
+  if (!PATTERN_STATUSES.includes(status)) throw new ValidationError(`unknown pattern status: ${status}`);
   const { rows } = await pool.query(
-    `INSERT INTO patterns (bank_id, content, confidence, coherence_score, source_memory_ids, sources)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO patterns (bank_id, content, confidence, coherence_score, source_memory_ids, status, hypothesis_ids, sources)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${COLUMNS}`,
-    [bankId, content, confidence, coherenceScore, sourceMemoryIds, sources],
+    [bankId, content, confidence, coherenceScore, sourceMemoryIds, status, hypothesisIds, sources],
   );
   return rows[0];
 }
@@ -39,7 +45,12 @@ async function get(bankId, id) {
   return rows[0];
 }
 
-async function update(bankId, id, { content, confidence, coherenceScore, sourceMemoryIds, sources } = {}) {
+async function update(bankId, id, {
+  content, confidence, coherenceScore, sourceMemoryIds, status, hypothesisIds, sources,
+} = {}) {
+  if (status !== undefined && status !== null && !PATTERN_STATUSES.includes(status)) {
+    throw new ValidationError(`unknown pattern status: ${status}`);
+  }
   await get(bankId, id);
   const { rows } = await pool.query(
     `UPDATE patterns SET
@@ -48,10 +59,12 @@ async function update(bankId, id, { content, confidence, coherenceScore, sourceM
        coherence_score = COALESCE($5, coherence_score),
        source_memory_ids = COALESCE($6, source_memory_ids),
        sources = COALESCE($7, sources),
+       status = COALESCE($8, status),
+       hypothesis_ids = COALESCE($9, hypothesis_ids),
        updated_at = now()
      WHERE bank_id = $1 AND id = $2
      RETURNING ${COLUMNS}`,
-    [bankId, id, content ?? null, confidence ?? null, coherenceScore ?? null, sourceMemoryIds ?? null, sources ?? null],
+    [bankId, id, content ?? null, confidence ?? null, coherenceScore ?? null, sourceMemoryIds ?? null, sources ?? null, status ?? null, hypothesisIds ?? null],
   );
   return rows[0];
 }
