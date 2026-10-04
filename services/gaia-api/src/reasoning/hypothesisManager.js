@@ -21,7 +21,11 @@
  *                      ↘ rejected
  *   confirmed → testing   (new contradicting pressure — §9: a confirmed
  *                          hypothesis never silently survives a contradiction)
- *   rejected  → testing   (strong new evidence re-opens it — explicit only)
+ *   rejected  → testing   ONLY through reopen(), an explicit human action.
+ *                          For every automatic process (applyUpdate,
+ *                          applyReasoningResult, setPersistence, the
+ *                          lifecycle verbs) `rejected` is a hard terminal
+ *                          quarantine — no amount of new evidence revives it.
  *
  * Confirming/rejecting is deliberately HARD (§8): an LLM saying "likely"
  * is never enough. Transitions to confirmed/rejected go through
@@ -84,7 +88,9 @@ const HYPOTHESIS_TRANSITIONS = Object.freeze({
   proposed: Object.freeze(['testing', 'rejected']),
   testing: Object.freeze(['confirmed', 'rejected']),
   confirmed: Object.freeze(['testing']),
-  rejected: Object.freeze(['testing']),
+  // Terminal for every automatic path. reopen() is the one deliberate,
+  // human-initiated exception (mirrors the Cognition store's /reopen route).
+  rejected: Object.freeze([]),
 });
 
 /**
@@ -513,7 +519,9 @@ function createHypothesisManager(options = {}) {
       return { ok: false, reason: 'a rationale is required for confirm/reject transitions' };
     }
     if (target === 'testing' && h.status !== 'testing') {
-      // Re-open paths (confirmed→testing, rejected→testing) demand a reason too.
+      // The only demotion this reaches is confirmed→testing (§9), which
+      // demands a reason. rejected→testing never gets here: the transition
+      // table has rejected as terminal — that is reopen()'s human path.
       if (!rationale) return { ok: false, reason: 're-opening requires a rationale' };
     }
     const res = transition(h, target, rationale);
@@ -521,6 +529,34 @@ function createHypothesisManager(options = {}) {
       promoteConfirmed(h, { ...h }, rationale);
     }
     return res;
+  }
+
+  /**
+   * The human reopen — the ONLY way out of the rejected quarantine. Every
+   * automatic process treats `rejected` as terminal; only this explicit,
+   * human-initiated call (the GaiaChat "Heroverwegen" action, mirroring
+   * Cognition's POST /reopen) moves it back to testing, and it must state a
+   * reason. It deliberately bypasses the transition table the same way
+   * supersession does in the store — one named exception, never a general edge.
+   */
+  function reopen(hypothesisId, { reason } = {}) {
+    const h = byId.get(hypothesisId);
+    if (!h) return { ok: false, reason: `unknown hypothesis: ${hypothesisId}` };
+    if (h.status !== 'rejected') {
+      return { ok: false, reason: `only a rejected hypothesis can be reopened (status: ${h.status})` };
+    }
+    const stated = reason == null ? '' : String(reason).trim();
+    if (!stated) return { ok: false, reason: 'reopening a rejected hypothesis requires a stated reason' };
+
+    const prev = { ...h };
+    const iso = now().toISOString();
+    stampStatus(h, 'rejected', 'testing', iso); // clears rejectionReason, stamps testedAt
+    h.status = 'testing';
+    h.updatedAt = iso;
+    h.history.push({ from: 'rejected', to: 'testing', at: iso, rationale: `reopened by human: ${stated}` });
+    persistUpdate(prev, h);
+    audits.push(makeAudit({ hypothesisId: h.id, from: 'rejected', to: 'testing', rationale: stated }));
+    return { ok: true };
   }
 
   /**
@@ -535,6 +571,12 @@ function createHypothesisManager(options = {}) {
     const relation = update.relation;
     if (!EVIDENCE_VERDICTS.includes(relation)) {
       return makeAudit({ hypothesisId: h.id, accepted: false, reason: `invalid relation: ${relation}` });
+    }
+    // Quarantine: rejected is terminal for automatic evidence. Mirrors
+    // Cognition's applyEvidence(), which refuses a rejected record outright —
+    // only the human reopen() lifts the quarantine.
+    if (h.status === 'rejected') {
+      return makeAudit({ hypothesisId: h.id, accepted: false, reason: 'rejected is quarantined; only a human reopen can lift it' });
     }
     const prev = { ...h };
 
@@ -634,6 +676,17 @@ function createHypothesisManager(options = {}) {
       }
       idFor.set(rh, target);
 
+      // Quarantine: a recognized/existing target that is rejected is never
+      // revived by a later turn's reasoning — no evidence merge, no
+      // confidence drift, no re-proposal. Only the human reopen() lifts it.
+      if (target && target.status === 'rejected') {
+        audits.push(makeAudit({
+          hypothesisId: target.id, relation: 'rejected-quarantine', accepted: false,
+          reason: 'rejected is quarantined; reasoning output cannot revive it',
+        }));
+        continue;
+      }
+
       // Merge provenance-filtered links (no-op duplicates).
       for (const id of rh.evidenceFor || []) {
         if (!target.evidenceFor.includes(id)) target.evidenceFor.push(id);
@@ -697,6 +750,10 @@ function createHypothesisManager(options = {}) {
   function setPersistence(hypothesisId, persistence, { reason } = {}) {
     const h = byId.get(hypothesisId);
     if (!h) return { ok: false, reason: `unknown hypothesis: ${hypothesisId}` };
+    // Quarantine: no automatic axis may be changed on a rejected hypothesis.
+    if (h.status === 'rejected') {
+      return { ok: false, reason: 'a rejected hypothesis is quarantined; reopen it first' };
+    }
     if (!isValidPersistence(persistence)) {
       audits.push(makeAudit({ hypothesisId: h.id, relation: 'persistence', accepted: false, reason: `invalid persistence: ${persistence}` }));
       return { ok: false, reason: `invalid persistence: ${persistence} (use ephemeral|durable)` };
@@ -732,6 +789,7 @@ function createHypothesisManager(options = {}) {
     applyUpdate,
     applyReasoningResult,
     evaluateTransition,
+    reopen,
     setPersistence,
     seed: (list) => seedAll(list),
     get: (id) => byId.get(id) || null,

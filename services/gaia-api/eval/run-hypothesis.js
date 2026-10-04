@@ -33,6 +33,8 @@ function runCase(kase) {
     outcome = m.applyUpdate({ ...a.update, hypothesisId: a.update.hypothesisId });
   } else if (a.type === 'evaluateTransition') {
     outcome = m.evaluateTransition(kase.setup.hypotheses[0].id, a.target, { rationale: a.rationale });
+  } else if (a.type === 'reopen') {
+    outcome = m.reopen(kase.setup.hypotheses[0].id, { reason: a.reason });
   } else if (a.type === 'setPersistence') {
     outcome = m.setPersistence(kase.setup.hypotheses[0].id, a.target, { reason: a.reason });
   } else if (a.type === 'propose') {

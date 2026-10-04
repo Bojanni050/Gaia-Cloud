@@ -91,6 +91,12 @@ router.post('/:id/reject', asyncRoute(async (req, res) => {
   res.json(await hypotheses.reject(bankId, id, req.body.reason, req.body.verwerp_bron));
 }));
 
+// Human reopen — the only way out of the rejected quarantine; reason required.
+router.post('/:id/reopen', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.reopen(bankId, id, { reason: req.body.reason }));
+}));
+
 // Consolidation — a newer statement supersedes this one.
 router.post('/:id/supersede', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;

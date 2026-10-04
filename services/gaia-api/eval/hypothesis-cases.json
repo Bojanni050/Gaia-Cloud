@@ -57,16 +57,22 @@
       "expect": { "ok": false, "reasonMatches": "invalid transition proposed -> confirmed", "statusAfter": "proposed" }
     },
     {
-      "id": "reo-01", "behavior": "re-open-rejected",
+      "id": "reo-01", "behavior": "rejected-terminal-for-automatic-transitions",
       "setup": { "hypotheses": [{ "id": "hyp-i1", "statement": "Rejected too eagerly?", "status": "rejected", "confidence": 0.3 }] },
       "action": { "type": "evaluateTransition", "target": "testing", "rationale": "strong new evidence surfaced" },
-      "expect": { "ok": true, "statusAfter": "testing" }
+      "expect": { "ok": false, "reasonMatches": "invalid transition rejected -> testing", "statusAfter": "rejected" }
     },
     {
-      "id": "reo-02", "behavior": "re-open-requires-rationale",
+      "id": "reo-02", "behavior": "human-reopen-requires-reason",
       "setup": { "hypotheses": [{ "id": "hyp-j1", "statement": "No free re-opens.", "status": "rejected", "confidence": 0.3 }] },
-      "action": { "type": "evaluateTransition", "target": "testing" },
-      "expect": { "ok": false, "reasonMatches": "rationale", "statusAfter": "rejected" }
+      "action": { "type": "reopen" },
+      "expect": { "ok": false, "reasonMatches": "reason", "statusAfter": "rejected" }
+    },
+    {
+      "id": "reo-03", "behavior": "human-reopen-lifts-quarantine",
+      "setup": { "hypotheses": [{ "id": "hyp-n1", "statement": "Rejected too eagerly?", "status": "rejected", "confidence": 0.3, "rejectionReason": "old disproof" }] },
+      "action": { "type": "reopen", "reason": "the disproof has since been retracted" },
+      "expect": { "ok": true, "statusAfter": "testing", "fields": { "rejectionReason": null } }
     },
     {
       "id": "rej-01", "behavior": "reject-records-reason",

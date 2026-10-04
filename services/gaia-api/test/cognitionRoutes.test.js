@@ -15,6 +15,7 @@ function fakeCognition() {
     markTesting: async (id) => { calls.push(['test', id]); return { id, status: 'testing' }; },
     rejectHypothesis: async (id, o) => { calls.push(['reject', id, o]); return { id, status: 'rejected', verwerp_bron: o.verwerpBron }; },
     getHypothesis: async (id) => { calls.push(['get', id]); return { id, status: 'testing', scope: 'macro' }; },
+    reopenHypothesis: async (id, o) => { calls.push(['reopen', id, o]); return { id, status: 'testing', rejection_reason: null }; },
     confirmHypothesis: async (id, o) => { calls.push(['confirm', id, o]); return { id, status: 'confirmed', statement: (o && o.statement) || 'statement' }; },
     supersedeHypothesis: async (id, o) => { calls.push(['supersede', id, o]); return { id, status: 'rejected', superseded_by_id: o.supersededById }; },
   };
@@ -80,6 +81,27 @@ test('POST confirm passes a human nuanced statement through', async () => {
   assert.equal(res.status, 200);
   const confirmCall = cognition.calls.find((c) => c[0] === 'confirm');
   assert.equal(confirmCall[2].statement, 'only late at night');
+});
+
+test('POST reopen refuses a missing reason (human action must state why)', async () => {
+  const cognition = fakeCognition();
+  const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h1/reopen').send({});
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /reason/);
+  assert.ok(!cognition.calls.some((c) => c[0] === 'reopen'));
+});
+
+test('POST reopen lifts the quarantine and mirrors the record', async () => {
+  const cognition = fakeCognition();
+  const mirrored = [];
+  const res = await request(appWith({ cognition, sync: { syncHypothesis: async (r) => mirrored.push(r) } }))
+    .post('/cognition/hypotheses/h1/reopen').send({ reason: 'the disproof was retracted' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'testing');
+  const reopenCall = cognition.calls.find((c) => c[0] === 'reopen');
+  assert.equal(reopenCall[2].reason, 'the disproof was retracted');
+  assert.equal(mirrored.length, 1);
 });
 
 test('POST test opens active testing', async () => {

@@ -91,6 +91,9 @@ function createCognitionClient({
     ...(reason !== undefined ? { reason } : {}),
     ...(verwerpBron !== undefined ? { verwerp_bron: verwerpBron } : {}),
   });
+  const reopenHypothesis = (id, { reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/reopen`, {
+    ...(reason !== undefined ? { reason } : {}),
+  });
   const supersedeHypothesis = (id, { supersededById, reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/supersede`, {
     superseded_by_id: supersededById,
     ...(reason !== undefined ? { reason } : {}),
@@ -113,6 +116,7 @@ function createCognitionClient({
     markCorroborated,
     confirmHypothesis,
     rejectHypothesis,
+    reopenHypothesis,
     supersedeHypothesis,
     listPatterns,
     getPattern,

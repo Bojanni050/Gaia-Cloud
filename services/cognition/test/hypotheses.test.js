@@ -221,6 +221,55 @@ test('confirm() refuses to confirm a rejected hypothesis', async () => {
   );
 });
 
+test('reopen() lifts a rejected record back to testing and clears the rejection', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async (sql) => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'rejected', rejection_reason: 'old', verwerp_bron: 'mens' })] };
+    assert.match(sql, /UPDATE hypotheses SET status = 'testing'/);
+    return { rows: [row({ status: 'testing', rejection_reason: null, verwerp_bron: null })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.reopen('gaia', 'h1', { reason: 'the disproof was retracted' });
+  assert.equal(h.status, 'testing');
+  assert.equal(h.rejection_reason, null);
+});
+
+test('reopen() requires a reason', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'rejected' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.reopen('gaia', 'h1', {}),
+    (err) => err.name === 'ValidationError' && /reason/.test(err.message),
+  );
+});
+
+test('reopen() refuses a non-rejected record', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'testing' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.reopen('gaia', 'h1', { reason: 'why not' }),
+    (err) => err.name === 'InvalidTransitionError',
+  );
+});
+
+test('markTesting() still refuses a rejected record (reopen is the only exit)', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'rejected' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.markTesting('gaia', 'h1'),
+    (err) => err.name === 'InvalidTransitionError',
+  );
+});
+
 test('reject() is allowed directly from proposed and defaults verwerp_bron to mens', async () => {
   const fake = makeFakePool();
   let call = 0;

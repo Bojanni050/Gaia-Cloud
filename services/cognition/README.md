@@ -22,6 +22,8 @@ Runs in Gaia Cloud, next to Hindsight — never client-side.
 proposed ──▶ testing ──▶ corroborated (machine, C >= 0.80) ──▶ confirmed (HUMAN ONLY)
     │           │                    │
     └───────────┴────────────────────┴──▶ rejected  ({ verwerp_bron: 'mens' | 'consolidatie' })
+                                              │
+                                      HUMAN reopen (reason required) ──▶ testing
 ```
 
 - **`corroborated`** is a machine soft-promotion tier: a high-confidence
@@ -29,6 +31,12 @@ proposed ──▶ testing ──▶ corroborated (machine, C >= 0.80) ──▶
   as settled.
 - **`confirmed` is human-only** (Absolute Override). No automated step — not
   model confidence, not corroboration — reaches it.
+- **`rejected` is a hard quarantine, terminal for every automatic path.** Once
+  a person rejects a statement, no later evidence, reasoning pass or background
+  process can test, edit, re-evidence or re-promote it. The one exception is
+  `POST …/reopen` — an explicit, human-initiated action that requires a stated
+  reason and returns the record to `testing` (mirrored by the manager's
+  `reopen()` and the GaiaChat "Heroverwegen" action).
 - **`verwerp_bron`** records *why* a statement was rejected: `mens` (a human)
   or `consolidatie` (a newer statement superseded it).
 - **Supersession**: a newer confirmed statement can supersede an older one;

@@ -12,7 +12,8 @@ const express = require('express');
  *   GET  /cognition/hypotheses                 pending/testing statements
  *   POST /cognition/hypotheses/:id/test        open active testing
  *   POST /cognition/hypotheses/:id/reject      { reason }  (verwerp_bron "mens")
- *   POST /cognition/hypotheses/:id/confirm     { supersedes?: [ids], rationale? }
+ *   POST /cognition/hypotheses/:id/reopen      { reason }  — the human lift of a rejection
+ *   POST /cognition/hypotheses/:id/confirm     { supersedes?: [ids], rationale?, statement? }
  *
  * `confirm` is the ONLY path to `confirmed` (Absolute Override). It updates
  * Cognition, mirrors the record to Hindsight (cognitionSync emits
@@ -53,6 +54,19 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
       reason: req.body && req.body.reason,
       verwerpBron: 'mens',
     });
+    await mirror(record);
+    res.json(record);
+  }));
+
+  // The human reopen — the ONLY way out of the rejected quarantine. `rejected`
+  // is terminal for every automatic path (manager and store); this is the one
+  // explicit, human-initiated exception, and it must state why.
+  router.post('/hypotheses/:id/reopen', asyncRoute(async (req, res) => {
+    const reason = (req.body && req.body.reason) || '';
+    if (!String(reason).trim()) {
+      return res.status(400).json({ error: 'a reason is required to reopen a rejected statement' });
+    }
+    const record = await cognition.reopenHypothesis(req.params.id, { reason });
     await mirror(record);
     res.json(record);
   }));

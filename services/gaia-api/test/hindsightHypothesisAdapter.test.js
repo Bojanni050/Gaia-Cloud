@@ -177,7 +177,7 @@ test('reject: maps to Hindsight native invalidation with the recorded reason', a
   assert.equal(fake.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/memories')).length, 0);
 });
 
-test('re-open: rejected -> testing retains a fresh ACTIVE version', async () => {
+test('human reopen: rejected -> testing retains a fresh ACTIVE version', async () => {
   const fake = makeFakeHindsight();
   const { manager } = makeRuntime(fake);
   manager.applyReasoningResult({
@@ -190,7 +190,7 @@ test('re-open: rejected -> testing retains a fresh ACTIVE version', async () => 
   await drain();
   fake.calls.length = 0;
 
-  manager.evaluateTransition('hyp-1', 'testing', { rationale: 'new strong evidence' });
+  manager.reopen('hyp-1', { reason: 'new strong evidence' });
   await drain();
 
   const retains = fake.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/memories'));

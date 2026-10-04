@@ -8,6 +8,11 @@
  *   proposed ──▶ testing ──▶ corroborated (machine, C >= 0.80) ──▶ confirmed (HUMAN ONLY)
  *       │           │                    │
  *       └───────────┴────────────────────┴──▶ rejected  ({ verwerp_bron: 'mens' | 'consolidatie' })
+ *                                                 │
+ *                                   reopen (HUMAN only, reason) ──▶ testing
+ *
+ * `rejected` is terminal in VALID_TRANSITIONS: every automatic verb refuses it.
+ * reopen() is the single human-initiated exception (like supersede()).
  *
  * Cognition only persists. It never forms, judges, tests, confirms, rejects or
  * refines on its own initiative — every judgment is Logos's, and only a human
@@ -239,6 +244,31 @@ async function reject(bankId, id, reason, verwerpBron = 'mens') {
 }
 
 /**
+ * Human reopen — the ONLY way out of the rejected quarantine. `rejected` is
+ * terminal in VALID_TRANSITIONS, so every automatic verb (test, corroborate,
+ * confirm, evidence, update) refuses it; this function is the one deliberate,
+ * human-initiated exception (same posture as supersede() below). A reason is
+ * required: the person is lifting their own earlier rejection, and the "why"
+ * must be recorded.
+ */
+async function reopen(bankId, id, { reason } = {}) {
+  if (!reason || !String(reason).trim()) {
+    throw new ValidationError('a reason is required to reopen a rejected hypothesis');
+  }
+  const current = await get(bankId, id);
+  if (current.status !== 'rejected') {
+    throw new InvalidTransitionError(current.status, 'reopened');
+  }
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET status = 'testing', rejection_reason = NULL,
+       verwerp_bron = NULL, updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id],
+  );
+  return rows[0];
+}
+
+/**
  * Consolidation: a newer confirmed statement supersedes an older one. This is
  * a system act (Logos's promotion/sync), so it is the ONE deliberate exception
  * to the transition table — it may move even a `confirmed` statement to
@@ -332,6 +362,6 @@ async function softDelete(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, confirm, reject, supersede, applyEvidence, softDelete,
+  propose, list, get, update, markTesting, markCorroborated, confirm, reject, reopen, supersede, applyEvidence, softDelete,
   VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES,
 };

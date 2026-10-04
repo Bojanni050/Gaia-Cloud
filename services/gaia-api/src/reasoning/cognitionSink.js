@@ -86,7 +86,14 @@ function createCognitionSink({ cognition, sync } = {}) {
     }
 
     if (before.status !== next.status) {
-      if (next.status === 'testing') record = await cognition.markTesting(cid);
+      if (next.status === 'testing' && before.status === 'rejected') {
+        // A reopen is the one human-initiated exit from the quarantine; its
+        // reason rides on the manager's history entry. markTesting would be
+        // refused by the store (rejected is terminal), so route it explicitly.
+        const last = Array.isArray(next.history) ? next.history[next.history.length - 1] : null;
+        const reason = (last && last.rationale) || 'reopened by human';
+        record = await cognition.reopenHypothesis(cid, { reason });
+      } else if (next.status === 'testing') record = await cognition.markTesting(cid);
       else if (next.status === 'corroborated') record = await cognition.markCorroborated(cid);
       else if (next.status === 'rejected') record = await cognition.rejectHypothesis(cid, { reason: next.rejectionReason });
       // 'confirmed' is intentionally not mirrored here.

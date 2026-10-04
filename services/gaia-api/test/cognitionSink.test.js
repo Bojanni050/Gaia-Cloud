@@ -16,6 +16,7 @@ function fakeCognition() {
     markTesting: async (id) => { calls.push(['test', id]); return { id, status: 'testing' }; },
     markCorroborated: async (id) => { calls.push(['corroborate', id]); return { id, status: 'corroborated' }; },
     rejectHypothesis: async (id, o) => { calls.push(['reject', id, o]); return { id, status: 'rejected' }; },
+    reopenHypothesis: async (id, o) => { calls.push(['reopen', id, o]); return { id, status: 'testing' }; },
     getHypothesis: async (id) => ({ id }),
     createPattern: async (r) => { calls.push(['createPattern', r]); return { id: `p${++seq}`, ...r }; },
     updatePattern: async (id, p) => { calls.push(['updatePattern', id, p]); return { id, ...p }; },
@@ -94,6 +95,20 @@ test('updateHypothesis patches a statement change and a persistence change', asy
   const patch = cognition.calls.find((c) => c[0] === 'patch');
   assert.equal(patch[2].statement, 'new');
   assert.equal(patch[2].persistence, 'durable');
+});
+
+test('updateHypothesis maps a rejected→testing reopen to reopenHypothesis, never markTesting', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.update('c1',
+    { id: 'c1', status: 'testing', evidenceFor: [], evidenceAgainst: [], history: [{ from: 'rejected', to: 'testing', rationale: 'human: the disproof was retracted' }] },
+    { id: 'c1', status: 'rejected', evidenceFor: [], evidenceAgainst: [] });
+
+  const reopen = cognition.calls.find((c) => c[0] === 'reopen');
+  assert.ok(reopen, 'the store reopen verb was used');
+  assert.equal(reopen[2].reason, 'human: the disproof was retracted');
+  assert.ok(!cognition.calls.some((c) => c[0] === 'test'), 'markTesting would be refused by the store');
 });
 
 test('a confirmed status change is not mirrored but the record still syncs', async () => {

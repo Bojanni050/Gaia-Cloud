@@ -34,9 +34,12 @@ The derived statements Logos is still weighing live in `services/cognition`. The
 | GET    | `/cognition/hypotheses`               | Bearer | `{ hypotheses: [...] }` (optional `?status=`) |
 | POST   | `/cognition/hypotheses/:id/test`      | Bearer | open active testing |
 | POST   | `/cognition/hypotheses/:id/reject`    | Bearer | `{ reason }` → `verwerp_bron: "mens"` |
+| POST   | `/cognition/hypotheses/:id/reopen`    | Bearer | `{ reason }` (required) → `testing`; the only exit from the rejected quarantine |
 | POST   | `/cognition/hypotheses/:id/confirm`   | Bearer | `{ supersedes?: [ids], rationale?, statement? }` → sets `confirmed`, mirrors `gaia:confirmed_fact`, supersedes the named older statements (`verwerp_bron: "consolidatie"`) |
 
 `confirm` is the human **Absolute Override**: no automated step (model confidence, corroboration) ever reaches `confirmed`. V3 friction: a **macro** statement (`scope` is anything but `micro`) is refused without a stated `rationale`, and any statement is refused until its quarantined `counter_hypothesis` exists — Cognition blocks it, the API never fakes one. `statement` is the human's own nuanced re-wording ("Nuanceren"), written with the confirmation as one audited act.
+
+`rejected` is a hard quarantine, terminal for every automatic path (evidence updates, reasoning output, persistence changes, the lifecycle verbs) in both the manager and Cognition. `POST …/reopen` with a stated reason — the GaiaChat "Heroverwegen" action — is the only way back to `testing`.
 
 ## Chat history
 

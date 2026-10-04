@@ -31,7 +31,7 @@ test('transitions: the lifecycle map is explicit and frozen', () => {
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.proposed, ['testing', 'rejected']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.testing, ['confirmed', 'rejected']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.confirmed, ['testing']);
-  assert.deepEqual(HYPOTHESIS_TRANSITIONS.rejected, ['testing']);
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.rejected, []); // terminal; only reopen() leaves it
 });
 
 // --- create -------------------------------------------------------------------
@@ -133,18 +133,52 @@ test('reject: requires strong opposition AND low confidence per policy', () => {
   assert.equal(m.get('hyp-r1').status, 'rejected');
 });
 
-test('re-open: confirmed -> testing is legal; rejected -> testing needs a rationale', () => {
+test('re-open: confirmed -> testing is legal; rejected is terminal except via the human reopen()', () => {
   const m = createHypothesisManager({
     hypotheses: [
       { id: 'hyp-ok', statement: 'A.', status: 'confirmed', confidence: 0.8 },
-      { id: 'hyp-rej', statement: 'B.', status: 'rejected', confidence: 0.2 },
+      { id: 'hyp-rej', statement: 'B.', status: 'rejected', confidence: 0.2, rejectionReason: 'old disproof' },
     ],
   });
   assert.equal(m.evaluateTransition('hyp-ok', 'testing', { rationale: 'fresh contradiction pressure' }).ok, true);
   assert.equal(m.get('hyp-ok').status, 'testing');
-  assert.equal(m.evaluateTransition('hyp-rej', 'testing', {}).ok, false); // re-open demands a reason
-  assert.equal(m.evaluateTransition('hyp-rej', 'testing', { rationale: 'strong new evidence surfaced' }).ok, true);
+
+  // rejected is terminal for the automatic path — with or without a rationale.
+  assert.equal(m.evaluateTransition('hyp-rej', 'testing', { rationale: 'strong new evidence surfaced' }).ok, false);
+  assert.equal(m.get('hyp-rej').status, 'rejected');
+
+  // Only the explicit, human-initiated reopen lifts the quarantine, and it needs a reason.
+  assert.equal(m.reopen('hyp-rej', {}).ok, false);
+  assert.equal(m.reopen('hyp-rej', { reason: 'the disproof was retracted' }).ok, true);
   assert.equal(m.get('hyp-rej').status, 'testing');
+  assert.equal(m.get('hyp-rej').rejectionReason, null); // live state cleared, history keeps the reject
+});
+
+test('quarantine: automatic evidence, persistence and reasoning can never touch a rejected hypothesis', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: 'hyp-q', statement: 'Quarantined claim.', status: 'rejected', confidence: 0.3, evidenceFor: ['a'] }],
+  });
+  // applyUpdate: refused, no mutation.
+  const audit = m.applyUpdate({ hypothesisId: 'hyp-q', evidenceId: 'b', relation: 'supports', confidenceDelta: 0.4, rationale: 'new support' });
+  assert.equal(audit.accepted, false);
+  assert.match(audit.reason, /quarantined/);
+  assert.equal(m.get('hyp-q').confidence, 0.3);
+  assert.deepEqual(m.get('hyp-q').evidenceFor, ['a']);
+
+  // setPersistence: refused.
+  assert.equal(m.setPersistence('hyp-q', 'durable', { reason: 'r' }).ok, false);
+
+  // applyReasoningResult: a later turn matching the rejected statement must not
+  // merge evidence, drift confidence, or re-propose it.
+  m.applyReasoningResult({
+    hypotheses: [{ statement: 'Quarantined claim.', existingId: 'hyp-q', confidence: 0.9, evidenceFor: ['c'] }],
+    hypothesisUpdates: [{ hypothesisId: 'hyp-q', evidenceId: 'c', relation: 'supports', confidenceDelta: 0.3, rationale: 'revive me' }],
+  });
+  const h = m.get('hyp-q');
+  assert.equal(h.status, 'rejected');
+  assert.equal(h.confidence, 0.3);
+  assert.deepEqual(h.evidenceFor, ['a']);
+  assert.equal(m.list().length, 1); // no shadow copy was created either
 });
 
 test('V3: a hypothesis without a counter-hypothesis can never be confirmed — and gains one later', () => {
@@ -356,7 +390,7 @@ test('rejectionReason: recorded on reject, cleared on re-open, preserved in hist
   assert.equal(m.evaluateTransition('hyp-r', 'rejected', { rationale: 'disproven by two independent traces' }).ok, true);
   assert.equal(m.get('hyp-r').rejectionReason, 'disproven by two independent traces');
 
-  assert.equal(m.evaluateTransition('hyp-r', 'testing', { rationale: 'strong new evidence surfaced' }).ok, true);
+  assert.equal(m.reopen('hyp-r', { reason: 'strong new evidence surfaced' }).ok, true);
   const h = m.get('hyp-r');
   assert.equal(h.rejectionReason, null); // cleared for the live state...
   const rejectEntry = h.history.find((e) => e.to === 'rejected');
@@ -534,7 +568,7 @@ test("0.1 lifecycle independence: persistence survives the entire lifecycle in b
     assert.equal(m.evaluateTransition(`hyp-${persistence}`, "rejected", { rationale: "disproven" }).ok, true);
     assert.equal(m.get(`hyp-${persistence}`).status, "rejected");
     assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
-    m.evaluateTransition(`hyp-${persistence}`, "testing", { rationale: "re-opened" });
+    m.reopen(`hyp-${persistence}`, { reason: "re-opened" });
     assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
   }
 });
