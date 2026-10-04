@@ -44,7 +44,7 @@ const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
 const { createProviderStore } = require('./providerStore');
 const { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig } = require('./providerConfigResolver');
-const { createChronicleClient } = require('./chronicleClient');
+const { createFromEnv: createFoundationFromEnv } = require('./foundationClient');
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
@@ -232,9 +232,11 @@ function createApp(env = process.env) {
       : undefined;
   }
 
-  // Chronicle archive (v3.0 source of truth): completed turns register
-  // here with status `observation`, fire-and-forget after delivery.
-  const chronicle = createChronicleClient({ env });
+  // Foundation (raw-observation source of truth): Gaia reads it for
+  // archive-shaped asks and carries completed turns back into its observation
+  // stream, fire-and-forget after delivery. Undefined when FOUNDATION_URL is
+  // unset — every caller falls through silently.
+  const foundation = createFoundationFromEnv(env);
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
@@ -352,7 +354,7 @@ function createApp(env = process.env) {
         documents,
         hindsight,
         hypothesisRuntime,
-        chronicle,
+        foundation,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -400,7 +402,7 @@ function createApp(env = process.env) {
       documents,
       hindsight,
       hypothesisRuntime,
-      chronicle,
+      foundation,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),

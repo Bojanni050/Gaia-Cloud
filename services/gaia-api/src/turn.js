@@ -19,7 +19,7 @@
  * deliverReply/emitter (SSE). Provider names, model names, transport
  * details and stacks never cross this seam (toCalmError).
  *
- * BACKGROUND (Logos is the reflection on the experience): Chronicle
+ * BACKGROUND (Logos is the reflection on the experience): Foundation
  * observation registration, Memoryworthiness, hypothesis lifecycle,
  * background Logos reflection, gated pattern formation, Hindsight reflection and
  * DecisionIQ review run in `runDeferredCognition` — started AFTER the
@@ -42,6 +42,8 @@ const {
 } = require('./memoryWorthiness');
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness, evaluatePatternUsage } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
+const { detectSignals } = require('./logos/intentSignals');
+const { renderFoundationContext } = require('./foundationClient');
 const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require('./logos/logos');
 const { logLogosGate } = require('./logos/logosLog');
 const { shouldRecall } = require('./memoryPolicy');
@@ -223,12 +225,17 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation } = {}) {
+  const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
-    return [{ id: 'native' }];
+    capabilities.push({ id: 'native' });
+  } else if (hermes) {
+    capabilities.push({ id: 'hermes' });
   }
-  if (hermes) return [{ id: 'hermes' }];
-  return [];
+  if (foundation && typeof foundation.searchResults === 'function') {
+    capabilities.push({ id: 'foundation' });
+  }
+  return capabilities;
 }
 
 /**
@@ -277,7 +284,7 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
  *   backupGenerator?: { generate: Function, stream?: Function }|null,
  *   nativeGenerator?: { generate: Function, stream?: Function }|null,
  *   hermes?: { chat?: Function, stream?: Function }|null,
- *   chronicle?: { append: Function }|null,
+ *   foundation?: { submitObservation: Function, searchResults: Function }|null,
  *   hypothesisRuntime?: object|null,
  *   decisionStore?: { append: (record: object) => boolean },
  *   reasonIQ?: Function, // background Logos evaluator (legacy param name, kept for tests/callers)
@@ -298,7 +305,7 @@ async function runTurnCore({
   backupGenerator,
   nativeGenerator,
   hermes,
-  chronicle,
+  foundation,
   hypothesisRuntime,
   decisionStore,
   reasonIQ = evaluateLogos,
@@ -327,6 +334,18 @@ async function runTurnCore({
   // policy only (memoryPolicy.shouldRecall with no intent decision).
   const intentDecision = null;
 
+  // Archive-shaped asks ("wat staat er in foundation…") open a read over
+  // Foundation — the raw-record counterpart to Hindsight recall. The signal
+  // is pure and lexical (intentSignals.detectSignals), so no model runs
+  // before the one inference call.
+  const archiveSignals = (() => {
+    try { return detectSignals(userText); } catch (_) { return null; }
+  })();
+  const wantFoundation = Boolean(
+    foundation && typeof foundation.searchResults === 'function'
+    && archiveSignals && archiveSignals.recordedKnowledge
+  );
+
   // Gated recall — Hindsight only on explicit requests or content
   // triggers, never by default. Pattern recall rides the same gated
   // moment through the hypothesisRuntime adapter seam.
@@ -337,7 +356,7 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages] = await Promise.all([
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults] = await Promise.all([
     hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
@@ -350,6 +369,12 @@ async function runTurnCore({
       : Promise.resolve([]),
     hindsight
       ? searchRelevantKnowledgePages(hindsight, userText, { intentDecision })
+      : Promise.resolve([]),
+    wantFoundation
+      ? foundation.searchResults(userText).catch((err) => {
+        console.warn(`[gaia:foundation] recall failed (non-fatal): ${err.message}`);
+        return [];
+      })
       : Promise.resolve([]),
   ]);
   timing.end('memory_recall');
@@ -413,11 +438,12 @@ async function runTurnCore({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
+  const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
     patternUsage,
@@ -429,6 +455,7 @@ async function runTurnCore({
   if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
   if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
+  if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
@@ -493,7 +520,7 @@ async function runTurnCore({
   const startDeferredCognition = () => runDeferredCognition({
     hypothesisRuntime,
     hindsight,
-    chronicle,
+    foundation,
     reasonIQ,
     evidence,
     intentDecision,
@@ -532,7 +559,7 @@ async function runTurnCore({
  * never reject — every failure is caught and logged here.
  *
  * What runs here, in order:
- *   1. Chronicle observation registration (status `observation`).
+ *   1. Foundation observation registration (status `observation`, owned by Foundation).
  *   2. Memoryworthiness evaluation (cheap, deterministic).
  *   3. Hypothesis lifecycle preparation (manager state + best-effort
  *      recall) and background Logos reflection (depth heuristic gate; deep ⇒ one
@@ -550,7 +577,7 @@ async function runTurnCore({
 async function runDeferredCognition({
   hypothesisRuntime,
   hindsight,
-  chronicle,
+  foundation,
   reasonIQ = evaluateLogos,
   evidence,
   intentDecision,
@@ -564,18 +591,23 @@ async function runDeferredCognition({
   decisionLogger,
   timing,
 }) {
-  // 1. Chronicle: the completed turn as a source fact. Fire-and-forget
+  // 1. Foundation: the completed turn as a raw observation (Foundation owns
+  //    the status — everything enters as `observation`). Fire-and-forget
   //    inside the deferred phase; a missing client is silently skipped.
-  if (chronicle && typeof chronicle.append === 'function' && replyText) {
+  if (foundation && typeof foundation.submitObservation === 'function' && replyText) {
     try {
-      await chronicle.append({
-        status: 'observation',
-        conversationId,
-        userText,
-        assistantText: replyText,
+      await foundation.submitObservation({
+        content: userText ? `${userText}\n\n${replyText}` : replyText,
+        source: 'gaia',
+        turns: [
+          ...(userText ? [{ role: 'user', text: userText }] : []),
+          { role: 'assistant', text: replyText },
+        ],
+        tags: ['gaia-turn'],
+        occurredAt: new Date().toISOString(),
       });
     } catch (_) {
-      // The archive must never break the deferred phase.
+      // Foundation must never break the deferred phase.
     }
   }
 
@@ -815,7 +847,7 @@ async function performTurn({
   backupGenerator,
   nativeGenerator,
   hermes,
-  chronicle,
+  foundation,
   hypothesisRuntime,
   decisionStore,
   reasonIQ,
@@ -837,7 +869,7 @@ async function performTurn({
     backupGenerator,
     nativeGenerator,
     hermes,
-    chronicle,
+    foundation,
     hypothesisRuntime,
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
@@ -877,7 +909,7 @@ async function performStreamingTurn({
   backupGenerator,
   nativeGenerator,
   hermes,
-  chronicle,
+  foundation,
   attachments,
   traceId,
   reasonIQ,
@@ -917,7 +949,7 @@ async function performStreamingTurn({
       backupGenerator,
       nativeGenerator,
       hermes,
-      chronicle,
+      foundation,
       hypothesisRuntime,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
