@@ -163,6 +163,68 @@ Run the synthetic evaluation set: `npm run eval:logos` (see
 `eval/README.md` — it runs against a labeled non-LLM stub, not a real
 model; read that file before trusting the pass rate).
 
+## Kairos — episode synthesizer & realtime stream
+
+`src/kairos/` folds the raw observation stream (Foundation) into narrative
+**episodes** — a derived synthesis about a span of activity, not a raw record.
+Cognition stores them (`services/cognition`, table `kairos_episodes`); this
+service does the reasoning and owns the client surface.
+
+**Off by default.** Nothing runs until both are true:
+
+| What | Where | How |
+|------|-------|-----|
+| Enable the worker | `GAIA_KAIROS_ENABLED=true` | env, this service |
+| Pick a model | `/admin` → **Kairos** role card | or `KAIROS_MODEL_BASE_URL` + `KAIROS_MODEL_NAME` as env fallback |
+
+Until both exist, `createKairosRuntime` returns null and the worker simply does
+not start — the read/stream endpoints still serve whatever episodes already
+exist. With the worker on but no model, each run logs a calm
+`no model configured` and does nothing; it never affects a turn or crashes.
+`GAIA_KAIROS_INTERVAL_MS` (default `30000`) is how often it polls.
+
+### The pipeline
+
+```
+Foundation                     gaia-api (this service)              Cognition
+GET /api/memory/episodes  ─▶   clusterer (0 tokens) ─▶ synthesizer ─▶ kairos_episodes
+?since=&with_source=1          watermark worker ─▶ emitter          (interpretation + sources)
+                               ─▶ GET /kairos/episodes/stream (SSE)
+```
+
+- **`clusterer.js` — deterministic, zero LLM tokens.** Groups observations on a
+  >5 min inactivity gap, an app switch, or a 30 min cap. The trailing,
+  still-open run is **never** finalized on a poll: the next poll continues it,
+  so a stretch of work becomes one episode instead of many fragments. Cluster
+  ids are deterministic (`cluster_<firstObs>_<lastObs>`), so re-processing is an
+  idempotent upsert, not a duplicate.
+- **`synthesizer.js` — the satellite model.** One cheap call under the `kairos`
+  role (Logos's "younger sibling"). The model returns only `summary` and an app
+  name; the epistemic literals around it are set in code, the model cannot name
+  an app the cluster never saw, and the raw OCR/title text is framed as data
+  (never instructions) against prompt injection.
+- **`worker.js` — the watermark is burst-safe.** The cursor (`captured_at`,
+  system time — Foundation filters on it) advances only past the last **cluster
+  that actually completed**. A failed cluster stops the batch there, so its
+  observations are retried next run and never silently skipped. (Clustering
+  itself uses `observed_at`, event time.)
+- **`runtime.js`** wires the pieces and starts the poll loop; **`emitter.js`**
+  is the single in-process bus the SSE route subscribes to.
+
+### Client contract (`/kairos/*`, Bearer)
+
+| Method | Path | Body / Result |
+|--------|------|----------------|
+| GET | `/kairos/episodes` | `?page=&limit=&since=` → `{ data: [...], pagination }`, newest first |
+| GET | `/kairos/episodes/stream` | `text/event-stream`; one `event: episode` frame per synthesis (plus `:heartbeat` every 15s) |
+| GET | `/kairos/episodes/:id/evidence` | `{ episode, observations }` — walks `sources` back to the raw records |
+
+An episode is always `epistemic_status: 'interpretation'` and carries
+`sources` back to the raw observations (`['chronicle:<ingest_object-id>']`) —
+the audit path `:id/evidence` walks. `cognitionSync` mirrors each episode to
+Hindsight as `gaia:kairos_episode` (`gaia-kep-{id}-v{N}`). The worker writes only
+through `cognitionClient`; nothing here touches Foundation's raw rows.
+
 ## Run (dev)
 
 ```bash
