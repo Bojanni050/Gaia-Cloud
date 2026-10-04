@@ -17,7 +17,7 @@
 const { pool } = require('./db/pool');
 const { NotFoundError, InvalidTransitionError, ValidationError } = require('./errors');
 
-const KINDS = ['hypothesis', 'mental_model', 'relationship'];
+const KINDS = ['hypothesis', 'mental_model', 'relationship', 'open_question'];
 const VERWERP_BRONNEN = ['mens', 'consolidatie'];
 const PERSISTENCES = ['ephemeral', 'durable'];
 const METHODS = ['asserted', 'derived', 'tested'];
@@ -130,7 +130,8 @@ async function update(bankId, id, {
     throw new InvalidTransitionError(current.status, 'edited');
   }
 
-  const refines = current.status === 'testing' || current.status === 'corroborated';
+  const refines = (current.status === 'testing' || current.status === 'corroborated')
+    && statement !== undefined && statement !== null && String(statement) !== current.statement;
   const nextStatus = refines ? 'proposed' : current.status;
   const { rows } = await pool.query(
     `UPDATE hypotheses SET
@@ -225,6 +226,70 @@ async function supersede(bankId, id, { supersededById, reason } = {}) {
   return rows[0];
 }
 
+const RELATIONS = ['supports', 'weakens', 'contradicts', 'irrelevant'];
+
+function clampConfidence(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  // soul.md: never claim certainty — capped at 0.95, 4-decimal rounding.
+  return Math.round(Math.min(0.95, Math.max(0, n)) * 10000) / 10000;
+}
+
+/**
+ * Applies one evidence verdict to a derived statement — the lifecycle owner's
+ * own transition rule. Logos supplies the verdict and delta; Cognition stores
+ * the evidence and books the consequence:
+ *   supports     → evidence_for,     confidence + delta,  proposed → testing
+ *   weakens      → evidence_against, confidence − |delta|, proposed → testing
+ *   contradicts  → evidence_against, confidence − |delta|, confirmed/proposed → testing
+ *   irrelevant   → recorded as a no-op (updated_at only)
+ * Only a human reaches `confirmed` (Absolute Override); this never confirms.
+ */
+async function applyEvidence(bankId, id, { relation, evidenceId, confidenceDelta, rationale } = {}) {
+  if (!RELATIONS.includes(relation)) throw new ValidationError(`unknown relation: ${relation}`);
+  const current = await get(bankId, id);
+  if (current.status === 'rejected') {
+    throw new InvalidTransitionError('rejected', 'evidence');
+  }
+
+  const evidenceFor = [...(current.evidence_for || [])];
+  const evidenceAgainst = [...(current.evidence_against || [])];
+  let confidence = clampConfidence(current.confidence);
+  let status = current.status;
+  let testedAt = current.tested_at;
+
+  const add = (list, value) => { if (value && !list.includes(value)) list.push(value); };
+  if (relation === 'supports') {
+    add(evidenceFor, evidenceId);
+    confidence = clampConfidence(confidence + (Number(confidenceDelta) || 0));
+    if (status === 'proposed') status = 'testing';
+  } else if (relation === 'weakens') {
+    add(evidenceAgainst, evidenceId);
+    confidence = clampConfidence(confidence - Math.abs(Number(confidenceDelta) || 0));
+    if (status === 'proposed') status = 'testing';
+  } else if (relation === 'contradicts') {
+    add(evidenceAgainst, evidenceId);
+    confidence = clampConfidence(confidence - Math.abs(Number(confidenceDelta) || 0.15));
+    if (status === 'confirmed' || status === 'proposed') status = 'testing';
+  }
+
+  if (status === 'testing' && !testedAt) testedAt = new Date().toISOString();
+
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET
+       evidence_for = $3,
+       evidence_against = $4,
+       confidence = $5,
+       status = $6,
+       tested_at = $7,
+       updated_at = now()
+     WHERE bank_id = $1 AND id = $2
+     RETURNING ${COLUMNS}`,
+    [bankId, id, evidenceFor, evidenceAgainst, confidence, status, testedAt],
+  );
+  return rows[0];
+}
+
 async function softDelete(bankId, id) {
   const { rowCount } = await pool.query(
     `UPDATE hypotheses SET deleted_at = now(), updated_at = now()
@@ -235,6 +300,6 @@ async function softDelete(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, confirm, reject, supersede, softDelete,
-  VALID_TRANSITIONS, KINDS,
+  propose, list, get, update, markTesting, markCorroborated, confirm, reject, supersede, applyEvidence, softDelete,
+  VALID_TRANSITIONS, KINDS, RELATIONS,
 };

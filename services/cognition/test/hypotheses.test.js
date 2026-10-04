@@ -250,32 +250,46 @@ test('supersede() is idempotent for an already-superseded record', async () => {
   assert.equal(calls, 1, 'no UPDATE when already superseded');
 });
 
-test('update() from testing status resets to proposed (refine)', async () => {
+test('update() demotes testing -> proposed only when the statement changes (refine)', async () => {
   const fake = makeFakePool();
   let call = 0;
   fake.setImpl(async (sql) => {
     call += 1;
-    if (call === 1) return { rows: [row({ status: 'testing' })] };
+    if (call === 1) return { rows: [row({ status: 'testing', statement: 'old formulation' })] };
     assert.match(sql, /UPDATE hypotheses/);
-    return { rows: [row({ status: 'proposed', confidence: 0.4 })] };
+    return { rows: [row({ status: 'proposed', statement: 'a new formulation' })] };
   });
   pool.query = fake.pool.query;
 
-  const h = await hypotheses.update('gaia', 'h1', { confidence: 0.4 });
+  const h = await hypotheses.update('gaia', 'h1', { statement: 'a new formulation' });
   assert.equal(h.status, 'proposed');
 });
 
-test('update() from corroborated also resets to proposed (refine invalidates the soft-promotion)', async () => {
+test('update() keeps testing when only confidence changes (no silent demotion)', async () => {
   const fake = makeFakePool();
   let call = 0;
   fake.setImpl(async () => {
     call += 1;
-    if (call === 1) return { rows: [row({ status: 'corroborated' })] };
-    return { rows: [row({ status: 'proposed', confidence: 0.4 })] };
+    if (call === 1) return { rows: [row({ status: 'testing' })] };
+    return { rows: [row({ status: 'testing', confidence: 0.4 })] };
   });
   pool.query = fake.pool.query;
 
   const h = await hypotheses.update('gaia', 'h1', { confidence: 0.4 });
+  assert.equal(h.status, 'testing');
+});
+
+test('update() from corroborated also demotes to proposed on a statement change', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'corroborated', statement: 'old' })] };
+    return { rows: [row({ status: 'proposed', statement: 'new' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.update('gaia', 'h1', { statement: 'new' });
   assert.equal(h.status, 'proposed');
 });
 
@@ -287,6 +301,49 @@ test('update() refuses to edit a confirmed hypothesis', async () => {
   await assert.rejects(
     () => hypotheses.update('gaia', 'h1', { confidence: 0.9 }),
     (err) => err.name === 'InvalidTransitionError',
+  );
+});
+
+test('applyEvidence: supports records evidence_for, raises confidence and opens testing', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'proposed', confidence: 0.5, evidence_for: [] })] };
+    return { rows: [row({ status: 'testing', confidence: 0.6, evidence_for: ['m1'] })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.applyEvidence('gaia', 'h1', { relation: 'supports', evidenceId: 'm1', confidenceDelta: 0.1 });
+  assert.equal(h.status, 'testing');
+  assert.deepEqual(h.evidence_for, ['m1']);
+  assert.equal(fake.calls[1].params[4], 0.6); // confidence
+});
+
+test('applyEvidence: contradicts demotes a confirmed statement back to testing', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'confirmed', confidence: 0.9, evidence_against: [] })] };
+    return { rows: [row({ status: 'testing', confidence: 0.75, evidence_against: ['m9'] })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.applyEvidence('gaia', 'h1', { relation: 'contradicts', evidenceId: 'm9' });
+  assert.equal(h.status, 'testing');
+  assert.deepEqual(h.evidence_against, ['m9']);
+  assert.equal(fake.calls[1].params[4], 0.75); // 0.9 - default 0.15
+});
+
+test('applyEvidence: rejects an unknown relation and never confirms', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'testing' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.applyEvidence('gaia', 'h1', { relation: 'confirmed' }),
+    (err) => err.name === 'ValidationError',
   );
 });
 

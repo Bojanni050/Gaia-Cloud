@@ -57,6 +57,19 @@ router.post('/:id/test', asyncRoute(async (req, res) => {
   res.json(await hypotheses.markTesting(bankId, id));
 }));
 
+// Lifecycle owner: Logos supplies one evidence verdict; Cognition applies it
+// and books the transition (proposed -> testing, confirmed -> testing).
+router.post('/:id/evidence', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  const h = await hypotheses.applyEvidence(bankId, id, {
+    relation: req.body.relation,
+    evidenceId: req.body.evidence_id,
+    confidenceDelta: req.body.confidence_delta,
+    rationale: req.body.rationale,
+  });
+  res.json(h);
+}));
+
 // Machine soft-promotion (C >= 0.80) — never Confirmed.
 router.post('/:id/corroborate', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;

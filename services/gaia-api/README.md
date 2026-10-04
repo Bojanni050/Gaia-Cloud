@@ -25,6 +25,19 @@ Image OCR uses the unified provider's `vision` role (Main Provider, `/admin` rol
 
 `conversationId` (the client's own thread id — Desktop already generates one per thread) triggers a fire-and-forget save of the full transcript, including the reply, after a successful turn (`conversationStore.js`). This is deliberately **not** Hindsight: architecture.md is explicit that Hindsight stores reflections, never the raw transcript — chat history is the literal log a person reopens to keep reading, a different job with its own store. Omitting `conversationId` skips saving entirely; the reply is unaffected either way.
 
+## GaiaChat review surface (human Absolute Override)
+
+The derived statements Logos is still weighing live in `services/cognition`. The client moves one forward or lets it go — the only pathway to `confirmed`:
+
+| Method | Path                                  | Auth   | Body / Result |
+|--------|---------------------------------------|--------|----------------|
+| GET    | `/cognition/hypotheses`               | Bearer | `{ hypotheses: [...] }` (optional `?status=`) |
+| POST   | `/cognition/hypotheses/:id/test`      | Bearer | open active testing |
+| POST   | `/cognition/hypotheses/:id/reject`    | Bearer | `{ reason }` → `verwerp_bron: "mens"` |
+| POST   | `/cognition/hypotheses/:id/confirm`   | Bearer | `{ supersedes?: [ids], rationale? }` → sets `confirmed`, mirrors `gaia:confirmed_fact`, supersedes the named older statements (`verwerp_bron: "consolidatie"`) |
+
+`confirm` is the human **Absolute Override**: no automated step (model confidence, corroboration) ever reaches `confirmed`.
+
 ## Chat history
 
 A separate surface (`conversationStore.js`, `historyRoutes.js`) from the library — same one-directory-per-item layout (`meta.json` + `messages.json`, no shared index), but read/delete only; writing only ever happens as the side effect described above, never by direct client upload:

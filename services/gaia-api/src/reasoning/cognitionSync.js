@@ -48,6 +48,11 @@ function hypothesisMetadata(record, version) {
     gaia_hypothesis_confidence: String(record.confidence != null ? record.confidence : ''),
     gaia_hypothesis_kind: String(record.kind || 'hypothesis'),
     gaia_hypothesis_sources: JSON.stringify(Array.isArray(record.sources) ? record.sources : []),
+    // Carried for the Hindsight read adapters that reconstruct manager state.
+    gaia_hypothesis_evidence_for: JSON.stringify(record.evidence_for || record.evidenceFor || []),
+    gaia_hypothesis_evidence_against: JSON.stringify(record.evidence_against || record.evidenceAgainst || []),
+    gaia_hypothesis_persistence: String(record.persistence || 'ephemeral'),
+    gaia_hypothesis_method: String(record.method || 'asserted'),
     gaia_hypothesis_verwerp_bron: record.verwerp_bron != null ? String(record.verwerp_bron) : '',
     gaia_hypothesis_updated_by: UPDATED_BY,
   };
@@ -60,12 +65,21 @@ function patternMetadata(record, version) {
     gaia_pattern_status: String(record.status || ''),
     gaia_pattern_confidence: String(record.confidence != null ? record.confidence : ''),
     gaia_pattern_sources: JSON.stringify(Array.isArray(record.sources) ? record.sources : []),
+    gaia_pattern_hypotheses: JSON.stringify(record.hypothesis_ids || record.hypothesisIds || []),
     gaia_pattern_updated_by: UPDATED_BY,
   };
 }
 
+const KIND_TAGS = Object.freeze({
+  hypothesis: HYPOTHESIS_TAG,
+  mental_model: 'gaia:mental_model',
+  relationship: 'gaia:relationship',
+  open_question: 'gaia:open_question',
+});
+
 function tagsForHypothesis(record) {
-  return record.status === 'confirmed' ? [HYPOTHESIS_TAG, CONFIRMED_TAG] : [HYPOTHESIS_TAG];
+  const base = KIND_TAGS[record.kind] || HYPOTHESIS_TAG;
+  return record.status === 'confirmed' ? [base, CONFIRMED_TAG] : [base];
 }
 
 /**

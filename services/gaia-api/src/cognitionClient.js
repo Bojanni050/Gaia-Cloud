@@ -75,6 +75,12 @@ function createCognitionClient({
   const proposeHypothesis = (record) => request('POST', '/hypotheses', record);
   const updateHypothesis = (id, patch) => request('PATCH', `/hypotheses/${encodeURIComponent(id)}`, patch);
   const markTesting = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/test`);
+  const applyEvidence = (id, { relation, evidenceId, confidenceDelta, rationale } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/evidence`, {
+    relation,
+    ...(evidenceId !== undefined ? { evidence_id: evidenceId } : {}),
+    ...(confidenceDelta !== undefined ? { confidence_delta: confidenceDelta } : {}),
+    ...(rationale !== undefined ? { rationale } : {}),
+  });
   const markCorroborated = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/corroborate`);
   const confirmHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/confirm`);
   const rejectHypothesis = (id, { reason, verwerpBron } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/reject`, {
@@ -99,6 +105,7 @@ function createCognitionClient({
     proposeHypothesis,
     updateHypothesis,
     markTesting,
+    applyEvidence,
     markCorroborated,
     confirmHypothesis,
     rejectHypothesis,

@@ -34,7 +34,11 @@ const { createHindsightClient } = require('./hindsightClient');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
 const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternAdapter');
-const { createHindsightCognitionAdapter } = require('./reasoning/hindsightCognitionAdapter');
+const { createCognitionClient } = require('./cognitionClient');
+const { createCognitionSync } = require('./reasoning/cognitionSync');
+const { createCognitionSink } = require('./reasoning/cognitionSink');
+const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
+const { createCognitionRouter } = require('./cognitionRoutes');
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
@@ -73,21 +77,35 @@ function createApp(env = process.env) {
     bankId: env.HINDSIGHT_BANK_ID || 'bojan',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });
-  // Hypothesis Persistence 0.1 — Logos's structured hypotheses persist
-  // as retained world-facts (tag gaia:hypothesis) through
-  // HypothesisManager's policy into Hindsight via the thin adapter. Boot
-  // loads the currently-active hypotheses once, lazily, best-effort; every
+  // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
+  // mirror — created unconditionally so the GaiaChat review surface works even
+  // when per-turn hypothesis persistence is disabled.
+  const cognition = createCognitionClient({
+    baseUrl: env.COGNITION_URL || undefined,
+    bankId: env.COGNITION_BANK_ID || undefined,
+  });
+  const cognitionSync = createCognitionSync({ hindsight, cognition });
+  // Foundation (raw-observation source of truth): Gaia reads it for
+  // archive-shaped asks and carries completed turns / observations back into
+  // its stream. Undefined when FOUNDATION_URL is unset — every caller falls
+  // through silently.
+  const foundation = createFoundationFromEnv(env);
+  // Hypothesis Persistence 0.1 — Logos's structured hypotheses persist to
+  // Cognition (the lifecycle owner) and mirror into Hindsight via cognitionSync.
+  // Boot loads the currently-active hypotheses once, lazily, best-effort; every
   // failure is logged and never blocks a turn. Disable with
   // GAIA_HYPOTHESIS_PERSISTENCE=false.
   let hypothesisRuntime = null;
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
+    const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
+
+    // Read adapters (Hindsight) — recall/load only; their sinks are retired.
     const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsight });
-    const hypothesisManager = createHypothesisManager({ sink: hypothesisAdapter.sink });
-    // Logos pattern formation over DURABLE hypotheses, persisted
-    // via the same principles (gaia:pattern world-facts). Gated: only runs
-    // when a durable hypothesis actually changed during a turn.
+    const hypothesisManager = createHypothesisManager({ sink: cognitionSink.hypothesis });
+    // Logos pattern formation over DURABLE hypotheses — persisted to Cognition
+    // (the read side still reconstructs patterns from Hindsight).
     const patternAdapter = createHindsightPatternAdapter({ client: hindsight });
-    const patternManager = createPatternManager({ sink: patternAdapter.sink });
+    const patternManager = createPatternManager({ sink: cognitionSink.pattern });
     let loadedPromise = null;
     hypothesisRuntime = {
       manager: hypothesisManager,
@@ -97,10 +115,10 @@ function createApp(env = process.env) {
       // IntentIQ signals and owns whatever happens next).
       recallPatterns: (query) => patternAdapter.recallPatterns(query),
       patternManager,
-      // Cognitive Analysis Model v1.0 — durable observations/open questions
-      // persist as ordinary Hindsight world facts (no second store; see
-      // reasoning/hindsightCognitionAdapter.js).
-      cognition: createHindsightCognitionAdapter({ client: hindsight }),
+      // Cognitive Analysis Model v1.0 — observations go to Foundation's
+      // ingest gateway; open questions and relationships go to Cognition
+      // (kinds open_question / relationship), mirrored to Hindsight.
+      cognition: createCognitionKnowledgeAdapter({ cognition, sync: cognitionSync, foundation }),
       ensureLoaded: () => {
         if (!loadedPromise) {
           loadedPromise = Promise.all([
@@ -232,12 +250,6 @@ function createApp(env = process.env) {
       : undefined;
   }
 
-  // Foundation (raw-observation source of truth): Gaia reads it for
-  // archive-shaped asks and carries completed turns back into its observation
-  // stream, fire-and-forget after delivery. Undefined when FOUNDATION_URL is
-  // unset — every caller falls through silently.
-  const foundation = createFoundationFromEnv(env);
-
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
     // The resolved config travels with the client so POST /speech can log
@@ -299,6 +311,10 @@ function createApp(env = process.env) {
 
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
   app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
+
+  // GaiaChat review surface — the human Absolute Override (list/test/reject/
+  // confirm) with active supersession. Part of the client contract.
+  app.use('/cognition', createCognitionRouter({ cognition, sync: cognitionSync, auth }));
 
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
