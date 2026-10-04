@@ -25,11 +25,6 @@
  *   GET  /admin/api/tts/voices        -> list saved voices from the TTS provider (Mistral only)
  *   GET  /admin/api/tts/log           -> recent speech-synthesis attempts, newest first
  *
- *   IntentIQ (semantic classification model — legacy seam):
- *   GET  /admin/api/intentiq/config   -> masked current config + env fallback
- *   PUT  /admin/api/intentiq/config   -> { provider?, baseUrl?, model?, apiKey? }
- *   GET  /admin/api/intentiq/models   -> fetch models from configured provider
- *
  *   Logos:
  *   GET  /admin/api/logos/decisions   -> durable Logos decision log
  */
@@ -38,7 +33,6 @@ const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
-const { readIntentModelConfig } = require('./logos/intentModelClient');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision'];
 
@@ -46,7 +40,6 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  * @param {{
  *   providerStore?: ReturnType<import('./providerStore').createProviderStore>,
  *   decisionStore?: ReturnType<import('./logos/decisionStore').createDecisionStore>,
- *   intentModelStore?: ReturnType<import('./logos/intentModelStore').createIntentModelStore>,
  *   auth: import('express').RequestHandler,
  *   createOpenRouterClientFn?: typeof createOpenRouterClient,
  *   retrieveModelsFn?: typeof retrieveModels,
@@ -56,7 +49,7 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision'];
  * }} deps
  */
 function createAdminRouter({
-  providerStore, decisionStore, intentModelStore, auth, ttsLog,
+  providerStore, decisionStore, auth, ttsLog,
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
@@ -90,99 +83,10 @@ function createAdminRouter({
     }
   });
 
-  // Resolves the provider/baseUrl/apiKey actually usable for a live models
-  // fetch: the role's own saved config, or — when useMainProvider is set —
-  // the shared Provider config's (providerStore) credentials/catalog. Used
-  // by /api/intentiq/models.
-  function resolveEffectiveProviderConfig(config) {
-    if (config && config.useMainProvider) {
-      const main = providerStore ? providerStore.getConfig() : null;
-      if (main && main.apiKey) {
-        return { provider: main.provider || 'openrouter', baseUrl: main.baseUrl || '', apiKey: main.apiKey, catalog: main.catalog || null };
-      }
-      return null;
-    }
-    if (config && config.apiKey) {
-      return { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey, catalog: null };
-    }
-    return null;
-  }
-
   function mainProviderConfigured() {
     const main = providerStore ? providerStore.getConfig() : null;
     return Boolean(main && main.apiKey);
   }
-
-  // --- IntentIQ routes (legacy seam: save provider/key,
-  // fetch the live model catalog, pick one) ---
-
-  router.get('/api/intentiq/config', auth, (req, res) => {
-    const envConfig = readIntentModelConfig();
-    const masked = intentModelStore
-      ? intentModelStore.getMaskedConfig()
-      : { provider: null, baseUrl: null, model: null, hasApiKey: false, maskedApiKey: null, useMainProvider: false, updatedAt: null };
-    res.json({
-      ...masked,
-      envModel: envConfig.model || null,
-      envConfigured: Boolean(envConfig.baseUrl),
-      mainProviderConfigured: mainProviderConfigured(),
-    });
-  });
-
-  router.put('/api/intentiq/config', auth, (req, res) => {
-    if (!intentModelStore) {
-      return res.status(400).json({ error: 'intent model store not available' });
-    }
-    const body = req.body || {};
-    const allowed = {};
-    if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
-    if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
-    if (typeof body.model === 'string') allowed.model = body.model.trim();
-    if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
-    if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
-
-    if (Object.keys(allowed).length === 0) {
-      return res.status(400).json({ error: 'no valid fields supplied' });
-    }
-
-    intentModelStore.saveConfig(allowed);
-    const envConfig = readIntentModelConfig();
-    res.json({
-      ...intentModelStore.getMaskedConfig(),
-      envModel: envConfig.model || null,
-      envConfigured: Boolean(envConfig.baseUrl),
-      mainProviderConfigured: mainProviderConfigured(),
-    });
-  });
-
-  router.get('/api/intentiq/models', auth, async (req, res) => {
-    const config = intentModelStore ? intentModelStore.getConfig() : null;
-    const effective = resolveEffectiveProviderConfig(config);
-    if (!effective) {
-      return res.status(400).json({ error: config && config.useMainProvider ? 'configure the main provider first' : 'save an API key first' });
-    }
-    if (effective.catalog) {
-      return res.json({ models: effective.catalog });
-    }
-    if (!effective.baseUrl) {
-      return res.status(400).json({ error: 'set a base URL for the provider' });
-    }
-
-    try {
-      const models = await retrieveModelsFn({
-        provider: effective.provider,
-        baseUrl: effective.baseUrl,
-        apiKey: effective.apiKey,
-      });
-      res.json({ models });
-    } catch (err) {
-      const message = err && err.message ? err.message : 'unknown error';
-      if (message.includes('authentication failed')) {
-        return res.status(401).json({ error: 'authentication failed — check your API key' });
-      }
-      res.status(502).json({ error: 'could not fetch models from provider' });
-    }
-  });
 
   router.get('/api/logos/decisions', auth, (req, res) => {
     if (!decisionStore) {

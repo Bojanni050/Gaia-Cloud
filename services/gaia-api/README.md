@@ -107,13 +107,13 @@ calls Hermes, chooses a model/provider, executes a capability, or writes
 memory — see `test/intentIQ.test.js`'s boundary tests, which assert this
 directly rather than just documenting it.
 
-Wired into `performStreamingTurn` (turn.js) as an **observe-and-log seam
-only** — every streaming turn is classified and the decision is dev-logged
-(`src/logos/intentLog.js`), but nothing about document selection, recall,
-or the Hermes call changes based on it yet. This matches how Logos's
-earlier client-side intentIQ/reasonIQ were introduced (evolution.md,
-Milestone 7b) — establish the seam, observe it, wire it into a real
-decision later once there's a Gaia-side decision layer to consume it.
+As of V3 it is **offline/eval-only** — the live turn runs no IntentIQ
+pre-flight (`turn.js` sets `intentDecision = null`; language understanding
+happens inside the single inference call, and Logos reflects after
+delivery). The classifier, its heuristic telemetry (`src/logos/intentLog.js`)
+and the evaluation harness remain for measured offline work; the former
+admin config surface (`/admin/api/intentiq/*`, `intentModelStore`) has been
+removed.
 
 Run the synthetic evaluation set: `npm run eval:intent` (see `eval/README.md`).
 

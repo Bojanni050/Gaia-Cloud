@@ -27,7 +27,7 @@
     --gold: #cba36a;     /* Generation */
     --rust: #c2794f;     /* Reasoning */
     --sage: #9cae7c;     /* Vision */
-    --clay: #c08a85;     /* Classification */
+    --clay: #c08a85;     /* Video capability tag */
     --bronze: #a9765a;   /* Voice */
     --ok: #7fbf8f;
     --err: #d98a8a;
@@ -86,7 +86,6 @@
   .role-card.amber   { border-color: color-mix(in srgb, var(--gold) 40%, transparent);   background: color-mix(in srgb, var(--gold) 6%, transparent); }
   .role-card.cyan    { border-color: color-mix(in srgb, var(--rust) 40%, transparent);   background: color-mix(in srgb, var(--rust) 6%, transparent); }
   .role-card.violet  { border-color: color-mix(in srgb, var(--sage) 40%, transparent);   background: color-mix(in srgb, var(--sage) 6%, transparent); }
-  .role-card.blue    { border-color: color-mix(in srgb, var(--clay) 40%, transparent);   background: color-mix(in srgb, var(--clay) 6%, transparent); }
   .role-card.rose    { border-color: color-mix(in srgb, var(--bronze) 40%, transparent); background: color-mix(in srgb, var(--bronze) 6%, transparent); }
 
   .role-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.1rem; }
@@ -95,7 +94,6 @@
   .role-icon.amber  { background: color-mix(in srgb, var(--gold) 18%, transparent);   color: var(--gold); }
   .role-icon.cyan   { background: color-mix(in srgb, var(--rust) 18%, transparent);   color: var(--rust); }
   .role-icon.violet { background: color-mix(in srgb, var(--sage) 18%, transparent);   color: var(--sage); }
-  .role-icon.blue   { background: color-mix(in srgb, var(--clay) 18%, transparent);   color: var(--clay); }
   .role-icon.rose   { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
 
   .role-status { text-align: right; }
@@ -227,7 +225,6 @@
   .decision-row { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 0.9rem; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
   .decision-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
   .decision-badge { font-size: 0.65rem; font-weight: 700; padding: 0.12rem 0.5rem; border-radius: 999px; letter-spacing: 0.02em; }
-  .decision-badge.intentiq { background: color-mix(in srgb, var(--clay) 18%, transparent); color: var(--clay); }
   .decision-badge.reasoniq { background: color-mix(in srgb, var(--rust) 18%, transparent); color: var(--rust); }
   .decision-badge.llm-call { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
   .decision-time { color: var(--text-faint); font-size: 0.72rem; }
@@ -246,7 +243,7 @@
 </head>
 <body>
 <main>
-  <h1>AI Configuration <small>v2.0</small></h1>
+  <h1>AI Configuration <small>v3.0</small></h1>
   <p class="lede">Choose which AI model handles each task. Operator-only — never surfaced to clients.</p>
 
   <div class="panel">
@@ -266,7 +263,7 @@
   <!-- Main Provider — shared credentials the other cards can reuse -->
   <div class="panel">
     <h2>Main Provider</h2>
-    <p class="section-sub">Configure one provider here, then pick "Use Main Provider" in Reasoning, Classification or Voice below instead of re-entering the same base URL and API key on every card.</p>
+    <p class="section-sub">Configure one provider here, then pick "Use Main Provider" in Reasoning or Voice below instead of re-entering the same base URL and API key on every card.</p>
 
     <label for="providerSelect">Provider</label>
     <select id="providerSelect">
@@ -310,7 +307,7 @@
         </div>
       </div>
       <p class="role-title">Generation</p>
-      <p class="role-desc">Gaia's native voice — the model that writes her replies when a turn doesn't route through Hermes. Always uses the Main Provider above.</p>
+      <p class="role-desc">Gaia's native voice — the model that writes her replies in the one inference call every live turn makes. Always uses the Main Provider above.</p>
 
       <label>Model</label>
       <div id="genDropdown"></div>
@@ -332,7 +329,7 @@
         </div>
       </div>
       <p class="role-title">Reasoning</p>
-      <p class="role-desc">Logos background reflection — weighs evidence and hypotheses after a reply is delivered. Always uses the Main Provider above.</p>
+      <p class="role-desc">Logos — Gaia's unified cognitive layer. Interprets what the turn is trying to achieve and weighs evidence and hypotheses after a reply is delivered. Always uses the Main Provider above.</p>
 
       <label>Model for Logos reflection</label>
       <div id="riqDropdown"></div>
@@ -364,59 +361,6 @@
         <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="riqVisionModelStatus"></div>
-    </section>
-
-    <!-- IntentIQ — Classification -->
-    <section class="role-card blue">
-      <div class="role-card-head">
-        <div class="role-icon blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
-        </div>
-        <div class="role-status">
-          <span class="role-status-badge inactive" id="iiqBadge">Inactive</span>
-        </div>
-      </div>
-      <p class="role-title">Classification</p>
-      <p class="role-desc">IntentIQ — classifies what the user is asking for before Gaia responds. Leave unset to run heuristic-only classification.</p>
-
-      <label for="iiqProviderSelect">Provider</label>
-      <select id="iiqProviderSelect">
-        <option value="">— select provider —</option>
-        <option value="__main__">— Use Main Provider —</option>
-        <option value="openrouter">OpenRouter</option>
-        <option value="edenai">EdenAI</option>
-        <option value="openai">OpenAI</option>
-        <option value="mistral">Mistral</option>
-        <option value="alibaba">Alibaba Cloud (Model Studio)</option>
-        <option value="nvidia">NVIDIA (NIM / API catalog)</option>
-        <option value="litellm">LiteLLM</option>
-        <option value="custom">Custom (OpenAI-compatible)</option>
-      </select>
-
-      <div id="iiqCredentialFields">
-        <label for="iiqBaseUrl">Base URL</label>
-        <input id="iiqBaseUrl" type="url" placeholder="https://openrouter.ai/api/v1" autocomplete="off">
-
-        <label for="iiqApiKey">API key</label>
-        <input id="iiqApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
-        <p class="hint" id="iiqKeyHint">No key saved yet.</p>
-      </div>
-      <p class="hint" id="iiqMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
-
-      <div class="role-actions-row" style="justify-content:flex-start;">
-        <button id="iiqSaveConfigBtn">Save config</button>
-        <button id="iiqFetchModelsBtn" class="secondary">Fetch models</button>
-      </div>
-      <div class="status" id="iiqConfigStatus"></div>
-
-      <label>Model for IntentIQ</label>
-      <div id="iiqDropdown"></div>
-
-      <div class="role-actions-row push-bottom">
-        <button id="iiqSaveModelBtn" disabled>Save selection</button>
-      </div>
-      <div class="status" id="iiqModelStatus"></div>
-      <p class="hint" id="iiqEnvHint"></p>
     </section>
 
     <!-- TTS (independent) -->
@@ -483,13 +427,12 @@
   <!-- Decision Log -->
   <div class="panel">
     <h2>Logos — decision log</h2>
-    <p class="section-sub">Durable copy of every Logos reflection, IntentIQ decision, and LLM call.</p>
+    <p class="section-sub">Durable copy of every Logos reflection and LLM call.</p>
     <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
       <div style="flex:1; min-width:130px;">
         <label for="decisionsKind">Kind</label>
         <select id="decisionsKind">
           <option value="">All</option>
-          <option value="intentiq.decision">IntentIQ</option>
           <option value="logos.result">Logos reflection</option>
           <option value="logos.gate">Logos gates</option>
           <option value="llm.call">LLM calls</option>
@@ -1213,128 +1156,6 @@
   });
 
   // ============================================================
-  // IntentIQ — Classification (provider-agnostic, own key)
-  // ============================================================
-  const iiqProviderEl = $('iiqProviderSelect'), iiqBaseUrlEl = $('iiqBaseUrl'), iiqApiKeyEl = $('iiqApiKey');
-  wireBaseUrlAutofill(iiqProviderEl, iiqBaseUrlEl);
-  wireMainProviderToggle(iiqProviderEl, $('iiqCredentialFields'), $('iiqMainHint'));
-  const iiqKeyHintEl = $('iiqKeyHint'), iiqConfigStatusEl = $('iiqConfigStatus'), iiqEnvHintEl = $('iiqEnvHint');
-  const iiqSaveConfigBtn = $('iiqSaveConfigBtn'), iiqFetchModelsBtn = $('iiqFetchModelsBtn');
-  const iiqModelStatusEl = $('iiqModelStatus'), iiqSaveModelBtn = $('iiqSaveModelBtn'), iiqBadgeEl = $('iiqBadge');
-
-  let iiqModels = [];
-  let iiqCurrentModel = null;
-
-  const iiqDropdown = createModelDropdown($('iiqDropdown'), {
-    placeholder: '— save config and fetch models —',
-    onChange: () => { iiqSaveModelBtn.disabled = !iiqDropdown.getValue(); },
-  });
-
-  function renderIntentIqEnvHint(cfg) {
-    iiqEnvHintEl.textContent = cfg.envConfigured
-      ? 'GAIA_INTENT_* env vars are also set (env model: ' + (cfg.envModel || '—') + ') — used only when no config is saved here.'
-      : 'No GAIA_INTENT_* env vars set — IntentIQ runs heuristic-only until a config is saved here.';
-  }
-
-  async function loadIntentIqConfig() {
-    try {
-      const res = await fetch('/admin/api/intentiq/config', { headers: authHeaders() });
-      if (!res.ok) return;
-      const cfg = await res.json();
-      iiqCurrentModel = cfg.model;
-      iiqProviderEl.value = cfg.useMainProvider ? USE_MAIN_PROVIDER : (cfg.provider || '');
-      iiqProviderEl.dispatchEvent(new Event('change'));
-      if (cfg.baseUrl) iiqBaseUrlEl.value = cfg.baseUrl;
-      iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
-      iiqDropdown.setProviderId(cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider);
-      iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
-        setStatus(iiqConfigStatusEl, 'Main Provider has no API key saved yet.', false);
-      }
-      if (cfg.model) {
-        iiqDropdown.setModels([{ id: cfg.model, name: cfg.model }]);
-        iiqDropdown.setValue(cfg.model);
-      }
-      setBadge(iiqBadgeEl, Boolean(iiqCurrentModel));
-      renderIntentIqEnvHint(cfg);
-    } catch (_) { /* ignore */ }
-  }
-
-  iiqSaveConfigBtn.addEventListener('click', async () => {
-    const provider = iiqProviderEl.value;
-    if (!provider) { setStatus(iiqConfigStatusEl, 'Select a provider first.', false); return; }
-    const useMainProvider = provider === USE_MAIN_PROVIDER;
-    const body = { useMainProvider };
-    if (!useMainProvider) {
-      const baseUrl = iiqBaseUrlEl.value.trim();
-      if (!baseUrl) { setStatus(iiqConfigStatusEl, 'Enter a base URL.', false); return; }
-      body.provider = provider;
-      body.baseUrl = baseUrl;
-      if (iiqApiKeyEl.value.trim()) body.apiKey = iiqApiKeyEl.value.trim();
-    }
-    iiqSaveConfigBtn.disabled = true;
-    try {
-      const res = await fetch('/admin/api/intentiq/config', {
-        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const cfg = await res.json();
-      iiqKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
-      iiqDropdown.setProviderLabel(cfg.useMainProvider ? 'Main Provider' : providerLabelFor(cfg.provider));
-      iiqDropdown.setProviderId(cfg.useMainProvider ? ((currentConfig && currentConfig.provider) || '') : cfg.provider);
-      iiqApiKeyEl.value = '';
-      renderIntentIqEnvHint(cfg);
-      setStatus(iiqConfigStatusEl, cfg.useMainProvider && !cfg.mainProviderConfigured ? 'Config saved — but the Main Provider has no API key yet.' : 'Config saved.', true);
-    } catch (err) {
-      setStatus(iiqConfigStatusEl, 'Could not save config.', false);
-    } finally {
-      iiqSaveConfigBtn.disabled = false;
-    }
-  });
-
-  iiqFetchModelsBtn.addEventListener('click', async () => {
-    iiqFetchModelsBtn.disabled = true;
-    setStatus(iiqModelStatusEl, 'Fetching…', true);
-    try {
-      const res = await fetch('/admin/api/intentiq/models', { headers: authHeaders() });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'request failed');
-      }
-      const body = await res.json();
-      iiqModels = body.models || [];
-      iiqDropdown.setModels(iiqModels);
-      if (iiqCurrentModel) iiqDropdown.setValue(iiqCurrentModel);
-      iiqSaveModelBtn.disabled = iiqModels.length === 0;
-      setStatus(iiqModelStatusEl, iiqModels.length + ' models available.', true);
-    } catch (err) {
-      setStatus(iiqModelStatusEl, 'Could not fetch models: ' + err.message, false);
-    } finally {
-      iiqFetchModelsBtn.disabled = false;
-    }
-  });
-
-  iiqSaveModelBtn.addEventListener('click', async () => {
-    const model = iiqDropdown.getValue();
-    if (!model) return;
-    iiqSaveModelBtn.disabled = true;
-    try {
-      const res = await fetch('/admin/api/intentiq/config', {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ model }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      iiqCurrentModel = model;
-      setBadge(iiqBadgeEl, true);
-      setStatus(iiqModelStatusEl, 'IntentIQ will use ' + iiqCurrentModel + '.', true);
-    } catch (err) {
-      setStatus(iiqModelStatusEl, 'Could not save the selection.', false);
-    } finally {
-      iiqSaveModelBtn.disabled = false;
-    }
-  });
-
-  // ============================================================
   // Logos decision log
   // ============================================================
   const decisionsKindEl = $('decisionsKind'), decisionsLimitEl = $('decisionsLimit');
@@ -1387,14 +1208,6 @@
   }
 
   function summarizeDecision(d) {
-    if (d.kind === 'intentiq.decision') {
-      return [
-        'intent: ' + (d.intent || '—'),
-        'status: ' + (d.status || '—'),
-        typeof d.confidence === 'number' ? 'confidence: ' + d.confidence.toFixed(2) : null,
-        d.needsClarification ? 'needs clarification' : null,
-      ].filter(Boolean).join(' · ');
-    }
     if (d.kind === 'logos.result' || d.kind === 'reasoniq.result') {
       return [
         'depth: ' + (d.reasoningDepth || '—'),
@@ -1419,7 +1232,6 @@
   }
 
   function systemLabel(system) {
-    if (system === 'intentiq') return 'IntentIQ';
     if (system === 'logos' || system === 'reasoniq') return 'Logos';
     if (system === 'native') return 'Gaia (native)';
     return system || '?';
@@ -1463,12 +1275,10 @@
       return;
     }
     decisionsListEl.innerHTML = decisions.map((d) => {
-      const badgeClass = d.kind === 'intentiq.decision' ? 'intentiq'
-        : (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'reasoniq'
+      const badgeClass = (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'reasoniq'
         : d.kind === 'llm.call' ? 'llm-call'
         : '';
-      const badgeLabel = d.kind === 'intentiq.decision' ? 'IntentIQ'
-        : (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'Logos'
+      const badgeLabel = (d.kind === 'logos.result' || d.kind === 'reasoniq.result') ? 'Logos'
         : d.kind === 'llm.call' ? 'LLM call · ' + systemLabel(d.system)
         : (d.kind || '?');
       return (
@@ -1512,8 +1322,8 @@
   exportDecisionsCsvBtn.addEventListener('click', () => exportDecisions('csv'));
 
   // --- Init ---
-  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadIntentIqConfig(); loadDecisions(); }
-  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadIntentIqConfig(); loadDecisions(); });
+  if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadDecisions(); }
+  tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadDecisions(); });
 })();
 </script>
 </body>

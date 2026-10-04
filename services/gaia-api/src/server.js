@@ -55,7 +55,6 @@ const { createConversationStore } = require('./conversationStore');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { createTtsLog } = require('./speech/ttsLog');
-const { createIntentModelStore } = require('./logos/intentModelStore');
 const { getUserIdentity } = require('./identity');
 const { createVersionRouter } = require('./versionRoutes');
 
@@ -196,17 +195,13 @@ function createApp(env = process.env) {
   const providerStore = createProviderStore(
     env.GAIA_PROVIDER_CONFIG_PATH !== undefined ? { storePath: env.GAIA_PROVIDER_CONFIG_PATH } : {}
   );
-  const intentModelStore = createIntentModelStore(
-    env.INTENTIQ_CONFIG_PATH !== undefined ? { storePath: env.INTENTIQ_CONFIG_PATH } : {}
-  );
   // Voice activity tail for the admin surface (GET /admin/api/tts/log) —
   // in-memory by design: a restart clears it, same as a fresh pair of
   // ears on the next shift.
   const ttsLog = createTtsLog();
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, intentModelStore, auth, ttsLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog }));
 
-  // v3.0: no live IntentIQ — Logos reflects after delivery. The intent
-  // model store stays for the admin surface only.
+  // v3.0: no live IntentIQ pre-flight — Logos reflects after delivery.
 
   // Provider store role overrides — when a role has a model selected via
   // the admin surface, it takes precedence over env vars. This is
