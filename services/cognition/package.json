@@ -1,0 +1,17 @@
+{
+  "name": "gaia-cognition",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gaia's derived-knowledge store — hypotheses, patterns and candidate models with a storage-only lifecycle (proposed → testing → corroborated → confirmed/rejected).",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.1"
+  }
+}

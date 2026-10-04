@@ -1,0 +1,29 @@
+services:
+  gaia-cognition-db:
+    image: postgres:16-alpine
+    container_name: gaia-cognition-db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: gaia_cognition
+      POSTGRES_DB: gaia_cognition
+    volumes:
+      - ./data:/var/lib/postgresql/data
+    networks:
+      - gaia_cognition_default
+
+  gaia-cognition:
+    build: .
+    container_name: gaia-cognition
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - gaia-cognition-db
+    ports:
+      - "${COGNITION_HOST:-100.65.0.15}:8890:8890"
+    networks:
+      - gaia_cognition_default
+
+networks:
+  gaia_cognition_default:
+    driver: bridge
