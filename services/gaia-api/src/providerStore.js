@@ -54,6 +54,7 @@ const DEFAULT_ROLES = Object.freeze({
   generation: { mode: 'catalog', model: '' },
   reasoning: { mode: 'catalog', model: '' },
   vision: { mode: 'catalog', model: '' },
+  kairos: { mode: 'catalog', model: '' },
 });
 
 const DEFAULT_TTS = Object.freeze({

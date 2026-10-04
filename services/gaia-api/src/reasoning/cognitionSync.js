@@ -25,8 +25,10 @@
 const HYPOTHESIS_TAG = 'gaia:hypothesis';
 const CONFIRMED_TAG = 'gaia:confirmed_fact';
 const PATTERN_TAG = 'gaia:pattern';
+const KAIROS_TAG = 'gaia:kairos_episode';
 const HYPOTHESIS_CONTEXT = 'gaia hypothesis';
 const PATTERN_CONTEXT = 'gaia pattern';
+const KAIROS_CONTEXT = 'gaia kairos episode';
 const LEGACY_FACT_TAG = 'foundation:fact';
 const UPDATED_BY = 'gaia-logos';
 
@@ -75,6 +77,26 @@ function patternMetadata(record, version) {
   };
 }
 
+/**
+ * A Kairos episode is a DERIVED narrative synthesis. It always carries
+ * epistemic_status 'interpretation', and its `sources` point back to the raw
+ * observations — so recall surfaces it as an interpretation with provenance,
+ * never as a fact.
+ */
+function kairosMetadata(record, version) {
+  return {
+    gaia_kairos_episode_id: String(record.id),
+    gaia_kairos_episode_version: String(version),
+    gaia_kairos_episode_start: record.start_time != null ? String(record.start_time) : '',
+    gaia_kairos_episode_end: record.end_time != null ? String(record.end_time) : '',
+    gaia_kairos_episode_primary_app: String(record.primary_app || ''),
+    gaia_kairos_episode_apps: JSON.stringify(Array.isArray(record.involved_apps) ? record.involved_apps : []),
+    gaia_kairos_episode_status: String(record.epistemic_status || 'interpretation'),
+    gaia_kairos_episode_sources: JSON.stringify(Array.isArray(record.sources) ? record.sources : []),
+    gaia_kairos_episode_updated_by: UPDATED_BY,
+  };
+}
+
 const KIND_TAGS = Object.freeze({
   hypothesis: HYPOTHESIS_TAG,
   mental_model: 'gaia:mental_model',
@@ -95,6 +117,7 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
 
   const activeHyps = new Map(); // id -> { version, factId, status }
   const activePatterns = new Map();
+  const activeKairos = new Map();
 
   async function retainAndSupersede({ tracked, id, documentId, content, context, tags, metadata }) {
     await hindsight.retainSync({ content, context, tags, metadata, documentId });
@@ -143,6 +166,29 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
       metadata: patternMetadata(record, version),
     });
     activePatterns.set(String(record.id), { version, factId, status: record.status || null });
+    return { documentId, factId, version };
+  }
+
+  /**
+   * Mirror one Kairos episode. Episodes are content-immutable once written
+   * (same id, same span, same summary), so re-syncing the same episode from a
+   * retry resolves to the same version rather than minting a new one.
+   */
+  async function syncKairosEpisode(record) {
+    if (!record || record.id == null) return null;
+    const t = activeKairos.get(String(record.id)) || { version: 0, factId: null };
+    const version = t.version + 1;
+    const documentId = `gaia-kep-${record.id}-v${version}`;
+    const factId = await retainAndSupersede({
+      tracked: activeKairos,
+      id: String(record.id),
+      documentId,
+      content: String(record.summary || ''),
+      context: KAIROS_CONTEXT,
+      tags: [KAIROS_TAG],
+      metadata: kairosMetadata(record, version),
+    });
+    activeKairos.set(String(record.id), { version, factId });
     return { documentId, factId, version };
   }
 
@@ -215,8 +261,8 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
   }
 
   return {
-    syncHypothesis, syncPattern, loadActive, invalidateByTags, reconcile,
-    HYPOTHESIS_TAG, CONFIRMED_TAG, PATTERN_TAG, LEGACY_FACT_TAG,
+    syncHypothesis, syncPattern, syncKairosEpisode, loadActive, invalidateByTags, reconcile,
+    HYPOTHESIS_TAG, CONFIRMED_TAG, PATTERN_TAG, KAIROS_TAG, LEGACY_FACT_TAG,
   };
 }
 
@@ -225,7 +271,9 @@ module.exports = {
   HYPOTHESIS_TAG,
   CONFIRMED_TAG,
   PATTERN_TAG,
+  KAIROS_TAG,
   LEGACY_FACT_TAG,
   HYPOTHESIS_CONTEXT,
   PATTERN_CONTEXT,
+  KAIROS_CONTEXT,
 };

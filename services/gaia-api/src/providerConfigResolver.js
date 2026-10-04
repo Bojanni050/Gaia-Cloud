@@ -113,6 +113,19 @@ function resolveEnvFallback(role, env) {
     case 'vision':
       return resolveEnvFallback('reasoning', env);
 
+    case 'kairos':
+      // The episode synthesizer (Logos's younger sibling). Independent of the
+      // reasoning role: an operator may point Kairos at a cheaper/faster model.
+      if (env.KAIROS_MODEL_BASE_URL && env.KAIROS_MODEL_NAME) {
+        return {
+          provider: env.KAIROS_MODEL_PROVIDER || 'env',
+          baseUrl: env.KAIROS_MODEL_BASE_URL,
+          model: env.KAIROS_MODEL_NAME,
+          apiKey: env.KAIROS_MODEL_API_KEY || '',
+        };
+      }
+      return null;
+
     default:
       return null;
   }
@@ -160,6 +173,7 @@ function deriveCapabilities(providerStore, env = process.env) {
     generation: resolveRoleConfig('generation', providerStore, env) !== null,
     reasoning: resolveRoleConfig('reasoning', providerStore, env) !== null,
     vision: resolveRoleConfig('vision', providerStore, env) !== null,
+    kairos: resolveRoleConfig('kairos', providerStore, env) !== null,
     tts: resolveTtsConfig(providerStore, env) !== null,
   };
 }

@@ -106,6 +106,18 @@ Hypotheses / derived statements:
 - `POST /v1/banks/:bank_id/hypotheses/:id/supersede` (`→ rejected` by consolidation; body: `{ superseded_by_id, reason? }`)
 - `DELETE /v1/banks/:bank_id/hypotheses/:id` (soft delete)
 
+Kairos episodes (derived narrative syntheses — see `src/kairosEpisodes.js`):
+- `POST /v1/banks/:bank_id/episodes` (create/upsert one episode; written by the Kairos worker in `gaia-api`, never by a client)
+- `GET /v1/banks/:bank_id/episodes` (`?page=`, `?limit=`, `?since=` → `{ data, pagination }`)
+- `GET /v1/banks/:bank_id/episodes/:id`
+- `GET /v1/banks/:bank_id/episodes/state` / `PUT …/episodes/state` (the worker watermark; internal)
+
+A Kairos episode is deliberately **not** Foundation's `episode` table: that holds a
+frozen *raw* observation. A Kairos episode is a *derived* statement about a span of
+observations, so it is always `epistemic_status = 'interpretation'` and carries
+`sources` back to the raw records (`['chronicle:<ingest_object-id>']`). The id is
+assigned by the writer, so re-processing a cluster is an idempotent upsert.
+
 ## Explicitly not in this pass
 
 - **Forming** hypotheses, patterns or models. This service stores what Logos

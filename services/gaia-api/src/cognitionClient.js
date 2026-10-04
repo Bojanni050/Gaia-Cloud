@@ -105,6 +105,20 @@ function createCognitionClient({
   const createPattern = (record) => request('POST', '/patterns', record);
   const updatePattern = (id, patch) => request('PATCH', `/patterns/${encodeURIComponent(id)}`, patch);
 
+  // --- Kairos episodes (derived narrative syntheses) + worker watermark ---
+  const listKairosEpisodes = (query = {}) => {
+    const params = new URLSearchParams();
+    if (query.page) params.set('page', String(query.page));
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.since) params.set('since', query.since);
+    const suffix = params.toString() ? `?${params}` : '';
+    return request('GET', `/episodes${suffix}`);
+  };
+  const getKairosEpisode = (id) => request('GET', `/episodes/${encodeURIComponent(id)}`);
+  const createKairosEpisode = (record) => request('POST', '/episodes', record);
+  const getKairosState = () => request('GET', '/episodes/state').then((r) => (r ? r.last_captured_at : null));
+  const setKairosState = (lastCapturedAt) => request('PUT', '/episodes/state', { last_captured_at: lastCapturedAt });
+
   return {
     bankId: bank,
     listHypotheses,
@@ -122,6 +136,11 @@ function createCognitionClient({
     getPattern,
     createPattern,
     updatePattern,
+    listKairosEpisodes,
+    getKairosEpisode,
+    createKairosEpisode,
+    getKairosState,
+    setKairosState,
   };
 }
 

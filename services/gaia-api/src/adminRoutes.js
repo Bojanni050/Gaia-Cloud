@@ -34,7 +34,7 @@ const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
 
-const VALID_ROLES = ['generation', 'reasoning', 'vision'];
+const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos'];
 
 /**
  * @param {{
@@ -194,6 +194,7 @@ function createAdminRouter({
         generation: Boolean(roles.generation && roles.generation.model),
         reasoning: Boolean(roles.reasoning && roles.reasoning.model),
         vision: Boolean(roles.vision && roles.vision.model),
+        kairos: Boolean(roles.kairos && roles.kairos.model),
         tts: Boolean(ttsConfig.model),
       };
       res.json(capabilities);

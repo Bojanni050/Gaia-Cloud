@@ -87,9 +87,47 @@ proposed ──▶ testing ──▶ corroborated (machine, C ≥ 0.80) ──�
 - Supersession: confirming a newer statement rejects the older contradicting one
   with `verwerp_bron: 'consolidatie'` and a pointer to the winner.
 
+## Kairos — raw observations into narrative episodes
+
+Chronos (raw clock time) and Kairos (narrative time) are kept apart. The raw
+stream is Foundation's observations; **Kairos** folds a *cluster* of them into
+one narrative episode — a derived statement, never a raw one, so it is always
+`epistemic_status = 'interpretation'` and always carries `sources` back to its
+observations (`['chronicle:<ingest_object-id>']`).
+
+```
+Foundation (raw)                    services/gaia-api (Kairos)              Cognition (derived)
+GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synthesizer ──▶  kairos_episodes
+?since=&with_source=1               (admin 'kairos' role)     │             · interpretation
+ · observation                      watermark worker          │             · sources → raws
+                                    ─▶ emitter ─▶ GET /kairos/episodes/stream (SSE)
+```
+
+- **Deterministic first.** `clusterer.js` groups observations on a >5 min
+  inactivity gap, an app switch, or a 30 min cap, spending zero LLM tokens. The
+  trailing, still-open run is never finalized on a poll — it keeps growing into
+  one episode instead of fragmenting.
+- **Satellite synthesis.** `synthesizer.js` runs one cheap inference call under
+  the admin-selected **Kairos** role (Logos's "younger sibling"). The model only
+  returns a summary and an app name; the epistemic literals are set in code, and
+  the model cannot name an app the cluster never saw.
+- **Watermark is burst-safe.** The cursor (`captured_at`) advances only past the
+  last cluster that actually completed; a failed cluster stops the batch so its
+  observations are retried, never skipped. Mirrors Foundation's own reflection
+  job.
+- **Cognition only stores.** The worker writes episodes through
+  `cognitionClient.createKairosEpisode`; `cognitionSync` mirrors them into
+  Hindsight under `gaia:kairos_episode`. Clients reach episodes **only** through
+  `/kairos/*` on Gaia API — never Cognition or Foundation directly.
+- **Auditable.** `GET /kairos/episodes/:id/evidence` walks `sources` back to
+  Foundation and returns the raw observations an interpretation was built from.
+- Off by default: `GAIA_KAIROS_ENABLED=true` starts the worker.
+
 ## Clients
 
 Clients reach Gaia only through the uniform Gaia API (`services/gaia-api`):
 turns, the file library, chat history, speech, and the **GaiaChat review
 surface** (`/cognition/*`) where the human confirms. `/admin/*` is operator-only
 and never part of any client's contract.
+Clients read live Kairos episodes at `GET /kairos/episodes` and stream them at
+`GET /kairos/episodes/stream` (SSE) — both on Gaia API.

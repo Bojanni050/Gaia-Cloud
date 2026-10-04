@@ -39,6 +39,8 @@ const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createCognitionRouter } = require('./cognitionRoutes');
+const { createKairosRouter } = require('./kairosRoutes');
+const { createKairosRuntime } = require('./kairos/runtime');
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
@@ -311,6 +313,13 @@ function createApp(env = process.env) {
   // confirm) with active supersession. Part of the client contract.
   app.use('/cognition', createCognitionRouter({ cognition, sync: cognitionSync, auth }));
 
+  // Kairos — derived narrative episodes over the raw Foundation observation
+  // stream, plus the realtime SSE stream. Clients reach episodes ONLY here,
+  // never Cognition/Foundation directly. Mounted unconditionally so the read
+  // + stream work even when the worker is disabled; the worker itself is
+  // created below behind GAIA_KAIROS_ENABLED.
+  app.use('/kairos', createKairosRouter({ cognition, foundation, auth }));
+
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
 
@@ -502,6 +511,21 @@ function createApp(env = process.env) {
       res.status(502).json({ error: 'gaia could not speak right now' });
     }
   });
+
+  // Kairos worker — folds raw Foundation observations into narrative episodes
+  // and pushes them over the SSE stream. Entirely best-effort and off by
+  // default (GAIA_KAIROS_ENABLED=true to start): no Foundation, no Cognition,
+  // or no Kairos model simply leaves the read/stream endpoints serving
+  // whatever already exists. Never blocks startup, never affects a turn.
+  const kairosRuntime = createKairosRuntime({
+    bankId: cognition.bankId,
+    foundation,
+    cognition,
+    providerStore,
+    syncEpisode: (episode) => cognitionSync.syncKairosEpisode(episode),
+    env,
+  });
+  if (kairosRuntime) kairosRuntime.start();
 
   // Calm JSON error surface — no stack traces, no provider names.
   app.use((err, req, res, next) => {

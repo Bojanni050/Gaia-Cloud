@@ -178,7 +178,76 @@ function createFoundationClient({
     }
   }
 
-  return { searchResults, submitObservation, limit: Number(limit) || DEFAULT_LIMIT };
+  /**
+   * Read the raw-observation stream since a cursor, for the Kairos pipeline.
+   * Uses the existing read seam (GET /api/memory/episodes) with
+   * `with_source=1` so each row carries the derived app/window (observed_app /
+   * observed_window) that capture-rs left on the ingest object — the
+   * deterministic clusterer needs it to split on app switches. Ascending by
+   * captured_at, exactly as the seam returns it.
+   *
+   * Never throws on "nothing new" — an empty list is honest absence.
+   * @param {string|null} sinceIso  watermark (captured_at), or null/undefined
+   *   to read from the beginning.
+   * @returns {Promise<Array<object>>}
+   */
+  async function listObservationsSince(sinceIso) {
+    const url = new URL(`${root}/api/memory/episodes`);
+    url.searchParams.set('with_source', '1');
+    if (sinceIso) url.searchParams.set('since', String(sinceIso));
+
+    let response;
+    try {
+      response = await fetchImpl(url.toString(), {
+        method: 'GET',
+        headers: authHeaders({ Accept: 'application/json' }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      console.error(`[gaia:foundation] episodes unreachable at ${root}: ${error.message}`);
+      throw new Error('foundation episodes unreachable');
+    }
+    if (!response.ok) {
+      console.error(`[gaia:foundation] episodes responded ${response.status} at ${root}`);
+      throw new Error('foundation episodes responded with an error');
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch (_) {
+      throw new Error('foundation episodes returned an unreadable response');
+    }
+    return Array.isArray(data) ? data : [];
+  }
+
+  /**
+   * Fetch raw ingest objects by id, for the Kairos evidence drill-down. Uses
+   * Foundation's read-only ingest-log endpoint (GET /api/ingest-logs/:id),
+   * which returns the object plus any episodes frozen from it. Best-effort:
+   * an id that 404s is skipped, never fatal — a partial audit trail is better
+   * than none.
+   * @param {string[]} ids  ingest_object ids (no 'ingest:' prefix)
+   * @returns {Promise<Array<object>>}
+   */
+  async function fetchIngestObjects(ids) {
+    const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+    const results = await Promise.all(list.map(async (id) => {
+      try {
+        const response = await fetchImpl(`${root}/api/ingest-logs/${encodeURIComponent(id)}`, {
+          method: 'GET',
+          headers: authHeaders({ Accept: 'application/json' }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_) {
+        return null;
+      }
+    }));
+    return results.filter(Boolean);
+  }
+
+  return { searchResults, submitObservation, listObservationsSince, fetchIngestObjects, limit: Number(limit) || DEFAULT_LIMIT };
 }
 
 /**

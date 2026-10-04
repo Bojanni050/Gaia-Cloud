@@ -1,6 +1,7 @@
 const express = require('express');
 const hypothesesRouter = require('./routes/hypotheses');
 const patternsRouter = require('./routes/patterns');
+const episodesRouter = require('./routes/episodes');
 const { NotFoundError, InvalidTransitionError, ValidationError } = require('./errors');
 
 const app = express();
@@ -10,6 +11,7 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.use('/v1/banks/:bankId/hypotheses', hypothesesRouter);
 app.use('/v1/banks/:bankId/patterns', patternsRouter);
+app.use('/v1/banks/:bankId/episodes', episodesRouter);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {

@@ -393,6 +393,7 @@ test('GET /admin/api/provider/capabilities returns capability availability', asy
     assert.equal(body.generation, true);
     assert.equal(body.reasoning, false);
     assert.equal(body.vision, false);
+    assert.equal(body.kairos, false);
     assert.equal(body.tts, true);
   } finally {
     await ctx.close();
@@ -408,6 +409,7 @@ test('GET /admin/api/provider/capabilities reports all false when nothing config
     assert.equal(body.generation, false);
     assert.equal(body.reasoning, false);
     assert.equal(body.vision, false);
+    assert.equal(body.kairos, false);
     assert.equal(body.tts, false);
   } finally {
     await ctx.close();

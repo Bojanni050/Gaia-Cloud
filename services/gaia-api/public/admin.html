@@ -29,6 +29,7 @@
     --sage: #9cae7c;     /* Vision */
     --clay: #c08a85;     /* Video capability tag */
     --bronze: #a9765a;   /* Voice */
+    --moss: #8fa98f;     /* Kairos */
     --ok: #7fbf8f;
     --err: #d98a8a;
   }
@@ -87,6 +88,7 @@
   .role-card.cyan    { border-color: color-mix(in srgb, var(--rust) 40%, transparent);   background: color-mix(in srgb, var(--rust) 6%, transparent); }
   .role-card.violet  { border-color: color-mix(in srgb, var(--sage) 40%, transparent);   background: color-mix(in srgb, var(--sage) 6%, transparent); }
   .role-card.rose    { border-color: color-mix(in srgb, var(--bronze) 40%, transparent); background: color-mix(in srgb, var(--bronze) 6%, transparent); }
+  .role-card.moss    { border-color: color-mix(in srgb, var(--moss) 40%, transparent);   background: color-mix(in srgb, var(--moss) 6%, transparent); }
 
   .role-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.1rem; }
   .role-icon { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; display: flex; align-items: center; justify-content: center; }
@@ -95,6 +97,7 @@
   .role-icon.cyan   { background: color-mix(in srgb, var(--rust) 18%, transparent);   color: var(--rust); }
   .role-icon.violet { background: color-mix(in srgb, var(--sage) 18%, transparent);   color: var(--sage); }
   .role-icon.rose   { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
+  .role-icon.moss   { background: color-mix(in srgb, var(--moss) 18%, transparent);   color: var(--moss); }
 
   .role-status { text-align: right; }
   .role-status-badge {
@@ -175,6 +178,7 @@
   .tag.provider { background: color-mix(in srgb, var(--text-dim) 16%, transparent); color: var(--text-dim); border-color: color-mix(in srgb, var(--text-dim) 35%, transparent); }
   .tag.vision { background: color-mix(in srgb, var(--sage) 18%, transparent); color: var(--sage); border-color: color-mix(in srgb, var(--sage) 40%, transparent); }
   .tag.reasoning { background: color-mix(in srgb, var(--rust) 18%, transparent); color: var(--rust); border-color: color-mix(in srgb, var(--rust) 40%, transparent); }
+  .tag.kairos { background: color-mix(in srgb, var(--moss) 18%, transparent); color: var(--moss); border-color: color-mix(in srgb, var(--moss) 40%, transparent); }
   .tag.function_calling { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
   .tag.audio { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); border-color: color-mix(in srgb, var(--bronze) 40%, transparent); }
   .tag.video { background: color-mix(in srgb, var(--clay) 18%, transparent); color: var(--clay); border-color: color-mix(in srgb, var(--clay) 40%, transparent); }
@@ -361,6 +365,29 @@
         <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="riqVisionModelStatus"></div>
+    </section>
+
+    <!-- Kairos (Main Provider role) -->
+    <section class="role-card moss">
+      <div class="role-card-head">
+        <div class="role-icon moss">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 22v-4M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h4M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/><circle cx="12" cy="12" r="2.5"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="kairosBadge">Inactive</span>
+        </div>
+      </div>
+      <p class="role-title">Kairos</p>
+      <p class="role-desc">The episode synthesizer — Logos's younger sibling. Turns raw observations into narrative episodes. Uses the Main Provider above; pick a fast, cheap model here.</p>
+
+      <label>Model for episode synthesis</label>
+      <div id="kairosDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="kairosClearModelBtn" class="secondary">Clear</button>
+        <button id="kairosSaveModelBtn" disabled>Save selection</button>
+      </div>
+      <div class="status" id="kairosModelStatus"></div>
     </section>
 
     <!-- TTS (independent) -->
@@ -916,8 +943,9 @@
     if (roles.generation && roles.generation.model) caps.push('generation');
     if (roles.reasoning && roles.reasoning.model) caps.push('reasoning');
     if (roles.vision && roles.vision.model) caps.push('vision');
+    if (roles.kairos && roles.kairos.model) caps.push('kairos');
     if (tts && tts.model) caps.push('tts');
-    const allCaps = ['generation', 'reasoning', 'vision', 'tts'];
+    const allCaps = ['generation', 'reasoning', 'vision', 'kairos', 'tts'];
     capabilitiesSection.style.display = '';
     capabilitiesBar.innerHTML = allCaps.map((c) =>
       '<span class="cap-chip ' + (caps.includes(c) ? 'active' : '') + '">' + escapeHtml(c) + '</span>'
@@ -1067,15 +1095,19 @@
   refreshTtsLogBtn.addEventListener('click', loadTtsLog);
 
   // ============================================================
-  // Logos reasoning + vision (Main Provider roles)
+  // Logos reasoning + vision + Kairos (Main Provider roles)
   // ============================================================
   const riqModelStatusEl = $('riqModelStatus'), riqSaveModelBtn = $('riqSaveModelBtn');
   const riqVisionModelStatusEl = $('riqVisionModelStatus');
   const riqSaveVisionModelBtn = $('riqSaveVisionModelBtn'), riqClearVisionModelBtn = $('riqClearVisionModelBtn');
   const riqBadgeEl = $('riqBadge'), riqVisionBadgeEl = $('riqVisionBadge');
+  const kairosModelStatusEl = $('kairosModelStatus');
+  const kairosSaveModelBtn = $('kairosSaveModelBtn'), kairosClearModelBtn = $('kairosClearModelBtn');
+  const kairosBadgeEl = $('kairosBadge');
 
   let riqCurrentModel = null;
   let riqCurrentVisionModel = null;
+  let kairosCurrentModel = null;
 
   const riqDropdown = createModelDropdown($('riqDropdown'), {
     placeholder: '— retrieve models above first —',
@@ -1086,6 +1118,31 @@
     emptyOptionLabel: '— unset —',
     onChange: () => { riqSaveVisionModelBtn.disabled = false; },
   });
+  const kairosDropdown = createModelDropdown($('kairosDropdown'), {
+    placeholder: '— retrieve models above first —',
+    emptyOptionLabel: '— unset —',
+    onChange: () => { kairosSaveModelBtn.disabled = false; },
+  });
+
+  // One place that knows how each Main Provider role renders after a change —
+  // keyed by role, so adding a role is a data change, not another else-branch.
+  const ROLE_UI = {
+    reasoning: {
+      statusEl: riqModelStatusEl, badgeEl: riqBadgeEl,
+      setCurrent: (m) => { riqCurrentModel = m; },
+      ok: (m) => 'Logos reflection will use ' + m + '.',
+    },
+    vision: {
+      statusEl: riqVisionModelStatusEl, badgeEl: riqVisionBadgeEl,
+      setCurrent: (m) => { riqCurrentVisionModel = m; },
+      ok: (m) => (m ? 'Image OCR will use ' + m + '.' : 'Vision model cleared.'),
+    },
+    kairos: {
+      statusEl: kairosModelStatusEl, badgeEl: kairosBadgeEl,
+      setCurrent: (m) => { kairosCurrentModel = m; },
+      ok: (m) => (m ? 'Episode synthesis will use ' + m + '.' : 'Kairos model cleared.'),
+    },
+  };
 
   // Populated from the Main Provider config (loadProviderConfig owns the
   // fetch; this applies it to the Logos cards). Called after every
@@ -1094,20 +1151,23 @@
     const models = (cfg && cfg.catalog) || [];
     const provider = (cfg && cfg.provider) || '';
     const label = providerLabelFor(provider);
-    riqDropdown.setProviderLabel(label);
-    riqDropdown.setProviderId(provider);
-    riqVisionDropdown.setProviderLabel(label);
-    riqVisionDropdown.setProviderId(provider);
-    riqDropdown.setModels(models);
-    riqVisionDropdown.setModels(models);
+    for (const dd of [riqDropdown, riqVisionDropdown, kairosDropdown]) {
+      dd.setProviderLabel(label);
+      dd.setProviderId(provider);
+      dd.setModels(models);
+    }
     const reasoning = cfg && cfg.roles && cfg.roles.reasoning && cfg.roles.reasoning.model;
     const vision = cfg && cfg.roles && cfg.roles.vision && cfg.roles.vision.model;
+    const kairos = cfg && cfg.roles && cfg.roles.kairos && cfg.roles.kairos.model;
     riqCurrentModel = reasoning || null;
     riqCurrentVisionModel = vision || null;
+    kairosCurrentModel = kairos || null;
     if (reasoning) { riqDropdown.setValue(reasoning); riqSaveModelBtn.disabled = false; }
     if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
+    if (kairos) { kairosDropdown.setValue(kairos); kairosSaveModelBtn.disabled = false; }
     setBadge(riqBadgeEl, Boolean(riqCurrentModel));
     setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Inactive');
+    setBadge(kairosBadgeEl, Boolean(kairosCurrentModel), 'Active', 'Inactive');
   }
 
   async function saveLogosRole(role, model, statusEl, badgeEl, okText) {
@@ -1119,8 +1179,9 @@
       if (!res.ok) throw new Error(await res.text());
       const updated = await res.json();
       currentConfig = updated;
-      if (role === 'reasoning') { riqCurrentModel = model || null; setBadge(riqBadgeEl, Boolean(model)); }
-      else { riqCurrentVisionModel = model || null; setBadge(riqVisionBadgeEl, Boolean(model), 'Active', 'Inactive'); }
+      const ui = ROLE_UI[role];
+      if (ui) { ui.setCurrent(model || null); ui.badgeEl && setBadge(ui.badgeEl, Boolean(model), 'Active', 'Inactive'); }
+      else { setBadge(badgeEl, Boolean(model)); }
       setStatus(statusEl, okText, true);
       updateCapabilities(updated.roles || {}, updated.tts || {});
     } catch (err) {
@@ -1153,6 +1214,22 @@
   riqClearVisionModelBtn.addEventListener('click', () => {
     riqVisionDropdown.setValue('');
     riqSaveVisionModelBtn.click();
+  });
+
+  kairosSaveModelBtn.addEventListener('click', async () => {
+    const model = kairosDropdown.getValue();
+    kairosSaveModelBtn.disabled = true;
+    try {
+      await saveLogosRole('kairos', model, kairosModelStatusEl, kairosBadgeEl,
+        model ? ('Episode synthesis will use ' + model + '.') : 'Kairos model cleared.');
+    } finally {
+      kairosSaveModelBtn.disabled = false;
+    }
+  });
+
+  kairosClearModelBtn.addEventListener('click', () => {
+    kairosDropdown.setValue('');
+    kairosSaveModelBtn.click();
   });
 
   // ============================================================

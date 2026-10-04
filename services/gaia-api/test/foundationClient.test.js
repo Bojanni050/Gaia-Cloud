@@ -118,3 +118,42 @@ test('renderFoundationContext is null with no usable results and labels the rest
   assert.match(block, /\[bevestigd feit\] Vastgelegd feit\./);
   assert.match(block, /\[hypothese · open\] Open hypothese\./);
 });
+
+test('listObservationsSince reads the episodes seam with with_source and since', async () => {
+  const calls = [];
+  const client = createFoundationClient({
+    baseUrl: 'http://foundation:4577',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => ([{ id: 'e1', observed_app: 'Outlook' }]) };
+    },
+  });
+
+  const rows = await client.listObservationsSince('2026-10-04T10:00:00Z');
+  assert.equal(rows[0].observed_app, 'Outlook');
+  assert.match(calls[0].url, /\/api\/memory\/episodes\?/);
+  assert.match(calls[0].url, /with_source=1/);
+  assert.match(calls[0].url, /since=2026-10-04T10%3A00%3A00Z/);
+});
+
+test('listObservationsSince omits since when there is no watermark', async () => {
+  const calls = [];
+  const client = createFoundationClient({
+    baseUrl: 'http://foundation:4577',
+    fetchImpl: async (url) => { calls.push({ url }); return { ok: true, status: 200, json: async () => [] }; },
+  });
+  await client.listObservationsSince(null);
+  assert.equal(calls[0].url.includes('since='), false);
+});
+
+test('fetchIngestObjects skips 404s and never throws (partial audit trail)', async () => {
+  const client = createFoundationClient({
+    baseUrl: 'http://foundation:4577',
+    fetchImpl: async (url) => (url.endsWith('/missing')
+      ? { ok: false, status: 404, json: async () => ({}) }
+      : { ok: true, status: 200, json: async () => ({ object: { id: 'present' } }) }),
+  });
+  const rows = await client.fetchIngestObjects(['present', 'missing']);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].object.id, 'present');
+});
