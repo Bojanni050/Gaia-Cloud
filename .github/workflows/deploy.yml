@@ -80,12 +80,18 @@ jobs:
             node scripts/generate-build-meta.js
 
             # The derived-knowledge store must exist before gaia-api joins its
-            # external network (docker-compose.yml's cognition_net →
-            # gaia_cognition_default). Idempotent: brings the stack up, applies
-            # any new Drizzle-less SQL migrations, then leaves it running.
+            # external network (docker-compose.yml's cognition_net). Idempotent:
+            # rebuilds the stack so it carries the current schema/routes, applies
+            # any new SQL migrations, then leaves it running.
+            #
+            # NOTE: the running stack's compose project is "gaia-cognition"
+            # (hyphen) => network gaia-cognition_default. gaia-api's compose
+            # declares that name as external. If this ever fails to join,
+            # verify with `docker network ls | grep -i cognition` and align
+            # the name: in services/gaia-api/docker-compose.yml.
             cd ../cognition
             docker compose up -d --build
-            docker compose exec -T gaia-cognition node src/db/migrate.js || true
+            docker compose exec -T gaia-cognition node src/db/migrate.js
 
             cd ../gaia-api
             docker compose up -d --build

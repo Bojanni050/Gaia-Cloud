@@ -24,9 +24,10 @@ services:
       - default
       - hermes_net
       # Cognition runs in its own compose stack (gaia-cognition +
-      # gaia-cognition-db, networks: gaia_cognition_default). Joining that
-      # external network lets gaia-api reach it by container name —
-      # COGNITION_URL=http://gaia-cognition:8890 — exactly like Hermes.
+      # gaia-cognition-db, project "gaia-cognition", so its default network
+      # is gaia-cognition_default). Joining that external network lets
+      # gaia-api reach it by container name — COGNITION_URL=
+      # http://gaia-cognition:8890 — exactly like Hermes.
       - cognition_net
 
 networks:
@@ -38,6 +39,12 @@ networks:
     name: hermes-agent_default
   cognition_net:
     external: true
-    # Compose names a stack's default network <project>_default; the
-    # cognition stack is deployed as project "gaia_cognition".
-    name: gaia_cognition_default
+    # Compose names a stack's default network <project>_default. The running
+    # cognition stack's project is "gaia-cognition" (hyphen) — confirmed by its
+    # container names (gaia-cognition-gaia-cognition, gaia-cognition-gaia-
+    # cognition-db) — so the network is gaia-cognition_default, NOT
+    # gaia_cognition_default. Verify on the VPS with:
+    #   docker network ls | grep -i cognition
+    # If you ever recreate the stack under a different project name, update
+    # this to match or gaia-api cannot join it.
+    name: gaia-cognition_default
