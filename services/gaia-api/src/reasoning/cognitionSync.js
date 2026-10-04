@@ -53,6 +53,11 @@ function hypothesisMetadata(record, version) {
     gaia_hypothesis_evidence_against: JSON.stringify(record.evidence_against || record.evidenceAgainst || []),
     gaia_hypothesis_persistence: String(record.persistence || 'ephemeral'),
     gaia_hypothesis_method: String(record.method || 'asserted'),
+    // V3: the quarantined anti-lexicographic counter-hypothesis and the
+    // micro/macro entrenchment travel with the record so recall can
+    // reconstruct them; absent counter-hypothesis is the empty string.
+    gaia_hypothesis_counter_hypothesis: record.counter_hypothesis != null ? String(record.counter_hypothesis) : '',
+    gaia_hypothesis_scope: String(record.scope || 'macro'),
     gaia_hypothesis_verwerp_bron: record.verwerp_bron != null ? String(record.verwerp_bron) : '',
     gaia_hypothesis_updated_by: UPDATED_BY,
   };

@@ -75,6 +75,10 @@ function metadataFor(hyp, version) {
     // Extra Gaia-state that reconstruction needs (same gaia_ namespace).
     gaia_hypothesis_method: String(hyp.method || ''),
     gaia_hypothesis_rejection_reason: hyp.rejectionReason != null ? String(hyp.rejectionReason) : '',
+    // V3: the quarantined counter-hypothesis and micro/macro entrenchment
+    // travel with the fact so per-turn recall can reconstruct them.
+    gaia_hypothesis_counter_hypothesis: hyp.counterHypothesis != null ? String(hyp.counterHypothesis) : '',
+    gaia_hypothesis_scope: String(hyp.scope || 'macro'),
   };
 }
 
@@ -114,6 +118,10 @@ function reconstructFromUnit(unit) {
       ? intMetadata(unit, 'gaia_hypothesis_persistence')
       : 'ephemeral', // absent/corrupt → the Gaia default, never invented
     rejectionReason: intMetadata(unit, 'gaia_hypothesis_rejection_reason') || null,
+    counterHypothesis: intMetadata(unit, 'gaia_hypothesis_counter_hypothesis') || null,
+    scope: ['micro', 'macro'].includes(intMetadata(unit, 'gaia_hypothesis_scope'))
+      ? intMetadata(unit, 'gaia_hypothesis_scope')
+      : 'macro', // absent/corrupt → the safe default, never invented
     testedAt: null,
     confirmedAt: null,
     rejectedAt: null,

@@ -44,7 +44,17 @@
  * adopted: transitions happen only through explicit, policy-gated calls.
  */
 
-const { EVIDENCE_VERDICTS } = require('../logos/logosSchema');
+const { EVIDENCE_VERDICTS, isValidHypothesisScope } = require('../logos/logosSchema');
+
+/**
+ * V3 epistemic entrenchment (micro/macro). `macro` is the safe default: an
+ * unclassified hypothesis is one a human must look at, never one a machine
+ * silently soft-promotes.
+ */
+const DEFAULT_SCOPE = 'macro';
+function scopeOf(value) {
+  return isValidHypothesisScope(value) ? value : DEFAULT_SCOPE;
+}
 
 /** How a hypothesis came to be / was settled (Stash's `method`, adopted). */
 const HYPOTHESIS_METHODS = Object.freeze(['asserted', 'derived', 'tested']);
@@ -89,6 +99,13 @@ const DEFAULT_POLICY = Object.freeze({
   confirmConfidence: 0.75,
   /** A hypothesis with active contradicting evidence can never be confirmed. */
   confirmRequiresNoContradictions: true,
+  /**
+   * V3: a hypothesis without a counter-hypothesis can never be confirmed. The
+   * anti-lexicographic counter-hypothesis must first exist (or be supplied by
+   * a later turn) — absence is honest, and it blocks the human override rather
+   * than being fabricated to satisfy it.
+   */
+  confirmRequiresCounterHypothesis: true,
   /** Distinct opposing items required before reject is possible. */
   minOpposeEvidence: 2,
   /** Confidence at-or-below which reject is possible (with enough oppose evidence). */
@@ -246,6 +263,8 @@ function createHypothesisManager(options = {}) {
         status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
         method: isValidMethod(h.method) ? h.method : 'asserted',
         persistence: persistenceOf(h.persistence),
+        counterHypothesis: typeof h.counterHypothesis === 'string' && h.counterHypothesis.trim() ? h.counterHypothesis.trim() : null,
+        scope: scopeOf(h.scope),
         confidence: clampConfidence(h.confidence) != null ? clampConfidence(h.confidence) : 0.5,
         evidenceFor: Array.isArray(h.evidenceFor) ? [...h.evidenceFor] : [],
         evidenceAgainst: Array.isArray(h.evidenceAgainst) ? [...h.evidenceAgainst] : [],
@@ -277,7 +296,7 @@ function createHypothesisManager(options = {}) {
    * Proposes a hypothesis — or recognizes an equivalent existing one (§4/§12).
    * @returns {{ hypothesis: object, duplicateOf: string|null }}
    */
-  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted', persistence, persist = true } = {}) {
+  function propose({ statement, confidence = 0.5, evidenceFor = [], evidenceAgainst = [], method = 'asserted', persistence, counterHypothesis = null, scope, persist = true } = {}) {
     if (!statement || !String(statement).trim()) throw new Error('hypothesis statement is required');
     const existing = findDuplicate(statement);
     if (existing) return { hypothesis: existing, duplicateOf: existing.id };
@@ -290,6 +309,8 @@ function createHypothesisManager(options = {}) {
       status: INITIAL_STATUS,
       method: isValidMethod(method) ? method : 'asserted',
       persistence: persistenceOf(persistence),
+      counterHypothesis: typeof counterHypothesis === 'string' && counterHypothesis.trim() ? counterHypothesis.trim() : null,
+      scope: scopeOf(scope),
       confidence: clampConfidence(confidence) != null ? clampConfidence(confidence) : 0.5,
       evidenceFor: [...new Set(evidenceFor)],
       evidenceAgainst: [...new Set(evidenceAgainst)],
@@ -314,9 +335,12 @@ function createHypothesisManager(options = {}) {
 
   function canConfirm(h) {
     const hasActiveContradiction = policy.confirmRequiresNoContradictions && h.evidenceAgainst.length > 0;
+    const missingCounterHypothesis = policy.confirmRequiresCounterHypothesis
+      && !(typeof h.counterHypothesis === 'string' && h.counterHypothesis.trim());
     return h.evidenceFor.length >= policy.minSupportEvidence
       && h.confidence >= policy.confirmConfidence
-      && !hasActiveContradiction;
+      && !hasActiveContradiction
+      && !missingCounterHypothesis;
   }
 
   function canReject(h) {
@@ -476,7 +500,7 @@ function createHypothesisManager(options = {}) {
     if (target === 'confirmed') {
       if (!canConfirm(h)) {
         audits.push(makeAudit({ hypothesisId: h.id, from: h.status, to: 'confirmed', accepted: false, reason: 'policy: insufficient support/confidence or active contradictions' }));
-        return { ok: false, reason: 'policy: needs more distinct support, higher confidence, and no active contradictions' };
+        return { ok: false, reason: 'policy: needs more distinct support, higher confidence, no active contradictions, and a counter-hypothesis' };
       }
     }
     if (target === 'rejected') {
@@ -601,6 +625,8 @@ function createHypothesisManager(options = {}) {
           evidenceFor: [],
           evidenceAgainst: [],
           persistence: rh.persistence,
+          counterHypothesis: rh.counterHypothesis,
+          scope: rh.scope,
           persist: false,
         });
         target = res.hypothesis;
@@ -616,6 +642,12 @@ function createHypothesisManager(options = {}) {
         if (!target.evidenceAgainst.includes(id)) target.evidenceAgainst.push(id);
       }
       const isFresh = rh.existingId == null;
+      // V3: a later turn may supply the counter-hypothesis a recognized
+      // hypothesis did not yet have. Adopt it, but never overwrite an
+      // existing one (the history/audit trail owns that change).
+      if (!isFresh && rh.counterHypothesis && !target.counterHypothesis) {
+        target.counterHypothesis = rh.counterHypothesis;
+      }
       if (isFresh) {
         // Fresh proposal drifts toward the model's own assessment of confidence.
         const c = clampConfidence(rh.confidence);

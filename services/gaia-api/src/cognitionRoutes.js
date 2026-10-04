@@ -59,7 +59,22 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
 
   router.post('/hypotheses/:id/confirm', asyncRoute(async (req, res) => {
     const id = req.params.id;
-    const confirmed = await cognition.confirmHypothesis(id);
+    const rationale = (req.body && req.body.rationale) || '';
+    const statement = req.body && req.body.statement;
+
+    // V3 structural friction, server-side: a macro statement (the safe
+    // default) may only be confirmed with a stated rationale — the API
+    // refuses a bare click even if a client forgot the UI step. A micro
+    // statement may be confirmed without one.
+    const existing = typeof cognition.getHypothesis === 'function'
+      ? await cognition.getHypothesis(id).catch(() => null)
+      : null;
+    const isMacro = !existing || existing.scope !== 'micro';
+    if (isMacro && !String(rationale).trim()) {
+      return res.status(400).json({ error: 'a rationale is required to confirm a macro statement' });
+    }
+
+    const confirmed = await cognition.confirmHypothesis(id, { statement });
     await mirror(confirmed);
 
     const toSupersede = Array.isArray(req.body && req.body.supersedes) ? req.body.supersedes : [];

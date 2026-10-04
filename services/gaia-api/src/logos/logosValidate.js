@@ -11,7 +11,7 @@
  * an honest fallback result rather than ever passing bad data upstream.
  */
 
-const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./logosSchema');
+const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, isValidHypothesisScope, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./logosSchema');
 
 class MalformedLogosOutputError extends Error {
   constructor(reason) {
@@ -70,6 +70,17 @@ function coerceHypothesis(item) {
     statement: asString(item.statement),
     confidence: clampConfidence(item.confidence),
     status,
+    // V3 anti-lexicographic counter-hypothesis. Soft enforcement: absence is
+    // honest (null) and is surfaced instead of fabricated; the lifecycle
+    // (manager/cognition) blocks confirmation until one exists. The
+    // counter-hypothesis is quarantined — point 12 of the prompt rule — and
+    // is never re-used as a fact.
+    counterHypothesis: typeof item.counterHypothesis === 'string' && item.counterHypothesis.trim()
+      ? item.counterHypothesis.trim()
+      : null,
+    // V3 epistemic entrenchment. Unclassified → 'macro' (safe default: the
+    // human looks at it rather than a machine soft-promoting it).
+    scope: isValidHypothesisScope(item.scope) ? item.scope : 'macro',
     verificationPlan: typeof item.verificationPlan === 'string' ? item.verificationPlan : null,
     // Logos 0.2 provenance: ids into the assembled evidence list. Only
     // ever kept when they survive the known-evidence filter in

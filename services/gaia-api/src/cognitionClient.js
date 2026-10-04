@@ -82,7 +82,11 @@ function createCognitionClient({
     ...(rationale !== undefined ? { rationale } : {}),
   });
   const markCorroborated = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/corroborate`);
-  const confirmHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/confirm`);
+  const confirmHypothesis = (id, { statement } = {}) => request(
+    'POST',
+    `/hypotheses/${encodeURIComponent(id)}/confirm`,
+    (typeof statement === 'string' && statement.trim()) ? { statement: statement.trim() } : undefined,
+  );
   const rejectHypothesis = (id, { reason, verwerpBron } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/reject`, {
     ...(reason !== undefined ? { reason } : {}),
     ...(verwerpBron !== undefined ? { verwerp_bron: verwerpBron } : {}),

@@ -20,6 +20,7 @@ function seeded() {
       confidence: 0.64,
       evidenceFor: ['hindsight-1', 'hindsight-2'],
       evidenceAgainst: [],
+      counterHypothesis: 'the race is caused by an unrelated scheduler delay',
     }],
   });
 }
@@ -146,6 +147,36 @@ test('re-open: confirmed -> testing is legal; rejected -> testing needs a ration
   assert.equal(m.get('hyp-rej').status, 'testing');
 });
 
+test('V3: a hypothesis without a counter-hypothesis can never be confirmed — and gains one later', () => {
+  const m = createHypothesisManager({ policy: { minSupportEvidence: 1, confirmConfidence: 0.7 } });
+  const { hypothesis } = m.propose({ statement: 'No opposition yet.', confidence: 0.8 });
+  m.applyUpdate({ hypothesisId: hypothesis.id, evidenceId: 'a', relation: 'supports', confidenceDelta: 0.0, rationale: 'one source' });
+
+  let res = m.evaluateTransition(hypothesis.id, 'confirmed', { rationale: 'looks right' });
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /counter-hypothesis/);
+
+  // A later turn supplies the missing opposition; it is adopted, never invented.
+  m.applyReasoningResult({
+    hypotheses: [{ statement: 'No opposition yet.', existingId: hypothesis.id, counterHypothesis: 'it is a coincidence' }],
+    hypothesisUpdates: [],
+  });
+  assert.equal(m.get(hypothesis.id).counterHypothesis, 'it is a coincidence');
+  res = m.evaluateTransition(hypothesis.id, 'confirmed', { rationale: 'considered the opposition' });
+  assert.equal(res.ok, true);
+  assert.equal(m.get(hypothesis.id).status, 'confirmed');
+});
+
+test('V3: scope defaults to the safe macro and micro is preserved', () => {
+  const m = createHypothesisManager();
+  const { hypothesis: macro } = m.propose({ statement: 'High-impact claim.' });
+  const { hypothesis: micro } = m.propose({ statement: 'Low-impact claim.', scope: 'micro' });
+  const { hypothesis: odd } = m.propose({ statement: 'Oddly classified claim.', scope: 'enormous' });
+  assert.equal(macro.scope, 'macro');
+  assert.equal(micro.scope, 'micro');
+  assert.equal(odd.scope, 'macro');
+});
+
 test('invalid transitions are refused with an explicit reason', () => {
   const m = createHypothesisManager();
   const { hypothesis } = m.propose({ statement: 'Fresh proposal.' });
@@ -258,7 +289,7 @@ test('boundary: no reasoning, no retrieval, no capabilities anywhere in the mana
 
 test('policy: every threshold is explicit and documented, overridable, never magic inline numbers', () => {
   const m = createHypothesisManager({ policy: { confirmConfidence: 0.6, minSupportEvidence: 1 } });
-  const { hypothesis } = m.propose({ statement: 'Custom policy path.', confidence: 0.62 });
+  const { hypothesis } = m.propose({ statement: 'Custom policy path.', confidence: 0.62, counterHypothesis: 'the default policy would refuse this' });
   m.applyUpdate({ hypothesisId: hypothesis.id, evidenceId: 'e', relation: 'supports', confidenceDelta: 0.01 });
   assert.equal(m.policy.confirmConfidence, 0.6);
   assert.equal(m.evaluateTransition(hypothesis.id, 'confirmed', { rationale: 'custom policy allows this' }).ok, true);
@@ -310,7 +341,7 @@ test('method: bare proposals are asserted, evidence-linked derivations are deriv
 
 test('method: settling a hypothesis marks it tested', () => {
   const m = createHypothesisManager({
-    hypotheses: [{ id: 'hyp-t', statement: 'X causes Y.', status: 'testing', confidence: 0.8, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-t', statement: 'X causes Y.', status: 'testing', confidence: 0.8, evidenceFor: ['a'], counterHypothesis: 'Y causes X' }],
     policy: { minSupportEvidence: 2 },
   });
   m.applyUpdate({ hypothesisId: 'hyp-t', evidenceId: 'b', relation: 'supports', confidenceDelta: 0.01, rationale: 'second source' });
@@ -335,7 +366,7 @@ test('rejectionReason: recorded on reject, cleared on re-open, preserved in hist
 test('timeline: testedAt/confirmedAt/rejectedAt are stamped by their transitions', () => {
   const m = createHypothesisManager({
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-c', statement: 'Fast path.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-c', statement: 'Fast path.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'the slow path is the real default' }],
   });
   // Honest-null: a seeded status without an explicit stamp does NOT invent one.
   assert.equal(m.get('hyp-c').testedAt, null);
@@ -353,7 +384,7 @@ test('promotion: confirm calls sink.promote exactly once with the settled payloa
   const m = createHypothesisManager({
     sink: { promote: (p) => { promotions.push(p); return { factId: 'hs-fact-77' }; } },
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-p', statement: 'The emitter owns the wire format.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-p', statement: 'The emitter owns the wire format.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'each capability formats its own output' }],
   });
   assert.equal(m.evaluateTransition('hyp-p', 'confirmed', { rationale: 'settled' }).ok, true);
   const h = m.get('hyp-p');
@@ -375,7 +406,7 @@ test('promotion: confirm calls sink.promote exactly once with the settled payloa
 test('promotion: sink without promote leaves an honest promotionPending instead of dropping it', () => {
   const m = createHypothesisManager({
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-w', statement: 'Waiting for storage.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-w', statement: 'Waiting for storage.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'storage will never be wired' }],
   });
   assert.equal(m.evaluateTransition('hyp-w', 'confirmed', { rationale: 'settled' }).ok, true);
   const h = m.get('hyp-w');
@@ -390,7 +421,7 @@ test('promotion: a throwing sink never breaks the confirm transition', () => {
   const m = createHypothesisManager({
     sink: { promote: () => { throw new Error('hindsight down'); } },
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-x', statement: 'Resilient.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-x', statement: 'Resilient.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'the sink failure is fatal' }],
   });
   assert.equal(m.evaluateTransition('hyp-x', 'confirmed', { rationale: 'settled' }).ok, true);
   const h = m.get('hyp-x');
@@ -427,7 +458,7 @@ test("0.1 async sink: promotion settles in the background without blocking or br
   const m = createHypothesisManager({
     sink: { promote: () => new Promise((res) => { resolvePromote = res; }) },
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: "hyp-async", statement: "Async storage.", status: "testing", confidence: 0.72, evidenceFor: ["a"] }],
+    hypotheses: [{ id: "hyp-async", statement: "Async storage.", status: "testing", confidence: 0.72, evidenceFor: ["a"], counterHypothesis: "the async write is dropped" }],
   });
   assert.equal(m.evaluateTransition("hyp-async", "confirmed", { rationale: "policy met" }).ok, true);
   const h = m.get("hyp-async");
@@ -490,7 +521,7 @@ test("0.1 lifecycle independence: persistence survives the entire lifecycle in b
     const m = createHypothesisManager({
       policy: { minSupportEvidence: 2, confirmConfidence: 0.7, minOpposeEvidence: 2, rejectConfidence: 0.35 },
       sink: { promote: () => ({ factId: `fact-${persistence}` }) },
-      hypotheses: [{ id: `hyp-${persistence}`, statement: `${persistence} claim.`, status: "testing", confidence: 0.72, evidenceFor: ["a"], persistence }],
+      hypotheses: [{ id: `hyp-${persistence}`, statement: `${persistence} claim.`, status: "testing", confidence: 0.72, evidenceFor: ["a"], persistence, counterHypothesis: `${persistence} is a coincidence` }],
     });
     m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "b", relation: "supports", confidenceDelta: 0.01, rationale: "second" });
     assert.equal(m.evaluateTransition(`hyp-${persistence}`, "confirmed", { rationale: "policy met" }).ok, true);
@@ -551,7 +582,7 @@ test("0.1 promotion separation: a CONFIRMED ephemeral hypothesis promotes but st
   const m = createHypothesisManager({
     sink: { promote: (p) => { promotions.push(p); return { factId: "f-1" }; } },
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: "hyp-ce", statement: "Short-lived but well supported.", status: "testing", confidence: 0.72, evidenceFor: ["a"] }],
+    hypotheses: [{ id: "hyp-ce", statement: "Short-lived but well supported.", status: "testing", confidence: 0.72, evidenceFor: ["a"], counterHypothesis: "it is only supported this once" }],
   });
   assert.equal(manager_get_status(m, "hyp-ce"), "testing");
   assert.equal(m.evaluateTransition("hyp-ce", "confirmed", { rationale: "policy met" }).ok, true);

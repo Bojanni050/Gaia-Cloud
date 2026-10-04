@@ -21,6 +21,9 @@ const KINDS = ['hypothesis', 'mental_model', 'relationship', 'open_question'];
 const VERWERP_BRONNEN = ['mens', 'consolidatie'];
 const PERSISTENCES = ['ephemeral', 'durable'];
 const METHODS = ['asserted', 'derived', 'tested'];
+// V3 epistemic entrenchment. `macro` is the safe default enforced by the
+// column default: an unclassified statement is one a human must look at.
+const SCOPES = ['micro', 'macro'];
 
 const VALID_TRANSITIONS = {
   proposed: ['testing', 'rejected'],
@@ -60,10 +63,17 @@ function assertMethod(m) {
   }
 }
 
+function assertScope(s) {
+  if (s !== undefined && s !== null && !SCOPES.includes(s)) {
+    throw new ValidationError(`unknown scope: ${s}`);
+  }
+}
+
 const COLUMNS = `
   id, bank_id, kind, statement, confidence, status, verification_plan,
   evidence_memory_ids, evidence_for, evidence_against, persistence, method,
   sources, supersedes_id, superseded_by_id,
+  counter_hypothesis, scope,
   confirmed_document_id, rejection_reason, verwerp_bron,
   tested_at, confirmed_at, rejected_at, created_at, updated_at
 `;
@@ -72,19 +82,24 @@ async function propose(bankId, {
   statement, confidence = 0.5, verificationPlan = '', evidenceMemoryIds = [],
   evidenceFor = [], evidenceAgainst = [], persistence = 'ephemeral', method = 'asserted',
   sources = [], kind = 'hypothesis', supersedesId = null,
+  counterHypothesis = null, scope = undefined,
 } = {}) {
   if (!statement) throw new ValidationError('statement is required');
   assertKind(kind);
   assertPersistence(persistence);
   assertMethod(method);
+  assertScope(scope);
   const { rows } = await pool.query(
     `INSERT INTO hypotheses
        (bank_id, statement, confidence, verification_plan, evidence_memory_ids,
-        evidence_for, evidence_against, persistence, method, sources, kind, supersedes_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        evidence_for, evidence_against, persistence, method, sources, kind, supersedes_id,
+        counter_hypothesis, scope)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'macro'))
      RETURNING ${COLUMNS}`,
     [bankId, statement, confidence, verificationPlan, evidenceMemoryIds,
-      evidenceFor, evidenceAgainst, persistence, method, sources, kind, supersedesId],
+      evidenceFor, evidenceAgainst, persistence, method, sources, kind, supersedesId,
+      (typeof counterHypothesis === 'string' && counterHypothesis.trim()) ? counterHypothesis.trim() : null,
+      scope ?? null],
   );
   return rows[0];
 }
@@ -122,9 +137,11 @@ async function get(bankId, id) {
 async function update(bankId, id, {
   statement, confidence, verificationPlan, evidenceMemoryIds,
   evidenceFor, evidenceAgainst, persistence, method, sources,
+  counterHypothesis, scope,
 } = {}) {
   assertPersistence(persistence);
   assertMethod(method);
+  assertScope(scope);
   const current = await get(bankId, id);
   if (current.status === 'confirmed' || current.status === 'rejected') {
     throw new InvalidTransitionError(current.status, 'edited');
@@ -144,13 +161,17 @@ async function update(bankId, id, {
        evidence_against = COALESCE($10, evidence_against),
        persistence = COALESCE($11, persistence),
        method = COALESCE($12, method),
+       counter_hypothesis = COALESCE($13, counter_hypothesis),
+       scope = COALESCE($14, scope),
        status = $8,
        tested_at = CASE WHEN $8 = 'proposed' THEN NULL ELSE tested_at END,
        updated_at = now()
      WHERE bank_id = $1 AND id = $2
      RETURNING ${COLUMNS}`,
     [bankId, id, statement ?? null, confidence ?? null, verificationPlan ?? null, evidenceMemoryIds ?? null, sources ?? null, nextStatus,
-      evidenceFor ?? null, evidenceAgainst ?? null, persistence ?? null, method ?? null],
+      evidenceFor ?? null, evidenceAgainst ?? null, persistence ?? null, method ?? null,
+      (typeof counterHypothesis === 'string' && counterHypothesis.trim()) ? counterHypothesis.trim() : null,
+      scope ?? null],
   );
   return rows[0];
 }
@@ -182,13 +203,24 @@ async function markCorroborated(bankId, id) {
  * Human Absolute Override: only this path reaches `confirmed`. The statement
  * is not written to Hindsight here — Logos's sync job mirrors it.
  */
-async function confirm(bankId, id) {
+async function confirm(bankId, id, { statement } = {}) {
   const current = await get(bankId, id);
   assertTransition(current.status, 'confirmed');
+  // V3: the anti-lexicographic counter-hypothesis must exist before a human
+  // can settle the statement. Absence is honest and blocks the override —
+  // it is never satisfied by inventing an opposition here.
+  if (!(typeof current.counter_hypothesis === 'string' && current.counter_hypothesis.trim())) {
+    throw new ValidationError('a counter-hypothesis is required before confirmation');
+  }
+  // `statement` is the human's own nuanced re-wording ("Nuanceren"): it is
+  // written together with the confirmation as one audited act, bypassing the
+  // testing→proposed refine reset that a plain PATCH would trigger.
+  const nuanced = (typeof statement === 'string' && statement.trim()) ? statement.trim() : null;
   const { rows } = await pool.query(
-    `UPDATE hypotheses SET status = 'confirmed', confirmed_at = now(), updated_at = now()
+    `UPDATE hypotheses SET status = 'confirmed', confirmed_at = now(), updated_at = now(),
+       statement = COALESCE($3, statement)
      WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
-    [bankId, id],
+    [bankId, id, nuanced],
   );
   return rows[0];
 }
@@ -301,5 +333,5 @@ async function softDelete(bankId, id) {
 
 module.exports = {
   propose, list, get, update, markTesting, markCorroborated, confirm, reject, supersede, applyEvidence, softDelete,
-  VALID_TRANSITIONS, KINDS, RELATIONS,
+  VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES,
 };

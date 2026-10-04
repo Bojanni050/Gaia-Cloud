@@ -14,7 +14,8 @@ function fakeCognition() {
     listHypotheses: async (q) => { calls.push(['list', q]); return [{ id: 'h1', status: 'testing' }]; },
     markTesting: async (id) => { calls.push(['test', id]); return { id, status: 'testing' }; },
     rejectHypothesis: async (id, o) => { calls.push(['reject', id, o]); return { id, status: 'rejected', verwerp_bron: o.verwerpBron }; },
-    confirmHypothesis: async (id) => { calls.push(['confirm', id]); return { id, status: 'confirmed' }; },
+    getHypothesis: async (id) => { calls.push(['get', id]); return { id, status: 'testing', scope: 'macro' }; },
+    confirmHypothesis: async (id, o) => { calls.push(['confirm', id, o]); return { id, status: 'confirmed', statement: (o && o.statement) || 'statement' }; },
     supersedeHypothesis: async (id, o) => { calls.push(['supersede', id, o]); return { id, status: 'rejected', superseded_by_id: o.supersededById }; },
   };
 }
@@ -59,6 +60,26 @@ test('POST confirm is the human path and performs active supersession', async ()
   assert.equal(supersedeCall[2].supersededById, 'h2');
   // confirmed + the superseded old record are both mirrored
   assert.equal(mirrored.length, 2);
+});
+
+test('POST confirm refuses a macro statement without a rationale (server-side friction)', async () => {
+  const cognition = fakeCognition();
+  const res = await request(appWith({ cognition }))
+    .post('/cognition/hypotheses/h2/confirm').send({ supersedes: [] });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /rationale/);
+  assert.ok(!cognition.calls.some((c) => c[0] === 'confirm'));
+});
+
+test('POST confirm passes a human nuanced statement through', async () => {
+  const cognition = fakeCognition();
+  const res = await request(appWith({ cognition }))
+    .post('/cognition/hypotheses/h2/confirm').send({ rationale: 'nuanced', statement: 'only late at night' });
+
+  assert.equal(res.status, 200);
+  const confirmCall = cognition.calls.find((c) => c[0] === 'confirm');
+  assert.equal(confirmCall[2].statement, 'only late at night');
 });
 
 test('POST test opens active testing', async () => {

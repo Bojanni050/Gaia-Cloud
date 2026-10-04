@@ -44,6 +44,14 @@ The state-machine concept is adapted from
 
 - `kind` discriminates a record: `hypothesis` (default), `mental_model`, or
   `relationship`. All share one lifecycle and one table.
+- `counter_hypothesis` is the mandatory anti-lexicographic opposing reading of
+  the same source (V3). It is quarantined: surfaced only for human review,
+  never presented as a fact. `NULL` is honest absence, and a statement without
+  one **cannot be confirmed** — the override is blocked, never faked.
+- `scope` is `micro` | `macro` (V3 epistemic entrenchment). `micro` is
+  low-impact and may soft-promote to `corroborated`; `macro` (the safe default)
+  always needs the human. The API additionally requires a stated `rationale`
+  to confirm a macro statement.
 - `sources` is provenance back to the raw records the statement was derived
   from: `['chronicle:<observation-id>']`. Nothing derived may overwrite raw
   truth in Foundation.

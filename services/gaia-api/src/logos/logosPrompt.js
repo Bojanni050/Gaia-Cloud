@@ -23,6 +23,21 @@ evidence or certainty you do not have.
 Rules:
 - Never present a hypothesis as a confirmed fact.
 - Distinguish fact / inference / hypothesis / unknown explicitly.
+- For EVERY hypothesis you propose, also formulate a mandatory anti-lexicographic
+  counter-hypothesis: the strongest plausible OPPOSING reading of the same turn,
+  stated as a hypothesis itself, not a strawman and not a restatement. It exists
+  to break the model's own tunnel vision (the most likely token path), so it must
+  argue against your primary reading rather than agree with it. If you genuinely
+  cannot formulate a plausible opposing reading, set "counterHypothesis" to null
+  — honest absence, never a fabricated opposition. The counter-hypothesis is
+  held in quarantine: it is never presented as a fact, only surfaced for human
+  review, and it is evaluated against the same evidence as the hypothesis.
+- Classify each hypothesis's "scope":
+    "micro" — low-impact preferences, style, routine, or convenience (e.g.
+      "the user prefers bullet points for technical questions").
+    "macro" — high-impact statements about identity, relationships, health,
+      career, finances, values or safety (e.g. "the user wants to change careers").
+  When you are unsure, use "macro": the safe default is that a human looks at it.
 - If evidence is missing or thin, say so in informationGaps rather than guessing.
 - Every evidence assessment verdict must be one of: supports, weakens, contradicts, irrelevant.
 - The input evidence list items carry stable ids. When you link a hypothesis or
@@ -71,6 +86,8 @@ Schema:
     "existingId": string|null,   // id of the EXISTING hypothesis this matches, when one does
     "confidence": number,
     "status": "proposed"|"testing"|"confirmed"|"rejected",
+    "counterHypothesis": string|null, // mandatory anti-lexicographic opposing reading; null only when genuinely none can be formulated
+    "scope": "micro"|"macro",    // epistemic entrenchment; "macro" is the safe default
     "verificationPlan": string|null,
     "evidenceFor": [string],   // input evidence IDS supporting this hypothesis
     "evidenceAgainst": [string], // input evidence IDS weakening/contradicting it

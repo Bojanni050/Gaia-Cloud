@@ -51,6 +51,15 @@ const EPISTEMIC_STATUS = Object.freeze(['fact', 'inference', 'hypothesis', 'unkn
 const EVIDENCE_VERDICTS = Object.freeze(['supports', 'weakens', 'contradicts', 'irrelevant']);
 
 /**
+ * How heavy a hypothesis is (V3 review: epistemic entrenchment). A `micro`
+ * hypothesis is low-impact and may soft-promote (`corroborated`) without a
+ * human click; a `macro` hypothesis always needs an explicit human
+ * confirmation in the choice domain. `macro` is the safe default: when the
+ * model does not classify, the human still has to look at it.
+ */
+const HYPOTHESIS_SCOPES = Object.freeze(['micro', 'macro']);
+
+/**
  * The hypothesis lifecycle's VALID_TRANSITIONS. `status` here is a same-turn
  * epistemic judgment, never a persisted transition.
  */
@@ -88,6 +97,9 @@ function isValidVerdict(v) {
 function isValidHypothesisStatus(v) {
   return HYPOTHESIS_STATUSES.includes(v);
 }
+function isValidHypothesisScope(v) {
+  return HYPOTHESIS_SCOPES.includes(v);
+}
 
 /**
  * @typedef {Object} EvidenceItem
@@ -116,6 +128,8 @@ function isValidHypothesisStatus(v) {
  * @property {string[]} evidenceFor - ids of assembled evidence items that SUPPORT this hypothesis (0.2 provenance)
  * @property {string[]} evidenceAgainst - ids of assembled evidence items that WEAKEN/CONTRADICT it
  * @property {string|null} [existingId] - 0.3: when this turn recognized an EXISTING hypothesis (supplied via input.existingHypotheses), its stable id — validated against that input list, never invented
+ * @property {string|null} counterHypothesis - V3: the mandatory anti-lexicographic counter-hypothesis — the most plausible opposing reading of the same turn. Kept in quarantine (shown for human review, never spoken as Gaia's own fact). Null is honest absence, never fabricated.
+ * @property {'micro'|'macro'} scope - V3 epistemic entrenchment: micro = low-impact (may soft-promote), macro = high-impact (always needs the human). Defaults to macro when unclassified.
  */
 
 /**
@@ -225,7 +239,7 @@ function isValidHypothesisStatus(v) {
  * @property {{ reasonerVersion: string, reasoningModelConfigured: boolean, fallbackReason: string|null, evidenceCount: number, evidenceSources: string[] }} meta
  */
 
-function makeHypothesis({ statement, confidence = 0.5, status = 'proposed', verificationPlan = null, evidenceAssessments = [] }) {
+function makeHypothesis({ statement, confidence = 0.5, status = 'proposed', verificationPlan = null, evidenceAssessments = [], counterHypothesis = null, scope = 'macro' }) {
   return {
     id: require('crypto').randomUUID(),
     statement,
@@ -233,6 +247,8 @@ function makeHypothesis({ statement, confidence = 0.5, status = 'proposed', veri
     status: isValidHypothesisStatus(status) ? status : 'proposed',
     verificationPlan,
     evidenceAssessments,
+    counterHypothesis: typeof counterHypothesis === 'string' && counterHypothesis.trim() ? counterHypothesis.trim() : null,
+    scope: isValidHypothesisScope(scope) ? scope : 'macro',
   };
 }
 
@@ -242,6 +258,7 @@ module.exports = {
   EPISTEMIC_STATUS,
   EVIDENCE_VERDICTS,
   HYPOTHESIS_STATUSES,
+  HYPOTHESIS_SCOPES,
   REASONING_DEPTHS,
   CONTRADICTION_SIGNIFICANCE,
   RELATIONSHIP_NODE_KINDS,
@@ -249,5 +266,6 @@ module.exports = {
   isValidEpistemicStatus,
   isValidVerdict,
   isValidHypothesisStatus,
+  isValidHypothesisScope,
   makeHypothesis,
 };

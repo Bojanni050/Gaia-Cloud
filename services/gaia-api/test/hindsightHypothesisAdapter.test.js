@@ -126,6 +126,9 @@ test('persistence: a proposed hypothesis retains as a world fact with full gaia_
   assert.equal(md.gaia_hypothesis_updated_by, 'gaia-logos');
   assert.deepEqual(JSON.parse(md.gaia_hypothesis_evidence_for), ['hs_native_9']); // NATIVE provenance id
   assert.deepEqual(JSON.parse(md.gaia_hypothesis_evidence_against), []);
+  // V3 defaults: no counter-hypothesis is honest (empty), scope falls back to macro.
+  assert.equal(md.gaia_hypothesis_counter_hypothesis, '');
+  assert.equal(md.gaia_hypothesis_scope, 'macro');
 });
 
 test('versioning: an evidence update persists v2 and natively supersedes v1', async () => {
@@ -218,7 +221,7 @@ test('confirm + promotion: policy-approved confirm promotes exactly once and ado
   const fake = makeFakeHindsight();
   const { manager } = makeRuntime(fake, {
     policy: { minSupportEvidence: 2, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-z', statement: 'Settled knowledge.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-z', statement: 'Settled knowledge.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'the knowledge is still unsettled' }],
   });
   manager.applyUpdate({ hypothesisId: 'hyp-z', evidenceId: 'b', relation: 'supports', confidenceDelta: 0.01, rationale: 'second' });
   assert.equal(manager.evaluateTransition('hyp-z', 'confirmed', { rationale: 'policy met' }).ok, true);
@@ -257,7 +260,7 @@ test('promotion failure semantics: a failing promote leaves confirmed + pending,
   const manager = createHypothesisManager({
     sink: adapter.sink,
     policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
-    hypotheses: [{ id: 'hyp-f', statement: 'Resilient.', status: 'testing', confidence: 0.72, evidenceFor: ['a'] }],
+    hypotheses: [{ id: 'hyp-f', statement: 'Resilient.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'it is fragile' }],
   });
   assert.equal(manager.evaluateTransition('hyp-f', 'confirmed', { rationale: 'settled' }).ok, true);
   await drain();
@@ -309,6 +312,7 @@ test('retrieval: recall scoped to gaia:hypothesis reconstructs Gaia state from m
       gaia_hypothesis_confidence: '0.81', gaia_hypothesis_evidence_for: '["e1","e2"]',
       gaia_hypothesis_evidence_against: '["e3"]', gaia_hypothesis_updated_by: 'gaia-logos',
       gaia_hypothesis_method: 'tested', gaia_hypothesis_rejection_reason: '',
+      gaia_hypothesis_counter_hypothesis: 'an unrelated scheduler delay', gaia_hypothesis_scope: 'micro',
     }, tags: ['gaia:hypothesis'], document_id: 'gaia-hyp-hyp-42-v3',
   });
   // A non-Gaia memory that must never leak into hypothesis retrieval.
@@ -325,6 +329,8 @@ test('retrieval: recall scoped to gaia:hypothesis reconstructs Gaia state from m
   assert.deepEqual(h.evidenceAgainst, ['e3']);
   assert.equal(h.sourceRef, 'hsf_cur');
   assert.equal(h.method, 'tested');
+  assert.equal(h.counterHypothesis, 'an unrelated scheduler delay');
+  assert.equal(h.scope, 'micro');
 
   // And the recall request itself was scoped exactly as briefed.
   const recallCall = fake.calls.find((c) => c.method === 'POST' && c.path.endsWith('/memories/recall'));

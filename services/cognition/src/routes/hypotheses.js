@@ -21,6 +21,8 @@ router.post('/', asyncRoute(async (req, res) => {
     sources: req.body.sources,
     kind: req.body.kind,
     supersedesId: req.body.supersedes_id,
+    counterHypothesis: req.body.counter_hypothesis,
+    scope: req.body.scope,
   });
   res.status(201).json(h);
 }));
@@ -48,6 +50,8 @@ router.patch('/:id', asyncRoute(async (req, res) => {
     persistence: req.body.persistence,
     method: req.body.method,
     sources: req.body.sources,
+    counterHypothesis: req.body.counter_hypothesis,
+    scope: req.body.scope,
   });
   res.json(h);
 }));
@@ -79,7 +83,7 @@ router.post('/:id/corroborate', asyncRoute(async (req, res) => {
 // Human Absolute Override — the only path to Confirmed.
 router.post('/:id/confirm', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;
-  res.json(await hypotheses.confirm(bankId, id));
+  res.json(await hypotheses.confirm(bankId, id, { statement: req.body.statement }));
 }));
 
 router.post('/:id/reject', asyncRoute(async (req, res) => {

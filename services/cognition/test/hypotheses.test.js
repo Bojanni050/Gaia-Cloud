@@ -22,6 +22,8 @@ function row(overrides = {}) {
     sources: [],
     supersedes_id: null,
     superseded_by_id: null,
+    counter_hypothesis: 'a plausible opposing reading',
+    scope: 'macro',
     confirmed_document_id: null,
     rejection_reason: null,
     verwerp_bron: null,
@@ -72,6 +74,28 @@ test('propose() carries evidence, persistence and method', async () => {
   assert.deepEqual(fake.calls[0].params[6], ['m2']); // evidence_against
   assert.equal(fake.calls[0].params[7], 'durable');  // persistence
   assert.equal(fake.calls[0].params[8], 'derived');  // method
+});
+
+test('propose() carries the counter-hypothesis and scope', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ counter_hypothesis: 'the opposite reading', scope: 'micro' })] }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.propose('gaia', {
+    statement: 'x', counterHypothesis: 'the opposite reading', scope: 'micro',
+  });
+
+  assert.equal(h.counter_hypothesis, 'the opposite reading');
+  assert.equal(h.scope, 'micro');
+  assert.equal(fake.calls[0].params[12], 'the opposite reading'); // counter_hypothesis
+  assert.equal(fake.calls[0].params[13], 'micro');               // scope
+});
+
+test('propose() rejects an unknown scope', async () => {
+  await assert.rejects(
+    () => hypotheses.propose('gaia', { statement: 'x', scope: 'enormous' }),
+    (err) => err.name === 'ValidationError',
+  );
 });
 
 test('propose() rejects an unknown persistence or method', async () => {
@@ -157,7 +181,33 @@ test('confirm() promotes corroborated -> confirmed and does NOT write to Hindsig
 
   const h = await hypotheses.confirm('gaia', 'h1');
   assert.equal(h.status, 'confirmed');
-  assert.equal(fake.calls[1].params.length, 2, 'confirm writes no document id — sync is Logos\' job');
+  assert.equal(fake.calls[1].params.length, 3, 'confirm writes no document id — sync is Logos\' job');
+});
+
+test('confirm() refuses when the counter-hypothesis is missing', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'corroborated', counter_hypothesis: null })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.confirm('gaia', 'h1'),
+    (err) => err.name === 'ValidationError' && /counter-hypothesis/.test(err.message),
+  );
+});
+
+test('confirm() writes the human nuanced statement as one audited act', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'testing' })] };
+    return { rows: [row({ status: 'confirmed', statement: 'only late at night when nobody asks' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.confirm('gaia', 'h1', { statement: 'only late at night when nobody asks' });
+  assert.equal(h.statement, 'only late at night when nobody asks');
+  assert.equal(fake.calls[1].params[2], 'only late at night when nobody asks');
 });
 
 test('confirm() refuses to confirm a rejected hypothesis', async () => {

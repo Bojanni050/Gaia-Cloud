@@ -39,6 +39,31 @@ test('saveHypothesis proposes into Cognition with the manager fields and mirrors
   assert.equal(synced.length, 1);
 });
 
+test('saveHypothesis carries the counter-hypothesis and scope into Cognition', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.save({
+    id: 'hyp-1', statement: 'x', confidence: 0.6, scope: 'micro',
+    counterHypothesis: 'the opposite reading', evidenceFor: [], evidenceAgainst: [],
+  });
+
+  assert.equal(cognition.calls[0][1].counter_hypothesis, 'the opposite reading');
+  assert.equal(cognition.calls[0][1].scope, 'micro');
+});
+
+test('updateHypothesis patches a late-arriving counter-hypothesis', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.update('c1',
+    { id: 'c1', status: 'testing', counterHypothesis: 'the opposing reading', evidenceFor: [], evidenceAgainst: [] },
+    { id: 'c1', status: 'testing', counterHypothesis: null, evidenceFor: [], evidenceAgainst: [] });
+
+  const patch = cognition.calls.find((c) => c[0] === 'patch');
+  assert.equal(patch[2].counter_hypothesis, 'the opposing reading');
+});
+
 test('updateHypothesis sends evidence verdicts and the lifecycle verb, never confirmed', async () => {
   const cognition = fakeCognition();
   const sink = createCognitionSink({ cognition, sync: null });

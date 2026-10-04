@@ -40,9 +40,15 @@
     },
     {
       "id": "val-01", "behavior": "valid-transition-confirm",
-      "setup": { "policy": { "minSupportEvidence": 2, "confirmConfidence": 0.7 }, "hypotheses": [{ "id": "hyp-g1", "statement": "Two independent sources agree.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"] }] },
+      "setup": { "policy": { "minSupportEvidence": 2, "confirmConfidence": 0.7 }, "hypotheses": [{ "id": "hyp-g1", "statement": "Two independent sources agree.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"], "counterHypothesis": "the two sources share one upstream origin" }] },
       "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "two independent confirmations, no counter-evidence" },
       "expect": { "ok": true, "statusAfter": "confirmed" }
+    },
+    {
+      "id": "cnh-01", "behavior": "confirm-refuses-without-counter-hypothesis",
+      "setup": { "policy": { "minSupportEvidence": 1, "confirmConfidence": 0.7 }, "hypotheses": [{ "id": "hyp-n1", "statement": "Well supported but never opposed.", "status": "testing", "confidence": 0.9, "evidenceFor": ["a"] }] },
+      "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "looks right" },
+      "expect": { "ok": false, "reasonMatches": "counter-hypothesis", "statusAfter": "testing" }
     },
     {
       "id": "inv-01", "behavior": "invalid-transition",
@@ -76,7 +82,7 @@
       "setup": {
         "capturePromotions": true,
         "policy": { "minSupportEvidence": 2, "confirmConfidence": 0.7 },
-        "hypotheses": [{ "id": "hyp-l1", "statement": "Settled knowledge.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"] }]
+        "hypotheses": [{ "id": "hyp-l1", "statement": "Settled knowledge.", "status": "testing", "confidence": 0.72, "evidenceFor": ["a", "b"], "counterHypothesis": "the evidence is coincidental" }]
       },
       "action": { "type": "evaluateTransition", "target": "confirmed", "rationale": "policy met, promoting" },
       "expect": {

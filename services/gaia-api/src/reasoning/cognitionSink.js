@@ -48,6 +48,8 @@ function createCognitionSink({ cognition, sync } = {}) {
       method: next.method,
       kind: next.kind || 'hypothesis',
       sources: next.sources || [],
+      counter_hypothesis: next.counterHypothesis || null,
+      scope: next.scope || undefined,
     });
     hypIdMap.set(String(next.id), String(record.id));
     await mirrorHypothesis(record);
@@ -64,6 +66,12 @@ function createCognitionSink({ cognition, sync } = {}) {
     if (next.confidence !== before.confidence) patch.confidence = next.confidence;
     if (next.persistence !== before.persistence) patch.persistence = next.persistence;
     if (next.method !== before.method) patch.method = next.method;
+    // V3: a hypothesis may gain its counter-hypothesis on a later turn; scope
+    // is set at proposal and not changed implicitly.
+    if ((next.counterHypothesis || null) !== (before.counterHypothesis || null)) {
+      patch.counter_hypothesis = next.counterHypothesis || null;
+    }
+    if (next.scope && next.scope !== before.scope) patch.scope = next.scope;
     if (Object.keys(patch).length > 0) record = await cognition.updateHypothesis(cid, patch);
 
     const prevFor = new Set(before.evidenceFor || []);

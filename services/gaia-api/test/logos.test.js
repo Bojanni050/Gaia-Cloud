@@ -22,6 +22,7 @@ test('logosSchema: vocabularies are the exact fixed sets', () => {
   assert.deepEqual(logosSchema.EPISTEMIC_STATUS, ['fact', 'inference', 'hypothesis', 'unknown']);
   assert.deepEqual(logosSchema.EVIDENCE_VERDICTS, ['supports', 'weakens', 'contradicts', 'irrelevant']);
   assert.deepEqual(logosSchema.HYPOTHESIS_STATUSES, ['proposed', 'testing', 'confirmed', 'rejected']);
+  assert.deepEqual(logosSchema.HYPOTHESIS_SCOPES, ['micro', 'macro']);
 });
 
 test('logosSchema: makeHypothesis defaults to proposed and gets a local id', () => {
@@ -40,6 +41,8 @@ const VALID_OUTPUT = JSON.stringify({
     statement: 'The website crashes due to a memory leak.',
     confidence: 0.6,
     status: 'proposed',
+    counterHypothesis: 'the crashes are actually caused by upstream timeouts',
+    scope: 'micro',
     verificationPlan: 'Check memory usage over time.',
     evidenceAssessments: [{
       evidence: 'server logs show OOM errors',
@@ -62,6 +65,21 @@ test('parseAndValidateReasoningOutput: happy path parses fully', () => {
   assert.equal(result.interpretation, 'The user is asking why their website crashed.');
   assert.equal(result.hypotheses.length, 1);
   assert.equal(result.hypotheses[0].evidenceAssessments[0].verdict, 'supports');
+});
+
+test('parseAndValidateReasoningOutput: counter-hypothesis and scope survive validation', () => {
+  const result = parseAndValidateReasoningOutput(VALID_OUTPUT);
+  assert.equal(result.hypotheses[0].counterHypothesis, 'the crashes are actually caused by upstream timeouts');
+  assert.equal(result.hypotheses[0].scope, 'micro');
+});
+
+test('parseAndValidateReasoningOutput: a missing counter-hypothesis stays honest (null), and an unknown scope falls back to macro', () => {
+  const output = JSON.parse(VALID_OUTPUT);
+  delete output.hypotheses[0].counterHypothesis;
+  output.hypotheses[0].scope = 'enormous';
+  const result = parseAndValidateReasoningOutput(JSON.stringify(output));
+  assert.equal(result.hypotheses[0].counterHypothesis, null);
+  assert.equal(result.hypotheses[0].scope, 'macro');
 });
 
 test('parseAndValidateReasoningOutput: confidence and newConfidence stay distinct', () => {
