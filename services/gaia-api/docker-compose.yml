@@ -39,11 +39,11 @@ networks:
     name: hermes-agent_default
   cognition_net:
     external: true
-    # Compose names a stack's default network <project>_<service>_default.
-    # The running cognition stack uses project "gaia-cognition" (the directory)
-    # and service "gaia_cognition", so the network is
-    # gaia-cognition_gaia_cognition_default — confirmed on the VPS with
+    # Compose names a stack's default network <project>_<service>_default. The
+    # cognition stack is deployed from the repo dir services/cognition, so its
+    # project is "cognition" and the network is cognition_gaia_cognition_default
+    # — confirmed on the VPS with
     # `docker inspect gaia-cognition --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'`.
     # If the stack is ever recreated under a different project/service name,
     # update this to match or gaia-api cannot join it.
-    name: gaia-cognition_gaia_cognition_default
+    name: cognition_gaia_cognition_default
