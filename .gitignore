@@ -106,3 +106,8 @@ src-tauri/WixTools/
 
 # Claude Code: machine-specific approved commands (paths, ssh hosts)
 .claude/settings.local.json
+
+# docs/Project Gaia: the PDF is the leidend document (tracked); the editable
+# source and the FreeFileSync database stay local.
+docs/Project Gaia/Project Gaia - Main Document.docx
+docs/Project Gaia/sync.ffs_db
