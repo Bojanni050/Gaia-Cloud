@@ -13,7 +13,8 @@
     "eval:logos": "node eval/run-logos.js",
     "eval:hypothesis": "node eval/run-hypothesis.js",
     "eval:pattern": "node eval/run-pattern.js",
-    "eval:memory": "node eval/run-memoryworthiness.js"
+    "eval:memory": "node eval/run-memoryworthiness.js",
+    "reconcile:hindsight": "node scripts/reconcile-hindsight-tags.js"
   },
   "dependencies": {
     "express": "^4.19.2",
