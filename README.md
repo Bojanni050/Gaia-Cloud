@@ -4,12 +4,13 @@ A lifelong personal intelligence.
 
 Gaia is a conversation-first personal intelligence built around identity, understanding and continuity rather than a single AI model.
 
-This repository is **Gaia Cloud** — her identity and server-side services. Her clients live in their own repositories: [Gaia Web](https://github.com/Bojanni050/Gaia-Web) (browser) and [Gaia Desktop](https://github.com/Bojanni050/Gaia-Desktop) (native, Tauri). See `docs/split-plan.md` for how and why the split happened, and what's still interim (Web's Logos still runs client-side — a known, explicitly-flagged gap, not an oversight).
+This repository is **Gaia Cloud** — her identity, cognition and server-side services. Her clients live in their own repositories: [Gaia Web](https://github.com/Bojanni050/Gaia-Web) (browser) and [Gaia Desktop](https://github.com/Bojanni050/Gaia-Desktop) (native, Tauri).
 
 ## What lives here
 
-- `docs/` — Gaia's constitution and architecture: `soul.md`'s architectural overview, `architecture.md`, `principles.md`, `evolution.md` (the running history of every real milestone), `split-plan.md`.
-- `services/gaia-api/` — the uniform Gaia API: server-side turn orchestration (`POST conversation/turn`), server-side SOUL (canonical `identity/soul.md`), Bearer auth. Desktop's only backend today; Web migrating onto it is later work.
+- `docs/` — Gaia's constitution and architecture: `architecture.md` (Cloud architecture), `soul.md`'s overview, `evolution.md`, `split-plan.md`, and `foundation ingestion capture-rs.md`.
+- `services/gaia-api/` — the uniform Gaia API: server-side turn orchestration (`POST conversation/turn`), server-side SOUL (canonical `identity/soul.md`), Bearer auth, Logos (cognition + background reflection), and the GaiaChat review surface (`/cognition/*`).
+- `services/cognition/` — the derived-knowledge store and lifecycle owner (hypotheses, patterns, candidate models, open questions, relationships), Postgres-backed.
 - `proxy/` — `gaia-hermes-proxy`: internal nginx fronting `hermes-agent`, injecting its auth token so clients never see it.
 
 ## Core Principles
@@ -24,16 +25,20 @@ This repository is **Gaia Cloud** — her identity and server-side services. Her
 ```
 Gaia Desktop / Gaia Web
         │
-        │  services/gaia-api (Desktop today; Web direct for now)
+        │  services/gaia-api (the uniform Gaia API)
         ▼
-   ┌─────────────────────────────┐
-   │          GAIA CLOUD          │
-   │   SOUL · direct generation    │
-   │   proxy/ (hermes auth injection) │
-   └─────────────────────────────┘
+   ┌──────────────────────────────────────────┐
+   │                GAIA CLOUD                 │
+   │   SOUL · Logos (cognition) · GaiaChat      │
+   │   services/cognition (derived lifecycle)   │
+   │   proxy/ (hermes auth injection)           │
+   └──────────────────────────────────────────┘
+        │                         │
+   Foundation (raw)         Hindsight (derived store)
+   observations · ingest    long-term memory (gaia:*)
 ```
 
-Clients depend only on contracts, never on a concrete provider — see `docs/architecture.md` for the full picture (Hermes, Hindsight, capabilities, Logos).
+Clients depend only on contracts, never on a concrete provider — see `docs/architecture.md` for the full picture (Logos, Cognition, Hindsight, Foundation, capabilities).
 
 ## Status
 

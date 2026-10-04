@@ -152,9 +152,9 @@ a hypothesis itself (Absolute Override: only a human confirms).
 
 **Never in the live path** — `turn.js` runs direct generation only; the
 background reflection (`runDeferredCognition`) calls Logos after the
-reply is delivered, fire-and-forget, and the result feeds future turns
-only via Hindsight recall. See `docs/architecture-v3.md` for the V3
-status and open decisions.
+reply is delivered, fire-and-forget, and its result is written to
+**Cognition** (the derived-knowledge store and lifecycle owner) and mirrored to
+Hindsight. See `docs/architecture.md` for the full Cloud architecture.
 
 Run the synthetic evaluation set: `npm run eval:logos` (see
 `eval/README.md` — it runs against a labeled non-LLM stub, not a real
