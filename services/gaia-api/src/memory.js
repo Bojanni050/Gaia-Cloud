@@ -14,8 +14,9 @@ const MAX_MEMORY_LINES = 6;
 const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.55;
 
 /**
- * The 7 standing mental models provisioned on Gaia's `gaia` bank (see
- * services/gaia-api/scripts/provision-mental-models.js) — each a living,
+ * The 7 standing mental models provisioned on the system-memory bank
+ * (`HINDSIGHT_BANK_ID`, default `bojan`) — see
+ * services/gaia-api/scripts/provision-mental-models.js — each a living,
  * periodically-refreshed synthesis over Bo's memories, distinct from
  * per-turn recall above. IDs must match what was provisioned on Hindsight.
  */

@@ -30,7 +30,7 @@
 const express = require('express');
 const { parseTokens, createAuthMiddleware } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
-const { createHindsightClient } = require('./hindsightClient');
+const { createHindsightClient, createCrossBankRecallClient } = require('./hindsightClient');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
 const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternAdapter');
@@ -73,11 +73,51 @@ function createApp(env = process.env) {
     authToken: env.HERMES_AUTH_TOKEN,
   });
   void hermes;
-  const hindsight = createHindsightClient({
-    baseUrl: env.HINDSIGHT_URL || 'http://100.65.0.15:8888',
-    bankId: env.HINDSIGHT_BANK_ID || 'bojan',
-    budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
+  const hindsightUrl = env.HINDSIGHT_URL || 'http://100.65.0.15:8888';
+  const hindsightBudget = env.HINDSIGHT_RECALL_BUDGET || 'mid';
+  // The system-memory bank: the memoryworthiness-gated conversation
+  // reflection still writes here, unchanged. The gate lives in turn.js.
+  const hindsightBankId = env.HINDSIGHT_BANK_ID || 'bojan';
+  // Gaia's OWN bank — her memories, her human side. Hers alone, no gate; the
+  // write path for her own curation is not built yet, so today it is a
+  // recall-only source. Read here so a memory she later places there is
+  // surfaceable from the start.
+  const hindsightOwnBankId = env.HINDSIGHT_OWN_BANK_ID || 'gaia';
+  // The derived-knowledge bank: the Cognition → Hindsight mirror (hypotheses,
+  // patterns, Kairos episodes) that Logos forms.
+  const hindsightLogosBankId = env.HINDSIGHT_LOGOS_BANK_ID || 'gaia-logos';
+  const hindsightApp = createHindsightClient({
+    baseUrl: hindsightUrl,
+    bankId: hindsightBankId,
+    budget: hindsightBudget,
   });
+  const hindsightLogos = createHindsightClient({
+    baseUrl: hindsightUrl,
+    bankId: hindsightLogosBankId,
+    budget: hindsightBudget,
+  });
+  // The banks Gaia recalls over: the system memory, the derived knowledge, and
+  // her own bank — so a derived statement or one of her own memories is as
+  // surfaceable as a raw memory of Bo's. `HINDSIGHT_RECALL_BANK_IDS` overrides
+  // the set; the app bank is always the primary (every non-recall method stays
+  // on it).
+  const recallBankIds = String(
+    env.HINDSIGHT_RECALL_BANK_IDS
+      || `${hindsightBankId},${hindsightLogosBankId},${hindsightOwnBankId}`
+  ).split(',').map((id) => id.trim()).filter(Boolean);
+  const recallClients = [];
+  const seenRecallBanks = new Set();
+  for (const id of recallBankIds) {
+    if (seenRecallBanks.has(id)) continue;
+    seenRecallBanks.add(id);
+    if (id === hindsightBankId) recallClients.push(hindsightApp);
+    else if (id === hindsightLogosBankId) recallClients.push(hindsightLogos);
+    else recallClients.push(createHindsightClient({ baseUrl: hindsightUrl, bankId: id, budget: hindsightBudget }));
+  }
+  const hindsight = createCrossBankRecallClient(
+    hindsightApp,
+    ...recallClients.filter((client) => client !== hindsightApp)
+  );
   // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
   // mirror — created unconditionally so the GaiaChat review surface works even
   // when per-turn hypothesis persistence is disabled.
@@ -85,7 +125,7 @@ function createApp(env = process.env) {
     baseUrl: env.COGNITION_URL || undefined,
     bankId: env.COGNITION_BANK_ID || undefined,
   });
-  const cognitionSync = createCognitionSync({ hindsight, cognition });
+  const cognitionSync = createCognitionSync({ hindsight: hindsightLogos, cognition });
   // Foundation (raw-observation source of truth): Gaia reads it for
   // archive-shaped asks and carries completed turns / observations back into
   // its stream. Undefined when FOUNDATION_URL is unset — every caller falls
@@ -101,11 +141,12 @@ function createApp(env = process.env) {
     const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
 
     // Read adapters (Hindsight) — recall/load only; their sinks are retired.
-    const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsight });
+    // They read the derived-knowledge bank, matching where cognitionSync writes.
+    const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsightLogos });
     const hypothesisManager = createHypothesisManager({ sink: cognitionSink.hypothesis });
     // Logos pattern formation over DURABLE hypotheses — persisted to Cognition
     // (the read side still reconstructs patterns from Hindsight).
-    const patternAdapter = createHindsightPatternAdapter({ client: hindsight });
+    const patternAdapter = createHindsightPatternAdapter({ client: hindsightLogos });
     const patternManager = createPatternManager({ sink: cognitionSink.pattern });
     let loadedPromise = null;
     hypothesisRuntime = {

@@ -70,7 +70,7 @@ async function runReconcile({ argv = process.argv.slice(2), env = process.env, d
 
   const hindsight = deps.hindsight || createHindsightClient({
     baseUrl: env.HINDSIGHT_URL || 'http://100.65.0.15:8888',
-    bankId: env.HINDSIGHT_BANK_ID || 'bojan',
+    bankId: env.HINDSIGHT_LOGOS_BANK_ID || 'gaia-logos',
   });
   const cognition = deps.cognition || createCognitionClient({
     baseUrl: env.COGNITION_URL || 'http://100.65.0.15:8890',

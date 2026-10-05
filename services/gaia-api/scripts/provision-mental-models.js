@@ -2,11 +2,10 @@
 
 /**
  * One-time (or re-run-safe) provisioning of the 7 standing mental models on
- * Bo's shared `bojan` Hindsight bank (deliberately not a Gaia-only bank —
- * see project_gaia_mental_models.md — so these draw on everything already
- * known about him) — see memory.js's MENTAL_MODEL_IDS, which must be kept
- * in sync with the ids created here. Not part of the running service; run
- * manually (from a machine that can reach HINDSIGHT_URL, e.g. over
+ * the system-memory bank (`bojan`) — the bank the app reads them from (see
+ * memory.js's fetchMentalModelContext). memory.js's MENTAL_MODEL_IDS must be
+ * kept in sync with the ids created here. Not part of the running service;
+ * run manually (from a machine that can reach HINDSIGHT_URL, e.g. over
  * Tailscale, or on the VPS itself) whenever the set of mental models needs
  * to change:
  *

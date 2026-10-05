@@ -74,6 +74,13 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   ids it was derived from.
 - **Hindsight is derivable.** Sync is Cognition → Hindsight only; the mirror is
   rebuildable, and `npm run reconcile:hindsight` re-pushes it.
+- **Three banks, split by origin.** `bojan` is the system-memory bank — the
+  memoryworthiness-gated conversation reflection writes there, unchanged
+  (the gate lives in `turn.js`). `gaia` is Gaia's own bank — her memories,
+  her human side; hers alone, no gate, reserved for her own curation
+  (recall-only today). The derived mirror above lives in its own
+  `gaia-logos` bank. Per-turn recall spans all three, so a derived statement
+  or one of her own memories is as surfaceable as a raw memory of Bo's.
 
 ## Derived lifecycle
 

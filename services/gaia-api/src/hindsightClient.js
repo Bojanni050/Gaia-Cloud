@@ -572,4 +572,35 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   };
 }
 
-module.exports = { createHindsightClient };
+/**
+ * Compose a client whose `recall` spans several Hindsight banks while every
+ * other method stays on the primary bank.
+ *
+ * Gaia's own memory lives in her app bank (`gaia`); the derived knowledge
+ * Logos forms and Cognition owns — hypotheses, patterns, Kairos episodes —
+ * lives in its own bank (`gaia-logos`). A derived statement must be as
+ * surfaceable in a turn as a raw memory, so recall fans out to every bank
+ * and merges the results by descending relevance score (`scores.final`,
+ * nulls last). Reads stay best-effort per bank: one bank being slow or
+ * unreachable drops its slice rather than failing the whole recall, exactly
+ * like the single-bank path.
+ *
+ * @param {ReturnType<typeof createHindsightClient>} primary
+ * @param {...ReturnType<typeof createHindsightClient>} others
+ */
+function createCrossBankRecallClient(primary, ...others) {
+  const banks = [primary, ...others].filter(Boolean);
+  return {
+    ...primary,
+    async recall(query, options = {}) {
+      const slices = await Promise.all(
+        banks.map((client) => client.recall(query, options).catch(() => []))
+      );
+      return slices
+        .flat()
+        .sort((a, b) => (b?.scores?.final ?? -Infinity) - (a?.scores?.final ?? -Infinity));
+    },
+  };
+}
+
+module.exports = { createHindsightClient, createCrossBankRecallClient };
