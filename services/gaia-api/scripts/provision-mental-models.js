@@ -2,15 +2,15 @@
 
 /**
  * One-time (or re-run-safe) provisioning of the 7 standing mental models on
- * Bo's shared `bojan` Hindsight bank (deliberately not a Gaia-only bank —
- * see project_gaia_mental_models.md — so these draw on everything already
- * known about him) — see memory.js's MENTAL_MODEL_IDS, which must be kept
- * in sync with the ids created here. Not part of the running service; run
+ * Gaia's own dedicated `gaia` Hindsight bank — deliberately not the shared
+ * 'bojan' bank (see project_gaia_mental_models.md, docs/evolution.md) — so
+ * these draw on Gaia's own derived knowledge. Keep the ids below in sync
+ * with the ids created here. Not part of the running service; run
  * manually (from a machine that can reach HINDSIGHT_URL, e.g. over
  * Tailscale, or on the VPS itself) whenever the set of mental models needs
  * to change:
  *
- *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=bojan \
+ *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=gaia \
  *     node scripts/provision-mental-models.js
  *
  * Re-run-safe: an id that already exists gets PATCHed (name/source_query/
@@ -74,7 +74,7 @@ const MAX_TOKENS = 768;
 
 async function main() {
   const baseUrl = String(process.env.HINDSIGHT_URL || '').replace(/\/+$/, '');
-  const bankId = process.env.HINDSIGHT_BANK_ID || 'bojan';
+  const bankId = process.env.HINDSIGHT_BANK_ID || 'gaia';
   if (!baseUrl) {
     console.error('HINDSIGHT_URL is required');
     process.exit(1);

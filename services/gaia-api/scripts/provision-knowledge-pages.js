@@ -11,7 +11,7 @@
  * over Tailscale, or on the VPS itself) whenever the initial page set
  * needs to be (re-)created or its definitions have changed:
  *
- *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=bojan \
+ *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=gaia \
  *     node scripts/provision-knowledge-pages.js
  *
  * Idempotent: provisionKnowledgePages() checks the bank's existing
@@ -28,7 +28,7 @@ const { provisionKnowledgePages } = require('../src/knowledgePages');
 
 async function main() {
   const baseUrl = process.env.HINDSIGHT_URL || 'http://100.65.0.15:8888';
-  const bankId = process.env.HINDSIGHT_BANK_ID || 'bojan';
+  const bankId = process.env.HINDSIGHT_BANK_ID || 'gaia';
 
   const hindsight = createHindsightClient({ baseUrl, bankId });
 

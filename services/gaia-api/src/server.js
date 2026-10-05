@@ -75,7 +75,7 @@ function createApp(env = process.env) {
   void hermes;
   const hindsight = createHindsightClient({
     baseUrl: env.HINDSIGHT_URL || 'http://100.65.0.15:8888',
-    bankId: env.HINDSIGHT_BANK_ID || 'bojan',
+    bankId: env.HINDSIGHT_BANK_ID || 'gaia',
     budget: env.HINDSIGHT_RECALL_BUDGET || 'mid',
   });
   // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight

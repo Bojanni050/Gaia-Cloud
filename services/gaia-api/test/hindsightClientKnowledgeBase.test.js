@@ -7,7 +7,7 @@ const { createHindsightClient } = require('../src/hindsightClient');
 test('createKnowledgeFolder: posts to /knowledge-base/folders and maps the response', async () => {
   let captured;
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async (url, init) => {
       captured = { url, init };
       return { ok: true, json: async () => ({ id: 'kf-1', kind: 'folder', name: 'User', parent_id: null }) };
@@ -22,7 +22,7 @@ test('createKnowledgeFolder: posts to /knowledge-base/folders and maps the respo
 test('createKnowledgePage: posts source_query and maps page_id/mental_model_id', async () => {
   let captured;
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async (url, init) => {
       captured = { url, init };
       return { ok: true, json: async () => ({ page_id: 'kp-1', mental_model_id: 'mm-1', operation_id: 'op-1' }) };
@@ -39,17 +39,17 @@ test('createKnowledgePage: posts source_query and maps page_id/mental_model_id',
 
 test('getKnowledgePage: returns null on failure, mapped object on success', async () => {
   const unreachable = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan', fetchImpl: async () => { throw new Error('down'); },
+    baseUrl: 'http://x', bankId: 'gaia', fetchImpl: async () => { throw new Error('down'); },
   });
   assert.equal(await unreachable.getKnowledgePage('kp-1'), null);
 
   const notFound = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan', fetchImpl: async () => ({ ok: false, status: 404 }),
+    baseUrl: 'http://x', bankId: 'gaia', fetchImpl: async () => ({ ok: false, status: 404 }),
   });
   assert.equal(await notFound.getKnowledgePage('kp-1'), null);
 
   const ok = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async () => ({
       ok: true,
       json: async () => ({
@@ -66,7 +66,7 @@ test('getKnowledgePage: returns null on failure, mapped object on success', asyn
 
 test('getKnowledgePage: treats the "Generating content..." placeholder as not-ready (null)', async () => {
   const generating = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async () => ({
       ok: true,
       json: async () => ({ id: 'kp-1', name: 'About', type: 'knowledge-page', body: 'Generating content...', markdown: '' }),
@@ -78,7 +78,7 @@ test('getKnowledgePage: treats the "Generating content..." placeholder as not-re
 test('searchKnowledgeBase: builds query params and maps results', async () => {
   let captured;
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async (url) => {
       captured = url;
       return {
@@ -100,14 +100,14 @@ test('searchKnowledgeBase: builds query params and maps results', async () => {
 
 test('searchKnowledgeBase: throws on non-ok response (recall parity, caller must gate)', async () => {
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan', fetchImpl: async () => ({ ok: false, status: 500 }),
+    baseUrl: 'http://x', bankId: 'gaia', fetchImpl: async () => ({ ok: false, status: 500 }),
   });
   await assert.rejects(() => client.searchKnowledgeBase('anything'));
 });
 
 test('getKnowledgeTree: maps nested folder/page tree with camelCase fields', async () => {
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async () => ({
       ok: true,
       json: async () => ({
@@ -132,7 +132,7 @@ test('getKnowledgeTree: maps nested folder/page tree with camelCase fields', asy
 test('updateKnowledgeNode: only sends provided fields', async () => {
   let captured;
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async (url, init) => {
       captured = { url, init };
       return { ok: true };
@@ -147,7 +147,7 @@ test('updateKnowledgeNode: only sends provided fields', async () => {
 test('deleteKnowledgeNode: DELETEs the node and returns true', async () => {
   let captured;
   const client = createHindsightClient({
-    baseUrl: 'http://x', bankId: 'bojan',
+    baseUrl: 'http://x', bankId: 'gaia',
     fetchImpl: async (url, init) => { captured = { url, init }; return { ok: true }; },
   });
   const result = await client.deleteKnowledgeNode('kf-1');

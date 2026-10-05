@@ -23,7 +23,7 @@
  * Hindsight addresses, if both still hold live knowledge-base data — see
  * project_gaia_knowledge_pages.md):
  *
- *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=bojan \
+ *   HINDSIGHT_URL=http://100.65.0.15:8888 HINDSIGHT_BANK_ID=gaia \
  *     node scripts/migrate-knowledge-pages-2026-08-29.js
  */
 
@@ -32,7 +32,7 @@ const { buildKnowledgePageTree, provisionKnowledgePages } = require('../src/know
 
 async function main() {
   const baseUrl = process.env.HINDSIGHT_URL || 'http://100.65.0.15:8888';
-  const bankId = process.env.HINDSIGHT_BANK_ID || 'bojan';
+  const bankId = process.env.HINDSIGHT_BANK_ID || 'gaia';
   const hindsight = createHindsightClient({ baseUrl, bankId });
 
   const roots = await hindsight.getKnowledgeTree();

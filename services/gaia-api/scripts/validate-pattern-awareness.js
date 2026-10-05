@@ -53,7 +53,7 @@ function makeFakeHindsight() {
 
 async function main() {
   const { server, port } = await makeFakeHindsight();
-  const client = createHindsightClient({ baseUrl: `http://127.0.0.1:${port}`, bankId: 'bojan', fetchImpl: fetch });
+  const client = createHindsightClient({ baseUrl: `http://127.0.0.1:${port}`, bankId: 'gaia', fetchImpl: fetch });
   const patternAdapter = createHindsightPatternAdapter({ client });
 
   // Seed two durable patterns via the real persistence sink.

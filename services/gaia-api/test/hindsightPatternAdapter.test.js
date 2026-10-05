@@ -46,7 +46,7 @@ function makeFake() {
     }
     return { ok: false, status: 404, json: async () => ({}) };
   };
-  const client = createHindsightClient({ baseUrl: 'http://hs.test', bankId: 'bojan', fetchImpl });
+  const client = createHindsightClient({ baseUrl: 'http://hs.test', bankId: 'gaia', fetchImpl });
   return { client, facts };
 }
 

@@ -88,7 +88,7 @@ function makeFakeHindsight() {
 }
 
 function makeRuntime(fake, managerOpts = {}) {
-  const client = createHindsightClient({ baseUrl: 'http://hs.test', bankId: 'bojan', fetchImpl: fake.fetchImpl });
+  const client = createHindsightClient({ baseUrl: 'http://hs.test', bankId: 'gaia', fetchImpl: fake.fetchImpl });
   const adapter = createHindsightHypothesisAdapter({ client });
   const manager = createHypothesisManager({ sink: adapter.sink, ...managerOpts });
   return { client, adapter, manager };
@@ -147,7 +147,7 @@ test('versioning: an evidence update persists v2 and natively supersedes v1', as
   assert.equal(retains[1].body.items[0].document_id, 'gaia-hyp-hyp-1-v2');
   const patches = fake.calls.filter((c) => c.method === 'PATCH');
   assert.equal(patches.length, 1);
-  assert.equal(patches[0].path, '/v1/default/banks/bojan/memories/hsf_1');
+  assert.equal(patches[0].path, '/v1/default/banks/gaia/memories/hsf_1');
   assert.equal(patches[0].body.state, 'invalidated');
   assert.match(patches[0].body.reason, /superseded by gaia-hyp-hyp-1-v2/);
   assert.equal(JSON.parse(retains[1].body.items[0].metadata.gaia_hypothesis_evidence_for).length, 2);
@@ -375,7 +375,7 @@ test('boot load: reconstructs the highest active version per hypothesis', async 
   const last = retains.at(-1).body.items[0];
   assert.equal(last.document_id, 'gaia-hyp-hyp-7-v3'); // continued from v2, not restarted at v1
   const patches = fake.calls.filter((c) => c.method === 'PATCH');
-  assert.equal(patches.at(-1).path, '/v1/default/banks/bojan/memories/hsf_v2');
+  assert.equal(patches.at(-1).path, '/v1/default/banks/gaia/memories/hsf_v2');
 });
 
 test('boundary: the manager still has zero Hindsight/capability dependencies', () => {
@@ -414,14 +414,14 @@ test("0.1 persistence metadata: durable persists, reconstructs, and defaults to 
 });
 
 async function adapter_loadAll(fake) {
-  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "bojan", fetchImpl: fake.fetchImpl });
+  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "gaia", fetchImpl: fake.fetchImpl });
   const adapter = createHindsightHypothesisAdapter({ client });
   return adapter.loadActiveHypotheses();
 }
 
 test("0.1 retrieval filter: recallHypotheses can narrow to durable/ephemeral adapter-side", async () => {
   const fake = makeFakeHindsight();
-  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "bojan", fetchImpl: fake.fetchImpl });
+  const client = createHindsightClient({ baseUrl: "http://hs.test", bankId: "gaia", fetchImpl: fake.fetchImpl });
   const adapter = createHindsightHypothesisAdapter({ client });
   fake.facts.set("hsf_d", {
     id: "hsf_d", text: "Durable pattern.", type: "world", state: "valid",
