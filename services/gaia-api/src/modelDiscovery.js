@@ -265,11 +265,27 @@ function normalizeOpenAiModel(m) {
     if (c.supports_reasoning) caps.push('reasoning');
     if (c.supports_function_calling) caps.push('function_calling');
   }
-  // OpenRouter-specific: check architecture or provider hints
+  // OpenRouter (and OpenAI-compatible endpoints that mirror it) describe what
+  // a model can DO in `architecture` + `supported_parameters` rather than a
+  // `capabilities` object. Read both, never inventing a flag that isn't there.
   if (m.architecture) {
-    if (m.architecture.modality && m.architecture.modality.includes('image')) {
+    const modality = typeof m.architecture.modality === 'string' ? m.architecture.modality : '';
+    const inputs = Array.isArray(m.architecture.input_modalities) ? m.architecture.input_modalities : [];
+    if ((modality && modality.includes('image')) || inputs.includes('image')) {
       if (!caps.includes('vision')) caps.push('vision');
     }
+    if (inputs.includes('audio') || modality.includes('audio')) {
+      if (!caps.includes('audio')) caps.push('audio');
+    }
+    if (inputs.includes('video') || modality.includes('video')) {
+      if (!caps.includes('video')) caps.push('video');
+    }
+  }
+  if (Array.isArray(m.supported_parameters)) {
+    const sp = m.supported_parameters;
+    if ((sp.includes('tools') || sp.includes('tool_choice')) && !caps.includes('function_calling')) caps.push('function_calling');
+    if ((sp.includes('reasoning') || sp.includes('include_reasoning') || sp.includes('reasoning_effort')) && !caps.includes('reasoning')) caps.push('reasoning');
+    if ((sp.includes('web_search') || sp.includes('web_search_options')) && !caps.includes('web_search')) caps.push('web_search');
   }
   return {
     id: m.id || '',

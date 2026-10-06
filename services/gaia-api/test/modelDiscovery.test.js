@@ -114,6 +114,37 @@ test('normalizeOpenAiModel: handles missing capabilities', () => {
   assert.deepEqual(result.capabilities, []);
 });
 
+test('normalizeOpenAiModel: reads OpenRouter supported_parameters (tools, reasoning, web_search)', () => {
+  const m = {
+    id: 'deepseek/deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    architecture: { modality: 'text->text', input_modalities: ['text'] },
+    supported_parameters: ['tools', 'tool_choice', 'reasoning', 'web_search'],
+  };
+  const caps = normalizeOpenAiModel(m).capabilities;
+  assert.ok(caps.includes('function_calling'));
+  assert.ok(caps.includes('reasoning'));
+  assert.ok(caps.includes('web_search'));
+  assert.ok(!caps.includes('vision'));
+});
+
+test('normalizeOpenAiModel: reads OpenRouter input_modalities for vision/audio/video', () => {
+  const m = {
+    id: 'x',
+    name: 'X',
+    architecture: { modality: 'text+image+audio->text', input_modalities: ['text', 'image', 'audio', 'video'] },
+  };
+  const caps = normalizeOpenAiModel(m).capabilities;
+  assert.ok(caps.includes('vision'));
+  assert.ok(caps.includes('audio'));
+  assert.ok(caps.includes('video'));
+});
+
+test('normalizeOpenAiModel: never invents a capability the provider did not report', () => {
+  const m = { id: 'z', name: 'Z', architecture: { modality: 'text->text', input_modalities: ['text'] }, supported_parameters: ['temperature', 'max_tokens'] };
+  assert.deepEqual(normalizeOpenAiModel(m).capabilities, []);
+});
+
 // --- retrieveEdenAiModels (mocked fetch) ---
 
 test('retrieveEdenAiModels: fetches and normalizes models', async () => {
