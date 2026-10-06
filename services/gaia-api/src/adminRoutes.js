@@ -16,6 +16,7 @@
  *   PUT  /admin/api/provider/config   -> { provider?, baseUrl?, apiKey? }
  *   GET  /admin/api/provider/models   -> retrieve models from provider
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
+ *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/kairos/selfmemory)
  *   GET  /admin/api/provider/capabilities -> derived capability availability
  *
  *   TTS (independent):
@@ -33,6 +34,7 @@ const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
+const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'selfmemory'];
 
@@ -186,16 +188,45 @@ function createAdminRouter({
       res.json(providerStore.getMaskedConfig().generationBackup);
     });
 
+    // --- Per-role custom provider (generation / kairos / selfmemory) ---
+    // PUT accepts { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? }.
+    // An empty apiKey never clears or changes the stored key.
+
+    router.put('/api/provider/role-provider', auth, (req, res) => {
+      const body = req.body || {};
+      const role = body.role;
+      if (!CUSTOM_PROVIDER_ROLES.includes(role)) {
+        return res.status(400).json({ error: `role must be one of: ${CUSTOM_PROVIDER_ROLES.join(', ')}` });
+      }
+      const allowed = {};
+      if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
+      if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
+      if (typeof body.model === 'string') allowed.model = body.model.trim();
+      if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+      if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
+
+      providerStore.saveRoleProvider(role, allowed);
+      res.json(providerStore.getMaskedConfig());
+    });
+
     router.get('/api/provider/capabilities', auth, (req, res) => {
       const config = providerStore.getConfig();
       const roles = config && config.roles ? config.roles : {};
+      const roleProviders = config && config.roleProviders ? config.roleProviders : {};
       const ttsConfig = config && config.tts ? config.tts : {};
+      // A custom-provider role is active when it names its own endpoint, or
+      // when it has a model picked from the Main Provider's catalog.
+      const roleActive = (r) => {
+        const custom = roleProviders[r];
+        if (custom && custom.useMainProvider === false && custom.baseUrl && custom.model) return true;
+        return Boolean(roles[r] && roles[r].model);
+      };
       const capabilities = {
-        generation: Boolean(roles.generation && roles.generation.model),
+        generation: roleActive('generation'),
         reasoning: Boolean(roles.reasoning && roles.reasoning.model),
         vision: Boolean(roles.vision && roles.vision.model),
-        kairos: Boolean(roles.kairos && roles.kairos.model),
-        selfmemory: Boolean(roles.selfmemory && roles.selfmemory.model),
+        kairos: roleActive('kairos'),
+        selfmemory: roleActive('selfmemory'),
         tts: Boolean(ttsConfig.model),
       };
       res.json(capabilities);

@@ -257,3 +257,60 @@ test('resolveBackupConfig: stored backup wins over env vars', () => {
   assert.equal(config.baseUrl, 'https://stored/v1');
   assert.equal(config.model, 's1');
 });
+
+// --- per-role custom provider (generation / kairos / selfmemory) ---
+
+test('resolveRoleConfig: a role custom provider wins over the Main Provider selection', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: { generation: { mode: 'catalog', model: 'main-model' } },
+    roleProviders: {
+      generation: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-custom', useMainProvider: false },
+    },
+  });
+  const config = resolveRoleConfig('generation', store);
+  assert.deepEqual(config, { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-custom' });
+});
+
+test('resolveRoleConfig: useMainProvider true (the default) ignores the custom block', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: { kairos: { mode: 'catalog', model: 'main-model' } },
+    roleProviders: {
+      kairos: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-custom', useMainProvider: true },
+    },
+  });
+  const config = resolveRoleConfig('kairos', store);
+  assert.equal(config.provider, 'edenai');
+  assert.equal(config.model, 'main-model');
+});
+
+test('resolveRoleConfig: an incomplete custom provider falls through to the Main Provider', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: { selfmemory: { mode: 'catalog', model: 'main-model' } },
+    roleProviders: { selfmemory: { baseUrl: 'https://api.openai.com/v1', model: '', useMainProvider: false } },
+  });
+  const config = resolveRoleConfig('selfmemory', store);
+  assert.equal(config.provider, 'edenai');
+  assert.equal(config.model, 'main-model');
+});
+
+test('deriveCapabilities: a custom-provider role counts as active', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: { generation: { mode: 'catalog', model: '' } },
+    roleProviders: {
+      generation: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', useMainProvider: false },
+    },
+  });
+  assert.equal(deriveCapabilities(store).generation, true);
+});

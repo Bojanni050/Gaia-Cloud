@@ -372,6 +372,37 @@ test('PUT /admin/api/provider/roles saves manual mode selection', async () => {
   }
 });
 
+test('PUT /admin/api/provider/role-provider saves a custom provider for an allowed role', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'kairos', useMainProvider: false, provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-kairos' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.roleProviders.kairos.baseUrl, 'https://api.openai.com/v1');
+    assert.equal(body.roleProviders.kairos.model, 'gpt-4o-mini');
+    assert.equal(body.roleProviders.kairos.useMainProvider, false);
+    assert.ok(!JSON.stringify(body).includes('sk-kairos'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/provider/role-provider rejects roles without the option', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', useMainProvider: false, baseUrl: 'x' }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('GET /admin/api/provider/capabilities returns capability availability', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {

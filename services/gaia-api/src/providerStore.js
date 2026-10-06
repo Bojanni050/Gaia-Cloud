@@ -76,6 +76,21 @@ const DEFAULT_BACKUP = Object.freeze({
 });
 
 /**
+ * Roles that may define their OWN provider (baseUrl/apiKey/model) instead of
+ * using the Main Provider's catalog. Default is `useMainProvider: true`, so
+ * nothing changes until an operator opts a role out.
+ */
+const CUSTOM_PROVIDER_ROLES = Object.freeze(['generation', 'kairos', 'selfmemory']);
+
+const DEFAULT_ROLE_PROVIDER = Object.freeze({
+  provider: '',
+  baseUrl: '',
+  apiKey: '',
+  model: '',
+  useMainProvider: true,
+});
+
+/**
  * @param {{ storePath?: string }} [options]
  */
 function createProviderStore(options = {}) {
@@ -207,6 +222,59 @@ function createProviderStore(options = {}) {
     return next;
   }
 
+  /**
+   * Save a role's own provider (baseUrl/apiKey/model), used instead of the
+   * Main Provider when `useMainProvider` is false. Only the roles in
+   * CUSTOM_PROVIDER_ROLES accept this. apiKey is optional — omitting it or
+   * sending an empty string keeps the previously stored key.
+   * @param {"generation"|"kairos"|"selfmemory"} role
+   * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string, useMainProvider?: boolean }} partial
+   */
+  function saveRoleProvider(role, partial = {}) {
+    if (!CUSTOM_PROVIDER_ROLES.includes(role)) {
+      throw new Error(`role does not support a custom provider: ${role}`);
+    }
+    const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
+    const currentRp = (current.roleProviders && current.roleProviders[role]) || { ...DEFAULT_ROLE_PROVIDER };
+    const nextApiKey = partial.apiKey !== undefined && String(partial.apiKey).trim() !== ''
+      ? partial.apiKey
+      : currentRp.apiKey;
+    const next = {
+      ...current,
+      roleProviders: {
+        ...(current.roleProviders || {}),
+        [role]: {
+          provider: partial.provider !== undefined ? partial.provider : currentRp.provider,
+          baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentRp.baseUrl,
+          model: partial.model !== undefined ? partial.model : currentRp.model,
+          apiKey: nextApiKey || '',
+          useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentRp.useMainProvider),
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    writeRaw(next);
+    return next;
+  }
+
+  /** Masked view of the custom-provider role configs — never the raw keys. */
+  function maskedRoleProviders(config) {
+    const stored = (config && config.roleProviders) || {};
+    const out = {};
+    for (const role of CUSTOM_PROVIDER_ROLES) {
+      const rp = { ...DEFAULT_ROLE_PROVIDER, ...(stored[role] || {}) };
+      out[role] = {
+        provider: rp.provider || '',
+        baseUrl: rp.baseUrl || '',
+        model: rp.model || '',
+        useMainProvider: Boolean(rp.useMainProvider),
+        hasApiKey: Boolean(rp.apiKey),
+        maskedApiKey: maskKey(rp.apiKey),
+      };
+    }
+    return out;
+  }
+
   /** Safe to return to a client — raw key never leaves this module. */
   function getMaskedConfig() {
     const config = readRaw();
@@ -215,6 +283,7 @@ function createProviderStore(options = {}) {
         provider: null, baseUrl: null, hasApiKey: false, maskedApiKey: null,
         catalog: [], catalogRetrievedAt: null,
         roles: { ...DEFAULT_ROLES },
+        roleProviders: maskedRoleProviders(null),
         generationBackup: { ...DEFAULT_BACKUP, hasApiKey: false, maskedApiKey: null },
         tts: { ...DEFAULT_TTS, hasApiKey: false, maskedApiKey: null },
         updatedAt: null,
@@ -230,6 +299,7 @@ function createProviderStore(options = {}) {
       catalog: Array.isArray(config.catalog) ? config.catalog : [],
       catalogRetrievedAt: config.catalogRetrievedAt || null,
       roles: { ...DEFAULT_ROLES, ...(config.roles || {}) },
+      roleProviders: maskedRoleProviders(config),
       generationBackup: {
         provider: backup.provider || '',
         baseUrl: backup.baseUrl || '',
@@ -256,7 +326,7 @@ function createProviderStore(options = {}) {
     } catch (_) { /* already gone */ }
   }
 
-  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveTtsConfig, saveBackupConfig, getMaskedConfig, clear, storePath };
+  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveRoleProvider, saveTtsConfig, saveBackupConfig, getMaskedConfig, clear, storePath };
 }
 
-module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS, DEFAULT_BACKUP };
+module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS, DEFAULT_BACKUP, DEFAULT_ROLE_PROVIDER, CUSTOM_PROVIDER_ROLES };

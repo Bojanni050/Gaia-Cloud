@@ -320,6 +320,7 @@
         <button id="genSaveBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="genStatus"></div>
+      <div id="genProvider"></div>
     </section>
 
     <!-- Logos — Reasoning (Main Provider role) -->
@@ -388,6 +389,7 @@
         <button id="kairosSaveModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="kairosModelStatus"></div>
+      <div id="kairosProvider"></div>
     </section>
 
     <!-- Self-memory (Main Provider role) -->
@@ -411,6 +413,7 @@
         <button id="selfMemSaveModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="selfMemModelStatus"></div>
+      <div id="selfMemProvider"></div>
     </section>
 
     <!-- TTS (independent) -->
@@ -886,6 +889,7 @@
       setBadge(genBadgeEl, Boolean(currentGenModel));
       updateCapabilities(cfg.roles || {}, cfg.tts || {});
       applyLogosRoles(cfg);
+      applyRoleProviders(cfg);
     } catch (_) { /* ignore on initial load */ }
   }
 
@@ -1289,6 +1293,97 @@
     selfMemDropdown.setValue('');
     selfMemSaveModelBtn.click();
   });
+
+  // ============================================================
+  // Per-role custom provider (generation / kairos / selfmemory)
+  // ============================================================
+  const ROLE_PROVIDER_BLOCKS = {};
+
+  function roleProviderHtml(prefix) {
+    return ''
+      + '<label for="' + prefix + 'ProviderSelect">Custom provider</label>'
+      + '<select id="' + prefix + 'ProviderSelect">'
+      +   '<option value="' + USE_MAIN_PROVIDER + '">— Use Main Provider —</option>'
+      +   '<option value="openai">OpenAI</option>'
+      +   '<option value="openrouter">OpenRouter</option>'
+      +   '<option value="edenai">EdenAI</option>'
+      +   '<option value="anthropic">Anthropic</option>'
+      +   '<option value="mistral">Mistral</option>'
+      +   '<option value="custom">Custom (OpenAI-compatible)</option>'
+      + '</select>'
+      + '<div id="' + prefix + 'CustomFields">'
+      +   '<label for="' + prefix + 'BaseUrl">Base URL</label>'
+      +   '<input id="' + prefix + 'BaseUrl" type="url" placeholder="https://..." autocomplete="off">'
+      +   '<label for="' + prefix + 'ApiKey">API Key</label>'
+      +   '<input id="' + prefix + 'ApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">'
+      +   '<p class="hint" id="' + prefix + 'KeyHint">No key saved yet.</p>'
+      +   '<label for="' + prefix + 'Model">Model</label>'
+      +   '<input id="' + prefix + 'Model" type="text" placeholder="e.g. gpt-4o-mini" autocomplete="off">'
+      + '</div>'
+      + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
+      + '<div class="role-actions-row push-bottom"><button id="' + prefix + 'SaveProviderBtn">Save provider</button></div>'
+      + '<div class="status" id="' + prefix + 'ProviderStatus"></div>';
+  }
+
+  function wireRoleProvider(role, prefix) {
+    const container = $(prefix + 'Provider');
+    if (!container) return;
+    container.innerHTML = roleProviderHtml(prefix);
+    const providerEl = $(prefix + 'ProviderSelect');
+    const fieldsEl = $(prefix + 'CustomFields');
+    const mainHintEl = $(prefix + 'MainHint');
+    wireBaseUrlAutofill(providerEl, $(prefix + 'BaseUrl'));
+    wireMainProviderToggle(providerEl, fieldsEl, mainHintEl);
+    const saveBtn = $(prefix + 'SaveProviderBtn');
+    const statusEl = $(prefix + 'ProviderStatus');
+    saveBtn.addEventListener('click', async () => {
+      const usingMain = providerEl.value === USE_MAIN_PROVIDER;
+      const payload = usingMain
+        ? { role, useMainProvider: true }
+        : {
+            role,
+            useMainProvider: false,
+            provider: providerEl.value,
+            baseUrl: $(prefix + 'BaseUrl').value.trim(),
+            model: $(prefix + 'Model').value.trim(),
+            apiKey: $(prefix + 'ApiKey').value,
+          };
+      saveBtn.disabled = true;
+      try {
+        const res = await fetch('/admin/api/provider/role-provider', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error(await res.text());
+        currentConfig = await res.json();
+        applyRoleProviders(currentConfig);
+        setStatus(statusEl, usingMain ? 'Using the Main Provider.' : 'Custom provider saved.', true);
+        updateCapabilities(currentConfig.roles || {}, currentConfig.tts || {});
+      } catch (err) {
+        setStatus(statusEl, 'Could not save the provider.', false);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+    ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl };
+  }
+
+  function applyRoleProviders(cfg) {
+    const rps = (cfg && cfg.roleProviders) || {};
+    for (const prefix of Object.keys(ROLE_PROVIDER_BLOCKS)) {
+      const block = ROLE_PROVIDER_BLOCKS[prefix];
+      const rp = rps[block.role] || {};
+      const usingMain = rp.useMainProvider !== false;
+      block.providerEl.value = usingMain ? USE_MAIN_PROVIDER : (rp.provider || 'custom');
+      block.fieldsEl.style.display = usingMain ? 'none' : '';
+      block.mainHintEl.style.display = usingMain ? '' : 'none';
+      $(prefix + 'BaseUrl').value = rp.baseUrl || '';
+      $(prefix + 'ApiKey').value = '';
+      $(prefix + 'Model').value = rp.model || '';
+      $(prefix + 'KeyHint').textContent = rp.hasApiKey ? ('Key saved: ' + rp.maskedApiKey) : 'No key saved yet.';
+    }
+  }
+
+  wireRoleProvider('generation', 'gen');
+  wireRoleProvider('kairos', 'kairos');
+  wireRoleProvider('selfmemory', 'selfMem');
 
   // ============================================================
   // Logos decision log

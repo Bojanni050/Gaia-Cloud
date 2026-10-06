@@ -20,6 +20,18 @@
 function resolveRoleConfig(role, providerStore, env = process.env) {
   const stored = providerStore ? providerStore.getConfig() : null;
 
+  // A role with its own custom provider wins outright — it names its own
+  // endpoint, key and model, so the Main Provider's catalog is irrelevant.
+  const roleProvider = stored && stored.roleProviders ? stored.roleProviders[role] : null;
+  if (roleProvider && roleProvider.useMainProvider === false && roleProvider.baseUrl && roleProvider.model) {
+    return {
+      provider: roleProvider.provider || 'custom',
+      baseUrl: roleProvider.baseUrl,
+      model: roleProvider.model,
+      apiKey: roleProvider.apiKey || '',
+    };
+  }
+
   // If the provider store has a configured provider with an apiKey, use it
   if (stored && stored.apiKey && stored.provider) {
     const roles = stored.roles || {};

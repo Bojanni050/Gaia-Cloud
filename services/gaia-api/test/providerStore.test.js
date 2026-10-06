@@ -290,3 +290,37 @@ test('getMaskedConfig reports backup defaults when nothing saved', async () => {
   assert.equal(masked.generationBackup.hasApiKey, false);
   assert.equal(masked.generationBackup.maskedApiKey, null);
 });
+
+// --- per-role custom provider ---
+
+test('saveRoleProvider stores a role\'s own provider and defaults useMainProvider to true', () => {
+  const store = tempStore();
+  assert.equal(store.getMaskedConfig().roleProviders.generation.useMainProvider, true);
+
+  store.saveRoleProvider('generation', { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-custom', useMainProvider: false });
+
+  const rp = store.getMaskedConfig().roleProviders.generation;
+  assert.equal(rp.provider, 'openai');
+  assert.equal(rp.baseUrl, 'https://api.openai.com/v1');
+  assert.equal(rp.model, 'gpt-4o-mini');
+  assert.equal(rp.useMainProvider, false);
+  assert.equal(rp.hasApiKey, true);
+});
+
+test('saveRoleProvider never returns the raw key and keeps it on an empty apiKey', () => {
+  const store = tempStore();
+  store.saveRoleProvider('kairos', { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'm1', apiKey: 'kairos-super-secret', useMainProvider: false });
+  store.saveRoleProvider('kairos', { model: 'm2' });
+
+  const masked = store.getMaskedConfig();
+  assert.ok(!JSON.stringify(masked).includes('kairos-super-secret'));
+  assert.equal(masked.roleProviders.kairos.model, 'm2');
+  assert.equal(masked.roleProviders.kairos.hasApiKey, true);
+  assert.equal(store.getConfig().roleProviders.kairos.apiKey, 'kairos-super-secret');
+});
+
+test('saveRoleProvider rejects roles without a custom-provider option', () => {
+  const store = tempStore();
+  assert.throws(() => store.saveRoleProvider('reasoning', { baseUrl: 'x' }), /does not support a custom provider/);
+  assert.throws(() => store.saveRoleProvider('vision', { baseUrl: 'x' }), /does not support a custom provider/);
+});
