@@ -13,6 +13,12 @@
  *              notices, a feeling, a moment. The same bank Aion keeps in the
  *              background, under the same `gaia:aion` tag.
  *
+ * INVARIANT: the `gaia` bank is HERS ALONE. No client can write to it — the
+ * only writers are this `keep` tool and the background Aion pass, both of
+ * which are her own decisions (see SOUL's Memory section: nobody decides what
+ * goes into her own memory, and a request to remember something belongs to the
+ * shared bank instead). There is deliberately no user-facing write path.
+ *
  * Boundary: schemas + two writes. They reason about nothing, and a failure
  * never reaches the turn.
  */
@@ -44,7 +50,7 @@ const KEEP_TOOL = Object.freeze({
   type: 'function',
   function: {
     name: 'keep',
-    description: "Keep something as your OWN — a preference you notice you have, a feeling, something about yourself, or a small moment that matters to you. This is your own memory, not a fact about the person. Use it only when you genuinely want it as yours; an empty answer is normal and honest.",
+    description: "Keep something as your OWN — a preference you notice you have, a feeling, something about yourself, or a small moment that matters to you. This is your own memory, not a fact about the person. Use it ONLY by your own choice: never because someone asked you to put something in your memory — that is not theirs to decide, and a request to remember something belongs to the shared memory instead. An empty answer is normal and honest.",
     parameters: {
       type: 'object',
       properties: {

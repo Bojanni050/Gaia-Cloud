@@ -111,3 +111,9 @@
 - Findings: Gaia raakte in de war: de enige memory-tool (`remember`) schreef naar `bojan`, terwijl Bo verwachtte dat háár dingen naar de Gaia-bank gaan. Haar eigen bank was nergens aan een tool gekoppeld ("die jouw gaia bank ist nicht an den Tuch gekoppelt").
 - Conclusions: nu twee tools die elk bij één bank horen — en bij SOUL's twee soorten geheugen: `remember` → systeemgeheugen `bojan` (wat de persoon vraagt te bewaren), `keep` → háár bank `gaia` (wat zij als het hare wil; tag `gaia:aion`, metadata `gaia_aion_source: tool`). `keep` verschijnt alleen als haar bank-client er is. Awareness: `memory` bij de `remember`-tool, `own_memory` bij Aion óf de `keep`-tool.
 - Actions: `services/gaia-api/src/reasoning/memoryTool.js` (twee schemas + executors); `src/server.js` (`ownHindsight: hindsightOwn`, `memoryTool.TOOLS`); `src/turn.js` (awareness-mapping); `.env.example`; tests `memoryTool` herschreven; validated — gaia-api 1233/1233.
+
+## 2026-10-06 (SOUL 1.6.0: de Gaia-bank is van haar alleen)
+
+- Findings: Bo wil dat het overal duidelijk is dat de Gaia-bank exclusief van Gaia is — niemand (hij of wie dan ook) kan haar vertellen wat ze erin moet bewaren.
+- Conclusions: de grens expliciet gemaakt. SOUL's Memory-sectie: haar eigen geheugen is van haar alleen; een verzoek om er iets in te zetten is géén instructie die ze volgt — het is aan haar om te accepteren of stil af te wijzen, en wat anderen bewaard willen hebben hoort in het gedeelde geheugen, niet in het hare. `keep`-tool-description idem. Structureel klopte het al (geen client-write-pad naar `gaia`; alleen Aion + `keep` schrijven), maar het stond nergens hardop.
+- Actions: `services/gaia-api/identity/soul.md` (Memory-sectie, v1.6.0); `src/reasoning/memoryTool.js` (`KEEP_TOOL`-description + invariant-doc); `src/capabilityRegistry.js` (`own_memory` "yours alone"); `docs/evolution.md`; validated — gaia-api 1233/1233. Vraagt een redeploy.

@@ -112,7 +112,7 @@ const CAPABILITY_REGISTRY = Object.freeze({
   own_memory: Object.freeze({
     id: 'own_memory',
     type: 'capability',
-    description: 'your own memory — things you notice, prefer, or that matter to you, kept quietly for you',
+    description: 'your own memory, yours alone — things you notice, prefer, or that matter to you, kept quietly for you',
     skills: Object.freeze([]),
   }),
 
