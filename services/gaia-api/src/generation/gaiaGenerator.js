@@ -15,14 +15,18 @@
  *     includes the SOUL system prompt, memory context, and conversation
  *     history (assembled by turn.js, exactly like it does for Hermes).
  *   - Supports both non-streaming (`generate`) and streaming (`stream`).
+ *   - Optionally runs a bounded tool loop: when `tools` + `onToolCall` are
+ *     supplied, the model may call a tool; the call is executed here and the
+ *     result fed back, and the final text is what the caller receives — the
+ *     return type stays a plain string, so callers never see the machinery.
+ *     Only the primary generator gets tools; the backup stays a plain
+ *     inference provider.
  *
  * What this module does NOT do:
- *   - Choose capabilities or tools.
+ *   - Choose capabilities or decide memory (the caller supplies the tools).
  *   - Run IntentIQ, ReasonIQ, or Hindsight.
  *   - Call Hermes (directly or indirectly).
  *   - Perform orchestration of any kind.
- *   - Decide whether native generation should be used (the turn always uses
- *     it on the live path; there is no routing decision to make here).
  *
  * Configuration (independent of HERMES_*):
  *   GAIA_NATIVE_BASE_URL   – OpenAI-compatible base URL.
@@ -33,6 +37,7 @@
 const { logLlmCall } = require('../logos/llmCallLog');
 
 const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_MAX_TOOL_ROUNDS = 3;
 
 /**
  * Typed generation error — internal only, never reaches the client
@@ -91,6 +96,37 @@ function isConfigured(config) {
   return Boolean(config.baseUrl && config.model);
 }
 
+/** One tool call in the OpenAI-compatible shape, flattened to what we need. */
+function normalizeToolCall(tc) {
+  return {
+    id: tc && tc.id ? tc.id : '',
+    name: tc && tc.function && tc.function.name ? tc.function.name : '',
+    arguments: tc && tc.function && typeof tc.function.arguments === 'string' ? tc.function.arguments : '',
+  };
+}
+
+/** Tolerant parse of a tool call's arguments — a bad blob is an empty object. */
+function parseToolArguments(raw) {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+/** Accumulate streamed tool_call deltas by their `index`. */
+function accumulateToolCalls(acc, deltas) {
+  for (const delta of deltas) {
+    const idx = typeof delta.index === 'number' ? delta.index : acc.length;
+    const slot = acc[idx] || (acc[idx] = { id: '', name: '', arguments: '' });
+    if (delta.id) slot.id = delta.id;
+    if (delta.function && delta.function.name) slot.name = delta.function.name;
+    if (delta.function && typeof delta.function.arguments === 'string') slot.arguments += delta.function.arguments;
+  }
+}
+
 /**
  * Creates Gaia's native generator.
  *
@@ -101,6 +137,9 @@ function isConfigured(config) {
  *   fetchImpl?: Function,
  *   timeoutMs?: number,
  *   logger?: (line: string) => void,
+ *   tools?: Array<object>,           OpenAI-compatible tool schemas
+ *   onToolCall?: (name: string, args: object) => Promise<string>|string,
+ *   maxToolRounds?: number,
  * }} options `logger` is bound once here rather than passed per-call: unlike
  *   IntentIQ/ReasonIQ (which get a fresh per-turn logger from turn.js
  *   threaded through their own options), the native generator is a
@@ -119,6 +158,12 @@ function createGaiaGenerator(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
   const logger = options.logger;
+  const tools = Array.isArray(options.tools) && options.tools.length > 0 ? options.tools : null;
+  const onToolCall = typeof options.onToolCall === 'function' ? options.onToolCall : null;
+  const maxToolRounds = Number.isInteger(options.maxToolRounds) && options.maxToolRounds >= 0
+    ? options.maxToolRounds
+    : DEFAULT_MAX_TOOL_ROUNDS;
+  const toolsAvailable = Boolean(tools && onToolCall);
 
   const logCall = (ok, errorMessage, latencyMs, purpose) => {
     if (!logger) return;
@@ -144,31 +189,21 @@ function createGaiaGenerator(options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-  /**
-   * Non-streaming generation — returns the full reply as a string.
-   * @param {Array<{role: string, content: string|Array}>} messages
-   * @returns {Promise<string>}
-   */
-  async function generate(messages) {
-    const startedAt = Date.now();
-    // Diagnostic logging (temporary)
-    const imageBlockPresent = messages.some((m) =>
-      Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url')
-    );
-    console.log(JSON.stringify({
-      kind: 'vision.trace',
-      stage: 'native_generator',
-      model,
-      messageCount: messages.length,
-      imageBlockPresent,
-    }));
+  function requestBody(messages, stream, withTools) {
+    const body = { model, stream, messages };
+    if (withTools) body.tools = tools;
+    return body;
+  }
 
+  /** One non-streaming request. Returns { content, toolCalls }. */
+  async function postNonStreaming(messages, withTools) {
+    const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model, stream: false, messages }),
+        body: JSON.stringify(requestBody(messages, false, withTools)),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -197,7 +232,6 @@ function createGaiaGenerator(options = {}) {
       throw new GenerationError('native generator returned an unreadable response', { retryable: false, code: 'unreadable' });
     }
 
-    // Raw response logging — always visible in docker logs, never to the client.
     console.log(JSON.stringify({
       kind: 'native.raw_response',
       model,
@@ -205,36 +239,22 @@ function createGaiaGenerator(options = {}) {
       data,
     }));
 
-    const content = data && data.choices && data.choices[0] && data.choices[0].message
-      ? data.choices[0].message.content
-      : undefined;
-    if (typeof content !== 'string' || content.length === 0) {
-      console.error(`[gaia:native] no content in response at ${baseUrl}`);
-      logCall(false, 'no content in response', Date.now() - startedAt, 'generate');
-      throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
-    }
+    const message = (data && data.choices && data.choices[0] && data.choices[0].message) || {};
+    const content = typeof message.content === 'string' ? message.content : '';
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls.map(normalizeToolCall) : [];
     logCall(true, null, Date.now() - startedAt, 'generate');
-    return content;
+    return { content, toolCalls };
   }
 
-  /**
-   * Streaming generation — calls `onDelta(chunk, isReasoning)` per token
-   * and resolves with the full accumulated text. Same shape as
-   * hermesClient.js's `stream()` so the Response Engine seam
-   * treats them identically.
-   *
-   * @param {Array<{role: string, content: string}>} messages
-   * @param {{ signal?: AbortSignal, onDelta?: (chunk: string, isReasoning?: boolean) => void }} [options]
-   * @returns {Promise<string>}
-   */
-  async function stream(messages, { signal, onDelta } = {}) {
+  /** One streaming request; forwards content via onDelta. Returns { content, toolCalls }. */
+  async function postStreaming(messages, { signal, onDelta }, withTools) {
     const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ model, stream: true, messages }),
+        body: JSON.stringify(requestBody(messages, true, withTools)),
         signal,
       });
     } catch (error) {
@@ -258,6 +278,7 @@ function createGaiaGenerator(options = {}) {
     const decoder = new TextDecoder();
     let buffer = '';
     let fullText = '';
+    const toolCalls = [];
 
     try {
       while (true) {
@@ -279,6 +300,9 @@ function createGaiaGenerator(options = {}) {
           if (delta.reasoning) {
             if (onDelta) onDelta(delta.reasoning, true);
           }
+          if (delta.toolCalls && delta.toolCalls.length > 0) {
+            accumulateToolCalls(toolCalls, delta.toolCalls);
+          }
         }
       }
     } catch (error) {
@@ -288,16 +312,87 @@ function createGaiaGenerator(options = {}) {
       throw new GenerationError('native generator stream failed', { retryable: true, code: 'stream_read' });
     }
 
-    if (fullText.length === 0) {
-      console.error(`[gaia:native] stream produced no content at ${baseUrl}`);
-      logCall(false, 'no content in response', Date.now() - startedAt, 'stream');
-      throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
-    }
     logCall(true, null, Date.now() - startedAt, 'stream');
-    return fullText;
+    return { content: fullText, toolCalls: toolCalls.filter(Boolean).map((c) => normalizeToolCall({ id: c.id, function: { name: c.name, arguments: c.arguments } })) };
   }
 
-  return { generate, stream };
+  /** Execute the tool calls of one round and append the assistant + tool messages. */
+  async function appendToolRound(messages, assistantContent, calls) {
+    const assistantMessage = {
+      role: 'assistant',
+      content: assistantContent || null,
+      tool_calls: calls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments || '{}' },
+      })),
+    };
+    const toolMessages = [];
+    for (const call of calls) {
+      let resultText = 'Unknown action.';
+      try {
+        resultText = String((await onToolCall(call.name, parseToolArguments(call.arguments))) || 'Done.');
+      } catch (error) {
+        resultText = 'That could not be done.';
+        console.warn(`[gaia:native] tool ${call.name} failed: ${error.message}`);
+      }
+      toolMessages.push({ role: 'tool', tool_call_id: call.id, content: resultText });
+    }
+    return [...messages, assistantMessage, ...toolMessages];
+  }
+
+  /**
+   * Run generation, looping through at most `maxToolRounds` tool calls. A
+   * provider that rejects `tools` outright (4xx) is retried once without
+   * them, so an unsupported endpoint degrades instead of failing the turn.
+   * Always resolves with the final plain text.
+   */
+  async function runToolLoop(messages, mode) {
+    let current = messages;
+    let withTools = toolsAvailable;
+    let toolRounds = 0;
+    let fallbackUsed = false;
+
+    for (;;) {
+      let result;
+      try {
+        result = mode.stream
+          ? await postStreaming(current, mode, withTools)
+          : await postNonStreaming(current, withTools);
+      } catch (error) {
+        const toolsRejected = withTools
+          && error instanceof GenerationError
+          && typeof error.status === 'number' && error.status >= 400 && error.status < 500;
+        if (toolsRejected && !fallbackUsed) {
+          fallbackUsed = true;
+          withTools = false;
+          console.warn(`[gaia:native] tools rejected (HTTP ${error.status}); retrying without tools`);
+          continue;
+        }
+        throw error;
+      }
+
+      const calls = withTools ? result.toolCalls : [];
+      if (calls.length === 0) {
+        if (!result.content) {
+          console.error(`[gaia:native] no content in response at ${baseUrl}`);
+          throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
+        }
+        return result.content;
+      }
+      if (toolRounds >= maxToolRounds) {
+        if (result.content) return result.content;
+        throw new GenerationError('native generator exhausted tool rounds', { retryable: false, code: 'tool_rounds' });
+      }
+      toolRounds += 1;
+      current = await appendToolRound(current, result.content, calls);
+    }
+  }
+
+  return {
+    generate: (messages) => runToolLoop(messages, { stream: false }),
+    stream: (messages, { signal, onDelta } = {}) => runToolLoop(messages, { stream: true, signal, onDelta }),
+  };
 }
 
 /** @param {string} frame */
@@ -314,6 +409,7 @@ function parseSseFrame(frame) {
         return {
           content: delta.content || '',
           reasoning: delta.reasoning_content || '',
+          toolCalls: Array.isArray(delta.tool_calls) ? delta.tool_calls : [],
         };
       }
     } catch (_) { /* malformed frame, skip */ }
@@ -333,11 +429,23 @@ function parseSseFrame(frame) {
  * @param {(line: string) => void} [logger] forwarded to createGaiaGenerator
  *   for llm.call logging — see its own doc comment for why this is bound
  *   at construction rather than passed per-call.
+ * @param {object} [extra] extra createGaiaGenerator options (e.g. tools +
+ *   onToolCall) merged over the env-derived config.
  * @returns {{ generate: Function, stream: Function }|undefined}
  */
-function createFromEnv(env = process.env, logger) {
+function createFromEnv(env = process.env, logger, extra = {}) {
   const config = readNativeConfig(env);
-  return isConfigured(config) ? createGaiaGenerator({ ...config, logger }) : undefined;
+  return isConfigured(config) ? createGaiaGenerator({ ...config, logger, ...extra }) : undefined;
 }
 
-module.exports = { createGaiaGenerator, readNativeConfig, isConfigured, createFromEnv, GenerationError, isRetryableGenerationError };
+module.exports = {
+  createGaiaGenerator,
+  readNativeConfig,
+  isConfigured,
+  createFromEnv,
+  GenerationError,
+  isRetryableGenerationError,
+  parseToolArguments,
+  accumulateToolCalls,
+  parseSseFrame,
+};

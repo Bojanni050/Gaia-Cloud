@@ -83,7 +83,9 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   there, tagged `gaia:aion`. The
   derived mirror above lives in its own `gaia-logos` bank. Per-turn recall
   spans all three, so a derived statement or one of her own memories is as
-  surfaceable as a raw memory of Bo's.
+  surfaceable as a raw memory of Bo's. When the person asks her to remember
+  something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
+  system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
 
 ## Derived lifecycle
 

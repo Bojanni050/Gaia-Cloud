@@ -40,6 +40,7 @@ const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
+const { createMemoryTool } = require('./reasoning/memoryTool');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
@@ -129,6 +130,16 @@ function createApp(env = process.env) {
     hindsightApp,
     ...recallClients.filter((client) => client !== hindsightApp)
   );
+  // On-demand memory: the `remember` tool Gaia may call during a turn. It
+  // writes to the system-memory bank (`bojan`) — the explicit counterpart to
+  // Aion, which writes what SHE chooses to her own bank. Off with
+  // GAIA_MEMORY_TOOL=false.
+  const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
+    ? null
+    : createMemoryTool({ hindsight: hindsightApp });
+  const memoryToolOptions = memoryTool
+    ? { tools: [memoryTool.TOOL], onToolCall: memoryTool.onToolCall }
+    : {};
   // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
   // mirror — created unconditionally so the GaiaChat review surface works even
   // when per-turn hypothesis persistence is disabled.
@@ -216,7 +227,7 @@ function createApp(env = process.env) {
   // selections exist. `llmCallLogger` is bound here (not threaded per-call
   // like Logos's background reflection) because this client is a singleton
   // with no per-turn logger in scope.
-  const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger);
+  const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger, memoryToolOptions);
   // Gaia's voice (src/speech/mimoTts.js, src/speech/mistralTts.js) —
   // undefined when GAIA_TTS_BASE_URL/GAIA_TTS_MODEL are unset, in which
   // case POST /speech answers 503 rather than attempting a call with
@@ -278,6 +289,7 @@ function createApp(env = process.env) {
           model: providerNativeConfig.model,
           authToken: providerNativeConfig.apiKey,
           logger: llmCallLogger,
+          ...memoryToolOptions,
         })
       : nativeGenerator;
   }

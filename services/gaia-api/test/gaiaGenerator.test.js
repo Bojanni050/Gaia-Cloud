@@ -177,3 +177,100 @@ test('stream() returns accumulated text and calls onDelta for each chunk', async
     { chunk: 'lo', isReasoning: false },
   ]);
 });
+
+// --- tool loop (on-demand memory) -----------------------------------------
+
+const REMEMBER_TOOL = [{ type: 'function', function: { name: 'remember', parameters: { type: 'object', properties: { text: { type: 'string' } } } } }];
+
+function sseBody(frames) {
+  let i = 0;
+  return {
+    getReader: () => ({
+      read: async () => {
+        if (i >= frames.length) return { done: true };
+        return { value: new TextEncoder().encode(frames[i++]), done: false };
+      },
+    }),
+  };
+}
+
+test('generate() executes a tool call and returns the final text', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    if (calls.length === 1) {
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'remember', arguments: '{"text":"Bo likes tea"}' } }] } }] }) };
+    }
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'Noted.' } }] }) };
+  };
+  const executed = [];
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    tools: REMEMBER_TOOL,
+    onToolCall: async (name, args) => { executed.push({ name, args }); return 'Kept.'; },
+  });
+
+  const result = await generator.generate([{ role: 'user', content: 'remember I like tea' }]);
+
+  assert.equal(result, 'Noted.');
+  assert.deepEqual(executed, [{ name: 'remember', args: { text: 'Bo likes tea' } }]);
+  assert.ok(Array.isArray(calls[0].tools));
+  assert.equal(calls[1].messages.at(-1).role, 'tool');
+  assert.equal(calls[1].messages.at(-1).content, 'Kept.');
+});
+
+test('generate() retries without tools when the provider rejects them (4xx)', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    if (bodies.length === 1) return { ok: false, status: 400, text: async () => 'tools not supported' };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'hi' } }] }) };
+  };
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    tools: REMEMBER_TOOL, onToolCall: async () => 'x',
+  });
+
+  assert.equal(await generator.generate([{ role: 'user', content: 'hi' }]), 'hi');
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies[0].tools);
+  assert.equal(bodies[1].tools, undefined);
+});
+
+test('generate() stops after maxToolRounds and returns the last text', async () => {
+  let n = 0;
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: '', tool_calls: [{ id: `c${n}`, function: { name: 'remember', arguments: '{}' } }] } }] }),
+  });
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    tools: REMEMBER_TOOL, onToolCall: async () => { n += 1; return 'Kept.'; }, maxToolRounds: 2,
+  });
+
+  await assert.rejects(() => generator.generate([{ role: 'user', content: 'x' }]), /exhausted tool rounds/);
+  assert.equal(n, 2); // two rounds of execution, then the budget is spent
+});
+
+test('stream() runs the tool loop and streams only the final answer', async () => {
+  let call = 0;
+  const toolFrame = `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'remember', arguments: '{"text":"x"}' } }] } }] })}\n\n`;
+  const fetchImpl = async () => {
+    call += 1;
+    if (call === 1) return { ok: true, body: sseBody([toolFrame, 'data: [DONE]\n\n']) };
+    return { ok: true, body: sseBody([`data: ${JSON.stringify({ choices: [{ delta: { content: 'Noted.' } }] })}\n\n`, 'data: [DONE]\n\n']) };
+  };
+  const deltas = [];
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    tools: REMEMBER_TOOL, onToolCall: async () => 'Kept.',
+  });
+
+  const result = await generator.stream([{ role: 'user', content: 'remember x' }], { onDelta: (c) => deltas.push(c) });
+
+  assert.equal(result, 'Noted.');
+  assert.deepEqual(deltas, ['Noted.']);
+  assert.equal(call, 2);
+});

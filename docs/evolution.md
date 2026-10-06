@@ -667,3 +667,11 @@ Each milestone records:
 - The **next milestone** — what unlocks next, and what guardrail protects it.
 
 If a future change contradicts something here, the change should be deliberate — and Evolution should be updated alongside it.
+
+---
+
+## 2026-10-06 — SOUL 1.4.0: memory, honestly spoken
+
+SOUL gained a **Memory** section and lost the absolute "you have no tool-calling mechanism" clause. Gaia now has one quiet ability beyond speaking: to keep something in memory when asked, or when it matters. Two memories live with her — what she understands about the person (the shared memory), and what is hers (what she notices, prefers, what matters to her). She may speak about both honestly, in plain human words, never with technical names, and still never emits machinery-shaped notation.
+
+The reason is a change in architecture, not personality: an explicit `remember` tool (function-calling on the native generator) now writes to the shared system-memory bank, while a background pass (Aion) writes what she chooses to her own bank. Before this, memory was decided entirely before she spoke and she had no such ability at all — so the old absolute clause was becoming false, and SOUL must stay true.
