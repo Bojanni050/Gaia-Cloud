@@ -389,9 +389,14 @@ function createGaiaGenerator(options = {}) {
     }
   }
 
+  const toolNames = tools
+    ? tools.map((t) => t && t.function && t.function.name).filter(Boolean)
+    : [];
+
   return {
     generate: (messages) => runToolLoop(messages, { stream: false }),
     stream: (messages, { signal, onDelta } = {}) => runToolLoop(messages, { stream: true, signal, onDelta }),
+    toolNames,
   };
 }
 

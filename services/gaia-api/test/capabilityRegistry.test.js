@@ -90,6 +90,34 @@ test('foundation is registered as the archive counterpart of hindsight (retrieva
   assert.equal(routingSkills('foundation').length, 0, 'archive selection is Decision input, never a skill target');
 });
 
+test('memory is registered as a capability and renders in awareness with hindsight', () => {
+  const memory = getCapabilityProfile('memory');
+  assert.ok(memory, 'memory must be in the registry — awareness renders from it');
+  assert.equal(memory.type, 'capability');
+  const block = renderCapabilityAwareness([{ id: 'hindsight' }, { id: 'memory' }]);
+  assert.match(block, /- hindsight: your long-term memory/);
+  assert.match(block, /- memory: keeping something in memory/);
+});
+
+test('a turn with Hindsight recall and a memory tool tells Gaia she genuinely has both', async () => {
+  const { performTurn } = require('../src/turn');
+  let captured = null;
+  const generator = {
+    toolNames: ['remember'],
+    generate: async (messages) => { captured = messages; return 'ok'; },
+  };
+  await performTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
+    generator,
+    hindsight: { recall: async () => [] },
+  });
+  const block = (captured || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
+  assert.ok(block, 'capability awareness block must be present');
+  assert.match(block.content, /- hindsight:/);
+  assert.match(block.content, /- memory:/);
+});
+
 // --- §10/§18: skill + capability validation -------------------------------------
 
 test('validateCapabilitySkill: known combo valid; unknown skill / unknown capability invalid', () => {

@@ -93,3 +93,9 @@
 - Findings: de admin-autofill zette EdenAI op `https://api.edenai.run/v1`, terwijl de modelcatalogus (`modelDiscovery.js`) al `https://api.edenai.run/v3/models` gebruikt — een scheve base URL.
 - Conclusions: EdenAI's base URL is `/v3`; de autofill rechtgetrokken zodat provider-config en catalogus dezelfde host/versie gebruiken.
 - Actions: `services/gaia-api/public/admin.html` (`PROVIDER_BASE_URLS.edenai`); validated — admin-JS `node --check` groen.
+
+## 2026-10-06 (Capability-awareness: geheugen ontbrak — Gaia ontkende haar eigen geheugen)
+
+- Findings: Gaia zei "ik kan niet bij mijn geheugenbank". Oorzaak: de capability-awareness-block (`capabilityAwareness.js`, gerenderd uit de registry) vermeldde alleen `native` en `foundation`; `hindsight` (haar lange-termijngeheugen) en de nieuwe `remember`-tool stonden er niet in — terwijl het blok zegt "never claim capabilities that are not listed here". Dus ontkende ze eerlijk een geheugen dat ze wél heeft. (De tool zelf komt van gaia-api, niet van de desktop; er is geen MCP/registry aan de clientkant.)
+- Conclusions: `generationCapabilities` neemt nu `hindsight` op zodra recall bedraad is, en `memory` zodra de primaire generator de `remember`-tool draagt (de generator exposeert daarvoor `toolNames`). Nieuwe registry-entry `memory`. De tool schrijft nog steeds naar `bojan` (systeemgeheugen), niet naar haar eigen `gaia`-bank — dat is Aion (background), zoals eerder besloten.
+- Actions: `services/gaia-api/src/capabilityRegistry.js` (`memory`); `src/generation/gaiaGenerator.js` (`toolNames` op de generator); `src/turn.js` (`generationCapabilities` + call site); tests `capabilityRegistry` + scherpere selectors in `conversationalGrounding`/`turn`; validated — gaia-api 1231/1231.

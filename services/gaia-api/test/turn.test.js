@@ -1892,7 +1892,7 @@ test("parity: identical turns through both transports hit generation with the id
   // ...including the same memory context block built from the same recall.
   const sysA = a.generationMessages.filter((m) => m.role === "system");
   const sysB = b.generationMessages.filter((m) => m.role === "system");
-  assert.ok(sysA.some((m) => /long-term memory/.test(m.content)), "memory context present");
+  assert.ok(sysA.some((m) => /From your long-term memory \(Hindsight\)/.test(m.content)), "memory context present");
   assert.deepEqual(sysB, sysA);
 
   // Memory semantics identical: the memory-worthy turn reflected ONCE per

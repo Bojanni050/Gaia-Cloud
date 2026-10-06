@@ -87,7 +87,7 @@ test('memory still works: established context about Anton reaches the prompt as 
 
   assert.equal(result.status, 200);
   assert.ok(capturedMessages, 'hermes must have received assembled messages');
-  const memoryBlock = capturedMessages.find((m) => m.role === 'system' && /long-term memory/.test(m.content));
+  const memoryBlock = capturedMessages.find((m) => m.role === 'system' && /From your long-term memory \(Hindsight\)/.test(m.content));
   assert.ok(memoryBlock, 'established memory about Anton must still reach the prompt as memory context');
   assert.match(memoryBlock.content, /Anton is a close friend/);
 });

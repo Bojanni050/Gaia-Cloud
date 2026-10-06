@@ -225,7 +225,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, hindsight } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -234,6 +234,17 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   }
   if (foundation && typeof foundation.searchResults === 'function') {
     capabilities.push({ id: 'foundation' });
+  }
+  // Memory is real this turn whenever Hindsight recall is wired — the
+  // capability-awareness block is the one place Gaia learns that, so leaving
+  // it out made her honestly deny a memory she actually has.
+  if (hindsight && typeof hindsight.recall === 'function') {
+    capabilities.push({ id: 'hindsight' });
+  }
+  // The on-demand memory tool, when the primary generator carries it.
+  const toolNames = primary && Array.isArray(primary.toolNames) ? primary.toolNames : [];
+  if (toolNames.includes('remember')) {
+    capabilities.push({ id: 'memory' });
   }
   return capabilities;
 }
@@ -439,7 +450,7 @@ async function runTurnCore({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, hindsight });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
