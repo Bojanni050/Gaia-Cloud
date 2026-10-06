@@ -38,6 +38,8 @@ const { createCognitionClient } = require('./cognitionClient');
 const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
+const { createSelfMemoryWriter } = require('./reasoning/selfMemory');
+const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
 const { createKairosRuntime } = require('./kairos/runtime');
@@ -96,6 +98,13 @@ function createApp(env = process.env) {
     bankId: hindsightLogosBankId,
     budget: hindsightBudget,
   });
+  // Gaia's own bank client — a recall source today, and the write target of
+  // the self-memory pass (see getEffectiveSelfMemory below).
+  const hindsightOwn = createHindsightClient({
+    baseUrl: hindsightUrl,
+    bankId: hindsightOwnBankId,
+    budget: hindsightBudget,
+  });
   // The banks Gaia recalls over: the system memory, the derived knowledge, and
   // her own bank — so a derived statement or one of her own memories is as
   // surfaceable as a raw memory of Bo's. `HINDSIGHT_RECALL_BANK_IDS` overrides
@@ -112,6 +121,7 @@ function createApp(env = process.env) {
     seenRecallBanks.add(id);
     if (id === hindsightBankId) recallClients.push(hindsightApp);
     else if (id === hindsightLogosBankId) recallClients.push(hindsightLogos);
+    else if (id === hindsightOwnBankId) recallClients.push(hindsightOwn);
     else recallClients.push(createHindsightClient({ baseUrl: hindsightUrl, bankId: id, budget: hindsightBudget }));
   }
   const hindsight = createCrossBankRecallClient(
@@ -288,6 +298,18 @@ function createApp(env = process.env) {
       : undefined;
   }
 
+  // Self-memory: Gaia's own-bank write path. A background pass asks her, per
+  // turn, whether anything from the turn is hers to keep; what she answers
+  // goes to `gaia`, ungated. Reuses the reasoning provider role. Off with
+  // GAIA_SELF_MEMORY=false.
+  function getEffectiveSelfMemory() {
+    if (env.GAIA_SELF_MEMORY === 'false') return undefined;
+    const roleConfig = resolveRoleConfig('reasoning', providerStore, env);
+    if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return undefined;
+    const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env) });
+    return createSelfMemoryWriter({ model, hindsight: hindsightOwn });
+  }
+
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
     // The resolved config travels with the client so POST /speech can log
@@ -416,6 +438,7 @@ function createApp(env = process.env) {
         hindsight,
         hypothesisRuntime,
         foundation,
+        selfMemory: getEffectiveSelfMemory(),
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -464,6 +487,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       foundation,
+      selfMemory: getEffectiveSelfMemory(),
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),

@@ -307,6 +307,7 @@ async function runTurnCore({
   hermes,
   foundation,
   hypothesisRuntime,
+  selfMemory,
   decisionStore,
   reasonIQ = evaluateLogos,
   onDelta,
@@ -522,6 +523,7 @@ async function runTurnCore({
     hindsight,
     foundation,
     reasonIQ,
+    selfMemory,
     evidence,
     intentDecision,
     recalledReflections: reflections,
@@ -579,6 +581,7 @@ async function runDeferredCognition({
   hindsight,
   foundation,
   reasonIQ = evaluateLogos,
+  selfMemory,
   evidence,
   intentDecision,
   recalledReflections,
@@ -822,6 +825,25 @@ async function runDeferredCognition({
     }
   }
 
+  // 7b. Self-memory — Gaia's own bank, at her own discretion. UNGATED by
+  //     design: the Memoryworthiness gate above governs the `bojan` bank,
+  //     not hers. A background prompt asks whether anything from this turn
+  //     is hers to keep; an empty answer is normal.
+  if (selfMemory && replyText) {
+    timing.start('deferred.self_memory');
+    try {
+      const outcome = await selfMemory.write({
+        userText,
+        replyText,
+        messages,
+        logger: decisionLogger,
+      });
+      timing.end('deferred.self_memory', { written: outcome && outcome.written });
+    } catch (err) {
+      timing.fail('deferred.self_memory', (err && err.constructor && err.constructor.name) || 'Error');
+    }
+  }
+
   // 8. DecisionIQ review — post-turn only, observability only.
   try {
     reflectDecisionIQ({ userText, decisionLogger });
@@ -849,6 +871,7 @@ async function performTurn({
   hermes,
   foundation,
   hypothesisRuntime,
+  selfMemory,
   decisionStore,
   reasonIQ,
   userDisplayName,
@@ -871,6 +894,7 @@ async function performTurn({
     hermes,
     foundation,
     hypothesisRuntime,
+    selfMemory,
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
@@ -914,6 +938,7 @@ async function performStreamingTurn({
   traceId,
   reasonIQ,
   hypothesisRuntime,
+  selfMemory,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -951,6 +976,7 @@ async function performStreamingTurn({
       hermes,
       foundation,
       hypothesisRuntime,
+      selfMemory,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,
