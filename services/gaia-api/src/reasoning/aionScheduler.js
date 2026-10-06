@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Self-memory scheduler — decides WHEN Gaia's own-memory pass runs.
+ * Aion scheduler — decides WHEN Gaia's own-memory pass runs.
  *
  * Running it every turn is both expensive and noisy, so it runs once every
  * `everyTurns` turns, and once when a session ends. gaia-api has no explicit
@@ -26,7 +26,7 @@ const WINDOW_MESSAGES = 12;
  *   clearTimer?: Function,
  * }} [options]
  */
-function createSelfMemoryScheduler({
+function createAionScheduler({
   getWriter,
   everyTurns = 5,
   idleMs = 5 * 60 * 1000,
@@ -105,4 +105,4 @@ function createSelfMemoryScheduler({
   return { noteTurn, flush, flushAll, size: () => conversations.size, everyTurns: every, idleMs };
 }
 
-module.exports = { createSelfMemoryScheduler, WINDOW_MESSAGES };
+module.exports = { createAionScheduler, WINDOW_MESSAGES };

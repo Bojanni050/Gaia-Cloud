@@ -392,28 +392,28 @@
       <div id="kairosProvider"></div>
     </section>
 
-    <!-- Self-memory (Main Provider role) -->
+    <!-- Aion (Main Provider role) -->
     <section class="role-card violet">
       <div class="role-card-head">
         <div class="role-icon violet">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
         </div>
         <div class="role-status">
-          <span class="role-status-badge inactive" id="selfMemBadge">Inactive</span>
+          <span class="role-status-badge inactive" id="aionBadge">Inactive</span>
         </div>
       </div>
-      <p class="role-title">Self-memory</p>
+      <p class="role-title">Aion</p>
       <p class="role-desc">Gaia's own memories — the model that decides, every few turns, what she wants to keep as hers, in her own bank. Runs in the background; pick a cheap model here.</p>
 
-      <label>Model for self-memory</label>
-      <div id="selfMemDropdown"></div>
+      <label>Model for Aion</label>
+      <div id="aionDropdown"></div>
 
       <div class="role-actions-row push-bottom">
-        <button id="selfMemClearModelBtn" class="secondary">Clear</button>
-        <button id="selfMemSaveModelBtn" disabled>Save selection</button>
+        <button id="aionClearModelBtn" class="secondary">Clear</button>
+        <button id="aionSaveModelBtn" disabled>Save selection</button>
       </div>
-      <div class="status" id="selfMemModelStatus"></div>
-      <div id="selfMemProvider"></div>
+      <div class="status" id="aionModelStatus"></div>
+      <div id="aionProvider"></div>
     </section>
 
     <!-- TTS (independent) -->
@@ -971,9 +971,9 @@
     if (roles.reasoning && roles.reasoning.model) caps.push('reasoning');
     if (roles.vision && roles.vision.model) caps.push('vision');
     if (roles.kairos && roles.kairos.model) caps.push('kairos');
-    if (roles.selfmemory && roles.selfmemory.model) caps.push('selfmemory');
+    if (roles.aion && roles.aion.model) caps.push('aion');
     if (tts && tts.model) caps.push('tts');
-    const allCaps = ['generation', 'reasoning', 'vision', 'kairos', 'selfmemory', 'tts'];
+    const allCaps = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'tts'];
     capabilitiesSection.style.display = '';
     capabilitiesBar.innerHTML = allCaps.map((c) =>
       '<span class="cap-chip ' + (caps.includes(c) ? 'active' : '') + '">' + escapeHtml(c) + '</span>'
@@ -1132,14 +1132,14 @@
   const kairosModelStatusEl = $('kairosModelStatus');
   const kairosSaveModelBtn = $('kairosSaveModelBtn'), kairosClearModelBtn = $('kairosClearModelBtn');
   const kairosBadgeEl = $('kairosBadge');
-  const selfMemModelStatusEl = $('selfMemModelStatus');
-  const selfMemSaveModelBtn = $('selfMemSaveModelBtn'), selfMemClearModelBtn = $('selfMemClearModelBtn');
-  const selfMemBadgeEl = $('selfMemBadge');
+  const aionModelStatusEl = $('aionModelStatus');
+  const aionSaveModelBtn = $('aionSaveModelBtn'), aionClearModelBtn = $('aionClearModelBtn');
+  const aionBadgeEl = $('aionBadge');
 
   let riqCurrentModel = null;
   let riqCurrentVisionModel = null;
   let kairosCurrentModel = null;
-  let selfMemCurrentModel = null;
+  let aionCurrentModel = null;
 
   const riqDropdown = createModelDropdown($('riqDropdown'), {
     placeholder: '— retrieve models above first —',
@@ -1155,10 +1155,10 @@
     emptyOptionLabel: '— unset —',
     onChange: () => { kairosSaveModelBtn.disabled = false; },
   });
-  const selfMemDropdown = createModelDropdown($('selfMemDropdown'), {
+  const aionDropdown = createModelDropdown($('aionDropdown'), {
     placeholder: '— retrieve models above first —',
     emptyOptionLabel: '— unset —',
-    onChange: () => { selfMemSaveModelBtn.disabled = false; },
+    onChange: () => { aionSaveModelBtn.disabled = false; },
   });
 
   // One place that knows how each Main Provider role renders after a change —
@@ -1179,10 +1179,10 @@
       setCurrent: (m) => { kairosCurrentModel = m; },
       ok: (m) => (m ? 'Episode synthesis will use ' + m + '.' : 'Kairos model cleared.'),
     },
-    selfmemory: {
-      statusEl: selfMemModelStatusEl, badgeEl: selfMemBadgeEl,
-      setCurrent: (m) => { selfMemCurrentModel = m; },
-      ok: (m) => (m ? 'Gaia\'s self-memory will use ' + m + '.' : 'Self-memory model cleared.'),
+    aion: {
+      statusEl: aionModelStatusEl, badgeEl: aionBadgeEl,
+      setCurrent: (m) => { aionCurrentModel = m; },
+      ok: (m) => (m ? 'Gaia\'s Aion will use ' + m + '.' : 'Aion model cleared.'),
     },
   };
 
@@ -1193,7 +1193,7 @@
     const models = (cfg && cfg.catalog) || [];
     const provider = (cfg && cfg.provider) || '';
     const label = providerLabelFor(provider);
-    for (const dd of [riqDropdown, riqVisionDropdown, kairosDropdown, selfMemDropdown]) {
+    for (const dd of [riqDropdown, riqVisionDropdown, kairosDropdown, aionDropdown]) {
       dd.setProviderLabel(label);
       dd.setProviderId(provider);
       dd.setModels(models);
@@ -1201,19 +1201,19 @@
     const reasoning = cfg && cfg.roles && cfg.roles.reasoning && cfg.roles.reasoning.model;
     const vision = cfg && cfg.roles && cfg.roles.vision && cfg.roles.vision.model;
     const kairos = cfg && cfg.roles && cfg.roles.kairos && cfg.roles.kairos.model;
-    const selfmemory = cfg && cfg.roles && cfg.roles.selfmemory && cfg.roles.selfmemory.model;
+    const aion = cfg && cfg.roles && cfg.roles.aion && cfg.roles.aion.model;
     riqCurrentModel = reasoning || null;
     riqCurrentVisionModel = vision || null;
     kairosCurrentModel = kairos || null;
-    selfMemCurrentModel = selfmemory || null;
+    aionCurrentModel = aion || null;
     if (reasoning) { riqDropdown.setValue(reasoning); riqSaveModelBtn.disabled = false; }
     if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
     if (kairos) { kairosDropdown.setValue(kairos); kairosSaveModelBtn.disabled = false; }
-    if (selfmemory) { selfMemDropdown.setValue(selfmemory); selfMemSaveModelBtn.disabled = false; }
+    if (aion) { aionDropdown.setValue(aion); aionSaveModelBtn.disabled = false; }
     setBadge(riqBadgeEl, Boolean(riqCurrentModel));
     setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Inactive');
     setBadge(kairosBadgeEl, Boolean(kairosCurrentModel), 'Active', 'Inactive');
-    setBadge(selfMemBadgeEl, Boolean(selfMemCurrentModel), 'Active', 'Inactive');
+    setBadge(aionBadgeEl, Boolean(aionCurrentModel), 'Active', 'Inactive');
   }
 
   async function saveLogosRole(role, model, statusEl, badgeEl, okText) {
@@ -1278,24 +1278,24 @@
     kairosSaveModelBtn.click();
   });
 
-  selfMemSaveModelBtn.addEventListener('click', async () => {
-    const model = selfMemDropdown.getValue();
-    selfMemSaveModelBtn.disabled = true;
+  aionSaveModelBtn.addEventListener('click', async () => {
+    const model = aionDropdown.getValue();
+    aionSaveModelBtn.disabled = true;
     try {
-      await saveLogosRole('selfmemory', model, selfMemModelStatusEl, selfMemBadgeEl,
-        model ? ('Gaia\'s self-memory will use ' + model + '.') : 'Self-memory model cleared.');
+      await saveLogosRole('aion', model, aionModelStatusEl, aionBadgeEl,
+        model ? ('Gaia\'s Aion will use ' + model + '.') : 'Aion model cleared.');
     } finally {
-      selfMemSaveModelBtn.disabled = false;
+      aionSaveModelBtn.disabled = false;
     }
   });
 
-  selfMemClearModelBtn.addEventListener('click', () => {
-    selfMemDropdown.setValue('');
-    selfMemSaveModelBtn.click();
+  aionClearModelBtn.addEventListener('click', () => {
+    aionDropdown.setValue('');
+    aionSaveModelBtn.click();
   });
 
   // ============================================================
-  // Per-role custom provider (generation / kairos / selfmemory)
+  // Per-role custom provider (generation / kairos / aion)
   // ============================================================
   const ROLE_PROVIDER_BLOCKS = {};
 
@@ -1383,7 +1383,7 @@
 
   wireRoleProvider('generation', 'gen');
   wireRoleProvider('kairos', 'kairos');
-  wireRoleProvider('selfmemory', 'selfMem');
+  wireRoleProvider('aion', 'aion');
 
   // ============================================================
   // Logos decision log

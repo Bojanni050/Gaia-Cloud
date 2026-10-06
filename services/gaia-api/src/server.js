@@ -38,8 +38,8 @@ const { createCognitionClient } = require('./cognitionClient');
 const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
-const { createSelfMemoryWriter } = require('./reasoning/selfMemory');
-const { createSelfMemoryScheduler } = require('./reasoning/selfMemoryScheduler');
+const { createAionWriter } = require('./reasoning/aion');
+const { createAionScheduler } = require('./reasoning/aionScheduler');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
@@ -100,7 +100,7 @@ function createApp(env = process.env) {
     budget: hindsightBudget,
   });
   // Gaia's own bank client — a recall source today, and the write target of
-  // the self-memory pass (see getEffectiveSelfMemory below).
+  // the Aion pass (see getEffectiveAionWriter below).
   const hindsightOwn = createHindsightClient({
     baseUrl: hindsightUrl,
     bankId: hindsightOwnBankId,
@@ -299,29 +299,29 @@ function createApp(env = process.env) {
       : undefined;
   }
 
-  // Self-memory: Gaia's own-bank write path. A background pass asks her,
+  // Aion: Gaia's own-bank write path. A background pass asks her,
   // every few turns (and when a session ends), whether anything from the
   // conversation is hers to keep; what she answers goes to `gaia`, ungated.
-  // Uses the `selfmemory` provider role (env fallback: the reasoning role),
-  // so it can be pointed at its own model. Off with GAIA_SELF_MEMORY=false.
-  function getEffectiveSelfMemoryWriter() {
-    if (env.GAIA_SELF_MEMORY === 'false') return undefined;
-    const roleConfig = resolveRoleConfig('selfmemory', providerStore, env);
+  // Uses the `aion` provider role (env fallback: the reasoning role),
+  // so it can be pointed at its own model. Off with GAIA_AION=false.
+  function getEffectiveAionWriter() {
+    if (env.GAIA_AION === 'false') return undefined;
+    const roleConfig = resolveRoleConfig('aion', providerStore, env);
     if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return undefined;
     const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env) });
-    return createSelfMemoryWriter({ model, hindsight: hindsightOwn });
+    return createAionWriter({ model, hindsight: hindsightOwn });
   }
 
-  // The scheduler owns WHEN it runs: every GAIA_SELF_MEMORY_EVERY_TURNS
+  // The scheduler owns WHEN it runs: every GAIA_AION_EVERY_TURNS
   // turns, plus a flush when the conversation changes or goes idle (the
   // closest thing to an end-of-session signal this service has).
-  const selfMemory = env.GAIA_SELF_MEMORY === 'false'
+  const aion = env.GAIA_AION === 'false'
     ? undefined
-    : createSelfMemoryScheduler({
-        getWriter: getEffectiveSelfMemoryWriter,
-        everyTurns: Number(env.GAIA_SELF_MEMORY_EVERY_TURNS) || 5,
-        idleMs: env.GAIA_SELF_MEMORY_IDLE_MS !== undefined
-          ? Number(env.GAIA_SELF_MEMORY_IDLE_MS)
+    : createAionScheduler({
+        getWriter: getEffectiveAionWriter,
+        everyTurns: Number(env.GAIA_AION_EVERY_TURNS) || 5,
+        idleMs: env.GAIA_AION_IDLE_MS !== undefined
+          ? Number(env.GAIA_AION_IDLE_MS)
           : 5 * 60 * 1000,
       });
 
@@ -453,7 +453,7 @@ function createApp(env = process.env) {
         hindsight,
         hypothesisRuntime,
         foundation,
-        selfMemory,
+        aion,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -502,7 +502,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       foundation,
-      selfMemory,
+      aion,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),

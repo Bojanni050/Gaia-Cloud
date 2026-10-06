@@ -138,17 +138,17 @@ function resolveEnvFallback(role, env) {
       }
       return null;
 
-    case 'selfmemory':
-      // Gaia's own-memory pass (reasoning/selfMemory.js). Independent of the
+    case 'aion':
+      // Gaia's own-memory pass (reasoning/aion.js). Independent of the
       // reasoning role so an operator can point it at its own model; falls
       // back to the reasoning role when no dedicated env is set, so it works
       // out of the box.
-      if (env.SELFMEMORY_MODEL_BASE_URL && env.SELFMEMORY_MODEL_NAME) {
+      if (env.AION_MODEL_BASE_URL && env.AION_MODEL_NAME) {
         return {
-          provider: env.SELFMEMORY_MODEL_PROVIDER || 'env',
-          baseUrl: env.SELFMEMORY_MODEL_BASE_URL,
-          model: env.SELFMEMORY_MODEL_NAME,
-          apiKey: env.SELFMEMORY_MODEL_API_KEY || '',
+          provider: env.AION_MODEL_PROVIDER || 'env',
+          baseUrl: env.AION_MODEL_BASE_URL,
+          model: env.AION_MODEL_NAME,
+          apiKey: env.AION_MODEL_API_KEY || '',
         };
       }
       return resolveEnvFallback('reasoning', env);
@@ -201,7 +201,7 @@ function deriveCapabilities(providerStore, env = process.env) {
     reasoning: resolveRoleConfig('reasoning', providerStore, env) !== null,
     vision: resolveRoleConfig('vision', providerStore, env) !== null,
     kairos: resolveRoleConfig('kairos', providerStore, env) !== null,
-    selfmemory: resolveRoleConfig('selfmemory', providerStore, env) !== null,
+    aion: resolveRoleConfig('aion', providerStore, env) !== null,
     tts: resolveTtsConfig(providerStore, env) !== null,
   };
 }

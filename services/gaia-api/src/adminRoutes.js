@@ -16,7 +16,7 @@
  *   PUT  /admin/api/provider/config   -> { provider?, baseUrl?, apiKey? }
  *   GET  /admin/api/provider/models   -> retrieve models from provider
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
- *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/kairos/selfmemory)
+ *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/kairos/aion)
  *   GET  /admin/api/provider/capabilities -> derived capability availability
  *
  *   TTS (independent):
@@ -36,7 +36,7 @@ const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDis
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 
-const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'selfmemory'];
+const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion'];
 
 /**
  * @param {{
@@ -188,7 +188,7 @@ function createAdminRouter({
       res.json(providerStore.getMaskedConfig().generationBackup);
     });
 
-    // --- Per-role custom provider (generation / kairos / selfmemory) ---
+    // --- Per-role custom provider (generation / kairos / aion) ---
     // PUT accepts { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? }.
     // An empty apiKey never clears or changes the stored key.
 
@@ -226,7 +226,7 @@ function createAdminRouter({
         reasoning: Boolean(roles.reasoning && roles.reasoning.model),
         vision: Boolean(roles.vision && roles.vision.model),
         kairos: roleActive('kairos'),
-        selfmemory: roleActive('selfmemory'),
+        aion: roleActive('aion'),
         tts: Boolean(ttsConfig.model),
       };
       res.json(capabilities);

@@ -307,7 +307,7 @@ async function runTurnCore({
   hermes,
   foundation,
   hypothesisRuntime,
-  selfMemory,
+  aion,
   decisionStore,
   reasonIQ = evaluateLogos,
   onDelta,
@@ -523,7 +523,7 @@ async function runTurnCore({
     hindsight,
     foundation,
     reasonIQ,
-    selfMemory,
+    aion,
     evidence,
     intentDecision,
     recalledReflections: reflections,
@@ -581,7 +581,7 @@ async function runDeferredCognition({
   hindsight,
   foundation,
   reasonIQ = evaluateLogos,
-  selfMemory,
+  aion,
   evidence,
   intentDecision,
   recalledReflections,
@@ -825,14 +825,14 @@ async function runDeferredCognition({
     }
   }
 
-  // 7b. Self-memory — Gaia's own bank, at her own discretion. UNGATED by
+  // 7b. Aion — Gaia's own bank, at her own discretion. UNGATED by
   //     design: the Memoryworthiness gate above governs the `bojan` bank,
   //     not hers. The scheduler decides WHEN it runs (every few turns, and
   //     when the session ends); this only records the turn.
-  if (selfMemory && replyText) {
+  if (aion && replyText) {
     timing.start('deferred.self_memory');
     try {
-      const outcome = await selfMemory.noteTurn({
+      const outcome = await aion.noteTurn({
         conversationId,
         messages,
         logger: decisionLogger,
@@ -870,7 +870,7 @@ async function performTurn({
   hermes,
   foundation,
   hypothesisRuntime,
-  selfMemory,
+  aion,
   decisionStore,
   reasonIQ,
   userDisplayName,
@@ -893,7 +893,7 @@ async function performTurn({
     hermes,
     foundation,
     hypothesisRuntime,
-    selfMemory,
+    aion,
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
@@ -937,7 +937,7 @@ async function performStreamingTurn({
   traceId,
   reasonIQ,
   hypothesisRuntime,
-  selfMemory,
+  aion,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -975,7 +975,7 @@ async function performStreamingTurn({
       hermes,
       foundation,
       hypothesisRuntime,
-      selfMemory,
+      aion,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,

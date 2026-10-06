@@ -258,7 +258,7 @@ test('resolveBackupConfig: stored backup wins over env vars', () => {
   assert.equal(config.model, 's1');
 });
 
-// --- per-role custom provider (generation / kairos / selfmemory) ---
+// --- per-role custom provider (generation / kairos / aion) ---
 
 test('resolveRoleConfig: a role custom provider wins over the Main Provider selection', () => {
   const store = createMockStore({
@@ -294,10 +294,10 @@ test('resolveRoleConfig: an incomplete custom provider falls through to the Main
     provider: 'edenai',
     baseUrl: 'https://api.edenai.run/v1',
     apiKey: 'sk-main',
-    roles: { selfmemory: { mode: 'catalog', model: 'main-model' } },
-    roleProviders: { selfmemory: { baseUrl: 'https://api.openai.com/v1', model: '', useMainProvider: false } },
+    roles: { aion: { mode: 'catalog', model: 'main-model' } },
+    roleProviders: { aion: { baseUrl: 'https://api.openai.com/v1', model: '', useMainProvider: false } },
   });
-  const config = resolveRoleConfig('selfmemory', store);
+  const config = resolveRoleConfig('aion', store);
   assert.equal(config.provider, 'edenai');
   assert.equal(config.model, 'main-model');
 });

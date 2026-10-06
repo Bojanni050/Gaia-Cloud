@@ -77,10 +77,10 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
 - **Three banks, split by origin.** `bojan` is the system-memory bank — the
   memoryworthiness-gated conversation reflection writes there, unchanged
   (the gate lives in `turn.js`). `gaia` is Gaia's own bank — her memories,
-  her human side; hers alone, no gate. A background self-memory pass
-  (`reasoning/selfMemory.js`, scheduled every few turns and when a session
+  her human side; hers alone, no gate. A background Aion pass
+  (`reasoning/aion.js`, scheduled every few turns and when a session
   ends) asks her whether anything is hers to keep and writes what she answers
-  there, tagged `gaia:self`. The
+  there, tagged `gaia:aion`. The
   derived mirror above lives in its own `gaia-logos` bank. Per-turn recall
   spans all three, so a derived statement or one of her own memories is as
   surfaceable as a raw memory of Bo's.

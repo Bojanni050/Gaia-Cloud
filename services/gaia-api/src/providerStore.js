@@ -2,7 +2,7 @@
 
 /**
  * Persisted configuration for the single model provider and its role-based
- * model selections (Generation, Reasoning, Vision, Kairos, Self-memory) and
+ * model selections (Generation, Reasoning, Vision, Kairos, Aion) and
  * TTS.
  *
  * Follows the same persistence pattern as reasoningModelStore.js —
@@ -56,7 +56,7 @@ const DEFAULT_ROLES = Object.freeze({
   reasoning: { mode: 'catalog', model: '' },
   vision: { mode: 'catalog', model: '' },
   kairos: { mode: 'catalog', model: '' },
-  selfmemory: { mode: 'catalog', model: '' },
+  aion: { mode: 'catalog', model: '' },
 });
 
 const DEFAULT_TTS = Object.freeze({
@@ -80,7 +80,7 @@ const DEFAULT_BACKUP = Object.freeze({
  * using the Main Provider's catalog. Default is `useMainProvider: true`, so
  * nothing changes until an operator opts a role out.
  */
-const CUSTOM_PROVIDER_ROLES = Object.freeze(['generation', 'kairos', 'selfmemory']);
+const CUSTOM_PROVIDER_ROLES = Object.freeze(['generation', 'kairos', 'aion']);
 
 const DEFAULT_ROLE_PROVIDER = Object.freeze({
   provider: '',
@@ -227,7 +227,7 @@ function createProviderStore(options = {}) {
    * Main Provider when `useMainProvider` is false. Only the roles in
    * CUSTOM_PROVIDER_ROLES accept this. apiKey is optional — omitting it or
    * sending an empty string keeps the previously stored key.
-   * @param {"generation"|"kairos"|"selfmemory"} role
+   * @param {"generation"|"kairos"|"aion"} role
    * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string, useMainProvider?: boolean }} partial
    */
   function saveRoleProvider(role, partial = {}) {

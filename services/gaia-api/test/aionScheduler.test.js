@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSelfMemoryScheduler } = require('../src/reasoning/selfMemoryScheduler');
+const { createAionScheduler } = require('../src/reasoning/aionScheduler');
 
 function fakeTimer() {
   const timers = [];
@@ -30,7 +30,7 @@ const msg = (t) => [{ role: 'user', content: t }];
 
 test('runs the pass every N turns, not on every turn', async () => {
   const { writes, writer } = recordingWriter();
-  const sched = createSelfMemoryScheduler({ getWriter: () => writer, everyTurns: 3, idleMs: 0 });
+  const sched = createAionScheduler({ getWriter: () => writer, everyTurns: 3, idleMs: 0 });
 
   for (let i = 0; i < 5; i += 1) {
     await sched.noteTurn({ conversationId: 'c1', messages: msg(`m${i}`) });
@@ -41,7 +41,7 @@ test('runs the pass every N turns, not on every turn', async () => {
 
 test('flushes the previous conversation when a new one starts (session end)', async () => {
   const { writes, writer } = recordingWriter();
-  const sched = createSelfMemoryScheduler({ getWriter: () => writer, everyTurns: 5, idleMs: 0 });
+  const sched = createAionScheduler({ getWriter: () => writer, everyTurns: 5, idleMs: 0 });
 
   await sched.noteTurn({ conversationId: 'c1', messages: msg('a') });
   assert.equal(writes.length, 0);
@@ -54,7 +54,7 @@ test('flushes the previous conversation when a new one starts (session end)', as
 test('flushes a conversation once it goes idle', async () => {
   const { writes, writer } = recordingWriter();
   const timer = fakeTimer();
-  const sched = createSelfMemoryScheduler({
+  const sched = createAionScheduler({
     getWriter: () => writer, everyTurns: 5, idleMs: 60000,
     setTimer: timer.setTimer, clearTimer: timer.clearTimer,
   });
@@ -72,7 +72,7 @@ test('flushes a conversation once it goes idle', async () => {
 test('a later turn re-arms the idle timer instead of flushing early', async () => {
   const { writes, writer } = recordingWriter();
   const timer = fakeTimer();
-  const sched = createSelfMemoryScheduler({
+  const sched = createAionScheduler({
     getWriter: () => writer, everyTurns: 5, idleMs: 60000,
     setTimer: timer.setTimer, clearTimer: timer.clearTimer,
   });
@@ -87,7 +87,7 @@ test('a later turn re-arms the idle timer instead of flushing early', async () =
 
 test('flushAll drains every tracked conversation', async () => {
   const { writes, writer } = recordingWriter();
-  const sched = createSelfMemoryScheduler({ getWriter: () => writer, everyTurns: 5, idleMs: 0 });
+  const sched = createAionScheduler({ getWriter: () => writer, everyTurns: 5, idleMs: 0 });
 
   await sched.noteTurn({ conversationId: 'c1', messages: msg('a') });
   await sched.flushAll();
@@ -97,10 +97,10 @@ test('flushAll drains every tracked conversation', async () => {
 });
 
 test('never throws when no writer is configured or the writer fails', async () => {
-  const none = createSelfMemoryScheduler({ getWriter: () => null, everyTurns: 1, idleMs: 0 });
+  const none = createAionScheduler({ getWriter: () => null, everyTurns: 1, idleMs: 0 });
   assert.deepEqual(await none.noteTurn({ conversationId: 'c', messages: msg('a') }), { written: 0, skipped: 'no-writer' });
 
-  const boom = createSelfMemoryScheduler({
+  const boom = createAionScheduler({
     getWriter: () => ({ write: async () => { throw new Error('boom'); } }),
     everyTurns: 1, idleMs: 0,
   });
