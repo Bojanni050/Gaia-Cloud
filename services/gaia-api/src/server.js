@@ -130,15 +130,15 @@ function createApp(env = process.env) {
     hindsightApp,
     ...recallClients.filter((client) => client !== hindsightApp)
   );
-  // On-demand memory: the `remember` tool Gaia may call during a turn. It
-  // writes to the system-memory bank (`bojan`) — the explicit counterpart to
-  // Aion, which writes what SHE chooses to her own bank. Off with
-  // GAIA_MEMORY_TOOL=false.
+  // On-demand memory: the tools Gaia may call during a turn. `remember`
+  // writes to the shared system-memory bank (`bojan`); `keep` writes to HER
+  // own bank (`gaia`) — the explicit, in-conversation counterpart to Aion.
+  // Off with GAIA_MEMORY_TOOL=false.
   const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
     ? null
-    : createMemoryTool({ hindsight: hindsightApp });
+    : createMemoryTool({ hindsight: hindsightApp, ownHindsight: hindsightOwn });
   const memoryToolOptions = memoryTool
-    ? { tools: [memoryTool.TOOL], onToolCall: memoryTool.onToolCall }
+    ? { tools: memoryTool.TOOLS, onToolCall: memoryTool.onToolCall }
     : {};
   // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
   // mirror — created unconditionally so the GaiaChat review surface works even

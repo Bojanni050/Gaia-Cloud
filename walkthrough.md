@@ -105,3 +105,9 @@
 - Findings: Bo's suggestie — Aion is (wordt) onderdeel van haar karakter, dus hoort het in SOUL, niet alleen in de code.
 - Conclusions: SOUL's Memory-sectie noemt nu **Aion** als de naam voor haar eigen geheugen: deel van wie ze is, geen tool die ze bedient, en nooit uitgelegd "eronder" — *"you simply have it, the way you have a voice."* De grens blijft: gewone mensentaal, nooit banken/systemen/modellen/tools.
 - Actions: `services/gaia-api/identity/soul.md` (Memory-sectie, v1.5.0); `docs/evolution.md` (notitie); validated — docs-only, geen tests geraakt. Vraagt een redeploy (SOUL zit in de image).
+
+## 2026-10-06 (Twee geheugen-tools: remember → bojan, keep → gaia)
+
+- Findings: Gaia raakte in de war: de enige memory-tool (`remember`) schreef naar `bojan`, terwijl Bo verwachtte dat háár dingen naar de Gaia-bank gaan. Haar eigen bank was nergens aan een tool gekoppeld ("die jouw gaia bank ist nicht an den Tuch gekoppelt").
+- Conclusions: nu twee tools die elk bij één bank horen — en bij SOUL's twee soorten geheugen: `remember` → systeemgeheugen `bojan` (wat de persoon vraagt te bewaren), `keep` → háár bank `gaia` (wat zij als het hare wil; tag `gaia:aion`, metadata `gaia_aion_source: tool`). `keep` verschijnt alleen als haar bank-client er is. Awareness: `memory` bij de `remember`-tool, `own_memory` bij Aion óf de `keep`-tool.
+- Actions: `services/gaia-api/src/reasoning/memoryTool.js` (twee schemas + executors); `src/server.js` (`ownHindsight: hindsightOwn`, `memoryTool.TOOLS`); `src/turn.js` (awareness-mapping); `.env.example`; tests `memoryTool` herschreven; validated — gaia-api 1233/1233.

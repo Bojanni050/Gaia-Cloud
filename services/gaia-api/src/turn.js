@@ -241,14 +241,13 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   if (hindsight && typeof hindsight.recall === 'function') {
     capabilities.push({ id: 'hindsight' });
   }
-  // The on-demand memory tool, when the primary generator carries it.
+  // The on-demand shared-memory tool, when the primary generator carries it.
   const toolNames = primary && Array.isArray(primary.toolNames) ? primary.toolNames : [];
   if (toolNames.includes('remember')) {
     capabilities.push({ id: 'memory' });
   }
-  // Aion — her OWN memory, kept in the background. Present when the scheduler
-  // is wired, so she can speak honestly about having one.
-  if (aion) {
+  // Her OWN memory — Aion in the background, or the on-demand `keep` tool.
+  if (aion || toolNames.includes('keep')) {
     capabilities.push({ id: 'own_memory' });
   }
   return capabilities;
