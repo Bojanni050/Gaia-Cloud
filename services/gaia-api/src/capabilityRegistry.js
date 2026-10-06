@@ -109,6 +109,13 @@ const CAPABILITY_REGISTRY = Object.freeze({
     skills: Object.freeze([]),
   }),
 
+  own_memory: Object.freeze({
+    id: 'own_memory',
+    type: 'capability',
+    description: 'your own memory — things you notice, prefer, or that matter to you, kept quietly for you',
+    skills: Object.freeze([]),
+  }),
+
   // Foundation — Bo's epistemische geheugen (Bojanni050/Foundation): what is
   // RECORDED there, as opposed to what Gaia remembers (hindsight). Results
   // arrive status-labelled ([bevestigd feit] / [hypothese · open] / …) —

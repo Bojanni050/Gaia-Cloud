@@ -225,7 +225,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, hindsight } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, hindsight, aion } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -245,6 +245,11 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   const toolNames = primary && Array.isArray(primary.toolNames) ? primary.toolNames : [];
   if (toolNames.includes('remember')) {
     capabilities.push({ id: 'memory' });
+  }
+  // Aion — her OWN memory, kept in the background. Present when the scheduler
+  // is wired, so she can speak honestly about having one.
+  if (aion) {
+    capabilities.push({ id: 'own_memory' });
   }
   return capabilities;
 }
@@ -450,7 +455,7 @@ async function runTurnCore({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, hindsight });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, hindsight, aion });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);

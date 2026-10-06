@@ -94,12 +94,15 @@ test('memory is registered as a capability and renders in awareness with hindsig
   const memory = getCapabilityProfile('memory');
   assert.ok(memory, 'memory must be in the registry — awareness renders from it');
   assert.equal(memory.type, 'capability');
-  const block = renderCapabilityAwareness([{ id: 'hindsight' }, { id: 'memory' }]);
+  const own = getCapabilityProfile('own_memory');
+  assert.ok(own, 'own_memory must be in the registry — Aion renders from it');
+  const block = renderCapabilityAwareness([{ id: 'hindsight' }, { id: 'memory' }, { id: 'own_memory' }]);
   assert.match(block, /- hindsight: your long-term memory/);
   assert.match(block, /- memory: keeping something in memory/);
+  assert.match(block, /- own_memory: your own memory/);
 });
 
-test('a turn with Hindsight recall and a memory tool tells Gaia she genuinely has both', async () => {
+test('a turn with Hindsight recall, a memory tool and Aion tells Gaia she genuinely has all three', async () => {
   const { performTurn } = require('../src/turn');
   let captured = null;
   const generator = {
@@ -111,11 +114,13 @@ test('a turn with Hindsight recall and a memory tool tells Gaia she genuinely ha
     documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
     generator,
     hindsight: { recall: async () => [] },
+    aion: { noteTurn: async () => ({}) },
   });
   const block = (captured || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
   assert.ok(block, 'capability awareness block must be present');
   assert.match(block.content, /- hindsight:/);
   assert.match(block.content, /- memory:/);
+  assert.match(block.content, /- own_memory:/);
 });
 
 // --- §10/§18: skill + capability validation -------------------------------------
