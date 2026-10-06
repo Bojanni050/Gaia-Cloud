@@ -87,3 +87,9 @@
 - Findings: de per-role custom-provider-blokken (generation/kairos/aion) hadden alleen een vrij tekstveld voor het model — je kon geen modellen ophalen bij die eigen provider, terwijl de Main Provider dat wel kan via "Retrieve models".
 - Conclusions: nieuwe `POST /admin/api/provider/role-models` haalt de modellenlijst op bij de rol-eigen provider (body `provider`/`baseUrl`/`apiKey`; een lege `apiKey` valt terug op de opgeslagen rol-key). In de admin kreeg elk rol-provider-blok een "Fetch models"-knop die een `<datalist>` vult, zodat je het model uit de lijst kiest i.p.v. typt.
 - Actions: `services/gaia-api/src/adminRoutes.js` (route + doc-header); `public/admin.html` (`roleProviderHtml` + `wireRoleProvider`); tests `adminRoutes`; validated — gaia-api 1229/1229, admin-JS `node --check` groen.
+
+## 2026-10-06 (EdenAI base URL → /v3)
+
+- Findings: de admin-autofill zette EdenAI op `https://api.edenai.run/v1`, terwijl de modelcatalogus (`modelDiscovery.js`) al `https://api.edenai.run/v3/models` gebruikt — een scheve base URL.
+- Conclusions: EdenAI's base URL is `/v3`; de autofill rechtgetrokken zodat provider-config en catalogus dezelfde host/versie gebruiken.
+- Actions: `services/gaia-api/public/admin.html` (`PROVIDER_BASE_URLS.edenai`); validated — admin-JS `node --check` groen.
