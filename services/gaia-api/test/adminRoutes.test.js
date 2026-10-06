@@ -403,6 +403,35 @@ test('PUT /admin/api/provider/role-provider rejects roles without the option', a
   }
 });
 
+test('POST /admin/api/provider/role-models fetches models for a custom-provider role', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    ctx.setProviderModels([{ id: 'gpt-4o-mini', name: 'GPT-4o Mini' }]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ role: 'kairos', provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-x' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.models[0].id, 'gpt-4o-mini');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-models rejects roles without the option', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', provider: 'openai', baseUrl: 'https://x' }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('GET /admin/api/provider/capabilities returns capability availability', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {

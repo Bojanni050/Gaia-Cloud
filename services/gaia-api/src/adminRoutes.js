@@ -17,6 +17,7 @@
  *   GET  /admin/api/provider/models   -> retrieve models from provider
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
  *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/kairos/aion)
+ *   POST /admin/api/provider/role-models -> { role, provider, baseUrl, apiKey? } -> the role's own provider's model list
  *   GET  /admin/api/provider/capabilities -> derived capability availability
  *
  *   TTS (independent):
@@ -207,6 +208,38 @@ function createAdminRouter({
 
       providerStore.saveRoleProvider(role, allowed);
       res.json(providerStore.getMaskedConfig());
+    });
+
+    // Fetch the model list for a role's OWN custom provider (not the Main
+    // Provider's catalog), so the operator can pick a model id instead of
+    // typing it. Uses the body's apiKey when given, else the role's stored key.
+    router.post('/api/provider/role-models', auth, async (req, res) => {
+      const body = req.body || {};
+      const role = body.role;
+      if (!CUSTOM_PROVIDER_ROLES.includes(role)) {
+        return res.status(400).json({ error: `role must be one of: ${CUSTOM_PROVIDER_ROLES.join(', ')}` });
+      }
+      const provider = typeof body.provider === 'string' ? body.provider.trim() : '';
+      const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
+      let apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+      if (!apiKey) {
+        const stored = providerStore.getConfig();
+        const rp = stored && stored.roleProviders ? stored.roleProviders[role] : null;
+        if (rp && rp.apiKey) apiKey = rp.apiKey;
+      }
+      if (!provider) return res.status(400).json({ error: 'select a provider first' });
+      if (!baseUrl && provider !== 'edenai') return res.status(400).json({ error: 'set a base URL for the provider' });
+
+      try {
+        const models = await retrieveModelsFn({ provider, baseUrl, apiKey });
+        res.json({ models });
+      } catch (err) {
+        const message = err && err.message ? err.message : 'unknown error';
+        if (message.includes('authentication failed')) {
+          return res.status(401).json({ error: 'authentication failed — check your API key' });
+        }
+        res.status(502).json({ error: 'could not retrieve models from provider' });
+      }
     });
 
     router.get('/api/provider/capabilities', auth, (req, res) => {

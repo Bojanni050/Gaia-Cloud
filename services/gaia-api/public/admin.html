@@ -1319,7 +1319,12 @@
       +   '<input id="' + prefix + 'ApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">'
       +   '<p class="hint" id="' + prefix + 'KeyHint">No key saved yet.</p>'
       +   '<label for="' + prefix + 'Model">Model</label>'
-      +   '<input id="' + prefix + 'Model" type="text" placeholder="e.g. gpt-4o-mini" autocomplete="off">'
+      +   '<div style="display:flex; gap:0.6rem; align-items:center;">'
+      +     '<input id="' + prefix + 'Model" type="text" list="' + prefix + 'ModelList" placeholder="e.g. gpt-4o-mini" autocomplete="off" style="flex:1;">'
+      +     '<button type="button" id="' + prefix + 'FetchModelsBtn" class="secondary">Fetch models</button>'
+      +   '</div>'
+      +   '<datalist id="' + prefix + 'ModelList"></datalist>'
+      +   '<p class="hint" id="' + prefix + 'ModelsHint"></p>'
       + '</div>'
       + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
       + '<div class="role-actions-row push-bottom"><button id="' + prefix + 'SaveProviderBtn">Save provider</button></div>'
@@ -1363,6 +1368,41 @@
         saveBtn.disabled = false;
       }
     });
+    const fetchModelsBtn = $(prefix + 'FetchModelsBtn');
+    const modelsHintEl = $(prefix + 'ModelsHint');
+    const modelListEl = $(prefix + 'ModelList');
+    fetchModelsBtn.addEventListener('click', async () => {
+      const provider = providerEl.value;
+      if (provider === USE_MAIN_PROVIDER) {
+        modelsHintEl.textContent = 'Using the Main Provider — pick its model in the dropdown above.';
+        return;
+      }
+      fetchModelsBtn.disabled = true;
+      modelsHintEl.textContent = 'Fetching…';
+      try {
+        const res = await fetch('/admin/api/provider/role-models', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({
+            role,
+            provider,
+            baseUrl: $(prefix + 'BaseUrl').value.trim(),
+            apiKey: $(prefix + 'ApiKey').value,
+          }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const body = await res.json();
+        const models = body.models || [];
+        modelListEl.innerHTML = models
+          .map((m) => '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name || m.id) + '</option>')
+          .join('');
+        modelsHintEl.textContent = models.length + ' models — start typing in Model to pick one.';
+      } catch (_) {
+        modelsHintEl.textContent = 'Could not fetch models — check the base URL and key.';
+      } finally {
+        fetchModelsBtn.disabled = false;
+      }
+    });
+
     ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl };
   }
 
