@@ -33,6 +33,11 @@ function fakeHindsight() {
   };
 }
 
+const convo = [
+  { role: 'user', content: 'hoi' },
+  { role: 'assistant', content: 'hey Bo' },
+];
+
 // --- parseSelfMemories ----------------------------------------------------
 
 test('parseSelfMemories reads the memories array', () => {
@@ -63,16 +68,11 @@ test('parseSelfMemories drops blanks and duplicates', () => {
 
 // --- buildSelfMemoryPrompt ------------------------------------------------
 
-test('buildSelfMemoryPrompt carries the turn and recent context', () => {
-  const msgs = buildSelfMemoryPrompt({
-    userText: 'hoi',
-    replyText: 'hey Bo',
-    messages: [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'reply' }],
-  });
+test('buildSelfMemoryPrompt renders the conversation window', () => {
+  const msgs = buildSelfMemoryPrompt({ messages: convo });
   assert.equal(msgs[0].role, 'system');
-  assert.match(msgs[1].content, /User: hoi/);
-  assert.match(msgs[1].content, /You \(Gaia\): hey Bo/);
-  assert.match(msgs[1].content, /earlier/);
+  assert.match(msgs[1].content, /Bo: hoi/);
+  assert.match(msgs[1].content, /Gaia: hey Bo/);
 });
 
 // --- createSelfMemoryWriter -----------------------------------------------
@@ -82,7 +82,7 @@ test('writer stores each memory in Gaia\'s bank, ungated, under the gaia:self ta
   const hindsight = fakeHindsight();
   const writer = createSelfMemoryWriter({ model, hindsight, now: () => new Date('2026-10-06T00:00:00Z') });
 
-  const outcome = await writer.write({ userText: 'hoi', replyText: 'hey Bo' });
+  const outcome = await writer.write({ messages: convo });
 
   assert.deepEqual(outcome, { written: 2, candidates: 2 });
   assert.equal(hindsight.retained.length, 2);
@@ -95,26 +95,26 @@ test('writer stores each memory in Gaia\'s bank, ungated, under the gaia:self ta
 test('writer is silent when Gaia keeps nothing', async () => {
   const hindsight = fakeHindsight();
   const writer = createSelfMemoryWriter({ model: fakeModel('{"memories":[]}'), hindsight });
-  assert.deepEqual(await writer.write({ userText: 'hoi', replyText: 'hey' }), { written: 0, candidates: 0 });
+  assert.deepEqual(await writer.write({ messages: convo }), { written: 0, candidates: 0 });
   assert.equal(hindsight.retained.length, 0);
 });
 
-test('writer never throws on a failed model call, missing model or missing reply', async () => {
+test('writer never throws on a failed model call, missing model or empty window', async () => {
   const hindsight = fakeHindsight();
   const failing = createSelfMemoryWriter({ model: fakeModel(new Error('boom')), hindsight });
-  assert.equal((await failing.write({ userText: 'a', replyText: 'b' })).skipped, 'model-failed');
+  assert.equal((await failing.write({ messages: convo })).skipped, 'model-failed');
 
   const unconfigured = createSelfMemoryWriter({
     model: { isConfigured: () => false, chat: async () => '{}' },
     hindsight,
   });
-  assert.equal((await unconfigured.write({ userText: 'a', replyText: 'b' })).skipped, 'model-unconfigured');
+  assert.equal((await unconfigured.write({ messages: convo })).skipped, 'model-unconfigured');
 
   const noModel = createSelfMemoryWriter({ hindsight });
-  assert.equal((await noModel.write({ userText: 'a', replyText: 'b' })).skipped, 'model-unconfigured');
+  assert.equal((await noModel.write({ messages: convo })).skipped, 'model-unconfigured');
 
-  const noReply = createSelfMemoryWriter({ model: fakeModel('{}'), hindsight });
-  assert.equal((await noReply.write({ userText: 'a', replyText: '' })).skipped, 'no-reply');
+  const empty = createSelfMemoryWriter({ model: fakeModel('{}'), hindsight });
+  assert.equal((await empty.write({ messages: [] })).skipped, 'no-conversation');
 });
 
 test('one failed write does not stop the rest', async () => {
@@ -122,7 +122,7 @@ test('one failed write does not stop the rest', async () => {
   const hindsight = fakeHindsight();
   const writer = createSelfMemoryWriter({ model, hindsight });
 
-  const outcome = await writer.write({ userText: 'a', replyText: 'b' });
+  const outcome = await writer.write({ messages: convo });
 
   assert.deepEqual(outcome, { written: 1, candidates: 2 });
   assert.equal(hindsight.retained.length, 1);

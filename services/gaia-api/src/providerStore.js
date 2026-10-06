@@ -1,8 +1,9 @@
 'use strict';
 
 /**
- * Persisted configuration for the single model provider and four
- * role-based model selections (Generation, Reasoning, Vision, TTS).
+ * Persisted configuration for the single model provider and its role-based
+ * model selections (Generation, Reasoning, Vision, Kairos, Self-memory) and
+ * TTS.
  *
  * Follows the same persistence pattern as reasoningModelStore.js —
  * a single JSON file, runtime-writable via the admin surface, never
@@ -55,6 +56,7 @@ const DEFAULT_ROLES = Object.freeze({
   reasoning: { mode: 'catalog', model: '' },
   vision: { mode: 'catalog', model: '' },
   kairos: { mode: 'catalog', model: '' },
+  selfmemory: { mode: 'catalog', model: '' },
 });
 
 const DEFAULT_TTS = Object.freeze({

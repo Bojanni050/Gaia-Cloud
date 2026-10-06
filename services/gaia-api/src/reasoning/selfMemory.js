@@ -40,21 +40,19 @@ Schema:
 }`;
 
 /**
- * @param {{ userText?: string|null, replyText?: string|null, messages?: Array<{role: string, content: string}> }} input
+ * @param {{ messages?: Array<{role: string, content: string}> }} input
  * @returns {Array<{role: string, content: string}>}
  */
-function buildSelfMemoryPrompt({ userText, replyText, messages } = {}) {
+function buildSelfMemoryPrompt({ messages } = {}) {
   const recent = (Array.isArray(messages) ? messages : [])
-    .slice(-6)
     .filter((m) => m && typeof m.content === 'string' && m.content.trim())
-    .map(({ role, content }) => `${role}: ${content}`)
+    .slice(-12)
+    .map(({ role, content }) => `${role === 'assistant' ? 'Gaia' : (role === 'user' ? 'Bo' : role)}: ${content}`)
     .join('\n');
   const userContent = [
-    'The turn you just had:',
+    'The last part of your conversation:',
     '',
-    `User: ${userText || ''}`,
-    `You (Gaia): ${replyText || ''}`,
-    ...(recent ? ['', 'Recent context:', recent] : []),
+    recent,
     '',
     'If anything here is yours to keep, return it. Otherwise return an empty list.',
   ].join('\n');
@@ -108,20 +106,22 @@ function createSelfMemoryWriter({ model, hindsight, now = () => new Date() } = {
   }
 
   /**
-   * Ask Gaia whether anything from this turn is hers to keep, and write what
-   * she answers into her own bank. Best-effort: a missing model, an empty
-   * answer, a failed call or a failed write all resolve to a calm result and
-   * never throw.
-   * @param {{ userText?: string|null, replyText?: string|null, messages?: Array, logger?: Function }} turn
+   * Ask Gaia whether anything from the recent conversation is hers to keep,
+   * and write what she answers into her own bank. Best-effort: an empty
+   * window, a missing model, a failed call or a failed write all resolve to a
+   * calm result and never throw.
+   * @param {{ messages?: Array, logger?: Function }} turn
    * @returns {Promise<{ written: number, candidates: number, skipped?: string }>}
    */
-  async function write({ userText, replyText, messages, logger } = {}) {
-    if (!replyText) return { written: 0, candidates: 0, skipped: 'no-reply' };
+  async function write({ messages, logger } = {}) {
+    const window = (Array.isArray(messages) ? messages : [])
+      .filter((m) => m && typeof m.content === 'string' && m.content.trim());
+    if (window.length === 0) return { written: 0, candidates: 0, skipped: 'no-conversation' };
     if (!modelReady()) return { written: 0, candidates: 0, skipped: 'model-unconfigured' };
 
     let raw;
     try {
-      raw = await model.chat(buildSelfMemoryPrompt({ userText, replyText, messages }), {
+      raw = await model.chat(buildSelfMemoryPrompt({ messages: window }), {
         logger,
         responseFormat: { type: 'json_object' },
       });

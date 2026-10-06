@@ -827,14 +827,13 @@ async function runDeferredCognition({
 
   // 7b. Self-memory — Gaia's own bank, at her own discretion. UNGATED by
   //     design: the Memoryworthiness gate above governs the `bojan` bank,
-  //     not hers. A background prompt asks whether anything from this turn
-  //     is hers to keep; an empty answer is normal.
+  //     not hers. The scheduler decides WHEN it runs (every few turns, and
+  //     when the session ends); this only records the turn.
   if (selfMemory && replyText) {
     timing.start('deferred.self_memory');
     try {
-      const outcome = await selfMemory.write({
-        userText,
-        replyText,
+      const outcome = await selfMemory.noteTurn({
+        conversationId,
         messages,
         logger: decisionLogger,
       });

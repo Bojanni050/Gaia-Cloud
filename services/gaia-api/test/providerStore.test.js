@@ -140,12 +140,13 @@ test('clear removes the stored config', () => {
   assert.equal(store.getConfig(), null);
 });
 
-test('DEFAULT_ROLES contains four Main Provider roles with empty defaults (TTS is independent)', () => {
+test('DEFAULT_ROLES contains the Main Provider roles with empty defaults (TTS is independent)', () => {
   assert.deepEqual(DEFAULT_ROLES, {
     generation: { mode: 'catalog', model: '' },
     reasoning: { mode: 'catalog', model: '' },
     vision: { mode: 'catalog', model: '' },
     kairos: { mode: 'catalog', model: '' },
+    selfmemory: { mode: 'catalog', model: '' },
   });
 });
 

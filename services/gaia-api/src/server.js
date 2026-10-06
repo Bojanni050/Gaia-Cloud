@@ -39,6 +39,7 @@ const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createSelfMemoryWriter } = require('./reasoning/selfMemory');
+const { createSelfMemoryScheduler } = require('./reasoning/selfMemoryScheduler');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
@@ -298,17 +299,31 @@ function createApp(env = process.env) {
       : undefined;
   }
 
-  // Self-memory: Gaia's own-bank write path. A background pass asks her, per
-  // turn, whether anything from the turn is hers to keep; what she answers
-  // goes to `gaia`, ungated. Reuses the reasoning provider role. Off with
-  // GAIA_SELF_MEMORY=false.
-  function getEffectiveSelfMemory() {
+  // Self-memory: Gaia's own-bank write path. A background pass asks her,
+  // every few turns (and when a session ends), whether anything from the
+  // conversation is hers to keep; what she answers goes to `gaia`, ungated.
+  // Uses the `selfmemory` provider role (env fallback: the reasoning role),
+  // so it can be pointed at its own model. Off with GAIA_SELF_MEMORY=false.
+  function getEffectiveSelfMemoryWriter() {
     if (env.GAIA_SELF_MEMORY === 'false') return undefined;
-    const roleConfig = resolveRoleConfig('reasoning', providerStore, env);
+    const roleConfig = resolveRoleConfig('selfmemory', providerStore, env);
     if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return undefined;
     const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env) });
     return createSelfMemoryWriter({ model, hindsight: hindsightOwn });
   }
+
+  // The scheduler owns WHEN it runs: every GAIA_SELF_MEMORY_EVERY_TURNS
+  // turns, plus a flush when the conversation changes or goes idle (the
+  // closest thing to an end-of-session signal this service has).
+  const selfMemory = env.GAIA_SELF_MEMORY === 'false'
+    ? undefined
+    : createSelfMemoryScheduler({
+        getWriter: getEffectiveSelfMemoryWriter,
+        everyTurns: Number(env.GAIA_SELF_MEMORY_EVERY_TURNS) || 5,
+        idleMs: env.GAIA_SELF_MEMORY_IDLE_MS !== undefined
+          ? Number(env.GAIA_SELF_MEMORY_IDLE_MS)
+          : 5 * 60 * 1000,
+      });
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
@@ -438,7 +453,7 @@ function createApp(env = process.env) {
         hindsight,
         hypothesisRuntime,
         foundation,
-        selfMemory: getEffectiveSelfMemory(),
+        selfMemory,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -487,7 +502,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       foundation,
-      selfMemory: getEffectiveSelfMemory(),
+      selfMemory,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),
