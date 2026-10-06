@@ -63,3 +63,9 @@
 - Findings: de self-memory-faculteit had nog een beschrijvende werknaam; Bo noemt hem **Aion** (Griekse tijdgod, naast Kairos).
 - Conclusions: volledige rename — provider-role `aion`, modules `reasoning/aion.js` + `reasoning/aionScheduler.js`, env `GAIA_AION*` + `AION_MODEL_*`, Hindsight-tag `gaia:aion` + metadata `gaia_aion*`, admin-kaart "Aion". Eerdere walkthrough-entries blijven staan (historie; daar staat nog de oude naam).
 - Actions: `git mv` `selfMemory(.test).js` → `aion(.test).js` en `selfMemoryScheduler(.test).js` → `aionScheduler(.test).js`; mechanische rename in `src/server.js`, `src/turn.js`, `src/providerStore.js`, `src/providerConfigResolver.js`, `src/adminRoutes.js`, `public/admin.html`, `.env.example`, `docs/architecture.md` + de tests; validated — gaia-api 1213/1213, admin-JS `node --check` groen.
+
+## 2026-10-06 (Aion valt terug op de volledig geresolveerde reasoning-role)
+
+- Findings: `resolveRoleConfig('aion')` viel bij een lege eigen selectie alleen terug op de reasoning-role via ENV (`resolveEnvFallback('reasoning')`). Op een VPS die de reasoning-role via de admin/provider-store zet (en geen `REASONIQ_MODEL_*` env), resolveerde Aion daardoor naar `null` — de Aion-pass draaide nooit en Gaia's bank bleef leeg.
+- Conclusions: Aion zonder eigen selectie leent nu de **volledig geresolveerde** reasoning-role (provider-store óf env), wat de bedoeling was.
+- Actions: `services/gaia-api/src/providerConfigResolver.js` (aion → `resolveRoleConfig('reasoning', ...)`); test toegevoegd; validated — gaia-api 1214/1214.

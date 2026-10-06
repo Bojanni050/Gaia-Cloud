@@ -46,7 +46,11 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
     }
   }
 
-  // Fall back to environment variables for backwards compatibility
+  // Fall back to environment variables for backwards compatibility.
+  // Aion has no selection of its own by default: it borrows the REASONING
+  // role, fully resolved (provider store or env), so it works out of the box
+  // without being configured separately.
+  if (role === 'aion') return resolveRoleConfig('reasoning', providerStore, env);
   return resolveEnvFallback(role, env);
 }
 

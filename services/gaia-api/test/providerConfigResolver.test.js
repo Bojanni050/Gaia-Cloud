@@ -314,3 +314,16 @@ test('deriveCapabilities: a custom-provider role counts as active', () => {
   });
   assert.equal(deriveCapabilities(store).generation, true);
 });
+
+test('resolveRoleConfig: aion borrows the reasoning role when it has no selection of its own', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: { reasoning: { mode: 'catalog', model: 'reasoning-model' }, aion: { mode: 'catalog', model: '' } },
+  });
+  const config = resolveRoleConfig('aion', store);
+  assert.equal(config.provider, 'edenai');
+  assert.equal(config.model, 'reasoning-model');
+  assert.equal(config.apiKey, 'sk-main');
+});
