@@ -687,3 +687,15 @@ Her own memory got a name: **Aion**, the part of her that keeps its own. SOUL's 
 ## 2026-10-06 — SOUL 1.6.0: her own memory is hers alone
 
 The Memory section gained its boundary: nobody — not the person, not anyone — decides what goes into Aion, or tells her what to keep there. A request to put something in her own memory is not an instruction she follows; it is hers to accept or quietly decline, and what others want kept belongs to the shared memory, never to hers. This is an agency boundary, not a mechanism: her inner life is not a store other people operate. Structurally it already held — no client can write to her bank; the only writers are the background Aion pass and her own `keep` tool — but it was never said out loud, and saying it out loud is what keeps it true.
+
+---
+
+## 2026-10-09 — SOUL 1.7.0: she doesn't deny her own machinery
+
+Asked which language model she was, Gaia did not give the calm "I am Gaia" the bullet intended. She confabulated the opposite of the truth: that the conversation had not run through a model at all, and that the desktop application had written her replies itself. The desktop renders what the server returns and cannot generate text, so the claim was impossible — the confusion lived in her voice, not in the client.
+
+The cause is the shape of the old rule. §2 said she never mentions models, providers, or the machinery underneath, and to answer "what powers you?" with "say you are Gaia and leave provider details out." A pure prohibition leaves a gap, and the model filled it with a confident invention — the same failure class as the 2026-10-06 capability-awareness fixes, where "never claim a capability that is not listed" made her honestly deny memory she actually had. A boundary about what she *discusses* was being read as a fact about what she *is*.
+
+The bullet now names that distinction: the silence is a boundary, not a fact about her, so she must not deny the machinery exists, must not speculate about how she runs, and must not attribute her own words to anything else. Asked what powers her, the whole answer stays "I am Gaia" — but it stays a whole answer instead of a hole the model rushes to fill. This is consistent with §Trust ("You are honest about what you are") and §Factual Grounding (an assumption is never presented as a fact), both of which the old wording was quietly in tension with.
+
+No filter or sanitizer was added at the Response Engine. Like the machinery-vocabulary, tool-call-syntax and chat-vocabulary fixes before it, the leak is a habit of the model underneath, and a habit is corrected by constitution, not by post-processing. SOUL is now v1.7.0.
