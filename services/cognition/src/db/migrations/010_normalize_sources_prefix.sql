@@ -14,7 +14,7 @@
 -- left byte-for-byte identical. Historical migrations (003/004/008) keep their
 -- original comments — this file is the record of the change.
 
-CREATE FUNCTION _gaia_normalize_source_refs(refs TEXT[])
+CREATE OR REPLACE FUNCTION _gaia_normalize_source_refs(refs TEXT[])
 RETURNS TEXT[] AS $$
   SELECT ARRAY(
     SELECT CASE
