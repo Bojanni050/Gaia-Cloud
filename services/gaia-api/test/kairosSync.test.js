@@ -31,7 +31,7 @@ const episode = (overrides = {}) => ({
   primary_app: 'Outlook',
   involved_apps: ['Outlook'],
   epistemic_status: 'interpretation',
-  sources: ['chronicle:ingest:obs1', 'chronicle:ingest:obs2'],
+  sources: ['foundation:obs1', 'foundation:obs2'],
   ...overrides,
 });
 
@@ -48,7 +48,7 @@ test('syncKairosEpisode mirrors a gaia:kairos_episode version with provenance', 
   assert.equal(hindsight.retained[0].metadata.gaia_kairos_episode_status, 'interpretation');
   assert.equal(
     hindsight.retained[0].metadata.gaia_kairos_episode_sources,
-    JSON.stringify(['chronicle:ingest:obs1', 'chronicle:ingest:obs2']),
+    JSON.stringify(['foundation:obs1', 'foundation:obs2']),
   );
 });
 

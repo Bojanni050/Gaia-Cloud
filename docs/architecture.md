@@ -65,7 +65,7 @@ Foundation (raw)            Cognition (derived lifecycle)          Hindsight (de
 observation · ingest ─────▶ hypothesis · pattern ·              ──▶ gaia:hypothesis
 · MCP                       candidate model · open_question ·       gaia:pattern · gaia:confirmed_fact
                             relationship                          gaia:open_question · gaia:relationship
-                            sources: ["chronicle:<id>"]              status + provenance
+                            sources: ["foundation:<id>"]             status + provenance
 ```
 
 - **Notebook ≠ memory.** Conversation history (`conversationStore`) saves every
@@ -105,7 +105,7 @@ Chronos (raw clock time) and Kairos (narrative time) are kept apart. The raw
 stream is Foundation's observations; **Kairos** folds a *cluster* of them into
 one narrative episode — a derived statement, never a raw one, so it is always
 `epistemic_status = 'interpretation'` and always carries `sources` back to its
-observations (`['chronicle:<ingest_object-id>']`).
+observations (`['foundation:<uuid>']`).
 
 ```
 Foundation (raw)                    services/gaia-api (Kairos)              Cognition (derived)

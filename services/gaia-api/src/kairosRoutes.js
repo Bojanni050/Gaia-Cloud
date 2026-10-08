@@ -16,6 +16,7 @@
  */
 const express = require('express');
 const { onEpisode } = require('./kairos/emitter');
+const { ingestObjectId } = require('./foundationRef');
 
 const HEARTBEAT_MS = 15000;
 
@@ -75,10 +76,10 @@ function createKairosRouter({ cognition, foundation, auth }) {
     try {
       const episode = await cognition.getKairosEpisode(req.params.id);
       const sources = Array.isArray(episode.sources) ? episode.sources : [];
-      // sources are 'chronicle:<ingest_object-id>' — strip the namespace and
-      // fetch each raw ingest object (Foundation owns the raws).
+      // sources are 'foundation:<uuid>' (Foundation ingest_object ids) — resolve
+      // them through the shared seam and fetch each raw ingest object.
       const ids = sources
-        .map((s) => String(s).replace(/^chronicle:/, ''))
+        .map((s) => ingestObjectId(s))
         .filter(Boolean);
       const observations = foundation.fetchIngestObjects
         ? await foundation.fetchIngestObjects(ids)

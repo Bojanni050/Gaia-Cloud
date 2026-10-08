@@ -5,7 +5,7 @@
  * clustering and the synthesis happen there. Mirrors the storage-only
  * posture of patterns.js / hypotheses.js: no reasoning lives here.
  *
- * `sources` points back to the raw records (['chronicle:<ingest_object-id>']),
+ * `sources` points back to the raw records (['foundation:<uuid>']),
  * exactly like patterns.sources and hypotheses.sources.
  */
 const { pool } = require('./db/pool');

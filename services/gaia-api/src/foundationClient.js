@@ -226,7 +226,9 @@ function createFoundationClient({
    * which returns the object plus any episodes frozen from it. Best-effort:
    * an id that 404s is skipped, never fatal — a partial audit trail is better
    * than none.
-   * @param {string[]} ids  ingest_object ids (no 'ingest:' prefix)
+   * @param {string[]} ids  Foundation ingest_object ids — the bare uuid that
+   *   `/api/ingest-logs/:id` expects (no `ingest:` episode prefix). Callers
+   *   resolve these from a `foundation:<uuid>` source ref via foundationRef.
    * @returns {Promise<Array<object>>}
    */
   async function fetchIngestObjects(ids) {

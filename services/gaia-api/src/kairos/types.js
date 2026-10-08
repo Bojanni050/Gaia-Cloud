@@ -9,7 +9,7 @@
  *     never writes to Foundation and never mutates a raw record.
  *   - A Kairos episode is a DERIVED synthesis and is therefore always
  *     epistemic_status 'interpretation', carrying `sources` back to the exact
- *     raw records (['chronicle:<ingest_object-id>']) so any interpretation can
+ *     raw records (['foundation:<uuid>']) so any interpretation can
  *     be audited down to its evidence.
  *
  * This module is the pure, deterministic core: it forms clusters and derives

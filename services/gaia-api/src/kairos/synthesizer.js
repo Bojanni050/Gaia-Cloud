@@ -22,6 +22,7 @@
 
 const { logLlmCall } = require('../logos/llmCallLog');
 const { EPISTEMIC_INTERPRETATION } = require('./types');
+const { toSourceRef } = require('../foundationRef');
 
 const DEFAULT_TIMEOUT_MS = 60000;
 const MAX_WINDOW_CHARS = 200;
@@ -179,7 +180,9 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
     const validated = validateSynthesis(content, cluster.apps);
     logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: true, errorMessage: null }, logger);
 
-    const sourceIds = cluster.observations.map((o) => `chronicle:${o.bron_object_id}`);
+    const sourceIds = cluster.observations
+      .map((o) => toSourceRef(o.bron_object_id))
+      .filter(Boolean);
     return {
       id: `kei_${bankId}_${cluster.id}`,
       bank_id: bankId,

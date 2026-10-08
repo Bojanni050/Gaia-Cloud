@@ -61,7 +61,7 @@ The state-machine concept is adapted from
   always needs the human. The API additionally requires a stated `rationale`
   to confirm a macro statement.
 - `sources` is provenance back to the raw records the statement was derived
-  from: `['chronicle:<observation-id>']`. Nothing derived may overwrite raw
+  from: `['foundation:<uuid>']`. Nothing derived may overwrite raw
   truth in Foundation.
 - `evidence_memory_ids` links the Hindsight memories that support/contradict it.
 
@@ -115,7 +115,7 @@ Kairos episodes (derived narrative syntheses — see `src/kairosEpisodes.js`):
 A Kairos episode is deliberately **not** Foundation's `episode` table: that holds a
 frozen *raw* observation. A Kairos episode is a *derived* statement about a span of
 observations, so it is always `epistemic_status = 'interpretation'` and carries
-`sources` back to the raw records (`['chronicle:<ingest_object-id>']`). The id is
+`sources` back to the raw records (`['foundation:<uuid>']`). The id is
 assigned by the writer, so re-processing a cluster is an idempotent upsert.
 
 ## Explicitly not in this pass

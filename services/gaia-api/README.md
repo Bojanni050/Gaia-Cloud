@@ -220,7 +220,7 @@ GET /api/memory/episodes  ─▶   clusterer (0 tokens) ─▶ synthesizer ─�
 | GET | `/kairos/episodes/:id/evidence` | `{ episode, observations }` — walks `sources` back to the raw records |
 
 An episode is always `epistemic_status: 'interpretation'` and carries
-`sources` back to the raw observations (`['chronicle:<ingest_object-id>']`) —
+`sources` back to the raw observations (`['foundation:<uuid>']`) —
 the audit path `:id/evidence` walks. `cognitionSync` mirrors each episode to
 Hindsight as `gaia:kairos_episode` (`gaia-kep-{id}-v{N}`). The worker writes only
 through `cognitionClient`; nothing here touches Foundation's raw rows.

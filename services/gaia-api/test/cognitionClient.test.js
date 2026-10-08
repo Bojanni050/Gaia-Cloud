@@ -36,11 +36,11 @@ test('proposeHypothesis POSTs the record', async () => {
   const { calls, fetchImpl } = fakeFetch();
   const client = createCognitionClient({ baseUrl: 'http://c:8890', fetchImpl });
 
-  await client.proposeHypothesis({ statement: 'x', kind: 'hypothesis', sources: ['chronicle:1'] });
+  await client.proposeHypothesis({ statement: 'x', kind: 'hypothesis', sources: ['foundation:1'] });
 
   assert.equal(calls[0].init.method, 'POST');
   assert.match(calls[0].url, /\/hypotheses$/);
-  assert.deepEqual(calls[0].body.sources, ['chronicle:1']);
+  assert.deepEqual(calls[0].body.sources, ['foundation:1']);
 });
 
 test('lifecycle verbs hit their routes (corroborate, confirm, reject, supersede)', async () => {
@@ -86,10 +86,10 @@ test('Kairos episode verbs hit their routes (list, create, state)', async () => 
   assert.ok(calls[0].url.includes('page=2'));
   assert.ok(calls[0].url.includes('limit=5'));
 
-  await client.createKairosEpisode({ id: 'kei_1', summary: 's', sources: ['chronicle:ingest:x'] });
+  await client.createKairosEpisode({ id: 'kei_1', summary: 's', sources: ['foundation:x'] });
   assert.equal(calls[1].init.method, 'POST');
   assert.match(calls[1].url, /\/episodes$/);
-  assert.deepEqual(calls[1].body.sources, ['chronicle:ingest:x']);
+  assert.deepEqual(calls[1].body.sources, ['foundation:x']);
 
   await client.setKairosState('2026-10-04T10:00:00Z');
   assert.equal(calls[2].init.method, 'PUT');

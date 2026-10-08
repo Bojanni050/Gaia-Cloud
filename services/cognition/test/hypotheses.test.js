@@ -52,11 +52,11 @@ test('propose() inserts and returns the new row (defaults kind=hypothesis)', asy
   fake.setImpl(async () => ({ rows: [row()] }));
   pool.query = fake.pool.query;
 
-  const h = await hypotheses.propose('gaia', { statement: row().statement, confidence: 0.7, sources: ['chronicle:abc'] });
+  const h = await hypotheses.propose('gaia', { statement: row().statement, confidence: 0.7, sources: ['foundation:abc'] });
 
   assert.equal(h.kind, 'hypothesis');
   assert.match(fake.calls[0].sql, /INSERT INTO hypotheses/);
-  assert.deepEqual(fake.calls[0].params[9], ['chronicle:abc']); // sources
+  assert.deepEqual(fake.calls[0].params[9], ['foundation:abc']); // sources
 });
 
 test('propose() carries evidence, persistence and method', async () => {

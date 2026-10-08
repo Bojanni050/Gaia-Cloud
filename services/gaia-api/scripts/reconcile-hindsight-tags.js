@@ -10,6 +10,12 @@
  * by the retired mayfly adapters). Cognition is now the source of truth, so
  * the store is rebuilt from it under one namespace (see cognitionSync.js).
  *
+ * Also the rebuild path for provenance-only changes: after migration 010
+ * normalises the `sources` prefix to `foundation:` in Cognition, run this with
+ * `--apply --clear` so the mirrored gaia_*_sources metadata is refreshed too
+ * (including Kairos episodes, whose content is unchanged but whose sources
+ * changed). `--clear` is what forces those immutable episodes to re-push.
+ *
  * Safe by default: without --apply this only SURVEYS and prints what it would
  * do. Nothing is written, invalidated or retained until you pass --apply.
  *
@@ -35,10 +41,12 @@ async function survey({ hindsight, cognition }) {
   const active = await hindsight.listMemories({ q: 'gaia', type: 'world', limit: 200, state: 'valid' }).catch(() => []);
   let gaiaHypotheses = 0;
   let gaiaPatterns = 0;
+  let gaiaKairos = 0;
   for (const u of Array.isArray(active) ? active : []) {
     const tags = (u && u.tags) || [];
     if (tags.includes('gaia:hypothesis') || tags.includes('gaia:confirmed_fact')) gaiaHypotheses += 1;
     if (tags.includes('gaia:pattern')) gaiaPatterns += 1;
+    if (tags.includes('gaia:kairos_episode')) gaiaKairos += 1;
   }
 
   // Legacy units can't be listed by tag (the list endpoint has no tag filter),
@@ -55,10 +63,22 @@ async function survey({ hindsight, cognition }) {
 
   const hypotheses = await cognition.listHypotheses().catch(() => null);
   const patterns = await cognition.listPatterns().catch(() => null);
+  const kairos = typeof cognition.listKairosEpisodes === 'function'
+    ? await cognition.listKairosEpisodes({ page: 1, limit: 1 }).catch(() => null)
+    : null;
 
   return {
-    hindsight: { activeGaiaHypotheses: gaiaHypotheses, activeGaiaPatterns: gaiaPatterns, legacyFoundationFacts: legacyFacts },
-    cognition: { hypotheses: hypotheses ? hypotheses.length : null, patterns: patterns ? patterns.length : null },
+    hindsight: {
+      activeGaiaHypotheses: gaiaHypotheses,
+      activeGaiaPatterns: gaiaPatterns,
+      activeGaiaKairos: gaiaKairos,
+      legacyFoundationFacts: legacyFacts,
+    },
+    cognition: {
+      hypotheses: hypotheses ? hypotheses.length : null,
+      patterns: patterns ? patterns.length : null,
+      kairos: kairos && kairos.pagination ? kairos.pagination.total_records : null,
+    },
   };
 }
 
@@ -80,8 +100,8 @@ async function runReconcile({ argv = process.argv.slice(2), env = process.env, d
 
   const before = await survey({ hindsight, cognition });
   log(`[reconcile] mode: ${apply ? 'APPLY' : 'dry-run'}${clear ? ' (clear)' : ''}`);
-  log(`[reconcile] Hindsight active  gaia:hypothesis=${before.hindsight.activeGaiaHypotheses} gaia:pattern=${before.hindsight.activeGaiaPatterns} legacy foundation:fact≈${before.hindsight.legacyFoundationFacts}`);
-  log(`[reconcile] Cognition records hypotheses=${before.cognition.hypotheses} patterns=${before.cognition.patterns}`);
+  log(`[reconcile] Hindsight active  gaia:hypothesis=${before.hindsight.activeGaiaHypotheses} gaia:pattern=${before.hindsight.activeGaiaPatterns} gaia:kairos_episode=${before.hindsight.activeGaiaKairos} legacy foundation:fact≈${before.hindsight.legacyFoundationFacts}`);
+  log(`[reconcile] Cognition records hypotheses=${before.cognition.hypotheses} patterns=${before.cognition.patterns} kairos=${before.cognition.kairos}`);
 
   if (!apply) {
     log('[reconcile] dry run — nothing written. Re-run with --apply to re-push from Cognition.');

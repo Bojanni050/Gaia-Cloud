@@ -25,7 +25,7 @@ function fakeCognition(overrides = {}) {
       data: [{ id: 'kei_1', summary: 's', epistemic_status: 'interpretation' }],
       pagination: { page: 1, limit: 20, total_records: 1, has_more: false },
     }),
-    getKairosEpisode: async (id) => ({ id, sources: ['chronicle:ingest:obs1'], epistemic_status: 'interpretation' }),
+    getKairosEpisode: async (id) => ({ id, sources: ['foundation:obs1'], epistemic_status: 'interpretation' }),
     ...overrides,
   };
 }
@@ -76,7 +76,27 @@ test('GET /kairos/episodes/:id/evidence walks sources back to Foundation raw rec
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.episode.id, 'kei_1');
-    assert.deepEqual(body.observations.map((o) => o.id), ['ingest:obs1'], 'the chronicle: namespace is stripped, leaving the ingest_object id Foundation knows');
+    assert.deepEqual(body.observations.map((o) => o.id), ['obs1'], 'the foundation: prefix is stripped, leaving the bare ingest_object id Foundation knows');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /kairos/episodes/:id/evidence still resolves a legacy chronicle: source (migration window)', async () => {
+  const seen = [];
+  const foundation = {
+    fetchIngestObjects: async (ids) => { seen.push(...ids); return ids.map((id) => ({ id, content: 'raw text' })); },
+  };
+  const cognition = fakeCognition({
+    getKairosEpisode: async (id) => ({ id, sources: ['chronicle:ingest:obs9'], epistemic_status: 'interpretation' }),
+  });
+  const ctx = startTestServer({ cognition, foundation });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/episodes/kei_1/evidence`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(seen, ['obs9'], 'Foundation gets the bare uuid, never the ingest: prefix');
+    assert.deepEqual(body.observations.map((o) => o.id), ['obs9']);
   } finally {
     await ctx.close();
   }

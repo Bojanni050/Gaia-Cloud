@@ -15,7 +15,7 @@ function row(overrides = {}) {
     primary_app: 'Outlook',
     involved_apps: ['Outlook'],
     epistemic_status: 'interpretation',
-    sources: ['chronicle:ingest:obs1', 'chronicle:ingest:obs9'],
+    sources: ['foundation:obs1', 'foundation:obs9'],
     created_at: '2026-10-04T10:02:43.000Z',
     updated_at: '2026-10-04T10:02:43.000Z',
     ...overrides,
@@ -40,14 +40,14 @@ test('create() upserts with the writer-owned id and always interpretation', asyn
     summary: row().summary,
     primaryApp: 'Outlook',
     involvedApps: ['Outlook'],
-    sources: ['chronicle:ingest:obs1', 'chronicle:ingest:obs9'],
+    sources: ['foundation:obs1', 'foundation:obs9'],
   });
   assert.equal(e.epistemic_status, 'interpretation');
   assert.match(fake.calls[0].sql, /INSERT INTO kairos_episodes/);
   assert.match(fake.calls[0].sql, /ON CONFLICT \(bank_id, id\) DO UPDATE/);
   assert.equal(fake.calls[0].params[0], row().id); // id — writer-owned
   assert.equal(fake.calls[0].params[7], 'interpretation'); // epistemic_status literal
-  assert.deepEqual(fake.calls[0].params[8], ['chronicle:ingest:obs1', 'chronicle:ingest:obs9']);
+  assert.deepEqual(fake.calls[0].params[8], ['foundation:obs1', 'foundation:obs9']);
 });
 
 test('get() throws NotFoundError when missing', async () => {

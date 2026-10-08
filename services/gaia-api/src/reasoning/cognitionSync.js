@@ -110,6 +110,23 @@ function tagsForHypothesis(record) {
 }
 
 /**
+ * Page through every Kairos episode Cognition holds (its list endpoint is
+ * paged). Tolerates a plain array so callers/tests can stub it simply.
+ * @param {object} cognition
+ * @param {number} [page]
+ * @param {Array<object>} [acc]
+ * @returns {Promise<Array<object>>}
+ */
+async function listAllKairosEpisodes(cognition, page = 1, acc = []) {
+  const res = await cognition.listKairosEpisodes({ page, limit: 200 });
+  const data = Array.isArray(res) ? res : (res && Array.isArray(res.data) ? res.data : []);
+  const all = acc.concat(data);
+  const pagination = res && !Array.isArray(res) ? res.pagination : null;
+  if (pagination && pagination.has_more) return listAllKairosEpisodes(cognition, page + 1, all);
+  return all;
+}
+
+/**
  * @param {{ hindsight: object, cognition?: object, now?: () => Date }} options
  */
 function createCognitionSync({ hindsight, cognition, now = () => new Date() } = {}) {
@@ -196,6 +213,7 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
   async function loadActive() {
     activeHyps.clear();
     activePatterns.clear();
+    activeKairos.clear();
     const units = await hindsight.listMemories({ q: HYPOTHESIS_CONTEXT, type: 'world', limit: 200, state: 'valid' });
     for (const u of Array.isArray(units) ? units : []) {
       const meta = u && u.metadata;
@@ -214,6 +232,18 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
         if (!cur || version > cur.version) {
           activePatterns.set(id, { version, factId: u.id != null ? String(u.id) : null, status: meta.gaia_pattern_status || null });
         }
+      }
+    }
+
+    const kairosUnits = await hindsight.listMemories({ q: KAIROS_CONTEXT, type: 'world', limit: 200, state: 'valid' });
+    for (const u of Array.isArray(kairosUnits) ? kairosUnits : []) {
+      const meta = u && u.metadata;
+      if (!meta || !meta.gaia_kairos_episode_id) continue;
+      const id = String(meta.gaia_kairos_episode_id);
+      const version = parseInt(meta.gaia_kairos_episode_version || '0', 10) || 0;
+      const cur = activeKairos.get(id);
+      if (!cur || version > cur.version) {
+        activeKairos.set(id, { version, factId: u.id != null ? String(u.id) : null });
       }
     }
   }
@@ -236,15 +266,24 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
   /**
    * Re-push every current Cognition record, skipping those already reflected
    * with the same status. Basis of the one-time tag reconciliation.
+   *
+   * Kairos episodes are content-immutable, so they are skipped while a valid
+   * mirror already exists; pass `clear` to invalidate first and re-push them as
+   * fresh versions (what the `foundation:` source-prefix migration needs, since
+   * the episode content is unchanged but its provenance strings are not).
    * @param {{ clear?: boolean }} [options] clear = invalidate all current
    *   gaia:* units first, then re-push each record as a fresh version.
    */
   async function reconcile({ clear = false } = {}) {
     if (!cognition) throw new Error('reconcile requires a cognition client');
-    if (clear) await invalidateByTags([HYPOTHESIS_TAG, PATTERN_TAG], 'reconciliation');
+    if (clear) await invalidateByTags([HYPOTHESIS_TAG, PATTERN_TAG, KAIROS_TAG], 'reconciliation');
     await loadActive();
 
-    const result = { hypothesesPushed: 0, hypothesesSkipped: 0, patternsPushed: 0, patternsSkipped: 0 };
+    const result = {
+      hypothesesPushed: 0, hypothesesSkipped: 0,
+      patternsPushed: 0, patternsSkipped: 0,
+      kairosPushed: 0, kairosSkipped: 0,
+    };
     for (const h of await cognition.listHypotheses()) {
       const cur = activeHyps.get(String(h.id));
       if (!clear && cur && cur.status === (h.status || null)) { result.hypothesesSkipped += 1; continue; }
@@ -256,6 +295,13 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
       if (!clear && cur && cur.status === (p.status || null)) { result.patternsSkipped += 1; continue; }
       await syncPattern(p);
       result.patternsPushed += 1;
+    }
+    if (typeof cognition.listKairosEpisodes === 'function') {
+      for (const ep of await listAllKairosEpisodes(cognition)) {
+        if (!clear && activeKairos.has(String(ep.id))) { result.kairosSkipped += 1; continue; }
+        await syncKairosEpisode(ep);
+        result.kairosPushed += 1;
+      }
     }
     return result;
   }

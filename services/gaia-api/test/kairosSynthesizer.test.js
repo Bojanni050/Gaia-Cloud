@@ -94,7 +94,7 @@ test('synthesize() produces one interpretation episode carrying source observati
   assert.equal(ep.epistemic_status, 'interpretation');
   assert.equal(ep.bank_id, 'gaia');
   assert.equal(ep.id, 'kei_gaia_cluster_a_b');
-  assert.deepEqual(ep.sources, ['chronicle:ingest:obs1', 'chronicle:ingest:obs2']);
+  assert.deepEqual(ep.sources, ['foundation:obs1', 'foundation:obs2']);
   assert.deepEqual(ep.involved_apps, ['Outlook']);
   assert.equal(ep.primary_app, 'Outlook');
 });
