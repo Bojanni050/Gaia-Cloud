@@ -18,6 +18,7 @@
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
  *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/reasoning/vision/kairos/aion)
  *   POST /admin/api/provider/role-models -> { role, provider, baseUrl, apiKey? } -> the role's own provider's model list
+ *   POST /admin/api/provider/role-test -> { role, provider?, baseUrl?, model?, apiKey? } -> one minimal chat call, to prove the role's model answers
  *   GET  /admin/api/provider/capabilities -> derived capability availability
  *
  *   TTS (independent):
@@ -36,6 +37,8 @@ const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
+const { resolveRoleConfig } = require('./providerConfigResolver');
+const { probeChatCompletion } = require('./providerProbe');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion'];
 
@@ -48,6 +51,7 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion'];
  *   retrieveModelsFn?: typeof retrieveModels,
  *   retrieveOpenRouterModelEndpointsFn?: typeof retrieveOpenRouterModelEndpoints,
  *   listTtsVoicesFn?: (options: { baseUrl: string, apiKey?: string }) => Promise<Array<{ id: string, name: string }>>,
+ *   probeChatFn?: typeof probeChatCompletion,
  *   ttsLog?: { list: () => object[] },
  * }} deps
  */
@@ -57,6 +61,7 @@ function createAdminRouter({
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
   listTtsVoicesFn = listMistralVoices,
+  probeChatFn = probeChatCompletion,
 }) {
   const router = express.Router();
 
@@ -103,8 +108,21 @@ function createAdminRouter({
   // --- Provider Settings routes ---
 
   if (providerStore) {
+    // The masked config plus, per role, the config the runtime will actually
+    // resolve — so the admin cards can show "Active · <model> · <provider>"
+    // without duplicating the resolver's fallback rules on the client.
+    function maskedWithResolved() {
+      const masked = providerStore.getMaskedConfig();
+      const resolved = {};
+      for (const role of VALID_ROLES) {
+        const c = resolveRoleConfig(role, providerStore);
+        resolved[role] = c ? { provider: c.provider || '', model: c.model || '', baseUrl: c.baseUrl || '' } : null;
+      }
+      return { ...masked, resolved };
+    }
+
     router.get('/api/provider/config', auth, (req, res) => {
-      res.json(providerStore.getMaskedConfig());
+      res.json(maskedWithResolved());
     });
 
     router.put('/api/provider/config', auth, (req, res) => {
@@ -119,7 +137,7 @@ function createAdminRouter({
       }
 
       providerStore.saveProviderConfig(allowed);
-      res.json(providerStore.getMaskedConfig());
+      res.json(maskedWithResolved());
     });
 
     router.get('/api/provider/models', auth, async (req, res) => {
@@ -161,7 +179,7 @@ function createAdminRouter({
       const model = typeof body.model === 'string' ? body.model.trim() : '';
 
       providerStore.saveRoleSelection(role, { mode, model });
-      res.json(providerStore.getMaskedConfig());
+      res.json(maskedWithResolved());
     });
 
     // --- Backup generation provider (independent inference fallback) ---
@@ -207,7 +225,7 @@ function createAdminRouter({
       if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 
       providerStore.saveRoleProvider(role, allowed);
-      res.json(providerStore.getMaskedConfig());
+      res.json(maskedWithResolved());
     });
 
     // Fetch the model list for a role's OWN custom provider (not the Main
@@ -240,6 +258,42 @@ function createAdminRouter({
         }
         res.status(502).json({ error: 'could not retrieve models from provider' });
       }
+    });
+
+    // Prove a role's model actually answers. Resolves the role exactly as the
+    // runtime does (Main Provider or its own provider), with the form's unsaved
+    // values overriding the saved ones so a connection can be tested before it
+    // is saved. One minimal chat call; the key is used but never returned.
+    router.post('/api/provider/role-test', auth, async (req, res) => {
+      const body = req.body || {};
+      const role = body.role;
+      if (!VALID_ROLES.includes(role)) {
+        return res.status(400).json({ ok: false, error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+      }
+      const stored = providerStore.getConfig();
+      const rp = stored && stored.roleProviders ? stored.roleProviders[role] : null;
+      let cfg = resolveRoleConfig(role, providerStore);
+      if (body.baseUrl || body.model) {
+        cfg = {
+          provider: body.provider || (rp && rp.provider) || (cfg && cfg.provider) || 'custom',
+          baseUrl: body.baseUrl || (rp && rp.baseUrl) || (cfg && cfg.baseUrl) || '',
+          model: body.model || (rp && rp.model) || (cfg && cfg.model) || '',
+          apiKey: body.apiKey || (rp && rp.apiKey) || (cfg && cfg.apiKey) || '',
+        };
+      }
+      if (!cfg || !cfg.baseUrl || !cfg.model) {
+        return res.json({ ok: false, error: 'no model configured for this role' });
+      }
+      const result = await probeChatFn({ baseUrl: cfg.baseUrl, model: cfg.model, apiKey: cfg.apiKey });
+      res.json({
+        ok: !!result.ok,
+        provider: cfg.provider || '',
+        model: cfg.model,
+        latencyMs: result.latencyMs,
+        status: result.status,
+        sample: result.sample,
+        error: result.ok ? undefined : (result.error || 'connection failed'),
+      });
     });
 
     router.get('/api/provider/capabilities', auth, (req, res) => {

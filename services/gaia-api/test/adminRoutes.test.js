@@ -39,13 +39,16 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
     return fakeTtsVoices || [];
   };
 
+  let fakeProbeResult = { ok: true, latencyMs: 12, sample: 'pong' };
+  const probeChatFn = async () => fakeProbeResult;
+
   const providerStore = withProviderStore
     ? createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') })
     : undefined;
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, ttsLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, probeChatFn, ttsLog }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -61,6 +64,7 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
     setProviderError: (err) => { fakeProviderError = err; },
     setTtsVoices: (voices) => { fakeTtsVoices = voices; },
     setTtsVoicesError: (err) => { fakeTtsVoicesError = err; },
+    setProbeResult: (result) => { fakeProbeResult = result; },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }
@@ -444,6 +448,114 @@ test('POST /admin/api/provider/role-models rejects roles without the option', as
       body: JSON.stringify({ role: 'tts', provider: 'openai', baseUrl: 'https://x' }),
     });
     assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+// --- role connection test ---
+
+test('POST /admin/api/provider/role-test reports when a role has no model', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-test`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ role: 'generation' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.match(body.error, /no model configured/);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-test rejects an unknown role', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-test`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ role: 'nonsense' }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-test probes the resolved role and reports latency', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', apiKey: 'k' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'generation', mode: 'catalog', model: 'm1' }),
+    });
+    ctx.setProbeResult({ ok: true, latencyMs: 34, sample: 'pong' });
+
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-test`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ role: 'generation' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.model, 'm1');
+    assert.equal(body.provider, 'edenai');
+    assert.equal(body.latencyMs, 34);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-test surfaces a probe failure', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', apiKey: 'k' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', mode: 'catalog', model: 'm1' }),
+    });
+    ctx.setProbeResult({ ok: false, latencyMs: 5, status: 401, error: 'HTTP 401 — bad key' });
+
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-test`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ role: 'reasoning' }),
+    });
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.match(body.error, /401/);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/config exposes the resolved per-role config', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', apiKey: 'k' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/roles`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'generation', mode: 'catalog', model: 'm1' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', useMainProvider: false, provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'r1' }),
+    });
+
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    const body = await res.json();
+    assert.equal(body.resolved.generation.model, 'm1');
+    assert.equal(body.resolved.generation.provider, 'edenai');
+    assert.equal(body.resolved.reasoning.model, 'r1');
+    assert.equal(body.resolved.reasoning.provider, 'openai');
+    assert.equal(body.resolved.vision, null);
   } finally {
     await ctx.close();
   }

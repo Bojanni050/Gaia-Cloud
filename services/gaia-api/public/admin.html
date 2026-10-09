@@ -311,7 +311,7 @@
         </div>
       </div>
       <p class="role-title">Generation</p>
-      <p class="role-desc">Gaia's native voice — the model that writes her replies in the one inference call every live turn makes. Always uses the Main Provider above.</p>
+      <p class="role-desc">Gaia's native voice — the model that writes her replies in the one inference call every live turn makes. Uses the Main Provider above, or a custom provider below.</p>
 
       <label>Model</label>
       <div id="genDropdown"></div>
@@ -554,9 +554,22 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  function setBadge(el, active, activeLabel, inactiveLabel) {
+  function setBadge(el, active, activeLabel, inactiveLabel, detail) {
     el.textContent = active ? (activeLabel || 'Active') : (inactiveLabel || 'Inactive');
     el.className = 'role-status-badge ' + (active ? 'active' : 'inactive');
+    // The note under the badge names the model + provider the role resolves to,
+    // so "Active" alone never leaves you guessing which LLM answers.
+    const parent = el.parentElement;
+    if (!parent) return;
+    let note = parent.querySelector('.role-status-note');
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'role-status-note';
+      parent.appendChild(note);
+    }
+    const show = active && detail;
+    note.textContent = show ? detail : '';
+    note.style.display = show ? '' : 'none';
   }
 
   // --- Shared model cost/capability formatting ---
@@ -889,10 +902,10 @@
         genDropdown.setValue(savedModel);
         genSaveBtn.disabled = false;
       }
-      setBadge(genBadgeEl, Boolean(currentGenModel));
       updateCapabilities(cfg.roles || {}, cfg.tts || {});
       applyLogosRoles(cfg);
       applyRoleProviders(cfg);
+      applyRoleBadges(cfg);
     } catch (_) { /* ignore on initial load */ }
   }
 
@@ -957,9 +970,9 @@
       const updated = await res.json();
       currentConfig = updated;
       currentGenModel = model;
-      setBadge(genBadgeEl, true);
       setStatus(genStatusEl, 'Generation set to ' + model, true);
       updateCapabilities(updated.roles || {}, updated.tts || {});
+      applyRoleBadges(updated);
     } catch (err) {
       setStatus(genStatusEl, 'Could not save: ' + err.message, false);
     } finally {
@@ -1213,10 +1226,30 @@
     if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
     if (kairos) { kairosDropdown.setValue(kairos); kairosSaveModelBtn.disabled = false; }
     if (aion) { aionDropdown.setValue(aion); aionSaveModelBtn.disabled = false; }
-    setBadge(riqBadgeEl, Boolean(riqCurrentModel));
-    setBadge(riqVisionBadgeEl, Boolean(riqCurrentVisionModel), 'Active', 'Inactive');
-    setBadge(kairosBadgeEl, Boolean(kairosCurrentModel), 'Active', 'Inactive');
-    setBadge(aionBadgeEl, Boolean(aionCurrentModel), 'Active', 'Inactive');
+    // Badges are set by applyRoleBadges(cfg): the resolved per-role config
+    // (custom provider or Main Provider), not just the catalog selection above.
+  }
+
+  // The top-right badge per role: Active/Inactive plus the model and provider
+  // the role actually resolves to (from cfg.resolved, computed server-side so
+  // the client never re-implements the resolver's fallback rules).
+  function roleResolved(cfg, role) {
+    const r = cfg && cfg.resolved && cfg.resolved[role];
+    return r && r.model ? r : null;
+  }
+  function applyRoleBadges(cfg) {
+    const badges = {
+      generation: genBadgeEl, reasoning: riqBadgeEl, vision: riqVisionBadgeEl,
+      kairos: kairosBadgeEl, aion: aionBadgeEl,
+    };
+    for (const role of Object.keys(badges)) {
+      const el = badges[role];
+      if (!el) continue;
+      const r = roleResolved(cfg, role);
+      const label = r ? providerLabelFor(r.provider) : '';
+      const detail = r ? (label ? (r.model + ' · ' + label) : r.model) : '';
+      setBadge(el, Boolean(r), 'Active', 'Inactive', detail);
+    }
   }
 
   async function saveLogosRole(role, model, statusEl, badgeEl, okText) {
@@ -1229,10 +1262,10 @@
       const updated = await res.json();
       currentConfig = updated;
       const ui = ROLE_UI[role];
-      if (ui) { ui.setCurrent(model || null); ui.badgeEl && setBadge(ui.badgeEl, Boolean(model), 'Active', 'Inactive'); }
-      else { setBadge(badgeEl, Boolean(model)); }
+      if (ui) ui.setCurrent(model || null);
       setStatus(statusEl, okText, true);
       updateCapabilities(updated.roles || {}, updated.tts || {});
+      applyRoleBadges(updated);
     } catch (err) {
       setStatus(statusEl, 'Could not save the selection.', false);
     }
@@ -1331,7 +1364,9 @@
       + '</div>'
       + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
       + '<div class="role-actions-row push-bottom"><button id="' + prefix + 'SaveProviderBtn">Save provider</button></div>'
-      + '<div class="status" id="' + prefix + 'ProviderStatus"></div>';
+      + '<div class="status" id="' + prefix + 'ProviderStatus"></div>'
+      + '<div class="role-actions-row"><button type="button" id="' + prefix + 'TestBtn" class="secondary">Test connection</button></div>'
+      + '<div class="status" id="' + prefix + 'TestStatus"></div>';
   }
 
   function wireRoleProvider(role, prefix) {
@@ -1365,6 +1400,7 @@
         applyRoleProviders(currentConfig);
         setStatus(statusEl, usingMain ? 'Using the Main Provider.' : 'Custom provider saved.', true);
         updateCapabilities(currentConfig.roles || {}, currentConfig.tts || {});
+        applyRoleBadges(currentConfig);
       } catch (err) {
         setStatus(statusEl, 'Could not save the provider.', false);
       } finally {
@@ -1403,6 +1439,39 @@
         modelsHintEl.textContent = 'Could not fetch models — check the base URL and key.';
       } finally {
         fetchModelsBtn.disabled = false;
+      }
+    });
+
+    // Test connection — resolves the role exactly as the runtime does. For a
+    // custom provider the form's (possibly unsaved) values are sent along; for
+    // "Use Main Provider" the saved role selection is tested.
+    const testBtn = $(prefix + 'TestBtn');
+    const testStatusEl = $(prefix + 'TestStatus');
+    testBtn.addEventListener('click', async () => {
+      const usingMain = providerEl.value === USE_MAIN_PROVIDER;
+      const payload = { role };
+      if (!usingMain) {
+        payload.provider = providerEl.value;
+        payload.baseUrl = $(prefix + 'BaseUrl').value.trim();
+        payload.model = $(prefix + 'Model').value.trim();
+        const key = $(prefix + 'ApiKey').value;
+        if (key) payload.apiKey = key;
+      }
+      testBtn.disabled = true;
+      setStatus(testStatusEl, 'Testing…', true);
+      try {
+        const res = await fetch('/admin/api/provider/role-test', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+        const body = await res.json().catch(() => ({}));
+        if (body.ok) {
+          const label = providerLabelFor(body.provider);
+          setStatus(testStatusEl, 'OK — ' + body.model + (label ? ' via ' + label : '') + ' (' + body.latencyMs + ' ms)', true);
+        } else {
+          setStatus(testStatusEl, 'Failed — ' + (body.error || 'connection failed'), false);
+        }
+      } catch (_) {
+        setStatus(testStatusEl, 'Failed — request error', false);
+      } finally {
+        testBtn.disabled = false;
       }
     });
 

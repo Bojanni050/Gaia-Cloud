@@ -183,3 +183,37 @@
     provider krijgen".
   - Validatie: `node --check` op de gewijzigde JS, inline admin-JS gecheckt,
     gaia-api 1247/1247 groen.
+
+## 2026-10-09 (Admin: Test-connection per rol + badge toont model & provider)
+
+- Findings: Je zag per rol alleen "Active/Inactive", niet wélk model/provider
+  erachter zat; en er was geen manier om te controleren of de verbinding met de
+  LLM echt werkt zonder een gesprek te starten. De config-route gaf wel de
+  gekozen modellen en rol-providers, maar niet wat de runtime daadwerkelijk
+  resolveert (inclusief de aion→reasoning-fallback), dus de client zou de
+  resolver-logica moeten dupliceren.
+- Conclusions: Eén seam — de server berekent per rol de resolved config
+  (`resolveRoleConfig`, dezelfde functie als de runtime) en levert die als
+  `resolved` mee in het config-antwoord; de admin toont dat als noot onder de
+  badge ("model · provider") en nooit een tweede implementatie van de
+  fallback-regels. De test is één minimale chat-call (`providerProbe.js`), via
+  dezelfde resolver, met de (mogelijk onopgeslagen) formulierwaarden als
+  override zodat je kunt testen vóór het opslaan. Nooit een throw: een
+  mislukte test is een waarde die de kaart toont.
+- Actions:
+  - `src/providerProbe.js` (nieuw) — `probeChatCompletion` (POST
+    /chat/completions, 15s timeout, key nooit terug, nooit throw).
+  - `src/adminRoutes.js` — `resolveRoleConfig` + `probeChatFn`-injectie;
+    `maskedWithResolved()` levert `resolved` per rol mee op GET/PUT config,
+    PUT roles en PUT role-provider; nieuw `POST /api/provider/role-test`.
+  - `public/admin.html` — `setBadge` toont een `.role-status-note` met
+    model · provider; `applyRoleBadges(cfg)` stuurt alle vijf badges vanuit
+    `cfg.resolved`; provider-blok kreeg een **Test connection**-knop + status;
+    Generation-tekst ("Always uses the Main Provider") rechtgezet.
+  - tests: `providerProbe.test.js` (nieuw, 3) + adminRoutes (role-test
+    onconfigured/unknown/ok/fail + `resolved` in config, 5). gaia-api
+    1255/1255 groen; inline admin-JS `node --check` ok.
+  - Visueel geverifieerd met een lokale stub-server (echte admin.html, nep-API):
+    badges tonen "anthropic/claude-haiku-5-5 · EdenAI" e.d., Test connection
+    geeft "OK — … via EdenAI (42 ms)".
+  - `Gaia-Documentation/operations.md` — Provider-Settings-bullet bijgewerkt.
