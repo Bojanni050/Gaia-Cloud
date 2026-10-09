@@ -16,7 +16,7 @@
  *   PUT  /admin/api/provider/config   -> { provider?, baseUrl?, apiKey? }
  *   GET  /admin/api/provider/models   -> retrieve models from provider
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
- *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/kairos/aion)
+ *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/reasoning/vision/kairos/aion)
  *   POST /admin/api/provider/role-models -> { role, provider, baseUrl, apiKey? } -> the role's own provider's model list
  *   GET  /admin/api/provider/capabilities -> derived capability availability
  *
@@ -189,7 +189,7 @@ function createAdminRouter({
       res.json(providerStore.getMaskedConfig().generationBackup);
     });
 
-    // --- Per-role custom provider (generation / kairos / aion) ---
+    // --- Per-role custom provider (generation / reasoning / vision / kairos / aion) ---
     // PUT accepts { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? }.
     // An empty apiKey never clears or changes the stored key.
 
@@ -256,8 +256,8 @@ function createAdminRouter({
       };
       const capabilities = {
         generation: roleActive('generation'),
-        reasoning: Boolean(roles.reasoning && roles.reasoning.model),
-        vision: Boolean(roles.vision && roles.vision.model),
+        reasoning: roleActive('reasoning'),
+        vision: roleActive('vision'),
         kairos: roleActive('kairos'),
         aion: roleActive('aion'),
         tts: Boolean(ttsConfig.model),

@@ -319,8 +319,21 @@ test('saveRoleProvider never returns the raw key and keeps it on an empty apiKey
   assert.equal(store.getConfig().roleProviders.kairos.apiKey, 'kairos-super-secret');
 });
 
+test('saveRoleProvider supports reasoning and vision as custom-provider roles', () => {
+  const store = tempStore();
+  store.saveRoleProvider('reasoning', { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'deepinfra/deepseek-ai/DeepSeek-V4-Flash', apiKey: 'sk-reason', useMainProvider: false });
+  store.saveRoleProvider('vision', { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'google/gemini-3.1-flash-lite', useMainProvider: false });
+
+  const rp = store.getMaskedConfig().roleProviders;
+  assert.equal(rp.reasoning.model, 'deepinfra/deepseek-ai/DeepSeek-V4-Flash');
+  assert.equal(rp.reasoning.useMainProvider, false);
+  assert.equal(rp.reasoning.hasApiKey, true);
+  assert.equal(rp.vision.model, 'google/gemini-3.1-flash-lite');
+  assert.equal(rp.vision.useMainProvider, false);
+});
+
 test('saveRoleProvider rejects roles without a custom-provider option', () => {
   const store = tempStore();
-  assert.throws(() => store.saveRoleProvider('reasoning', { baseUrl: 'x' }), /does not support a custom provider/);
-  assert.throws(() => store.saveRoleProvider('vision', { baseUrl: 'x' }), /does not support a custom provider/);
+  assert.throws(() => store.saveRoleProvider('tts', { baseUrl: 'x' }), /does not support a custom provider/);
+  assert.throws(() => store.saveRoleProvider('nonsense', { baseUrl: 'x' }), /does not support a custom provider/);
 });

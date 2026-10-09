@@ -153,3 +153,33 @@
   - Geen codepad geraakt; geen tests nodig. Let op: een push naar main raakt
     `services/gaia-api/**` en triggert dus de deploy-workflow (test + rebuild op
     de VPS), ook al is dit docs-only.
+
+## 2026-10-09 (Per-rol custom provider: ook voor Reasoning & Vision)
+
+- Findings: generation/kairos/aion konden al een eigen provider kiezen, maar
+  reasoning en vision niet — die moesten het met de Main Provider doen. Bo vroeg
+  of dat ook mocht. `resolveRoleConfig` bleek al generiek (hij kijkt voor élke
+  rol naar `roleProviders[role]`); alleen de allowlist en de admin-UI hielden het
+  tegen. De capabilities-route rekende reasoning/vision bovendien via
+  `roles[x].model` i.p.v. `roleActive`, dus een eigen-provider-keuze zou daar
+  onterecht "inactive" tonen.
+- Conclusions: Reasoning en Vision toevoegen aan `CUSTOM_PROVIDER_ROLES` en
+  hetzelfde provider-blok op hun admin-kaarten zetten. vision en aion blijven
+  terugvallen op reasoning als ze leeg zijn — dat is nu juist de bedoeling
+  (reasoning op EdenAI/DeepSeek, vision expliciet op een multimodaal model).
+- Actions:
+  - `src/providerStore.js` — `CUSTOM_PROVIDER_ROLES` uitgebreid met
+    `reasoning`, `vision` (+ JSDoc).
+  - `src/adminRoutes.js` — doc-comment bijgewerkt; `capabilities` gebruikt nu
+    `roleActive('reasoning')`/`roleActive('vision')`.
+  - `public/admin.html` — provider-blok (`riqProvider`, `riqVisionProvider`) +
+    `wireRoleProvider('reasoning','riq')` en `('vision','riqVision')`, kaart-
+    teksten en sectie-comment aangepast.
+  - tests: `providerStore` (reasoning/vision toegestaan, 'tts' geweigerd),
+    `adminRoutes` (accept-test voor reasoning/vision, reject-test op 'tts'),
+    `providerConfigResolver` (resolver + capabilities voor reasoning/vision).
+  - docs: `services/gaia-api/.env.example` en
+    `Gaia-Documentation/operations.md` — "elke rol behalve Voice kan een eigen
+    provider krijgen".
+  - Validatie: `node --check` op de gewijzigde JS, inline admin-JS gecheckt,
+    gaia-api 1247/1247 groen.

@@ -334,7 +334,7 @@
         </div>
       </div>
       <p class="role-title">Reasoning</p>
-      <p class="role-desc">Logos — Gaia's unified cognitive layer. Interprets what the turn is trying to achieve and weighs evidence and hypotheses after a reply is delivered. Always uses the Main Provider above.</p>
+      <p class="role-desc">Logos — Gaia's unified cognitive layer. Interprets what the turn is trying to achieve and weighs evidence and hypotheses after a reply is delivered. Uses the Main Provider above, or a custom provider below.</p>
 
       <label>Model for Logos reflection</label>
       <div id="riqDropdown"></div>
@@ -343,6 +343,7 @@
         <button id="riqSaveModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="riqModelStatus"></div>
+      <div id="riqProvider"></div>
     </section>
 
     <!-- Vision (Main Provider role) -->
@@ -356,7 +357,7 @@
         </div>
       </div>
       <p class="role-title">Vision</p>
-      <p class="role-desc">Reads image attachments (OCR). Uses the Main Provider above — pick a multimodal model here, or leave unset.</p>
+      <p class="role-desc">Reads image attachments (OCR). Uses the Main Provider above — pick a multimodal model here, or a custom provider below. Leave unset and it falls back to the Reasoning role.</p>
 
       <label>Vision model</label>
       <div id="riqVisionDropdown"></div>
@@ -366,6 +367,7 @@
         <button id="riqSaveVisionModelBtn" disabled>Save selection</button>
       </div>
       <div class="status" id="riqVisionModelStatus"></div>
+      <div id="riqVisionProvider"></div>
     </section>
 
     <!-- Kairos (Main Provider role) -->
@@ -1296,7 +1298,7 @@
   });
 
   // ============================================================
-  // Per-role custom provider (generation / kairos / aion)
+  // Per-role custom provider (generation / reasoning / vision / kairos / aion)
   // ============================================================
   const ROLE_PROVIDER_BLOCKS = {};
 
@@ -1424,6 +1426,8 @@
   }
 
   wireRoleProvider('generation', 'gen');
+  wireRoleProvider('reasoning', 'riq');
+  wireRoleProvider('vision', 'riqVision');
   wireRoleProvider('kairos', 'kairos');
   wireRoleProvider('aion', 'aion');
 

@@ -258,7 +258,7 @@ test('resolveBackupConfig: stored backup wins over env vars', () => {
   assert.equal(config.model, 's1');
 });
 
-// --- per-role custom provider (generation / kairos / aion) ---
+// --- per-role custom provider (generation / reasoning / vision / kairos / aion) ---
 
 test('resolveRoleConfig: a role custom provider wins over the Main Provider selection', () => {
   const store = createMockStore({
@@ -310,9 +310,32 @@ test('deriveCapabilities: a custom-provider role counts as active', () => {
     roles: { generation: { mode: 'catalog', model: '' } },
     roleProviders: {
       generation: { provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', useMainProvider: false },
+      reasoning: { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'deepinfra/deepseek-ai/DeepSeek-V4-Flash', useMainProvider: false },
+      vision: { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'google/gemini-3.1-flash-lite', useMainProvider: false },
     },
   });
-  assert.equal(deriveCapabilities(store).generation, true);
+  const caps = deriveCapabilities(store);
+  assert.equal(caps.generation, true);
+  assert.equal(caps.reasoning, true);
+  assert.equal(caps.vision, true);
+});
+
+test('resolveRoleConfig: reasoning and vision can carry their own provider', () => {
+  const store = createMockStore({
+    provider: 'edenai',
+    baseUrl: 'https://api.edenai.run/v1',
+    apiKey: 'sk-main',
+    roles: {},
+    roleProviders: {
+      reasoning: { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'deepinfra/deepseek-ai/DeepSeek-V4-Flash', apiKey: 'sk-r', useMainProvider: false },
+      vision: { provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'google/gemini-3.1-flash-lite', useMainProvider: false },
+    },
+  });
+  const reasoning = resolveRoleConfig('reasoning', store);
+  assert.equal(reasoning.model, 'deepinfra/deepseek-ai/DeepSeek-V4-Flash');
+  assert.equal(reasoning.baseUrl, 'https://api.edenai.run/v3');
+  const vision = resolveRoleConfig('vision', store);
+  assert.equal(vision.model, 'google/gemini-3.1-flash-lite');
 });
 
 test('resolveRoleConfig: aion borrows the reasoning role when it has no selection of its own', () => {

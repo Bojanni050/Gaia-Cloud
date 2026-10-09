@@ -390,12 +390,29 @@ test('PUT /admin/api/provider/role-provider saves a custom provider for an allow
   }
 });
 
+test('PUT /admin/api/provider/role-provider accepts reasoning and vision', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    for (const role of ['reasoning', 'vision']) {
+      const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ role, useMainProvider: false, provider: 'edenai', baseUrl: 'https://api.edenai.run/v3', model: 'm' }),
+      });
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.roleProviders[role].baseUrl, 'https://api.edenai.run/v3');
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('PUT /admin/api/provider/role-provider rejects roles without the option', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ role: 'reasoning', useMainProvider: false, baseUrl: 'x' }),
+      body: JSON.stringify({ role: 'tts', useMainProvider: false, baseUrl: 'x' }),
     });
     assert.equal(res.status, 400);
   } finally {
@@ -424,7 +441,7 @@ test('POST /admin/api/provider/role-models rejects roles without the option', as
   try {
     const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-models`, {
       method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ role: 'reasoning', provider: 'openai', baseUrl: 'https://x' }),
+      body: JSON.stringify({ role: 'tts', provider: 'openai', baseUrl: 'https://x' }),
     });
     assert.equal(res.status, 400);
   } finally {

@@ -78,9 +78,10 @@ const DEFAULT_BACKUP = Object.freeze({
 /**
  * Roles that may define their OWN provider (baseUrl/apiKey/model) instead of
  * using the Main Provider's catalog. Default is `useMainProvider: true`, so
- * nothing changes until an operator opts a role out.
+ * nothing changes until an operator opts a role out. TTS is independent and
+ * handled separately (saveTtsConfig).
  */
-const CUSTOM_PROVIDER_ROLES = Object.freeze(['generation', 'kairos', 'aion']);
+const CUSTOM_PROVIDER_ROLES = Object.freeze(['generation', 'reasoning', 'vision', 'kairos', 'aion']);
 
 const DEFAULT_ROLE_PROVIDER = Object.freeze({
   provider: '',
@@ -227,7 +228,7 @@ function createProviderStore(options = {}) {
    * Main Provider when `useMainProvider` is false. Only the roles in
    * CUSTOM_PROVIDER_ROLES accept this. apiKey is optional — omitting it or
    * sending an empty string keeps the previously stored key.
-   * @param {"generation"|"kairos"|"aion"} role
+   * @param {"generation"|"reasoning"|"vision"|"kairos"|"aion"} role
    * @param {{ provider?: string, baseUrl?: string, model?: string, apiKey?: string, useMainProvider?: boolean }} partial
    */
   function saveRoleProvider(role, partial = {}) {
