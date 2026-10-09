@@ -26,6 +26,58 @@ const express = require('express');
 
 const REVIEW_STATUSES = Object.freeze(['proposed', 'testing', 'corroborated']);
 
+// A relationship is persisted (cognitionKnowledgeAdapter.renderRelationship) as
+// `kind:ref type kind:ref`, where a ref is an id when the endpoint had one and
+// its own text otherwise. An id ("hypothesis:hyp-1") tells the human nothing, so
+// when listing we swap a `hypothesis:<id>` endpoint for that hypothesis's
+// statement — the readable thing the human is actually being asked to judge.
+// Unresolved references stay as the bare id rather than a broken half.
+const RELATIONSHIP_KINDS = 'evidence|observation|hypothesis|pattern';
+const RELATIONSHIP_TYPES = 'supports|weakens|contradicts|irrelevant|relates_to';
+const RELATIONSHIP_RE = new RegExp(
+  `^(${RELATIONSHIP_KINDS}):([\\s\\S]+?) (${RELATIONSHIP_TYPES}) (${RELATIONSHIP_KINDS}):([\\s\\S]+)$`
+);
+
+/** A bare token (no whitespace) reads as an id; anything else is already text. */
+function looksLikeId(ref) {
+  return typeof ref === 'string' && ref.length > 0 && !/\s/.test(ref);
+}
+
+async function resolveRelationshipStatement(statement, getHypothesis, cache) {
+  const match = RELATIONSHIP_RE.exec(String(statement || ''));
+  if (!match) return statement;
+  const [, fromKind, fromRef, type, toKind, toRef] = match;
+  const resolve = async (kind, ref) => {
+    if (kind !== 'hypothesis' || !looksLikeId(ref) || typeof getHypothesis !== 'function') return ref;
+    if (cache.has(ref)) return cache.get(ref);
+    let text = ref;
+    try {
+      const found = await getHypothesis(ref);
+      if (found && typeof found.statement === 'string' && found.statement.trim()) {
+        text = found.statement.trim();
+      }
+    } catch (_) { /* an unresolved reference keeps its bare id */ }
+    cache.set(ref, text);
+    return text;
+  };
+  const [from, to] = await Promise.all([resolve(fromKind, fromRef), resolve(toKind, toRef)]);
+  return `${fromKind}:${from} ${type} ${toKind}:${to}`;
+}
+
+/** Expands every relationship record's id endpoints into their statements. */
+async function expandRelationships(records, cognition) {
+  if (!Array.isArray(records) || records.length === 0) return records;
+  const cache = new Map();
+  const getHypothesis = cognition && typeof cognition.getHypothesis === 'function'
+    ? cognition.getHypothesis.bind(cognition)
+    : null;
+  return Promise.all(records.map(async (record) => {
+    if (!record || record.kind !== 'relationship' || typeof record.statement !== 'string') return record;
+    const statement = await resolveRelationshipStatement(record.statement, getHypothesis, cache);
+    return statement === record.statement ? record : { ...record, statement };
+  }));
+}
+
 function createCognitionRouter({ cognition, sync, auth } = {}) {
   if (!cognition) throw new Error('cognitionRoutes requires a cognition client');
   const router = express.Router();
@@ -40,7 +92,8 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
   router.get('/hypotheses', asyncRoute(async (req, res) => {
     const { status } = req.query;
     const list = await cognition.listHypotheses(status ? { status } : {});
-    res.json({ hypotheses: Array.isArray(list) ? list : [] });
+    const expanded = await expandRelationships(Array.isArray(list) ? list : [], cognition);
+    res.json({ hypotheses: expanded });
   }));
 
   router.post('/hypotheses/:id/test', asyncRoute(async (req, res) => {

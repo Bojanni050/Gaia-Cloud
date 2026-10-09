@@ -217,3 +217,34 @@
     badges tonen "anthropic/claude-haiku-5-5 · EdenAI" e.d., Test connection
     geeft "OK — … via EdenAI (42 ms)".
   - `Gaia-Documentation/operations.md` — Provider-Settings-bullet bijgewerkt.
+
+## 2026-10-10 (Cognition-lijst: relatie-id's uitgeklapt naar leesbare tekst)
+
+- Findings: In de desktop Understanding-kaart zag Bo relatiestellingen als
+  `observation:… supports hypothesis:hyp-1` en `observation:… weakens
+  hypothesis:87d8f273-…`. De kaart print `statement` letterlijk, en
+  `cognitionKnowledgeAdapter.renderRelationship` koos de **id** boven de
+  endpoint-tekst (`fromStatement`/`toStatement`) die het model meeleverde —
+  dus de mens kreeg een id te zien in plaats van de inhoud, contextloos en niet
+  te beantwoorden. De onderliggende tekst is niet verloren (chat + hypotheses
+  staan opgeslagen), maar zit niet in het relatiedocument zelf.
+- Conclusions: Oplossen bij het **lezen**, niet bij het schrijven: de
+  Cognition-lijstroute klapt elk `hypothesis:<id>`-endpoint uit naar de
+  stelling van die hypothese (`cognition.getHypothesis`), zodat ook al
+  opgeslagen contextloze records leesbaar worden. Parsen op het bekende
+  `kind:ref type kind:ref`-formaat; een ref zonder whitespace geldt als id,
+  anders is het al tekst. Alleen `hypothesis`-endpoints (de zichtbare pijn);
+  pattern/evidence laten we voorlopig staan. Een niet-op te lossen id blijft de
+  kale id — nooit een half afgebroken zin. Geen recursie (een uitgeklapte
+  stelling wordt niet nóg eens uitgeklapt).
+- Actions:
+  - `services/gaia-api/src/cognitionRoutes.js` — `RELATIONSHIP_RE` +
+    `looksLikeId` + `resolveRelationshipStatement` + `expandRelationships`
+    (met per-request id-cache); `GET /hypotheses` expandeert nu de lijst.
+  - `services/gaia-api/test/cognitionRoutes.test.js` — +2 tests (id → stelling;
+    onopgelost blijft de kale id). gaia-api 1257/1257 groen.
+  - Vraagt een **herstart/redeploy** van gaia-api om zichtbaar te worden in de
+    desktop; de desktop zelf is ongewijzigd (rendert `statement` al).
+  - Nog open (bewust niet meegenomen): de `observation:`/`hypothesis:`-prefixen
+    blijven staan, en de vraag op de kaart is nog niet `kind`-specifiek
+    (open_question vraagt nog steeds "Klopt dit?").

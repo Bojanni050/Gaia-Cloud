@@ -110,3 +110,36 @@ test('POST test opens active testing', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'testing');
 });
+
+test('GET /cognition/hypotheses expands a relationship hypothesis id into its statement', async () => {
+  const cognition = fakeCognition();
+  cognition.listHypotheses = async () => ([
+    { id: 'r1', kind: 'relationship', status: 'proposed', statement: 'observation:the user linked tracking to patterns. supports hypothesis:hyp-1' },
+    { id: 'h1', kind: 'hypothesis', status: 'proposed', statement: 'Concurrent cancellation causes the streaming race.' },
+  ]);
+  cognition.getHypothesis = async (id) => {
+    assert.equal(id, 'hyp-1');
+    return { id, statement: 'Concurrent cancellation causes the streaming race.' };
+  };
+
+  const res = await request(appWith({ cognition })).get('/cognition/hypotheses');
+  assert.equal(res.status, 200);
+  const rel = res.body.hypotheses.find((h) => h.id === 'r1');
+  assert.equal(
+    rel.statement,
+    'observation:the user linked tracking to patterns. supports hypothesis:Concurrent cancellation causes the streaming race.'
+  );
+  // the untouched hypothesis record is returned as it was
+  assert.equal(res.body.hypotheses.find((h) => h.id === 'h1').statement, 'Concurrent cancellation causes the streaming race.');
+});
+
+test('an unresolved relationship id stays as the bare id, never a broken half', async () => {
+  const cognition = fakeCognition();
+  cognition.listHypotheses = async () => ([
+    { id: 'r2', kind: 'relationship', status: 'proposed', statement: 'observation:x weakens hypothesis:missing' },
+  ]);
+  cognition.getHypothesis = async () => { throw new Error('cognition get 404'); };
+
+  const res = await request(appWith({ cognition })).get('/cognition/hypotheses');
+  assert.equal(res.body.hypotheses[0].statement, 'observation:x weakens hypothesis:missing');
+});
