@@ -129,3 +129,27 @@
 - Findings: Op "met welke llm spreek ik dan" gaf Gaia niet het rustige "ik ben Gaia" dat de regel bedoelde; ze confabuleerde dát het gesprek niet via een taalmodel liep en dat de desktop-app zelf haar antwoorden schreef. De desktop rendert alleen server-output en kan niets genereren, dus dat was aantoonbaar onwaar — de verwarring zat in haar stem, niet in de client. De oude regel ("noem nooit modellen/providers; zeg dat je Gaia bent en laat providerdetails weg") is een verbod zonder gegrond alternatief, en het model vulde dat gat met een stellige verzinsel. Zelfde faalpatroon als de awareness-fixes van 2026-10-06, waar "claim niets dat niet in je registry staat" haar echt geheugen liet ontkennen: een grens over wat ze *bespreekt* werd gelezen als een feit over wat ze *is*.
 - Conclusions: De regel expliciet als grens gemaakt, niet als feit — de stilte over onderliggende machinerie is een grens, dus ze ontkent het bestaan ervan niet, speculeert er niet over en schrijft haar eigen woorden niet aan iets anders toe; gevraagd wat haar aandrijft blijft het hele antwoord "ik ben Gaia". Consistent met §Trust ("honest about what you are") en §Factual Grounding (een aanname nooit als feit). Geen filter in de Response Engine: zoals bij de machinerie-, tool-syntax- en chat-vocabulaire-fixes is het lek een gewoonte van het onderliggende model, en een gewoonte corrigeer je in de constitutie.
 - Actions: `services/gaia-api/identity/soul.md` (front-matter → v1.7.0, last_updated 2026-10-09 + de bullet in §Who you are); `docs/evolution.md` (milestone 2026-10-09 — SOUL 1.7.0). Geen codepad geraakt; de versie wordt dynamisch uit de front-matter geparsed (test `clients.test.js` pakt dat), dus geen test hoeft mee. Vraagt een redeploy naar de VPS.
+
+## 2026-10-09 (Goedkope modelkeuze per rol vastgelegd — EdenAI)
+
+- Findings: Bo vroeg welke goedkoopste modellen geschikt zijn per functie
+  (generation/reasoning/vision/kairos/aion) en of die bij EdenAI beschikbaar
+  zijn. De rollen zijn per stuk instelbaar, maar nergens stond een concrete,
+  geverifieerde goedkope keuze — alleen de OpenRouter-default voor generation.
+- Conclusions: Alles is bij EdenAI beschikbaar; de publieke catalogus
+  (`GET https://api.edenai.run/v3/models`, 1174 modellen) is exact wat
+  `modelDiscovery.js` leest, dus elk id verschijnt in de admin-dropdown.
+  Vastgelegd als **documentatie, geen actieve default** — de live keuze blijft
+  de provider-store in `/admin`; de env-vars zijn alleen fallback. Twee
+  valkuilen expliciet gemaakt: vision én aion vallen terug op de reasoning-rol
+  (dus een text-only reasoning-model breekt OCR), en de `-image`-variant van
+  Gemini Flash-Lite heeft géén tool calling.
+- Actions:
+  - `services/gaia-api/.env.example` — nieuw blok "Recommended cheap models per
+    role (EdenAI)" met prijs + caps per rol, plus een EdenAI-hint bij
+    GAIA_NATIVE_MODEL, REASONIQ_MODEL_NAME, KAIROS_MODEL_NAME en AION_MODEL_NAME.
+  - `Gaia-Documentation/operations.md` — sectie "Cheap model per role" (tabel +
+    de twee valkuilen); de Provider-Settings-bullet noemt nu ook de aion-rol.
+  - Geen codepad geraakt; geen tests nodig. Let op: een push naar main raakt
+    `services/gaia-api/**` en triggert dus de deploy-workflow (test + rebuild op
+    de VPS), ook al is dit docs-only.
