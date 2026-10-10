@@ -274,3 +274,23 @@ test('stream() runs the tool loop and streams only the final answer', async () =
   assert.deepEqual(deltas, ['Noted.']);
   assert.equal(call, 2);
 });
+
+test('stream() does not expose draft content emitted before a tool call', async () => {
+  let call = 0;
+  const firstFrame = `data: ${JSON.stringify({ choices: [{ delta: { content: 'internal draft', tool_calls: [{ index: 0, id: 'c1', function: { name: 'remember', arguments: '{}' } }] } }] })}\n\n`;
+  const fetchImpl = async () => {
+    call += 1;
+    if (call === 1) return { ok: true, body: sseBody([firstFrame, 'data: [DONE]\n\n']) };
+    return { ok: true, body: sseBody([`data: ${JSON.stringify({ choices: [{ delta: { content: 'Final answer.' } }] })}\n\n`, 'data: [DONE]\n\n']) };
+  };
+  const deltas = [];
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    tools: REMEMBER_TOOL, onToolCall: async () => 'Kept.',
+  });
+
+  const result = await generator.stream([{ role: 'user', content: 'remember this' }], { onDelta: (c) => deltas.push(c) });
+
+  assert.equal(result, 'Final answer.');
+  assert.deepEqual(deltas, ['Final answer.']);
+});

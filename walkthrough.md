@@ -254,6 +254,12 @@
 - Conclusions: De wire-separatie blijft behouden: `content` is het antwoord, `reasoning_content` is de inklapbare reasoning. De provider/configuratie die reasoning in `content` laat vallen moet apart worden opgespoord.
 - Actions: `services/gaia-api/src/responseEngine.js` en de regressietest herstellen de aparte reasoning-frame; `services/gaia-api/identity/soul.md` verbiedt het tonen van private deliberatie; validated — eerdere `npm test` 1257/1257, foundation-artifact opnieuw gegenereerd.
 
+## 2026-10-10 (LightLM-tool-call lekte draftcontent)
+
+- Findings: De raw response van `glm-5.3-flash` bevatte de interne analyse in `message.content`, gevolgd door een echte `keep`-tool-call (`finish_reason: tool_calls`). `gaiaGenerator` forwardde die content al tijdens de streamingronde voordat bekend was dat de ronde een tool-call bevatte.
+- Conclusions: Content uit een tool-callronde is voorlopig en mag nooit als antwoord naar de client. De tool-loop buffert zulke content; alleen een ronde zonder tool-call wordt als user-facing antwoord geflusht. De uiteindelijke `keep`-tool-call blijft werken.
+- Actions: `services/gaia-api/src/generation/gaiaGenerator.js` buffert content per streamingronde; `services/gaia-api/test/gaiaGenerator.test.js` dekt draft vóór tool-call; validated — test volgt.
+
 ## 2026-10-10 (Datum en tijd per beurt in de chat-export)
 
 - Findings: De chat-export (markdown/json) toonde geen tijd per beurt, omdat `conversationStore` uitsluitend `role`/`content` bewaarde.

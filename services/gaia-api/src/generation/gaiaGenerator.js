@@ -354,10 +354,26 @@ function createGaiaGenerator(options = {}) {
     let fallbackUsed = false;
 
     for (;;) {
+      // A reasoning model may emit draft text before it emits a tool call.
+      // That text belongs to the tool-call round, not to Gaia's answer. Keep
+      // it off the wire until we know this round has no tool calls.
+      const pendingContent = [];
+      const roundMode = mode.stream
+        ? {
+          ...mode,
+          onDelta: (chunk, isReasoning) => {
+            if (isReasoning) {
+              if (mode.onDelta) mode.onDelta(chunk, true);
+            } else if (chunk) {
+              pendingContent.push(chunk);
+            }
+          },
+        }
+        : mode;
       let result;
       try {
         result = mode.stream
-          ? await postStreaming(current, mode, withTools)
+          ? await postStreaming(current, roundMode, withTools)
           : await postNonStreaming(current, withTools);
       } catch (error) {
         const toolsRejected = withTools
@@ -374,6 +390,9 @@ function createGaiaGenerator(options = {}) {
 
       const calls = withTools ? result.toolCalls : [];
       if (calls.length === 0) {
+        if (mode.stream && mode.onDelta) {
+          for (const chunk of pendingContent) mode.onDelta(chunk, false);
+        }
         if (!result.content) {
           console.error(`[gaia:native] no content in response at ${baseUrl}`);
           throw new GenerationError('native generator returned no content', { retryable: false, code: 'no_content' });
