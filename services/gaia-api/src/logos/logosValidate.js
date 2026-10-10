@@ -28,6 +28,25 @@ function clampConfidence(value, fallback = 0.5) {
   return Math.min(0.95, Math.max(0, n)); // soul.md: never claim certainty
 }
 
+// A derived statement (hypothesis / open question) is only kept when it reads
+// as ONE proposition a human could actually judge. This is a defensive guard,
+// not a quality oracle: it drops the clearly-unusable model glitches that
+// otherwise reach the desktop review card as an unanswerable "Klopt dit?"
+// prompt — most visibly an absurdly long run-on, or repeated "??"/"!!"
+// punctuation, neither of which occurs in a single readable proposition. It is
+// deliberately conservative so it never drops readable prose (short statements
+// like "A causes B" stay).
+const MAX_STATEMENT_CHARS = 500;
+
+function isReadableStatement(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s || s.length > MAX_STATEMENT_CHARS) return false;
+  if (!/[a-zA-Z]/.test(s)) return false;
+  // "??", "???" or "!!" are strong signals of a model glitch, not prose.
+  if (/[?!]{2,}/.test(s)) return false;
+  return true;
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -64,6 +83,9 @@ function coerceHypothesis(item) {
   if (!item || typeof item !== 'object' || !item.statement) {
     throw new MalformedReasoningOutputError('hypothesis missing a statement');
   }
+  // A statement that is present but unreadable is dropped (see
+  // isReadableStatement), not coerced into a reviewable hypothesis.
+  if (!isReadableStatement(item.statement)) return null;
   const status = isValidHypothesisStatus(item.status) ? item.status : 'proposed';
   return {
     id: require('crypto').randomUUID(),
@@ -402,13 +424,13 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting, 
   const body = {
     interpretation: parsed.interpretation,
     evidence: asArray(parsed.evidence).map(coerceEvidenceItem),
-    hypotheses: asArray(parsed.hypotheses).map(coerceHypothesis),
+    hypotheses: asArray(parsed.hypotheses).map(coerceHypothesis).filter(Boolean),
     hypothesisUpdates: asArray(parsed.hypothesisUpdates).map(coerceHypothesisUpdate),
     contradictions: asArray(parsed.contradictions).map(coerceContradiction),
     uncertainties: asArray(parsed.uncertainties).map((u) => asString(u)).filter(Boolean),
     informationGaps: asArray(parsed.informationGaps).map((g) => asString(g)).filter(Boolean),
     observations: asArray(parsed.observations).map(coerceObservation),
-    openQuestions: asArray(parsed.openQuestions).map((q) => asString(q)).filter(Boolean),
+    openQuestions: asArray(parsed.openQuestions).map((q) => asString(q)).filter((q) => q.trim() && isReadableStatement(q)),
     relationships: asArray(parsed.relationships).map(coerceRelationship),
     reflection: coerceReflection(parsed.reflection),
     conclusions: asArray(parsed.conclusions).map(coerceConclusion),

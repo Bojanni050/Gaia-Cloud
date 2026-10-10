@@ -121,6 +121,27 @@ test('parseAndValidateReasoningOutput: missing optional arrays default to empty,
   assert.equal(result.sufficientForConclusion, false);
 });
 
+test('parseAndValidateReasoningOutput: an unreadable hypothesis statement is dropped, not surfaced for review', () => {
+  const output = JSON.parse(VALID_OUTPUT);
+  output.hypotheses = [
+    { statement: 'Does use extend isolated companionship mode where raw throughput priorities flare?? involve alternating safer interpretative arcs unfold story????', confidence: 0.5 },
+    { statement: 'The website crashes due to a memory leak.', confidence: 0.6 },
+  ];
+  const result = parseAndValidateReasoningOutput(JSON.stringify(output));
+  assert.equal(result.hypotheses.length, 1);
+  assert.equal(result.hypotheses[0].statement, 'The website crashes due to a memory leak.');
+});
+
+test('parseAndValidateReasoningOutput: unreadable open questions are dropped, readable ones survive', () => {
+  const output = JSON.parse(VALID_OUTPUT);
+  output.openQuestions = [
+    'story???? topology?? unfold',
+    'What is causing the intermittent timeouts?',
+  ];
+  const result = parseAndValidateReasoningOutput(JSON.stringify(output));
+  assert.deepEqual(result.openQuestions, ['What is causing the intermittent timeouts?']);
+});
+
 // --- reasonPrompt -----------------------------------------------------
 
 test('buildLogosPrompt: embeds text, intent, and evidence in the user message', () => {
