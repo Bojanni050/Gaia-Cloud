@@ -137,9 +137,9 @@ function createStreamEmitter(res) {
   }
 
   /**
-   * Emits one piece of Gaia's reply. `reasoning: true` marks a
-   * reasoning-trace delta rather than user-facing content — still routed
-   * through this one wire shape, never a capability-specific one.
+   * Emits one piece of Gaia's reply. `reasoning: true` marks a reasoning
+   * delta separately from user-facing content so clients can render it in
+   * their collapsible reasoning field rather than appending it to the reply.
    * @param {string} content
    * @param {{ reasoning?: boolean }} [options]
    */

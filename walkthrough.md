@@ -248,3 +248,9 @@
   - Nog open (bewust niet meegenomen): de `observation:`/`hypothesis:`-prefixen
     blijven staan, en de vraag op de kaart is nog niet `kind`-specifiek
     (open_question vraagt nog steeds "Klopt dit?").
+## 2026-10-10 (Interne reasoning gescheiden van antwoord)
+
+- Findings: De collapsible reasoning-weergave werkt alleen wanneer reasoning als apart `reasoning_content`-veld aankomt. Het verbergen van die frames aan de servergrens zou de weergave breken; het incident wijst erop dat deze beurt reasoning als gewone `content` heeft bereikt of is opgeslagen.
+- Conclusions: De wire-separatie blijft behouden: `content` is het antwoord, `reasoning_content` is de inklapbare reasoning. De provider/configuratie die reasoning in `content` laat vallen moet apart worden opgespoord.
+- Actions: `services/gaia-api/src/responseEngine.js` en de regressietest herstellen de aparte reasoning-frame; `services/gaia-api/identity/soul.md` verbiedt het tonen van private deliberatie; validated — eerdere `npm test` 1257/1257, foundation-artifact opnieuw gegenereerd.
+

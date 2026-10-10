@@ -54,7 +54,7 @@ test('a capability-agnostic emitter: any source calling delta() produces the ide
   assert.equal(res.written[1], `data: ${JSON.stringify({ choices: [{ delta: { content: 'from capability B' } }] })}\n\n`);
 });
 
-test('reasoning deltas use a distinct frame shape but the same wire contract', () => {
+test('reasoning deltas use a separate frame for the collapsible reasoning field', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);
   emitter.delta('thinking...', { reasoning: true });
