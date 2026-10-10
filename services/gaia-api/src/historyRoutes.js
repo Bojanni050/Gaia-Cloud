@@ -35,6 +35,19 @@ const express = require('express');
 const { ConversationNotFoundError, InvalidConversationIdError } = require('./conversationStore');
 
 /**
+ * The date and time a turn was said, for the human-readable export, or ''
+ * when the stored message predates per-turn timestamps. Local formatting is
+ * deliberate — the markdown is read, not parsed — and matches the header's
+ * own nl-NL date/time style.
+ */
+function formatTurnTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/**
  * @param {{
  *   store: ReturnType<import('./conversationStore').createConversationStore>,
  *   auth: import('express').RequestHandler,
@@ -110,7 +123,8 @@ function createHistoryRouter({ store, auth }) {
 
         for (const msg of messages) {
           const role = msg.role === 'user' ? '**You**' : '**Gaia**';
-          lines.push(`${role}:`);
+          const when = formatTurnTime(msg.createdAt);
+          lines.push(when ? `${role} · ${when}` : role);
           lines.push('');
           lines.push(msg.content);
           lines.push('');

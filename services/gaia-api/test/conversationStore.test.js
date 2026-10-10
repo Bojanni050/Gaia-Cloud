@@ -80,14 +80,59 @@ test('saveConversation then getConversation round-trips the transcript and deriv
   assert.equal(meta.messageCount, 2);
   assert.ok(meta.createdAt);
   assert.ok(meta.updatedAt);
-  assert.deepEqual(read, messages);
+  assert.deepEqual(read.map(({ role, content }) => ({ role, content })), messages);
+  assert.ok(read.every((m) => typeof m.createdAt === 'string' && m.createdAt));
 });
 
-test('saveConversation strips any extra client-side fields down to role/content', () => {
+test('saveConversation keeps a per-turn createdAt the client supplied', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [
+    { role: 'user', content: 'hi', createdAt: '2026-10-03T10:15:00.000Z' },
+    { role: 'assistant', content: 'hello', createdAt: '2026-10-03T10:15:04.000Z' },
+  ]);
+  const { messages } = store.getConversation('conv-1');
+  assert.equal(messages[0].createdAt, '2026-10-03T10:15:00.000Z');
+  assert.equal(messages[1].createdAt, '2026-10-03T10:15:04.000Z');
+});
+
+test('saveConversation stamps a message that arrives without a createdAt', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'hi' }]);
+  const { messages } = store.getConversation('conv-1');
+  assert.ok(!Number.isNaN(Date.parse(messages[0].createdAt)));
+});
+
+test('saveConversation reuses the stored time for an unchanged message and stamps a new one', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [
+    { role: 'user', content: 'first', createdAt: '2026-10-03T10:15:00.000Z' },
+    { role: 'assistant', content: 'first reply', createdAt: '2026-10-03T10:15:05.000Z' },
+  ]);
+
+  // A client that doesn't send times re-sends the history and appends a turn.
+  store.saveConversation('conv-1', [
+    { role: 'user', content: 'first' },
+    { role: 'assistant', content: 'first reply' },
+    { role: 'user', content: 'second' },
+  ]);
+  const { messages } = store.getConversation('conv-1');
+  assert.equal(messages[0].createdAt, '2026-10-03T10:15:00.000Z');
+  assert.equal(messages[1].createdAt, '2026-10-03T10:15:05.000Z');
+  assert.ok(!Number.isNaN(Date.parse(messages[2].createdAt)));
+});
+
+test('saveConversation ignores an unparseable client createdAt and stamps the turn instead', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'hi', createdAt: 'not a date' }]);
+  const { messages } = store.getConversation('conv-1');
+  assert.ok(!Number.isNaN(Date.parse(messages[0].createdAt)));
+});
+
+test('saveConversation strips any extra client-side fields down to role/content/createdAt', () => {
   const store = tempStore();
   store.saveConversation('conv-1', [{ id: 'local-1', role: 'user', content: 'hi', failed: false }]);
   const { messages } = store.getConversation('conv-1');
-  assert.deepEqual(Object.keys(messages[0]), ['role', 'content']);
+  assert.deepEqual(Object.keys(messages[0]).sort(), ['content', 'createdAt', 'role']);
 });
 
 test('saveConversation called again overwrites messages and keeps the original title/createdAt', () => {

@@ -65,6 +65,18 @@ function deriveTitle(messages) {
 }
 
 /**
+ * A client-supplied turn time, normalized to a valid ISO-8601 string, or
+ * null when absent/unparseable. Arbitrary client text is rejected here so a
+ * `createdAt` is either a real time or not written at all.
+ */
+function normalizeCreatedAt(value) {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return null;
+  return new Date(time).toISOString();
+}
+
+/**
  * @param {{ historyDir?: string }} [options]
  */
 function createConversationStore(options = {}) {
@@ -85,13 +97,33 @@ function createConversationStore(options = {}) {
     return path.join(convDir(id), 'messages.json');
   }
 
+  /** The previously stored transcript, or [] when there isn't a readable one. */
+  function readStoredMessages(id) {
+    try {
+      const messages = JSON.parse(fs.readFileSync(messagesPath(id), 'utf-8'));
+      return Array.isArray(messages) ? messages : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   /**
    * Persists the full transcript so far for `id` — overwrites, doesn't
    * append, since the caller (turn.js/server.js) already has the
    * complete history in memory each turn. Title is derived once, from
    * the first save, and kept stable across later turns.
+   *
+   * Each message carries its own `createdAt` (ISO-8601). A client that
+   * knows when a turn was said (Desktop stamps one per message) has that
+   * time preserved. When a message arrives without one — an older client,
+   * or the assistant reply the server appends itself — the stored time
+   * from the previous save is reused if the message is unchanged at the
+   * same position (same role+content), so re-sending the whole history
+   * each turn never re-stamps earlier turns; a genuinely new message is
+   * stamped now. Only role/content/createdAt are ever written — any other
+   * client field is still stripped.
    * @param {string} id
-   * @param {Array<{role: string, content: string}>} messages
+   * @param {Array<{role: string, content: string, createdAt?: string}>} messages
    * @throws {InvalidConversationIdError}
    */
   function saveConversation(id, messages) {
@@ -109,7 +141,17 @@ function createConversationStore(options = {}) {
     meta.updatedAt = new Date().toISOString();
     meta.messageCount = messages.length;
 
-    const plain = messages.map(({ role, content }) => ({ role, content }));
+    const previous = readStoredMessages(id);
+    const plain = messages.map((message, index) => {
+      const before = previous[index];
+      const unchanged =
+        before && before.role === message.role && before.content === message.content ? before : null;
+      const createdAt =
+        normalizeCreatedAt(message.createdAt) ||
+        normalizeCreatedAt(unchanged && unchanged.createdAt) ||
+        new Date().toISOString();
+      return { role: message.role, content: message.content, createdAt };
+    });
     fs.writeFileSync(messagesPath(id), JSON.stringify(plain, null, 2), 'utf-8');
     fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');
     events.emit('changed');
@@ -134,7 +176,7 @@ function createConversationStore(options = {}) {
 
   /**
    * @param {string} id
-   * @returns {{ meta: object, messages: Array<{role: string, content: string}> }}
+   * @returns {{ meta: object, messages: Array<{role: string, content: string, createdAt: string}> }}
    * @throws {InvalidConversationIdError | ConversationNotFoundError}
    */
   function getConversation(id) {

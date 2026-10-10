@@ -168,6 +168,7 @@ test('GET /conversations/:id/export/json returns conversation as JSON file', asy
     assert.ok(body.exportedAt);
     assert.equal(body.conversation.meta.id, 'conv-1');
     assert.equal(body.conversation.messages.length, 2);
+    assert.ok(body.conversation.messages.every((m) => typeof m.createdAt === 'string' && m.createdAt));
   } finally {
     await ctx.close();
   }
@@ -210,6 +211,9 @@ test('GET /conversations/:id/export/markdown returns conversation as Markdown fi
     assert.match(text, /\*\*You\*\*/);
     assert.match(text, /\*\*Gaia\*\*/);
     assert.match(text, /let's check the logs/);
+    // Each turn carries its date and time.
+    assert.match(text, /\*\*You\*\* · \d{2}-\d{2}-\d{4},? \d{2}:\d{2}/);
+    assert.match(text, /\*\*Gaia\*\* · \d{2}-\d{2}-\d{4},? \d{2}:\d{2}/);
   } finally {
     await ctx.close();
   }
