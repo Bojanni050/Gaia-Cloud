@@ -320,7 +320,7 @@ function createApp(env = process.env) {
     if (env.GAIA_AION === 'false') return undefined;
     const roleConfig = resolveRoleConfig('aion', providerStore, env);
     if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return undefined;
-    const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env) });
+    const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env), logSystem: 'aion', logPurpose: 'aion' });
     return createAionWriter({ model, hindsight: hindsightOwn });
   }
 

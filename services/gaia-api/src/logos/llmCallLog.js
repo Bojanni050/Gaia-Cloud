@@ -19,7 +19,7 @@
 
 /**
  * @param {{
- *   system: 'intentiq'|'logos'|'native'|'reasoniq',
+ *   system: 'intentiq'|'logos'|'aion'|'native'|'reasoniq',
  *   provider?: string|null,
  *   baseUrl?: string|null,
  *   model?: string|null,

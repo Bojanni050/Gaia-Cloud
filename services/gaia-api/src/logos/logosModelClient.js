@@ -59,7 +59,7 @@ function isConfigured(config) {
  * step inside one turn, not a chat surface, so there is no streaming
  * concern here the way there is in hermesClient.js.
  *
- * @param {{ baseUrl?: string, model?: string, apiKey?: string, provider?: string, fetchImpl?: Function, timeoutMs?: number }} [options]
+ * @param {{ baseUrl?: string, model?: string, apiKey?: string, provider?: string, fetchImpl?: Function, timeoutMs?: number, logSystem?: string, logPurpose?: string }} [options]
  */
 function createLogosModelClient(options = {}) {
   const config = {
@@ -70,6 +70,12 @@ function createLogosModelClient(options = {}) {
   };
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  // Which subsystem this client serves, for the llm.call log line. Logos's own
+  // reflection is 'logos'; the Aion pass reuses this client but is a different
+  // thing, so it labels its calls 'aion' — otherwise /admin's decision log shows
+  // two "Logos reason" models and conflates them, as happened live.
+  const logSystem = options.logSystem || 'logos';
+  const logPurpose = options.logPurpose || 'reason';
 
   /**
    * @param {Array<{role: string, content: string|Array<object>}>} messages content may be a plain string, or an OpenAI-compatible content-block array (e.g. for image_url blocks — see ocrResolver.js)
@@ -81,11 +87,11 @@ function createLogosModelClient(options = {}) {
     const logCall = (ok, errorMessage) => {
       if (!options.logger) return;
       logLlmCall({
-        system: 'logos',
+        system: logSystem,
         provider: config.provider,
         baseUrl: config.baseUrl,
         model: config.model,
-        purpose: 'reason',
+        purpose: logPurpose,
         latencyMs: Date.now() - startedAt,
         ok,
         errorMessage: errorMessage || null,

@@ -77,3 +77,23 @@ test('chat: a normal completion still works with the shorter timeout', async () 
   const client = createLogosModelClient({ ...BASE, fetchImpl, timeoutMs: 20000 });
   assert.equal(await client.chat([{ role: 'user', content: 'hi' }]), '{"ok":true}');
 });
+
+test('chat: logSystem/logPurpose relabel the llm.call line (the Aion pass is not Logos)', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"memories":[]}' } }] }) });
+  const { lines, logger } = collectLogs();
+  const client = createLogosModelClient({ ...BASE, fetchImpl, logSystem: 'aion', logPurpose: 'aion' });
+  await client.chat([{ role: 'user', content: 'hi' }], { logger });
+  const call = lines.find((l) => l.kind === 'llm.call');
+  assert.equal(call.system, 'aion');
+  assert.equal(call.purpose, 'aion');
+});
+
+test('chat: the default label stays logos/reason', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"ok":true}' } }] }) });
+  const { lines, logger } = collectLogs();
+  const client = createLogosModelClient({ ...BASE, fetchImpl });
+  await client.chat([{ role: 'user', content: 'hi' }], { logger });
+  const call = lines.find((l) => l.kind === 'llm.call');
+  assert.equal(call.system, 'logos');
+  assert.equal(call.purpose, 'reason');
+});
