@@ -204,7 +204,7 @@ test('research reach with GAIA_RESEARCH_REACH=on submits a run and still answers
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
-          body: JSON.stringify({ messages: [{ role: 'user', content: 'Doe research naar VPS-hosting met bronnen.' }] }),
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'Doe research naar VPS-hosting met bronnen.' }], conversationId: 'conv-1' }),
         });
         const body = await res.json();
 

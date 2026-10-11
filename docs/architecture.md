@@ -49,7 +49,9 @@ never a fallback and never the generator. The single exception is the
 Hermes naming the `grounded-citations` skill and does **not** wait for it. The
 turn answers immediately; the findings are polled up later, written into the
 conversation, and announced on `GET /research/jobs`. The answer stays Gaia's
-(`src/researchReach.js`, `src/researchJob.js`, `src/researchRoutes.js`).
+(`src/researchReach.js`, `src/researchJob.js`, `src/researchRoutes.js`). A
+research turn therefore requires a `conversationId` — the findings need a
+conversation to land in; without one the turn simply answers.
 
 After the reply is delivered, `runDeferredCognition` runs fire-and-forget and
 never touches the reply:

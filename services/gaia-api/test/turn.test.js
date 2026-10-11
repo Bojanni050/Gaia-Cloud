@@ -191,6 +191,7 @@ test('performTurn starts a research job, tells Gaia it is running, and still ans
     documents: DOCUMENTS,
     generator,
     researchJobs,
+    conversationId: 'conv-1',
   });
 
   assert.equal(result.status, 200);
@@ -223,6 +224,7 @@ test('a running job travels with the reply, so a client can show it is working',
     documents: DOCUMENTS,
     generator,
     researchJobs,
+    conversationId: 'conv-1',
   });
 
   assert.equal(result.status, 200);
@@ -244,6 +246,27 @@ test('a turn without a research job carries no research field at all', async () 
 
   assert.equal(result.status, 200);
   assert.equal('research' in result.body, false);
+});
+
+test('performTurn does not reach without a conversationId — the findings need somewhere to land', async () => {
+  let started = 0;
+  let promptMessages;
+  const generator = { generate: async (messages) => { promptMessages = messages; return 'Gewoon antwoord.'; } };
+  const researchJobs = { start: async () => { started += 1; return { id: 'rj_1' }; } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Doe research naar X met bronnen.' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs,
+    // no conversationId
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(started, 0, 'a research turn without a conversation never submits a run');
+  assert.equal('research' in result.body, false);
+  const pending = promptMessages.find((m) => m.role === 'system' && /onderzoeksopdracht/.test(m.content));
+  assert.equal(pending, undefined, 'and Gaia is not told about work that was never started');
 });
 
 test('performTurn starts no job on an ordinary turn', async () => {
@@ -426,6 +449,7 @@ test('performStreamingTurn reports a submitted research job as its own frame', a
     hermes,
     hindsight: SILENT_HINDSIGHT,
     researchJobs,
+    conversationId: 'conv-1',
     res,
   });
 

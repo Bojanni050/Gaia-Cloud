@@ -375,9 +375,30 @@ async function runTurnCore({
   // grounded-citations run takes minutes (measured live: still going after 15,
   // 33 tool calls), so this turn answers now and the findings arrive through
   // the poll endpoint. It runs alongside recall so the submit costs nothing.
-  const reachSkill = researchJobs && typeof researchJobs.start === 'function'
+  //
+  // A conversationId is REQUIRED. The findings are written into the
+  // conversation, so without one they would have nowhere to land and the
+  // client would only ever see "finished" with no content. A turn without a
+  // conversation therefore does not reach at all — it simply answers, and the
+  // skip is logged so the missing id is visible instead of silent.
+  const detectedSkill = researchJobs && typeof researchJobs.start === 'function'
     ? resolveReachSkill(userText)
     : null;
+  const reachSkill = detectedSkill && conversationId ? detectedSkill : null;
+  if (detectedSkill && !reachSkill) {
+    try {
+      const line = JSON.stringify({
+        kind: 'research.skipped',
+        traceId: traceId || null,
+        skill: detectedSkill,
+        reason: 'no-conversation',
+      });
+      if (decisionLogger) decisionLogger(line);
+      else console.log(line);
+    } catch (_) {
+      // Observability must never take down a turn.
+    }
+  }
 
   // Gated recall — Hindsight only on explicit requests or content
   // triggers, never by default. Pattern recall rides the same gated

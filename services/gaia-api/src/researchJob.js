@@ -13,6 +13,11 @@
  * cannot reach Hermes, an unreadable document — none of it may break a turn or
  * a poll cycle; the job simply stays `running` and is retried next cycle, or
  * lands as `failed` with a reason.
+ *
+ * A conversationId is REQUIRED: the findings are written into the conversation
+ * (saveResearchMessage), so a job without one would have nowhere to land and a
+ * client would only ever see "finished" with no content. startResearchJob
+ * refuses such a job and never submits the run.
  */
 
 const fs = require('fs');
@@ -48,6 +53,13 @@ function resolveOutboxDir(env = process.env) {
 async function startResearchJob({ question, skillId, conversationId, hermes, store, outboxDir = HERMES_OUTBOX_DIR } = {}) {
   if (!store || typeof store.create !== 'function') return null;
   if (!hermes || typeof hermes.submitRun !== 'function') return null;
+  // The findings are written into the conversation, so a job without one has
+  // nowhere to land. Enforced here as well as in the turn, so the invariant
+  // holds for every caller.
+  if (!conversationId) {
+    console.warn('[gaia:research] no conversationId — not submitting a run');
+    return null;
+  }
   try {
     const input = buildReachPrompt({ skillId, question, outboxDir });
     const { runId } = await hermes.submitRun({ input });

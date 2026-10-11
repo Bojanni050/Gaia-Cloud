@@ -67,12 +67,21 @@ test('startResearchJob records nothing when Hermes gives no run id, or cannot be
     getRun: async () => null,
   };
   let { store } = setup();
-  assert.equal(await startResearchJob({ question: 'q', skillId: 's', hermes: noId, store }), null);
+  assert.equal(await startResearchJob({ question: 'q', skillId: 's', conversationId: 'conv-1', hermes: noId, store }), null);
   assert.equal(store.list().length, 0);
 
   const throwing = { submitRun: async () => { throw new Error('hermes unreachable'); }, getRun: async () => null };
   ({ store } = setup());
-  assert.equal(await startResearchJob({ question: 'q', skillId: 's', hermes: throwing, store }), null);
+  assert.equal(await startResearchJob({ question: 'q', skillId: 's', conversationId: 'conv-1', hermes: throwing, store }), null);
+  assert.equal(store.list().length, 0);
+});
+
+test('startResearchJob refuses a job without a conversation, and never submits the run', async () => {
+  const { store, hermes, submitted } = setup();
+
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  assert.equal(job, null);
+  assert.equal(submitted.length, 0, 'the run must not be submitted at all');
   assert.equal(store.list().length, 0);
 });
 
@@ -80,7 +89,7 @@ test('startResearchJob records nothing when Hermes gives no run id, or cannot be
 
 test('a completed run closes the job with its findings', async () => {
   const { store, hermes } = setup({ runState: { status: 'completed', output: 'Bevindingen met bronnen.', error: null } });
-  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
 
   const changed = await pollResearchJobs({ hermes, store });
 
@@ -92,7 +101,7 @@ test('a completed run closes the job with its findings', async () => {
 
 test('a failed run closes the job with the reason', async () => {
   const { store, hermes } = setup({ runState: { status: 'failed', output: null, error: 'provider exploded' } });
-  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
 
   await pollResearchJobs({ hermes, store });
 
@@ -103,7 +112,7 @@ test('a failed run closes the job with the reason', async () => {
 
 test('a run that is still going, or an unreachable Hermes, leaves the job running for the next cycle', async () => {
   const { store, hermes } = setup({ runState: { status: 'running', output: null, error: null } });
-  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
   await pollResearchJobs({ hermes, store });
   assert.equal(store.get(job.id).status, 'running');
 
@@ -115,7 +124,7 @@ test('a run that is still going, or an unreachable Hermes, leaves the job runnin
 
 test('pollResearchJobs hands finished jobs to onCompleted', async () => {
   const { store, hermes } = setup({ runState: { status: 'completed', output: 'klaar', error: null } });
-  await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
 
   const seen = [];
   await pollResearchJobs({ hermes, store, onCompleted: (job) => seen.push(job.status) });
@@ -172,7 +181,7 @@ test('an unimportable document leaves the file in place for the next poll', () =
 test('a completed run imports the document it left behind', async () => {
   const outboxDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-outbox-'));
   const { store, hermes } = setup({ runState: { status: 'completed', output: 'Zie bijgaand.', error: null } });
-  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', hermes, store });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
   fs.writeFileSync(path.join(outboxDir, 'rapport.pdf'), 'pdf-bytes');
   const library = { saveFile: () => ({ id: 'file_9' }) };
 
