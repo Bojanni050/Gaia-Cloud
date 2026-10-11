@@ -146,6 +146,11 @@
   .model-dd-trigger .placeholder { font-size: 0.85rem; color: var(--text-faint); }
   .model-dd-trigger .chev { flex-shrink: 0; width: 0.85rem; height: 0.85rem; color: var(--text-faint); transition: transform 0.15s; }
   .model-dd.open .model-dd-trigger .chev { transform: rotate(180deg); }
+  /* A role whose custom provider wins: the Main Provider dropdown above is
+     stored preference only, not what runs — dim it so it never reads as active. */
+  .model-dd.overridden { opacity: 0.5; }
+  .model-dd.overridden .model-dd-trigger { cursor: not-allowed; }
+  .role-main-note { color: var(--amber, #c98a3a); }
 
   .model-dd-panel {
     position: absolute; z-index: 40; margin-top: 0.5rem; width: 100%;
@@ -1177,6 +1182,67 @@
     onChange: () => { aionSaveModelBtn.disabled = false; },
   });
 
+  // Each role can be served EITHER by the Main Provider (the dropdown above)
+  // OR by its own custom provider (the block below). resolveRoleConfig gives a
+  // custom provider outright priority, so when one is set the Main Provider
+  // dropdown is a stored preference only — not the model that runs. That was
+  // the confusion: the dropdown showed glm-5.3-flash as if active while the
+  // role actually ran on edenai/deepseek-v4.1-flash. applyRolePrecedence marks
+  // the losing control on every card, so "which model runs" is never ambiguous.
+  const MAIN_SELECTION = {
+    generation: { prefix: 'gen' },
+    reasoning: { prefix: 'riq' },
+    vision: { prefix: 'riqVision' },
+    kairos: { prefix: 'kairos' },
+    aion: { prefix: 'aion' },
+  };
+
+  // Mirrors providerConfigResolver.resolveRoleConfig: a role's own provider
+  // wins only when it is explicitly not using the Main Provider AND names a
+  // base URL + model.
+  function roleUsesCustomProvider(cfg, role) {
+    const rp = cfg && cfg.roleProviders && cfg.roleProviders[role];
+    return Boolean(rp && rp.useMainProvider === false && rp.baseUrl && rp.model);
+  }
+
+  function ensureMainRoleNote(prefix) {
+    const container = $(prefix + 'Dropdown');
+    if (!container) return null;
+    let note = document.getElementById(prefix + 'MainNote');
+    if (!note) {
+      note = document.createElement('p');
+      note.id = prefix + 'MainNote';
+      note.className = 'hint role-main-note';
+      note.style.marginTop = '0.45rem';
+      note.style.display = 'none';
+      container.insertAdjacentElement('afterend', note);
+    }
+    return note;
+  }
+
+  function applyRolePrecedence(cfg) {
+    for (const role of Object.keys(MAIN_SELECTION)) {
+      const prefix = MAIN_SELECTION[role].prefix;
+      const container = $(prefix + 'Dropdown');
+      if (!container) continue;
+      const overridden = roleUsesCustomProvider(cfg, role);
+      const dd = container.querySelector('.model-dd');
+      if (dd) dd.classList.toggle('overridden', overridden);
+      const note = ensureMainRoleNote(prefix);
+      if (!note) continue;
+      if (overridden) {
+        const rp = (cfg && cfg.roleProviders && cfg.roleProviders[role]) || {};
+        const label = providerLabelFor(rp.provider);
+        note.textContent = 'Not in use — this role runs on the custom provider below: '
+          + rp.model + (label ? ' via ' + label : '') + '.';
+        note.style.display = '';
+      } else {
+        note.textContent = '';
+        note.style.display = 'none';
+      }
+    }
+  }
+
   // One place that knows how each Main Provider role renders after a change —
   // keyed by role, so adding a role is a data change, not another else-branch.
   const ROLE_UI = {
@@ -1226,6 +1292,7 @@
     if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
     if (kairos) { kairosDropdown.setValue(kairos); kairosSaveModelBtn.disabled = false; }
     if (aion) { aionDropdown.setValue(aion); aionSaveModelBtn.disabled = false; }
+    applyRolePrecedence(cfg);
     // Badges are set by applyRoleBadges(cfg): the resolved per-role config
     // (custom provider or Main Provider), not just the catalog selection above.
   }
@@ -1250,6 +1317,7 @@
       const detail = r ? (label ? (r.model + ' · ' + label) : r.model) : '';
       setBadge(el, Boolean(r), 'Active', 'Inactive', detail);
     }
+    applyRolePrecedence(cfg);
   }
 
   async function saveLogosRole(role, model, statusEl, badgeEl, okText) {
@@ -1492,6 +1560,7 @@
       $(prefix + 'Model').value = rp.model || '';
       $(prefix + 'KeyHint').textContent = rp.hasApiKey ? ('Key saved: ' + rp.maskedApiKey) : 'No key saved yet.';
     }
+    applyRolePrecedence(cfg);
   }
 
   wireRoleProvider('generation', 'gen');
