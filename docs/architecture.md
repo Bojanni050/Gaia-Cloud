@@ -44,7 +44,12 @@ are load-bearing** and are never folded into the capability set.
 A live turn is **direct generation**: `validate → SOUL/context prompt → gated
 recall → one inference call (primary, backup on a retryable failure) → Response
 Engine`. No synchronous Logos pre-flight, no planning/routing layer. Hermes is
-never a fallback.
+never a fallback and never the generator. The single exception is the
+**research reach**: on a research-with-sources turn Gaia submits a `run` at
+Hermes naming the `grounded-citations` skill and does **not** wait for it. The
+turn answers immediately; the findings are polled up later, written into the
+conversation, and announced on `GET /research/jobs`. The answer stays Gaia's
+(`src/researchReach.js`, `src/researchJob.js`, `src/researchRoutes.js`).
 
 After the reply is delivered, `runDeferredCognition` runs fire-and-forget and
 never touches the reply:

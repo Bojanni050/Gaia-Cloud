@@ -58,6 +58,10 @@ const { createFromEnv: createFoundationFromEnv } = require('./foundationClient')
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
+const { createResearchJobStore } = require('./researchJobStore');
+const { startResearchJob, pollResearchJobs, saveResearchMessage, resolveOutboxDir } = require('./researchJob');
+const { createResearchRouter } = require('./researchRoutes');
+const { HERMES_OUTBOX_DIR } = require('./researchReach');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { createTtsLog } = require('./speech/ttsLog');
@@ -69,14 +73,18 @@ const PORT = Number(process.env.PORT || 8891);
 function createApp(env = process.env) {
   const soul = loadSoulWithEnv(env);
   const documents = loadFoundationDocumentsWithEnv(env);
-  // Hermes stays constructed for explicit future HADES use only — it is
-  // never passed into the live turn and never an inference fallback.
+  // Hermes is handed exactly ONE thing: a research run, where Gaia names a
+  // routing skill and Hermes loads and runs it in the background
+  // (src/researchReach.js + src/researchJob.js, wired further down). It is
+  // still never the generator and never an inference fallback — which is also
+  // why it never travels as `hermes` into the turn: a `hermes` client becomes
+  // the generator whenever nothing else is configured.
   const hermes = createHermesClient({
     baseUrl: env.HERMES_BASE_URL,
     model: env.HERMES_MODEL || 'hermes-agent',
     authToken: env.HERMES_AUTH_TOKEN,
   });
-  void hermes;
+
   const hindsightUrl = env.HINDSIGHT_URL || 'http://100.65.0.15:8888';
   const hindsightBudget = env.HINDSIGHT_RECALL_BUDGET || 'mid';
   // The system-memory bank: the memoryworthiness-gated conversation
@@ -399,6 +407,52 @@ function createApp(env = process.env) {
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
   app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
 
+  // RESEARCH JOBS — Gaia reaching FOR a Hermes skill, off the turn's clock.
+  //
+  // A research turn submits a run at Hermes and answers immediately; the
+  // findings are picked up later by a poll cycle, written into the
+  // conversation like any other message, and announced through
+  // GET /research/jobs so a client knows to look. Off unless a deployment
+  // opts in (GAIA_RESEARCH_REACH=on), because it means Hermes works
+  // unattended, with its full toolset, on Gaia's behalf.
+  const researchStore = createResearchJobStore(
+    env.GAIA_RESEARCH_JOBS_PATH !== undefined ? { jobsDir: env.GAIA_RESEARCH_JOBS_PATH } : {}
+  );
+  const researchOutboxDir = resolveOutboxDir(env);
+  const researchJobs = env.GAIA_RESEARCH_REACH === 'on'
+    ? {
+        start: async ({ question, skillId, conversationId }) => startResearchJob({
+          question,
+          skillId,
+          conversationId,
+          hermes,
+          store: researchStore,
+          outboxDir: HERMES_OUTBOX_DIR,
+        }),
+      }
+    : undefined;
+  app.use('/research', createResearchRouter({ store: researchStore, auth }));
+
+  if (researchJobs) {
+    const pollMs = Number(env.GAIA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_RESEARCH_POLL_MS) : 20000;
+    const timer = setInterval(() => {
+      pollResearchJobs({
+        hermes,
+        store: researchStore,
+        library: libraryStore,
+        outboxDir: researchOutboxDir,
+        onCompleted: async (job) => {
+          // The findings belong in the conversation, not only in a poll
+          // response: write them, then remember that we did.
+          const saved = saveResearchMessage({ job, historyStore });
+          if (saved) researchStore.update(job.id, { messageSaved: true });
+        },
+      }).catch(() => { /* a poll cycle never rejects; belt and braces */ });
+    }, pollMs);
+    // Never hold the process open just for the poller.
+    if (typeof timer.unref === 'function') timer.unref();
+  }
+
   // GaiaChat review surface — the human Absolute Override (list/test/reject/
   // confirm) with active supersession. Part of the client contract.
   app.use('/cognition', createCognitionRouter({ cognition, sync: cognitionSync, auth }));
@@ -470,6 +524,7 @@ function createApp(env = process.env) {
         conversationId,
         generator: getEffectiveNativeGenerator(),
         backupGenerator: getEffectiveBackupGenerator(),
+        researchJobs,
         historyStore,
         decisionStore,
         attachments: resolvedAttachments,
@@ -518,6 +573,7 @@ function createApp(env = process.env) {
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),
+      researchJobs,
       traceId,
       conversationId,
       decisionStore,

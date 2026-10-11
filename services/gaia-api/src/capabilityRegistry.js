@@ -17,6 +17,9 @@
  * `routing: true` means: knowing this skill exists adds something to Gaia's
  * capability/skill selection for a turn. Skills with `routing: false` are
  * recorded as honest metadata but must not be used as routing targets.
+ * Routing skills are read by src/researchReach.js — the only place Gaia
+ * reaches for a Hermes skill — and by the IntentIQ task shapes in
+ * src/logos/intentSignals.js that trigger the reach.
  *
  * Boundary: pure frozen data + pure lookup helpers. Zero requires, zero I/O,
  * zero decisions — this module only records metadata.
@@ -52,7 +55,7 @@ const CAPABILITY_REGISTRY = Object.freeze({
       Object.freeze({
         id: 'grounded-citations',
         category: 'research',
-        routing: false,
+        routing: true,
         description: 'ground answers and documents in cited, verifiable sources',
       }),
       Object.freeze({

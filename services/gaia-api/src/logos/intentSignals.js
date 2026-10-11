@@ -83,7 +83,8 @@ const SIGNAL_PATTERNS = Object.freeze({
 
 /**
  * TASK SHAPES that clearly match a routing skill: failure investigation,
- * test strategy, code review. Deliberately narrow and deliberately NOT a
+ * test strategy, code review, research-with-sources. Deliberately narrow and
+ * deliberately NOT a
  * name->skill keyword router: the frames describe multi-word semantic
  * shapes, a skill's own NAME appearing in the prompt never selects it, and a
  * turn with no matching shape simply reports none (spec §13). Order matters:
@@ -103,6 +104,22 @@ const SKILL_TASK_FRAMES = Object.freeze([
   {
     skill: 'requesting-code-review',
     frames: Object.freeze([/\bcode review\b/i, /\b(beoordeel|review|nakijken)\b[\s\S]{0,40}\b(mijn code|deze code|mijn wijzigingen|de wijzigingen|pull request|mijn pr)\b/i, /\b(mijn code|deze code|mijn wijzigingen|de wijzigingen)\b[\s\S]{0,40}\b(reviewen|review|beoordelen|nakijken)\b/i]),
+  },
+  {
+    // Research with sources — the one shape that justifies reaching for
+    // Hermes' grounded-citations skill (src/researchReach.js). It demands an
+    // explicit research/sources cue: a bare "onderzoek" or "zoek uit" keeps
+    // its own shape (e.g. systematic-debugging) and never lands here.
+    skill: 'grounded-citations',
+    frames: Object.freeze([
+      /\b(doe|doet|even|graag)\b[\s\S]{0,25}\bresearch\b/i,
+      /\bresearch\b[\s\S]{0,30}\b(naar|over|voor)\b/i,
+      /\bresearch\s+(this|that|it)\b/i,
+      /\bmet\s+(bronnen|sources|citations?)\b/i,
+      /\b(zoek|zoek dit|zoek het|zoek dat)\b[\s\S]{0,30}\buit\b[\s\S]{0,50}\b(bronnen|sources)\b/i,
+      /\bverdiep\s+je\s+in\b/i,
+      /\b(literatuur|markt|concurrentie|achtergrond)(onderzoek|\s*analyse)\b/i,
+    ]),
   },
 ]);
 

@@ -24,11 +24,12 @@
  * THE FRAME FAMILY (this module's wire vocabulary): every frame this module
  * writes is one `data:` JSON line ending in a blank line, terminated by
  * `data: [DONE]`. Content frames keep the original OpenAI-compatible
- * `{ choices: [{ delta }] }` shape untouched. Two EXTENSION frames were
+ * `{ choices: [{ delta }] }` shape untouched. Three EXTENSION frames were
  * added alongside it:
  *
- *   { choices: [{ delta: {} }], type: 'step',   step: {...} }   plan progress
- *   { choices: [{ delta: {} }], type: 'error',  error: '...' }  calm failure
+ *   { choices: [{ delta: {} }], type: 'step',     step: {...} }     plan progress
+ *   { choices: [{ delta: {} }], type: 'research', research: {...} } background job
+ *   { choices: [{ delta: {} }], type: 'error',    error: '...' }    calm failure
  *
  * Both deliberately carry an EMPTY `choices[0].delta` next to their type:
  * a client written against the original contract reads that as "no content
@@ -44,7 +45,10 @@
  * step's position, its type in a plan's own vocabulary
  * (retrieval/reasoning/generation/capability) and its status — never the
  * capability id behind it, never content, never the error behind a failure
- * (that is `toCalmError()`'s text and nothing else).
+ * (that is `toCalmError()`'s text and nothing else). The research frame says
+ * that a background job was submitted and carries the job's own metadata for
+ * the client's indicator — never the question's answer, which arrives later
+ * through the conversation.
  *
  * generateReply/generateStreamingReply extend this seam to one generation
  * result — the non-streaming and streaming twins of the same judgment.
@@ -100,13 +104,17 @@ function toCalmError() {
  * becomes a calm 502 — the same outcome whether the capability threw or
  * simply returned nothing usable.
  * @param {string|null|undefined} text
+ * @param {object} [extras] extra top-level fields for a successful reply — a
+ *   Gaia-level fact about the turn that is not the reply itself (today: the
+ *   research job that was submitted, so a client can show it is working in
+ *   the background). Never applied to the error shape.
  * @returns {{status: number, body: object}}
  */
-function formatReply(text) {
+function formatReply(text, extras = {}) {
   if (typeof text !== 'string' || text.length === 0) {
     return { status: 502, body: { error: toCalmError() } };
   }
-  return { status: 200, body: { reply: text } };
+  return { status: 200, body: { reply: text, ...extras } };
 }
 
 /**
@@ -165,6 +173,20 @@ function createStreamEmitter(res) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'step', step: payload })}\n\n`);
   }
 
+  /**
+   * Reports that a background research job was started, as an extension frame
+   * in the same family as `step`: a fact about the turn, never content. A
+   * client uses it to show that something is still running after the reply —
+   * `GET /research/jobs` is the durable version of the same fact, so a client
+   * that misses this frame loses nothing but immediacy.
+   * @param {object} payload
+   */
+  function research(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    ensureHeaders();
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'research', research: payload })}\n\n`);
+  }
+
   /** Finalizes a successful stream. */
   function finish() {
     ensureHeaders();
@@ -190,7 +212,7 @@ function createStreamEmitter(res) {
     res.end();
   }
 
-  return { delta, step, finish, fail };
+  return { delta, step, research, finish, fail };
 }
 
 /**

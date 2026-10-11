@@ -98,6 +98,11 @@ function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false, onWebSear
     }
     if (href.startsWith(HERMES_BASE)) {
       if (onHermes) onHermes(href);
+      // The research pipeline submits a RUN (/v1/runs) rather than a chat
+      // completion; answer it with a run id so a job can actually be created.
+      if (href.endsWith('/runs')) {
+        return { ok: true, json: async () => ({ run_id: 'run_test_1', status: 'started' }) };
+      }
       return fakeResponse(requestBody.stream, 'Hermes reply');
     }
     if (href.startsWith(TTS_BASE)) {
@@ -156,6 +161,61 @@ test('createApp does not throw when GAIA_NATIVE_* is unset (native generator sta
 
 test('createApp does not throw when GAIA_NATIVE_* is set (native generator is constructed)', () => {
   assert.doesNotThrow(() => createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' })));
+});
+
+// --- research reach gating (opt-in, off by default) -------------------------
+
+test('research reach is off by default: a research ask never starts a Hermes run', async () => {
+  let hermesCalls = 0;
+
+  await withMockedFetch(
+    mockFetch({ onHermes: () => { hermesCalls += 1; } }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'Doe research naar VPS-hosting met bronnen.' }] }),
+        });
+        const body = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(body.reply, 'Gaia native voice reply');
+      });
+    }
+  );
+
+  assert.equal(hermesCalls, 0, 'the reach is opt-in and must not fire unless enabled');
+});
+
+test('research reach with GAIA_RESEARCH_REACH=on submits a run and still answers immediately', async () => {
+  let hermesCalls = 0;
+
+  await withMockedFetch(
+    mockFetch({ onHermes: () => { hermesCalls += 1; } }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({
+        GAIA_NATIVE_BASE_URL: NATIVE_BASE,
+        GAIA_NATIVE_MODEL: 'test-model',
+        GAIA_RESEARCH_REACH: 'on',
+      }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify({ messages: [{ role: 'user', content: 'Doe research naar VPS-hosting met bronnen.' }] }),
+        });
+        const body = await res.json();
+
+        assert.equal(res.status, 200);
+        // The turn answers now; the run is not waited on.
+        assert.equal(body.reply, 'Gaia native voice reply');
+      });
+    }
+  );
+
+  assert.equal(hermesCalls, 1, 'exactly one run submitted per research turn');
 });
 
 // --- performTurn (non-streaming) -------------------------------------------

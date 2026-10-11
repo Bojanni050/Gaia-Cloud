@@ -18,7 +18,7 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
   const headers = { 'Content-Type': 'application/json' };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-  async function chat(messages) {
+  async function chat(messages, { timeoutMs: callTimeoutMs = timeoutMs } = {}) {
     // Diagnostic logging (temporary)
     const imageBlockPresent = messages.some((m) => 
       Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url')
@@ -40,7 +40,7 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
         method: 'POST',
         headers,
         body: JSON.stringify({ model, stream: false, messages }),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(callTimeoutMs),
       });
     } catch (error) {
       // Server-side diagnostic only; the client still gets a calm error.
@@ -146,7 +146,72 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
     return fullText;
   }
 
-  return { chat, stream };
+  /**
+   * Submits an agent run without waiting for it — the async primitive the
+   * research pipeline is built on. `input` is a plain string (the same
+   * skill-naming prompt chat() would carry), never the reply. Resolves with
+   * the run id so the caller can poll later.
+   *
+   * @param {{ input: string, instructions?: string, sessionId?: string, idempotencyKey?: string }} request
+   * @returns {Promise<{ runId: string|null, status: string|null }>}
+   */
+  async function submitRun({ input, instructions, sessionId, idempotencyKey } = {}) {
+    const body = { input: String(input || '') };
+    if (instructions) body.instructions = String(instructions);
+    if (sessionId) body.session_id = String(sessionId);
+    const requestHeaders = { ...headers };
+    if (idempotencyKey) requestHeaders['Idempotency-Key'] = String(idempotencyKey).slice(0, 255);
+
+    let response;
+    try {
+      response = await fetchImpl(`${root}/runs`, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      console.error(`[hermes] run submit unreachable at ${root}: ${error.message}`);
+      throw new Error('hermes unreachable');
+    }
+    if (!response.ok) {
+      console.error(`[hermes] run submit responded ${response.status} at ${root}`);
+      throw new Error('hermes rejected the run');
+    }
+    const data = await response.json().catch(() => null);
+    return { runId: (data && data.run_id) || null, status: (data && data.status) || null };
+  }
+
+  /**
+   * Reads one submitted run's state. `output` is the run's text once it
+   * completed; a run that failed or was cancelled carries the terminal
+   * status instead.
+   *
+   * @param {string} runId
+   * @returns {Promise<{ status: string|null, output: string|null, error: string|null, raw: object|null }>}
+   */
+  async function getRun(runId) {
+    let response;
+    try {
+      response = await fetchImpl(`${root}/runs/${encodeURIComponent(runId)}`, { headers });
+    } catch (error) {
+      console.error(`[hermes] run status unreachable at ${root}: ${error.message}`);
+      throw new Error('hermes unreachable');
+    }
+    if (!response.ok) {
+      console.error(`[hermes] run status responded ${response.status} at ${root}`);
+      throw new Error('hermes run unreadable');
+    }
+    const data = await response.json().catch(() => null);
+    if (!data) return { status: null, output: null, error: null, raw: null };
+    return {
+      status: data.status || null,
+      output: typeof data.output === 'string' ? data.output : null,
+      error: data.error || null,
+      raw: data,
+    };
+  }
+
+  return { chat, stream, submitRun, getRun };
 }
 
 function parseSseFrame(frame) {

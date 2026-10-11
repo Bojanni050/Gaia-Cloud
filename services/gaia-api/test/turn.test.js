@@ -173,6 +173,109 @@ test('performTurn with only unreadable attachments still mentions them without f
   assert.match(attachmentMsg.content, /could not be read as text/);
 });
 
+// --- research jobs (the one place Gaia reaches FOR a Hermes skill) ---------
+
+test('performTurn starts a research job, tells Gaia it is running, and still answers herself', async () => {
+  let promptMessages;
+  const generator = { generate: async (messages) => { promptMessages = messages; return 'Ik ben ermee bezig.'; } };
+  const started = [];
+  const researchJobs = {
+    start: async (input) => {
+      started.push(input);
+      return { id: 'rj_1', skillId: input.skillId, runId: 'run_1', status: 'running' };
+    },
+  };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Doe research naar VPS-hosting met bronnen.' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs,
+  });
+
+  assert.equal(result.status, 200);
+  // The answer is Gaia's own, produced without waiting for the run.
+  assert.equal(result.body.reply, 'Ik ben ermee bezig.');
+  assert.equal(started.length, 1);
+  assert.equal(started[0].skillId, 'grounded-citations');
+  assert.match(started[0].question, /VPS-hosting/);
+  const pending = promptMessages.find((m) => m.role === 'system' && /onderzoeksopdracht/.test(m.content));
+  assert.ok(pending, 'Gaia is told the research is running, so she does not imply she already did it');
+});
+
+test('a running job travels with the reply, so a client can show it is working', async () => {
+  const generator = { generate: async () => 'Ik ben ermee bezig.' };
+  const researchJobs = {
+    start: async () => ({
+      id: 'rj_1',
+      conversationId: 'conv-1',
+      skillId: 'grounded-citations',
+      question: 'Doe research naar X met bronnen.',
+      status: 'running',
+      createdAt: '2026-10-11T10:00:00.000Z',
+      updatedAt: '2026-10-11T10:00:00.000Z',
+      file: null,
+    }),
+  };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Doe research naar X met bronnen.' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.research.id, 'rj_1');
+  assert.equal(result.body.research.status, 'running');
+  assert.equal(result.body.research.conversationId, 'conv-1');
+  // Metadata only — the findings are never in the turn body.
+  assert.equal(result.body.research.resultText, undefined);
+});
+
+test('a turn without a research job carries no research field at all', async () => {
+  const generator = { generate: async () => 'ok' };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo.' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs: { start: async () => null },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal('research' in result.body, false);
+});
+
+test('performTurn starts no job on an ordinary turn', async () => {
+  let started = 0;
+  const generator = { generate: async () => 'ok' };
+  const researchJobs = { start: async () => { started += 1; return null; } };
+
+  await performTurn({
+    messages: [{ role: 'user', content: 'Hallo, hoe gaat het?' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs,
+  });
+
+  assert.equal(started, 0, 'a plain turn never starts a research run');
+});
+
+test('a research job that cannot be started never fails the turn', async () => {
+  const generator = { generate: async () => 'Gewoon antwoord.' };
+  const researchJobs = { start: async () => { throw new Error('hermes unreachable'); } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Doe research naar X met bronnen.' }],
+    documents: DOCUMENTS,
+    generator,
+    researchJobs,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'Gewoon antwoord.');
+});
+
 // --- performTurn / Decision Engine + Orchestrator integration -------------
 //
 // performTurn runs the SAME cognitive pipeline as performStreamingTurn via
@@ -294,6 +397,46 @@ test('performStreamingTurn streams SSE frames matching the OpenAI delta shape, t
   // of this migration: a plain conversational turn selects the base three.
   assert.equal(seenMessages[0].content, 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON');
   assert.equal(seenMessages.at(-1).content, 'hi there, how is your day');
+});
+
+test('performStreamingTurn reports a submitted research job as its own frame', async () => {
+  const res = fakeRes();
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      onDelta('Ik ben ermee bezig.', false);
+      return 'Ik ben ermee bezig.';
+    },
+  };
+  const researchJobs = {
+    start: async () => ({
+      id: 'rj_1',
+      conversationId: 'conv-1',
+      skillId: 'grounded-citations',
+      question: 'Doe research naar X met bronnen.',
+      status: 'running',
+      createdAt: '2026-10-11T10:00:00.000Z',
+      updatedAt: '2026-10-11T10:00:00.000Z',
+      file: null,
+    }),
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Doe research naar X met bronnen.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    researchJobs,
+    res,
+  });
+
+  const frame = res.written.find((chunk) => chunk.includes('"type":"research"'));
+  assert.ok(frame, 'the client is told a background job started, without waiting for a poll');
+  const parsed = JSON.parse(frame.slice('data: '.length));
+  assert.deepEqual(parsed.choices, [{ delta: {} }]); // additive: old readers append nothing
+  assert.equal(parsed.research.id, 'rj_1');
+  assert.equal(parsed.research.status, 'running');
+  assert.equal(parsed.research.resultText, undefined);
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
 });
 
 test('performStreamingTurn sends a normal JSON error if Hermes fails before any delta', async () => {

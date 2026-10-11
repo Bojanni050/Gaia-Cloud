@@ -53,10 +53,20 @@ test('skill ids are the OFFICIAL Hermes Bundled Skills Catalog names', () => {
 
 test('routing flags: only selection-relevant skills are routing targets', () => {
   const routing = routingSkills('hermes').map((s) => s.id).sort();
-  assert.deepEqual(routing, ['requesting-code-review', 'systematic-debugging', 'test-driven-development']);
+  assert.deepEqual(routing, ['grounded-citations', 'requesting-code-review', 'systematic-debugging', 'test-driven-development']);
   // Non-routing metadata exists but is flagged honestly.
   assert.equal(getSkill('hermes', 'plan').routing, false);
-  assert.equal(getSkill('hermes', 'grounded-citations').routing, false);
+  assert.equal(getSkill('hermes', 'grounded-citations').routing, true);
+});
+
+test('every routing:true skill has an IntentIQ task shape that can select it', () => {
+  // The registry grants permission; IntentIQ supplies the shape. A routing
+  // skill with no frame is dead config — it can never be reached for.
+  const { SKILL_TASK_FRAMES } = require('../src/logos/intentSignals');
+  const framed = new Set(SKILL_TASK_FRAMES.map((entry) => entry.skill));
+  for (const skill of routingSkills('hermes')) {
+    assert.ok(framed.has(skill.id), `routing skill without a task shape: ${skill.id}`);
+  }
 });
 
 test('no duplicate skill ids within any capability; every skill has category + description', () => {

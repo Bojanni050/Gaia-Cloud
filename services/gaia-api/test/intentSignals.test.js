@@ -96,3 +96,11 @@ test('the name of a skill never selects it (spec §13)', () => {
   assert.deepEqual(detectSignals('Wat betekent systematic-debugging?').skillTasks, []);
   assert.deepEqual(detectSignals('wat houdt test-driven-development in?').skillTasks, []);
 });
+
+test('detectSkillTasks: research-with-sources is its own shape, never the debugging cue', () => {
+  assert.deepEqual(detectSignals('Doe research naar de beste alternatieven.').skillTasks, ['grounded-citations']);
+  assert.deepEqual(detectSignals('Vat dit samen met bronnen.').skillTasks, ['grounded-citations']);
+  assert.deepEqual(detectSignals('Wat houdt grounded-citations in?').skillTasks, []);
+  // a bare "zoek uit" without a sources cue stays a debugging shape
+  assert.deepEqual(detectSignals('Zoek uit waarom dit faalt.').skillTasks, ['systematic-debugging']);
+});

@@ -25,7 +25,7 @@ flowchart TB
         hindsight["HINDSIGHT  :8888 (external)<br/>DERIVED STORE<br/>gaia:* tags · semantic recall"]
     end
 
-    hermes["HERMES  :8642 (hermes_net)<br/>capability — NOT in the live turn"]
+    hermes["HERMES  :8642 (hermes_net)<br/>capability — runs research jobs async"]
 
     web -->|"HTTPS + Bearer"| api
     desktop -->|"HTTPS + Bearer"| api
@@ -34,7 +34,7 @@ flowchart TB
     cognition -->|"cognitionSync mirror"| hindsight
     api -->|"recall / mental models / pages"| hindsight
     api -->|"archive asks only"| foundation
-    api -.->|"never called live"| hermes
+    api -.->|"research run submitted, not awaited"| hermes
 
     classDef ext fill:#2A241B,stroke:#CBA36A,color:#ECE6DA
     classDef own fill:#221D15,stroke:#CBA36A,color:#ECE6DA
@@ -47,18 +47,22 @@ flowchart TB
 ```mermaid
 flowchart TB
     A["client → POST /conversation/turn"] --> B["1. validate + auth<br/>fail-closed 503 / 401"]
+    hermes["HERMES  :8642 — separate container, its own run"]
     B --> C["2. resolve attachments<br/>library → text / vision"]
     C --> D["3. gated recall (parallel)"]
     D --> D1["Hindsight: reflections +<br/>mental models + knowledge pages"]
     D --> D2["Hindsight: patterns (gaia:pattern)"]
     D --> D3["Foundation: archive asks only<br/>'wat staat er vastgelegd'"]
-    D1 & D2 & D3 --> E["4. SOUL prompt + recall blocks +<br/>capability awareness"]
+    D --> D4["HERMES: research reach — submits a run,<br/>names grounded-citations, does not wait"]
+    D1 & D2 & D3 & D4 --> E["4. SOUL prompt + recall blocks +<br/>capability awareness"]
     E --> F["5. ONE inference call<br/>primary → backup (429/5xx/timeout, pre-output)"]
     F --> G["6. Response Engine<br/>only writer of the wire format"]
     G --> H["reply delivered ({ reply } or SSE)"]
     H --> I["7. runDeferredCognition<br/>fire-and-forget · never awaited"]
+    H --> J["8. research poll (separate cycle)<br/>findings → conversation · GET /research/jobs"]
 
-    F -.->|"Hermes is NEVER a fallback"| H
+    F -.->|"Hermes is NEVER a fallback and never the generator"| H
+    J -.->|"run status only"| hermes
 ```
 
 ## 3. Deferred cognition — where writing happens

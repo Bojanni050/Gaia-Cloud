@@ -54,6 +54,29 @@ test('a capability-agnostic emitter: any source calling delta() produces the ide
   assert.equal(res.written[1], `data: ${JSON.stringify({ choices: [{ delta: { content: 'from capability B' } }] })}\n\n`);
 });
 
+test('formatReply carries turn-level extras on success and never on failure', () => {
+  const ok = formatReply('hoi', { research: { id: 'rj_1', status: 'running' } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.reply, 'hoi');
+  assert.equal(ok.body.research.id, 'rj_1');
+
+  const failed = formatReply('', { research: { id: 'rj_1' } });
+  assert.equal(failed.status, 502);
+  assert.equal('research' in failed.body, false);
+});
+
+test('the research frame is additive: empty delta, its own type, and metadata only', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  emitter.research({ id: 'rj_1', status: 'running' });
+
+  const parsed = JSON.parse(res.written[0].slice('data: '.length));
+  assert.deepEqual(parsed.choices, [{ delta: {} }]); // an old reader appends nothing
+  assert.equal(parsed.type, 'research');
+  assert.deepEqual(parsed.research, { id: 'rj_1', status: 'running' });
+  assert.equal(res.headers['Content-Type'], 'text/event-stream');
+});
+
 test('reasoning deltas use a separate frame for the collapsible reasoning field', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);

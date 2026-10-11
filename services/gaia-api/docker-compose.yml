@@ -15,6 +15,13 @@ services:
       # volume the admin config is lost on every container recreation —
       # the same class of trap as any other untracked state on the VPS.
       - ./data:/app/data
+      # The research outbox: the SAME host directory is mounted into the
+      # Hermes container as /shared/out (see /root/hermes-agent/
+      # docker-compose.yml on the VPS). A research run drops a document
+      # there; gaia-api reads it and imports it into Gaia's own library.
+      # Read-write because an imported document is moved to imported/ so it
+      # can never be picked up twice.
+      - "${GAIA_RESEARCH_OUTBOX_HOST:-/root/shared/research-out}:/shared/research-out"
     ports:
       # Tailscale-only, same posture as Hindsight and gaia-cognition:
       # reachable from the tailnet (desktop clients live there), never

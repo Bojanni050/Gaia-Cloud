@@ -44,6 +44,8 @@ const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwar
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
+const { resolveReachSkill, renderResearchPending } = require('./researchReach');
+const { researchJobView } = require('./researchRoutes');
 const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require('./logos/logos');
 const { logLogosGate } = require('./logos/logosLog');
 const { shouldRecall } = require('./memoryPolicy');
@@ -286,7 +288,10 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
  * Engine. The only transport knob is `onDelta`: present ⇒ streaming
  * generation with SSE delivery; absent ⇒ one JSON body. No Logos
  * pre-flight, no Decision Engine, no Orchestrator, no plan/tool/capability
- * routing in this path.
+ * routing in this path — the single exception is the research reach
+ * (src/researchReach.js), which SUBMITS a Hermes run alongside recall and
+ * returns a job, never the reply: the findings arrive later through the poll
+ * endpoint (src/researchJob.js + src/researchRoutes.js).
  *
  * @param {{
  *   messages: Array<{role: string, content: string}>,
@@ -320,12 +325,14 @@ async function runTurnCore({
   backupGenerator,
   nativeGenerator,
   hermes,
+  researchJobs,
   foundation,
   hypothesisRuntime,
   aion,
   decisionStore,
   reasonIQ = evaluateLogos,
   onDelta,
+  onResearchJob,
   userDisplayName,
 }) {
   const userText = latestUserText(messages);
@@ -362,6 +369,16 @@ async function runTurnCore({
     && archiveSignals && archiveSignals.recordedKnowledge
   );
 
+  // Research with sources is the ONE shape that reaches FOR Hermes (see
+  // researchReach.js + researchJob.js): the task shape comes from IntentIQ,
+  // the permission from the registry. The run is SUBMITTED, never awaited — a
+  // grounded-citations run takes minutes (measured live: still going after 15,
+  // 33 tool calls), so this turn answers now and the findings arrive through
+  // the poll endpoint. It runs alongside recall so the submit costs nothing.
+  const reachSkill = researchJobs && typeof researchJobs.start === 'function'
+    ? resolveReachSkill(userText)
+    : null;
+
   // Gated recall — Hindsight only on explicit requests or content
   // triggers, never by default. Pattern recall rides the same gated
   // moment through the hypothesisRuntime adapter seam.
@@ -372,8 +389,7 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults] = await Promise.all([
-    hindsight
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, researchJob] = await Promise.all([    hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
@@ -392,8 +408,24 @@ async function runTurnCore({
         return [];
       })
       : Promise.resolve([]),
+    reachSkill
+      ? Promise.resolve()
+        .then(() => researchJobs.start({ question: userText, skillId: reachSkill, conversationId }))
+        .catch(() => null)
+      : Promise.resolve(null),
   ]);
   timing.end('memory_recall');
+
+  // The moment the run exists, tell the transport — a client can then show
+  // that something is running in the background while this reply streams,
+  // instead of finding out on its next poll.
+  if (researchJob && typeof onResearchJob === 'function') {
+    try {
+      onResearchJob(researchJob);
+    } catch (_) {
+      // Telling the client is not worth failing a turn over.
+    }
+  }
 
   // Meetbasis voor Gaia-geïnitieerde recall: één regel per turn met gate
   // en counts only (nooit user-/memory-inhoud). Blijft werken zonder
@@ -413,6 +445,25 @@ async function runTurnCore({
     }, decisionLogger);
   } catch (_) {
     // Observability must never take down a turn.
+  }
+
+  // Reach observability: one line per research turn — which skill Gaia reached
+  // for, which job carries it, and whether the run actually got submitted.
+  // Ids and booleans only, never content.
+  if (reachSkill) {
+    try {
+      const line = JSON.stringify({
+        kind: 'research.job',
+        traceId: traceId || null,
+        skill: reachSkill,
+        jobId: researchJob ? researchJob.id : null,
+        submitted: Boolean(researchJob && researchJob.runId),
+      });
+      if (decisionLogger) decisionLogger(line);
+      else console.log(line);
+    } catch (_) {
+      // Observability must never take down a turn.
+    }
   }
 
   const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
@@ -460,6 +511,7 @@ async function runTurnCore({
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
+  const researchPendingBlock = renderResearchPending(researchJob);
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
     patternUsage,
@@ -472,6 +524,7 @@ async function runTurnCore({
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
   if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
   if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
+  if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
   if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
@@ -561,6 +614,7 @@ async function runTurnCore({
     replyText: typeof replyText === 'string' && replyText.length > 0 ? replyText : null,
     timing,
     notConfigured,
+    researchJob: researchJob || null,
     startDeferredCognition,
   };
 }
@@ -869,9 +923,12 @@ async function runDeferredCognition({
  * Performs one conversational turn — NON-STREAMING transport.
  *
  * Same direct-generation pipeline as performStreamingTurn (runTurnCore);
- * delivery is one plain JSON `{ reply }`. No generation configured ⇒
- * calm 503; configured providers failing ⇒ calm 502 via the Response
- * Engine. Hermes is never called.
+ * delivery is one plain JSON `{ reply }`, plus a `research` field when a
+ * background research job was submitted on this turn so a client can show
+ * that work is still running. No generation configured ⇒ calm 503;
+ * configured providers failing ⇒ calm 502 via the Response Engine. Hermes is
+ * never called as a generator — only handed a research run it does in the
+ * background (src/researchJob.js).
  */
 async function performTurn({
   messages,
@@ -884,6 +941,7 @@ async function performTurn({
   backupGenerator,
   nativeGenerator,
   hermes,
+  researchJobs,
   foundation,
   hypothesisRuntime,
   aion,
@@ -896,7 +954,7 @@ async function performTurn({
     return { status: 400, body: { error: problem } };
   }
 
-  const { replyText, timing, notConfigured, startDeferredCognition } = await runTurnCore({
+  const { replyText, timing, notConfigured, researchJob, startDeferredCognition } = await runTurnCore({
     messages,
     documents,
     hindsight,
@@ -907,6 +965,7 @@ async function performTurn({
     backupGenerator,
     nativeGenerator,
     hermes,
+    researchJobs,
     foundation,
     hypothesisRuntime,
     aion,
@@ -921,14 +980,16 @@ async function performTurn({
   const deferredCognition = startDeferredCognition();
   void deferredCognition;
 
+  const researchExtras = researchJob ? { research: researchJobView(researchJob) } : {};
+
   if (typeof replyText !== 'string' || replyText.length === 0) {
     if (notConfigured) {
       return { status: 503, body: { error: toCalmError() } };
     }
-    return formatReply(replyText);
+    return formatReply(replyText, researchExtras);
   }
 
-  return formatReply(replyText);
+  return formatReply(replyText, researchExtras);
 }
 
 /**
@@ -948,6 +1009,7 @@ async function performStreamingTurn({
   backupGenerator,
   nativeGenerator,
   hermes,
+  researchJobs,
   foundation,
   attachments,
   traceId,
@@ -989,12 +1051,14 @@ async function performStreamingTurn({
       backupGenerator,
       nativeGenerator,
       hermes,
+      researchJobs,
       foundation,
       hypothesisRuntime,
       aion,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,
+      onResearchJob: (job) => emitter.research(researchJobView(job)),
       userDisplayName,
     });
   } catch (_) {
