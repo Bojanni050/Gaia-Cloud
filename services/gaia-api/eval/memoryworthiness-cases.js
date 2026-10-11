@@ -92,6 +92,18 @@ const CASES = [
   { id: 'bc-02', category: 'acknowledgement', input: 'Kun je dat nog iets uitleggen?', expected: 'discard' },
   { id: 'bc-03', category: 'filler', input: 'De tests draaien allemaal weer groen na de refactor van vannacht.', expected: 'discard' },
   { id: 'bc-04', category: 'project decision', input: 'We besluiten de API op versie 2 te houden, er is geen budget voor meer.', expected: 'retain' },
+
+  // --- the COMPLETED turn: a `reply` is judged along with the input. The first
+  // set below is where the substance sits in Gaia's answer, not the prompt;
+  // the last four are chatty/generic replies that must not tilt a discard.
+  // The cases above carry no reply — they only measure the user-turn half. ---
+  { id: 'rp-01', category: 'reply decision', input: 'Wat denk je, Postgres of Mongo?', reply: 'Ga voor Postgres: je data is relationeel en je team kent het al. Dat is het besluit voor Melodiq.', expected: 'retain' },
+  { id: 'rp-02', category: 'reply plan', input: 'En wat nu?', reply: 'Plan: eerst de mixage afronden, daarna volgende maand de release van het album voorbereiden.', expected: 'retain' },
+  { id: 'rp-03', category: 'reply routine', input: 'Oké doen we zo.', reply: 'Afgesproken: de deploy draait elke vrijdag via GitHub Actions.', expected: 'retain' },
+  { id: 'rp-04', category: 'greeting', input: 'Hoi!', reply: 'Hoi Bo! Fijn je te zien, hoe gaat het met je?', expected: 'discard' },
+  { id: 'rp-05', category: 'acknowledgement', input: 'Bedankt', reply: 'Graag gedaan, laat het me weten als je nog iets nodig hebt!', expected: 'discard' },
+  { id: 'rp-06', category: 'trivia', input: 'Wat is de hoofdstad van Bolivia?', reply: 'Sucre is de constitutionele hoofdstad; La Paz is de zetel van de regering.', expected: 'discard' },
+  { id: 'rp-07', category: 'generic explanation', input: 'Kun je uitleggen wat een closure is?', reply: 'Een closure is een functie die variabelen uit haar omringende scope onthoudt, ook nadat die scope is afgelopen.', expected: 'discard' },
 ];
 
 module.exports = { CASES };

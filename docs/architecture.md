@@ -52,6 +52,11 @@ never touches the reply:
 1. **Observation registration** — the completed turn is registered in Foundation
    (raw).
 2. **Memoryworthiness** — a cheap, deterministic gate for what deserves memory.
+   Optionally (`MEMORY_WORTHINESS_MODE=shadow|llm`, default `heuristic` = off) a
+   model judges the completed turn instead, binary retain/discard; explicit
+   memory requests, corrections, duplicates and pure acknowledgements always
+   stay with the deterministic gate, and a model failure falls back to it. Each
+   retain is tagged `gaia_memory_decider: heuristic|llm`.
 3. **Logos reflection** — over the turn (and, later, the Foundation observation
    delta): proposes hypotheses, patterns, open questions and relationships.
 4. **Cognition writes** — proposals land in Cognition; confirmed statements

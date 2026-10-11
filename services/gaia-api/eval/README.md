@@ -139,3 +139,26 @@ configured `REASONIQ_MODEL_*` model — see that file's own header comment.
 Not a benchmark for the stub, not evidence Logos reasons well, and not
 real user data. Its job — same as the IntentIQ harness — is to keep the
 pipeline honest about its own contract (never a training target).
+
+---
+
+# Memoryworthiness evaluation
+
+```bash
+npm run eval:memory            # deterministic gate only, no model
+npm run eval:memory -- --llm   # also the optional LLM judge, side by side
+```
+
+Runs `eval/memoryworthiness-cases.js` against `src/memoryWorthiness.js`.
+Most cases carry only a user turn; the `rp-*` cases also carry Gaia's `reply`,
+because the gate judges the completed turn — a user-turn-only case cannot
+measure the part where the substance sits in the answer.
+
+`--llm` additionally runs `src/memoryWorthinessLlm.js` in `llm` mode (needs
+`MEMORY_WORTHINESS_MODEL_BASE_URL`/`_NAME`, or `REASONIQ_MODEL_*`) and prints
+the heuristic and the model scored binary (keep vs discard), how often the
+model was actually asked (the rest is settled by the deterministic pre-checks),
+and every disagreement. It is the measurement step before switching
+`MEMORY_WORTHINESS_MODE` away from `heuristic`; the cases are synthetic, so
+read the disagreements, not just the percentage.
+

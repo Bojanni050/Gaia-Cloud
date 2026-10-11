@@ -67,7 +67,7 @@ flowchart TB
 flowchart TB
     D["runDeferredCognition (after reply, never awaited)"]
     D --> S1["1. Foundation.submitObservation<br/>the turn as a RAW observation"]
-    D --> S2["2. Memoryworthiness (deterministic gate)"]
+    D --> S2["2. Memoryworthiness (deterministic gate; optional LLM judge, off by default)"]
     D --> S3["3. Logos reflection (one model call, deep only)"]
     D --> S4["4. Hindsight reflectOnTurn (gated)"]
 

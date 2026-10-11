@@ -1689,6 +1689,76 @@ test("0.1 memory: a meaningful turn reflects WITH gaia_memory_* decision metadat
   assert.match(meta.gaia_memory_reason, /explicit/);
 });
 
+// --- Memoryworthiness LLM judge (MEMORY_WORTHINESS_MODE) — the injected seam ---
+
+function judgeTurn(mode, chat, extra = {}) {
+  const { createMemoryWorthinessJudge } = require("../src/memoryWorthinessLlm");
+  return createMemoryWorthinessJudge({ mode, getModel: () => ({ chat }), ...extra });
+}
+
+async function memoryTurn(userText, memoryJudge, reply = "Dat is genoteerd, dank je.") {
+  const { reflectCalls, hindsight } = memoryHindsight();
+  const logs = [];
+  await performStreamingTurn({
+    messages: [{ role: "user", content: userText }],
+    documents: DOCUMENTS,
+    hermes: { stream: async (m, { onDelta }) => { onDelta(reply, false); return reply; } },
+    hindsight,
+    res: fakeRes(),
+    memoryJudge,
+    intentIQ: () => ({ schemaVersion: "intentiq.v1", intent: "converse", status: "accepted" }),
+    reasonIQ: async () => ({}),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  return { reflectCalls, logs };
+}
+
+const MIDBAND_TURN = "De klant belde terug en het contract tekent pas na de zomer, dus de oplevering schuift op.";
+
+test("memory judge (llm mode): a model retain on a lexically bare turn reflects, tagged decider=llm", async () => {
+  const judge = judgeTurn("llm", async () => JSON.stringify({ action: "retain", reason: "oplevering schuift" }));
+  const { reflectCalls } = await memoryTurn(MIDBAND_TURN, judge);
+  assert.equal(reflectCalls.length, 1);
+  assert.equal(reflectCalls[0].metadata.gaia_memory_decider, "llm");
+  assert.equal(reflectCalls[0].metadata.gaia_memory_decision, "retain");
+});
+
+test("memory judge (llm mode): a deliberate model discard is the only way to suppress the reflection", async () => {
+  const judge = judgeTurn("llm", async () => JSON.stringify({ action: "discard", reason: "niets blijvends" }));
+  const { reflectCalls } = await memoryTurn(MIDBAND_TURN, judge);
+  assert.equal(reflectCalls.length, 0);
+});
+
+test("memory judge (llm mode): a failing model falls back to the heuristic, never silences the reflection", async () => {
+  const judge = judgeTurn("llm", async () => { throw new Error("logos model unreachable"); });
+  const { reflectCalls } = await memoryTurn("Onthoud dat ik voortaan kortere antwoorden wil.", judge);
+  assert.equal(reflectCalls.length, 1);
+  assert.equal(reflectCalls[0].metadata.gaia_memory_decider, "heuristic");
+});
+
+test("memory judge (llm mode): an explicit memory request is never discarded by the model", async () => {
+  let asked = 0;
+  const judge = judgeTurn("llm", async () => { asked += 1; return JSON.stringify({ action: "discard", reason: "x" }); });
+  const { reflectCalls } = await memoryTurn("Onthoud dat ik voortaan kortere antwoorden wil.", judge);
+  assert.equal(asked, 0);
+  assert.equal(reflectCalls.length, 1);
+});
+
+test("memory judge (shadow mode): the heuristic still decides, the model never blocks the reflection", async () => {
+  // A model that never answers must not hold up (or change) anything.
+  const judge = judgeTurn("shadow", () => new Promise(() => {}), { shadowEvery: 1 });
+  const { reflectCalls } = await memoryTurn("Onthoud dat ik voortaan kortere antwoorden wil.", judge);
+  assert.equal(reflectCalls.length, 1);
+  assert.equal(reflectCalls[0].metadata.gaia_memory_decider, "heuristic");
+});
+
+test("memory judge absent (heuristic mode): metadata says heuristic and behavior is the plain gate", async () => {
+  const { reflectCalls } = await memoryTurn("Onthoud dat ik voortaan kortere antwoorden wil.", undefined);
+  assert.equal(reflectCalls.length, 1);
+  assert.equal(reflectCalls[0].metadata.gaia_memory_decider, "heuristic");
+});
+
 test("0.1 memory: low-priority turns are still retained but tagged priority=low", async () => {
   const { reflectCalls, hindsight } = memoryHindsight();
   const hermes = { stream: async (m, { onDelta }) => { onDelta("ok", false); return "Prima, geniet ervan."; } };

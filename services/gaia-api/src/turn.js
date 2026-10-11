@@ -323,6 +323,7 @@ async function runTurnCore({
   foundation,
   hypothesisRuntime,
   aion,
+  memoryJudge,
   decisionStore,
   reasonIQ = evaluateLogos,
   onDelta,
@@ -539,6 +540,7 @@ async function runTurnCore({
     foundation,
     reasonIQ,
     aion,
+    memoryJudge,
     evidence,
     intentDecision,
     recalledReflections: reflections,
@@ -597,6 +599,7 @@ async function runDeferredCognition({
   foundation,
   reasonIQ = evaluateLogos,
   aion,
+  memoryJudge,
   evidence,
   intentDecision,
   recalledReflections,
@@ -642,10 +645,25 @@ async function runDeferredCognition({
       conversationContext: messages,
       existingMemorySignals: { recalledReflections: recalledReflections || [] },
     });
+    // Optional LLM judge (MEMORY_WORTHINESS_MODE shadow|llm; absent ⇒ the gate
+    // above stands untouched). It never throws; on any model failure it
+    // returns the heuristic decision, so "no reflection" is only ever a
+    // deliberate discard.
+    if (memoryJudge && typeof memoryJudge.decide === 'function') {
+      memoryDecision = await memoryJudge.decide({
+        heuristicDecision: memoryDecision,
+        userText,
+        replyText,
+        recalledReflections: recalledReflections || [],
+        logger: decisionLogger,
+        contextId: conversationId,
+      });
+    }
     memoryDecision = applyCapabilityOutcomeOverride(memoryDecision, executionResult);
     logMemoryWorthiness(memoryDecision, Date.now() - mwStartMs, decisionLogger);
   } catch (_) {
-    // A classification failure degrades to null → reflection gated off.
+    // A classification failure degrades to null → no decision metadata; the
+    // reflection still runs (see the `!memoryDecision ||` guards below).
   }
   timing.end('deferred.memory_worthiness');
 
@@ -887,6 +905,7 @@ async function performTurn({
   foundation,
   hypothesisRuntime,
   aion,
+  memoryJudge,
   decisionStore,
   reasonIQ,
   userDisplayName,
@@ -910,6 +929,7 @@ async function performTurn({
     foundation,
     hypothesisRuntime,
     aion,
+    memoryJudge,
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
@@ -954,6 +974,7 @@ async function performStreamingTurn({
   reasonIQ,
   hypothesisRuntime,
   aion,
+  memoryJudge,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -992,6 +1013,7 @@ async function performStreamingTurn({
       foundation,
       hypothesisRuntime,
       aion,
+      memoryJudge,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,

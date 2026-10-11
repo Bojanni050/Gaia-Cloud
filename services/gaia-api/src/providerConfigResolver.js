@@ -157,6 +157,20 @@ function resolveEnvFallback(role, env) {
       }
       return resolveEnvFallback('reasoning', env);
 
+    case 'memory':
+      // The Memoryworthiness LLM judge (memoryWorthinessLlm.js): a small, fast
+      // model with a short timeout, independent of the reasoning role. No
+      // dedicated env ⇒ null; server.js then borrows the reasoning role.
+      if (env.MEMORY_WORTHINESS_MODEL_BASE_URL && env.MEMORY_WORTHINESS_MODEL_NAME) {
+        return {
+          provider: env.MEMORY_WORTHINESS_MODEL_PROVIDER || 'env',
+          baseUrl: env.MEMORY_WORTHINESS_MODEL_BASE_URL,
+          model: env.MEMORY_WORTHINESS_MODEL_NAME,
+          apiKey: env.MEMORY_WORTHINESS_MODEL_API_KEY || '',
+        };
+      }
+      return null;
+
     default:
       return null;
   }

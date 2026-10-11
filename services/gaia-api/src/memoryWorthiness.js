@@ -2,7 +2,9 @@
 
 /**
  * Memoryworthiness 0.1 — a small, deterministic gate between IntentIQ and
- * Hindsight. It answers exactly one question:
+ * Hindsight (this module is the deterministic judge; an optional LLM judge
+ * lives beside it in memoryWorthinessLlm.js, off by default — see "Optional
+ * LLM judge" below). It answers exactly one question:
  *
  *   > Is this turn worth keeping as a Hindsight memory?
  *
@@ -39,11 +41,18 @@
  *   4. Thresholds map score → action: ≥ RETAIN_SCORE retain,
  *      ≥ LOW_PRIORITY_SCORE retain_low_priority, else discard.
  *
- * Semantic fallback (§11) is deliberately NOT built in 0.1: every case is
- * decided by the deterministic first pass, so clear retains/discards cost
- * zero LLM calls. The extension seam is evaluate()'s single call site in
- * turn.js — a semantic check would slot between the hard rules and the
- * threshold mapping for mid-band turns only.
+ * THIS MODULE performs no LLM call, ever: every case here is decided by the
+ * deterministic first pass, so clear retains/discards cost zero LLM calls.
+ *
+ * Optional LLM judge (MEMORY_WORTHINESS_MODE, default `heuristic` = nothing
+ * below applies): the lexical rules have coverage gaps that cause
+ * false-discards, so memoryWorthinessLlm.js can let a model judge the turn.
+ * The seam is evaluate()'s single call site in turn.js, where the judge's
+ * `decide()` receives this module's decision and returns the one to act on —
+ * same MemoryDecision shape, plus `decider: 'heuristic'|'llm'`. In `shadow`
+ * mode this gate still decides and the model is only compared and logged; in
+ * `llm` mode the model decides, except explicit memory requests, corrections,
+ * duplicate downgrades and pure acknowledgements, which stay with this gate.
  *
  * Boundary: PURE module. Requires only memoryPolicy's existing signal
  * vocabulary; performs no I/O whatsoever.
@@ -508,6 +517,7 @@ function applyCapabilityOutcomeOverride(memoryDecision, executionResult) {
     score: memoryDecision ? memoryDecision.score : 1,
     reasons: [...(memoryDecision ? memoryDecision.reasons : []), 'notable_capability_outcome'],
     dimensions: memoryDecision ? memoryDecision.dimensions : {},
+    decider: memoryDecision && memoryDecision.decider ? memoryDecision.decider : 'heuristic',
   };
 }
 
@@ -523,6 +533,8 @@ function metadataForMemoryDecision(memoryDecision) {
     gaia_memory_reason: String((memoryDecision.reasons || []).join('|')).slice(0, 300),
     gaia_memory_priority: memoryDecision.action === 'retain_low_priority' ? 'low' : 'normal',
     gaia_memory_score: String(memoryDecision.score != null ? memoryDecision.score : ''),
+    // Who decided — 'llm' only when memoryWorthinessLlm.js overruled the gate.
+    gaia_memory_decider: memoryDecision.decider === 'llm' ? 'llm' : 'heuristic',
   };
 }
 

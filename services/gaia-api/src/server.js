@@ -42,6 +42,7 @@ const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
 const { createMemoryTool } = require('./reasoning/memoryTool');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
+const { createMemoryWorthinessJudge } = require('./memoryWorthinessLlm');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
 const { createKairosRuntime } = require('./kairos/runtime');
@@ -324,6 +325,29 @@ function createApp(env = process.env) {
     return createAionWriter({ model, hindsight: hindsightOwn });
   }
 
+  // Memoryworthiness LLM judge (memoryWorthinessLlm.js). MEMORY_WORTHINESS_MODE
+  // = heuristic (default; no judge is built, behavior unchanged) | shadow |
+  // llm. Uses its own small/fast model and short timeout, falling back to the
+  // reasoning role when no MEMORY_WORTHINESS_MODEL_* is set; resolved per turn
+  // so admin changes apply without a restart.
+  function getEffectiveMemoryWorthinessModel() {
+    const roleConfig = resolveRoleConfig('memory', providerStore, env)
+      || resolveRoleConfig('reasoning', providerStore, env);
+    if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return null;
+    const timeoutMs = Number(env.MEMORY_WORTHINESS_TIMEOUT_MS);
+    return createLogosModelClient({
+      ...roleConfig,
+      timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      logSystem: 'memory',
+      logPurpose: 'worthiness',
+    });
+  }
+  const memoryJudge = createMemoryWorthinessJudge({
+    mode: env.MEMORY_WORTHINESS_MODE,
+    getModel: getEffectiveMemoryWorthinessModel,
+    shadowEvery: Number(env.MEMORY_WORTHINESS_SHADOW_EVERY) || 3,
+  }) || undefined;
+
   // The scheduler owns WHEN it runs: every GAIA_AION_EVERY_TURNS
   // turns, plus a flush when the conversation changes or goes idle (the
   // closest thing to an end-of-session signal this service has).
@@ -466,6 +490,7 @@ function createApp(env = process.env) {
         hypothesisRuntime,
         foundation,
         aion,
+        memoryJudge,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -515,6 +540,7 @@ function createApp(env = process.env) {
       hypothesisRuntime,
       foundation,
       aion,
+      memoryJudge,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),
