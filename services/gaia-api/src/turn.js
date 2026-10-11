@@ -637,6 +637,7 @@ async function runDeferredCognition({
     const mwStartMs = Date.now();
     memoryDecision = evaluateMemoryWorthiness({
       userInput: userText,
+      assistantReply: replyText,
       intent: intentDecision,
       conversationContext: messages,
       existingMemorySignals: { recalledReflections: recalledReflections || [] },

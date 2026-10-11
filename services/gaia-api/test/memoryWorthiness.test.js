@@ -86,6 +86,37 @@ test('important personal fact retains', () => {
   assert.equal(evaluate('Mijn dochter begint volgende week op nieuwe school.').action, 'retain');
 });
 
+// --- completed turn: the REPLY is judged too (P0) ------------------------------
+
+test('a durable reply lifts a lexically mundane prompt', () => {
+  const d = evaluate('voer de tests uit', {
+    assistantReply: 'De tests falen: de login-route geeft een 500. We besluiten de sessie-store te vervangen door Redis.',
+  });
+  assert.notEqual(d.action, 'discard');
+  assert.ok(d.reasons.includes('decision_or_commitment') || d.reasons.includes('durable_plan_or_routine'));
+});
+
+test('a chatty reply to a greeting still discards (a reply is not a retention free-for-all)', () => {
+  const d = evaluate('Hoi Gaia', {
+    assistantReply: 'Hoi Bo! Leuk dat je er bent. Waar wil je vandaag aan werken?',
+  });
+  assert.equal(d.action, 'discard');
+});
+
+test('person-signals in the reply alone do not manufacture personal relevance', () => {
+  const d = evaluate('oké', {
+    assistantReply: 'Ik heb liever dat we morgen verdergaan, dat werkt voor mij beter.',
+  });
+  assert.equal(d.action, 'discard');
+});
+
+test('without a reply the judgment is unchanged (reply is opt-in)', () => {
+  const a = evaluate('voer de tests uit');
+  const b = evaluate('voer de tests uit', { assistantReply: '' });
+  assert.equal(a.action, b.action);
+  assert.equal(a.score, b.score);
+});
+
 test('temporary context discards or stays low priority', () => {
   assert.notEqual(evaluate('Ik ben even koffie halen.').action, 'retain');
   assert.equal(evaluate('Oké, ik ga even koffie pakken.').action, 'discard');

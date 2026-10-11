@@ -21,6 +21,11 @@
  * post-turn reflection never fires; on retain/retain_low_priority it rides
  * along as `gaia_memory_*` metadata on the existing reflection.
  *
+ * It judges the COMPLETED turn: the user's message AND Gaia's delivered reply
+ * (`assistantReply`) — the durable conclusion/decision/plan often lives in the
+ * reply, so a lexically mundane prompt no longer forces a discard on its own.
+ * Person-signals stay user-only; topic-signals read either side.
+ *
  * Scoring (fully deterministic, no ML, no LLM — spec §10):
  *
  *   1. Six dimensions scored 0–3 from objective lexical/intent signals
@@ -240,6 +245,7 @@ function topicOverlap(a, b) {
  *
  * @param {{
  *   userInput: string,
+ *   assistantReply?: string,                    // Gaia's reply for the completed turn — part of what may be worth remembering
  *   intent?: object|null,                       // IntentIQ's IntentDecision
  *   conversationContext?: Array|null,           // full message history (context only)
  *   existingMemorySignals?: { recalledReflections?: Array }|null,
@@ -252,6 +258,19 @@ function evaluateMemoryWorthiness(input = {}) {
   const text = userInput.trim();
   const intent = input.intent || null;
   const reasons = [];
+
+  // The turn's own reply is part of what may deserve memory: the durable
+  // conclusion, decision or plan often lives in Gaia's answer, not in the
+  // (possibly mundane) prompt that triggered it. Bug this fixes: only the
+  // user's INPUT was ever judged, so a turn whose substance sat in the reply
+  // read as trivia. Signals ABOUT THE PERSON stay user-only — Gaia's "ik" is
+  // not Bo — while topic-level signals may come from either side. With no
+  // reply supplied the behavior is byte-for-byte what it was.
+  const reply = String(input.assistantReply || '').trim();
+  const turnText = reply ? `${text}\n${reply}` : text;
+  const replySubstantive = Boolean(reply)
+    && !isTrivial(reply, MEMORY_POLICY.minReflectLength)
+    && !isPureAcknowledgement(reply);
 
   // --- 1. Dimensions -------------------------------------------------------
   const d = {
@@ -294,7 +313,7 @@ function evaluateMemoryWorthiness(input = {}) {
     d.novelty = Math.max(d.novelty, 2);
     reasons.push('personal_fact');
   }
-  if (hasSignal(text, SIGNALS.lifeEvent)) {
+  if (hasSignal(turnText, SIGNALS.lifeEvent)) {
     d.personalRelevance = Math.max(d.personalRelevance, 3);
     d.persistence = Math.max(d.persistence, 3);
     d.futureUtility = Math.max(d.futureUtility, 2);
@@ -306,20 +325,20 @@ function evaluateMemoryWorthiness(input = {}) {
     // durability claim ("Ik ben even koffie halen" is not a memory).
     d.personalRelevance = Math.max(d.personalRelevance, 1);
   }
-  if (hasSignal(text, SIGNALS.recurrence)) {
+  if (hasSignal(turnText, SIGNALS.recurrence)) {
     d.persistence = Math.max(d.persistence, 3);
     d.futureUtility = Math.max(d.futureUtility, 2);
     d.novelty = Math.max(d.novelty, 2);
     reasons.push('recurring_commitment');
   }
-  if (hasSignal(text, SIGNALS.decision)) {
+  if (hasSignal(turnText, SIGNALS.decision)) {
     // Commitments are durable by nature (§9: project decisions, afspraken).
     d.persistence = Math.max(d.persistence, 3);
     d.futureUtility = Math.max(d.futureUtility, 2);
     d.novelty = Math.max(d.novelty, 2);
     reasons.push('decision_or_commitment');
   }
-  if (hasSignal(text, SIGNALS.future)) {
+  if (hasSignal(turnText, SIGNALS.future)) {
     // Forward-looking commitments about one's own life/work: useful later,
     // durable across weeks, novel by definition.
     d.futureUtility = Math.max(d.futureUtility, 2);
@@ -328,21 +347,26 @@ function evaluateMemoryWorthiness(input = {}) {
     d.personalRelevance = Math.max(d.personalRelevance, 2);
     reasons.push('future_consequence');
   }
-  if (hasSignal(text, PAST_REFERENCE_SIGNALS)) {
+  if (hasSignal(turnText, PAST_REFERENCE_SIGNALS)) {
     // References to prior conversation imply an active memory relationship.
     d.personalRelevance = Math.max(d.personalRelevance, 1);
     reasons.push('references_shared_history');
   }
-  if (hasSignal(text, DURABLE_CONTEXT_SIGNALS)) {
+  if (hasSignal(turnText, DURABLE_CONTEXT_SIGNALS)) {
     d.futureUtility = Math.max(d.futureUtility, 1);
     d.persistence = Math.max(d.persistence, 1);
     reasons.push('durable_topic');
   }
 
   // Non-trivial, non-acknowledgement speech carries at least situational
-  // novelty; pure ritual carries none by definition.
+  // novelty; pure ritual carries none by definition. A substantive REPLY
+  // carries that same floor even when the prompt itself was terse.
   if (!isTrivialTurn && !pureAck) {
     d.novelty = Math.max(d.novelty, 1);
+  }
+  if (replySubstantive) {
+    d.novelty = Math.max(d.novelty, 1);
+    reasons.push('substantive_reply');
   }
   // §6: intent is INPUT, never the verdict — memory.inspect/meta.relational
   // nudge relevance at most; inform/converse stay neutral.
@@ -409,7 +433,7 @@ function evaluateMemoryWorthiness(input = {}) {
   // corrective signal co-occurs.
   const temporaryContext = hasSignal(text, SIGNALS.temporary)
     && d.explicitRecallRequest < 2 && d.correctionValue < 2
-    && !hasSignal(text, SIGNALS.decision) && !hasSignal(text, SIGNALS.lifeEvent);
+    && !hasSignal(turnText, SIGNALS.decision) && !hasSignal(turnText, SIGNALS.lifeEvent);
   if (temporaryContext && d.persistence <= 2 && d.futureUtility <= 1) {
     d.persistence = Math.min(d.persistence, 1);
     d.personalRelevance = Math.min(d.personalRelevance, 1);
@@ -442,10 +466,10 @@ function shouldRetainToHindsight(memoryDecision) {
  * Whether a capability's outcome is, on its own, notable enough to force
  * retention — independent of evaluateMemoryWorthiness's score.
  *
- * evaluateMemoryWorthiness runs during the turn immediately after recall,
- * so it judges
- * only the user's INPUT text and can never see whether the capability
- * needed a retry, failed outright, or escalated to ask_user. Since P0's
+ * evaluateMemoryWorthiness runs during the turn immediately after recall, and
+ * now also receives the completed turn's reply; even so, a capability's
+ * outcome (retry/failure/ask_user) is not something its lexical signals can
+ * read, so this stays a separate, additive override. Since P0's
  * runtime integration routes every capability — including ordinary
  * conversational replies via the "hermes" capability — through the same
  * contract loop with at least a trivial default expected_outcome, a
