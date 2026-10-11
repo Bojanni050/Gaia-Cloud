@@ -24,7 +24,13 @@ const fs = require('fs');
 const path = require('path');
 const { buildReachPrompt, HERMES_OUTBOX_DIR } = require('./researchReach');
 
-const TERMINAL_FAILURES = new Set(['failed', 'cancelled', 'interrupted', 'stopping']);
+const TERMINAL_FAILURES = new Set(['failed', 'cancelled', 'interrupted']);
+// A run parked on a human approval is NOT "still running": with nobody to
+// answer it, it stays parked indefinitely (observed live 2026-10-11: 30+
+// minutes, still `waiting_for_approval`). Gaia has no human to offer mid-run,
+// so the job closes as blocked and the person is told why — instead of a job
+// that never finishes and a conversation that never gets its findings.
+const BLOCKED_STATES = new Set(['waiting_for_approval']);
 
 const MIME_BY_EXT = Object.freeze({
   '.pdf': 'application/pdf',
@@ -144,6 +150,11 @@ function renderResearchMessage(job) {
       : 'Het onderzoek is klaar, maar er kwam geen tekst terug.';
     return `Onderzoek afgerond${skill}.\n\n${body}${fileLine}`;
   }
+  if (job.status === 'blocked') {
+    return `Het onderzoek${skill} is gestopt: Hermes wilde een commando uitvoeren dat zonder`
+      + ' goedkeuring niet mag, en er was niemand om die te geven. Er is niets stuk —'
+      + ` alleen dit stuk onderzoek is niet afgekomen.${fileLine}`;
+  }
   return `Het onderzoek${skill} is niet gelukt: ${job.error || 'onbekende oorzaak'}.${fileLine}`;
 }
 
@@ -212,6 +223,12 @@ async function pollResearchJobs({ hermes, store, library, outboxDir = resolveOut
         file: file || job.file || null,
       });
       if (updated) changed.push(updated);
+    } else if (BLOCKED_STATES.has(state.status)) {
+      const updated = store.update(job.id, {
+        status: 'blocked',
+        error: 'approval_required',
+      });
+      if (updated) changed.push(updated);
     } else if (TERMINAL_FAILURES.has(state.status)) {
       const updated = store.update(job.id, {
         status: 'failed',
@@ -243,4 +260,5 @@ module.exports = {
   saveResearchMessage,
   resolveOutboxDir,
   TERMINAL_FAILURES,
+  BLOCKED_STATES,
 };

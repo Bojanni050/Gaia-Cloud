@@ -19,7 +19,9 @@
  *   { id, conversationId, skillId, question, status, runId,
  *     createdAt, updatedAt, resultText, file, error, messageSaved,
  *     deliveredAt }
- * status: 'running' → 'done' | 'failed'
+ * status: 'running' → 'done' | 'failed' | 'blocked'
+ * ('blocked' = the run parked on an approval nobody could give; see
+ * src/researchJob.js)
  */
 
 const fs = require('fs');

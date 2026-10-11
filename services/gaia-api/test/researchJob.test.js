@@ -99,6 +99,21 @@ test('a completed run closes the job with its findings', async () => {
   assert.equal(stored.resultText, 'Bevindingen met bronnen.');
 });
 
+test('a run parked on an approval closes as blocked instead of hanging forever', async () => {
+  const { store, hermes } = setup({ runState: { status: 'waiting_for_approval', output: null, error: null } });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  const changed = await pollResearchJobs({ hermes, store });
+
+  assert.deepEqual(changed.map((j) => j.id), [job.id]);
+  const stored = store.get(job.id);
+  assert.equal(stored.status, 'blocked');
+  assert.equal(stored.error, 'approval_required');
+  // Delivered, not left in limbo: the person learns why nothing came back.
+  assert.equal(store.listRunning().length, 0);
+  assert.deepEqual(store.listUndelivered().map((j) => j.id), [job.id]);
+});
+
 test('a failed run closes the job with the reason', async () => {
   const { store, hermes } = setup({ runState: { status: 'failed', output: null, error: 'provider exploded' } });
   const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
@@ -206,6 +221,10 @@ test('renderResearchMessage reports the findings, and the document when there is
 
   const failed = renderResearchMessage({ status: 'failed', skillId: 'grounded-citations', error: 'timeout' });
   assert.match(failed, /niet gelukt: timeout/);
+
+  const blocked = renderResearchMessage({ status: 'blocked', skillId: 'grounded-citations', error: 'approval_required' });
+  assert.match(blocked, /zonder goedkeuring niet mag/);
+  assert.match(blocked, /niets stuk/);
 });
 
 test('saveResearchMessage appends Gaia\'s findings to the conversation', () => {
