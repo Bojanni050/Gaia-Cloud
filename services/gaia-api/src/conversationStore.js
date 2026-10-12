@@ -121,7 +121,10 @@ function createConversationStore(options = {}) {
    * same position (same role+content), so re-sending the whole history
    * each turn never re-stamps earlier turns; a genuinely new message is
    * stamped now. Only role/content/createdAt are ever written — any other
-   * client field is still stripped.
+   * client field is still stripped — plus one server-set flag: `interrupted:
+   * true` on an assistant reply the user cut off mid-stream (turn.js saves
+   * the partial text it had streamed). It is written only when it is exactly
+   * `true`, so a client cannot invent other markers.
    * @param {string} id
    * @param {Array<{role: string, content: string, createdAt?: string}>} messages
    * @param {{ title?: string }} [options] an explicit title for a NEWLY created
@@ -157,7 +160,9 @@ function createConversationStore(options = {}) {
         normalizeCreatedAt(message.createdAt) ||
         normalizeCreatedAt(unchanged && unchanged.createdAt) ||
         new Date().toISOString();
-      return { role: message.role, content: message.content, createdAt };
+      const stored = { role: message.role, content: message.content, createdAt };
+      if (message.interrupted === true) stored.interrupted = true;
+      return stored;
     });
     fs.writeFileSync(messagesPath(id), JSON.stringify(plain, null, 2), 'utf-8');
     fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');

@@ -591,6 +591,15 @@ function createApp(env = process.env) {
     }));
 
     if (req.body && req.body.stream) {
+      // The client may leave at any moment (Desktop closes the connection when the user interrupts
+      // Gaia): abort the turn so generation stops instead of running on for nobody. `close` also fires
+      // after a normal finish, so only an unfinished response counts as a disconnect. Attached before
+      // the first await so a client that leaves early is caught too.
+      const turnAbort = new AbortController();
+      res.on('close', () => {
+        if (!res.writableFinished) turnAbort.abort();
+      });
+
       // PATCH: Resolve attachments for streaming path too
       const modelSupportsVision = env.GAIA_NATIVE_SUPPORTS_VISION === 'true' || false;
       const resolvedAttachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
@@ -630,6 +639,7 @@ function createApp(env = process.env) {
         attachments: resolvedAttachments,
         traceId,
         userDisplayName,
+        signal: turnAbort.signal,
       });
       return;
     }

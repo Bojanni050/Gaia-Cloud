@@ -57,6 +57,13 @@ Transcribes one finished utterance.
 
 ## C2. Turn abort on client disconnect
 
+**Implemented** (branch `feat/turn-abort`): `POST /conversation/turn` with `stream: true` creates an `AbortController` and aborts it when the response closes before it finished; the signal reaches `runTurnCore`, `streamWithFailover` and the generators (`performStreamingTurn` and the Hermes adapter now forward it). An aborted turn: stops generating, never starts the backup generator, writes nothing to the dead connection, saves the user's question plus whatever reply text had already streamed marked `interrupted: true` (the history store keeps that flag only when it is exactly `true`), and runs **no** reflection or deferred cognition. A client that left during memory recall never starts generating. Tests: 13 new, including a real-HTTP test where the client disconnects while the provider is still thinking.
+
+What C2 does and does not cover, found while building it:
+- The native generator (`gaiaGenerator.js`) buffers all reply text until its provider stream round has finished (with or without tools), so during generation nothing has been sent to the client yet, and a cut-off mid-generation saves **only the question**, never partial text. The partial-reply save is real but only reachable with a generator that streams live (it is covered at the turn level).
+- Interrupting Gaia **while she is speaking** happens after generation has finished: the turn is complete, so nothing is aborted and the full written reply stays in the history (it is on the user's screen in full anyway). Telling Cloud what was actually *heard* would need a separate, explicit client signal and is not part of this change.
+- A background research job started for the interrupted turn is not cancelled; its findings still arrive in the conversation later.
+
 Desktop will interrupt Gaia mid-reply. When it does, it closes the streaming connection to `POST conversation/turn` (SSE).
 
 **Required behaviour:**
