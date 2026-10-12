@@ -225,6 +225,50 @@ the audit path `:id/evidence` walks. `cognitionSync` mirrors each episode to
 Hindsight as `gaia:kairos_episode` (`gaia-kep-{id}-v{N}`). The worker writes only
 through `cognitionClient`; nothing here touches Foundation's raw rows.
 
+## Eleos — coming back to a moment
+
+`src/reasoning/eleos.js` + `src/eleosRuntime.js` let Gaia **start a
+conversation of her own**. After a turn, Eleos notices a moment worth coming
+back to (someone said they were having a hard time, named something hard) and
+records it as an open loop; roughly a day later — outside the conversation,
+when the person is not active — she writes the opening message into a **new
+conversation** and asks how they are doing.
+
+**Off by default.** Nothing runs until `GAIA_ELEOS=true`; the poll endpoint
+still answers (with empty lists) either way.
+
+| Half | Module | What |
+|------|--------|------|
+| Notice | `reasoning/eleos.js` (role `eleos`, env fallback: `ELEOS_MODEL_*` → reasoning) | gate-then-call: a free bilingual signal gate (`reasoning/eleosSignals.js`) must fire before one model call decides whether there is a loop |
+| Come back | `eleosRuntime.js` + `eleosVoice.js` (role `generation`) | a background tick, a politeness policy, then one generated opening written into a new conversation |
+
+**Gate-then-call.** Most turns never reach a model: only a genuine signal
+(sadness, worry, loss, illness, a named life event) opens the gate. The model
+then returns one grounded loop — a short summary and the person's own verbatim
+quote — or an honest nothing. It may also say a previously noted loop is
+resolved, which cancels it.
+
+**"Never noisy."** The runtime enforces a global cap of one check-in per
+rolling 24h; a recent turn defers delivery so she never interrupts; and quiet
+hours (default 22:00–08:00, `GAIA_ELEOS_TIMEZONE`) defer delivery **unless the
+person is themselves active at that hour**. Offsets are 20–28h (a human gap,
+not a cron). A moment in the same conversation updates the existing loop rather
+than creating a second.
+
+**Client contract (`/eleos/*`, Bearer).** The check-in text is never returned
+here — it is an ordinary assistant message in the new conversation.
+
+| Method | Path | Body / Result |
+|--------|------|----------------|
+| GET | `/eleos/checkins` | `{ pending: [...], delivered: [...] }` — metadata only; `deliveredConversationId` is where to open the message |
+| POST | `/eleos/checkins/:id/ack` | mark a delivered check-in as seen (204) |
+
+A client polls this the way it polls `/research/jobs`, opens
+`deliveredConversationId`, and acks. The new conversation is written through
+`conversationStore`, so the existing `GET /conversations/events` SSE also tells
+a client something changed. **Surfacing the new thread on screen (a sidebar
+entry, an optional cue) is client work** in Gaia Desktop / Gaia Web.
+
 ## Run (dev)
 
 ```bash

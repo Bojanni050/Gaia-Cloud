@@ -12,6 +12,9 @@
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
  *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
+ *   /eleos/*                 → Gaia-initiated check-ins: pending + delivered loops (eleosRoutes.js), auth required —
+ *                              the poll counterpart to research jobs; the check-in itself is an ordinary assistant
+ *                              message in a server-started conversation
  *   POST /speech             → audio/*             (auth required; { text } → Gaia's voice, src/speech/mimoTts.js or
  *                              src/speech/mistralTts.js per the TTS provider — presentation-only, always *after* a text
  *                              reply exists, never a turn decision)
@@ -58,6 +61,13 @@ const { createFromEnv: createFoundationFromEnv } = require('./foundationClient')
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
+const { createEleosIntentStore } = require('./eleosIntentStore');
+const { createEleosPass } = require('./reasoning/eleos');
+const { createEleosVoice } = require('./eleosVoice');
+const { createEleosRuntime } = require('./eleosRuntime');
+const { createEleos } = require('./eleos');
+const { createEleosRouter } = require('./eleosRoutes');
+const { generateWithFailover } = require('./generation/generationFailover');
 const { createResearchJobStore } = require('./researchJobStore');
 const { startResearchJob, pollResearchJobs, saveResearchMessage, answerJobApproval, resolveOutboxDir } = require('./researchJob');
 const { createResearchRouter } = require('./researchRoutes');
@@ -407,6 +417,61 @@ function createApp(env = process.env) {
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
   app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
 
+  // ELEOS — the check-in faculty: notice a moment worth coming back to, and
+  // later start a new conversation about it. Off unless GAIA_ELEOS=true,
+  // because it means Gaia speaks first, unprompted. The write half (the pass)
+  // runs after a turn in the deferred phase; the delivery half (the runtime)
+  // is a background tick like the research poller. The poll endpoint is
+  // mounted unconditionally so a client can always ask (and get empty lists)
+  // even while the feature is off.
+  const eleosStore = createEleosIntentStore(
+    env.GAIA_ELEOS_INTENTS_PATH !== undefined ? { intentsDir: env.GAIA_ELEOS_INTENTS_PATH } : {}
+  );
+  // Resolve the check-in model lazily — the `eleos` role can change in the
+  // admin panel at any time (env fallback: the reasoning role).
+  function getEffectiveEleosModel() {
+    const roleConfig = resolveRoleConfig('eleos', providerStore, env);
+    if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return null;
+    return createLogosModelClient({
+      ...roleConfig,
+      timeoutMs: readLogosTimeoutMs(env),
+      logSystem: 'eleos',
+      logPurpose: 'eleos',
+    });
+  }
+  const eleosVoice = createEleosVoice({
+    documents,
+    generate: (messages) => generateWithFailover(messages, {
+      primary: getEffectiveNativeGenerator(),
+      backup: getEffectiveBackupGenerator(),
+    }),
+  });
+  const eleosRuntime = createEleosRuntime({
+    store: eleosStore,
+    voice: eleosVoice,
+    historyStore,
+    activeMs: Number(env.GAIA_ELEOS_ACTIVE_MS) || undefined,
+    deferMs: Number(env.GAIA_ELEOS_DEFER_MS) || undefined,
+    quietStartHour: Number.isFinite(Number(env.GAIA_ELEOS_QUIET_START)) ? Number(env.GAIA_ELEOS_QUIET_START) : undefined,
+    quietEndHour: Number.isFinite(Number(env.GAIA_ELEOS_QUIET_END)) ? Number(env.GAIA_ELEOS_QUIET_END) : undefined,
+    timezone: env.GAIA_ELEOS_TIMEZONE || undefined,
+    maxPerDay: Number.isFinite(Number(env.GAIA_ELEOS_MAX_PER_DAY)) ? Number(env.GAIA_ELEOS_MAX_PER_DAY) : undefined,
+    tickMs: Number(env.GAIA_ELEOS_TICK_MS) || undefined,
+  });
+  const eleos = env.GAIA_ELEOS === 'true'
+    ? createEleos({
+        pass: createEleosPass({
+          getModel: getEffectiveEleosModel,
+          store: eleosStore,
+          delayMinMs: Number(env.GAIA_ELEOS_DELAY_MIN_MS) || undefined,
+          delayMaxMs: Number(env.GAIA_ELEOS_DELAY_MAX_MS) || undefined,
+        }),
+        runtime: eleosRuntime,
+      })
+    : undefined;
+  if (eleos) eleos.start();
+  app.use('/eleos', createEleosRouter({ store: eleosStore, auth }));
+
   // RESEARCH JOBS — Gaia reaching FOR a Hermes skill, off the turn's clock.
   //
   // A research turn submits a run at Hermes and answers immediately; the
@@ -529,6 +594,7 @@ function createApp(env = process.env) {
         hypothesisRuntime,
         foundation,
         aion,
+        eleos,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
@@ -579,6 +645,7 @@ function createApp(env = process.env) {
       hypothesisRuntime,
       foundation,
       aion,
+      eleos,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),

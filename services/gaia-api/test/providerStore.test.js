@@ -147,6 +147,7 @@ test('DEFAULT_ROLES contains the Main Provider roles with empty defaults (TTS is
     vision: { mode: 'catalog', model: '' },
     kairos: { mode: 'catalog', model: '' },
     aion: { mode: 'catalog', model: '' },
+    eleos: { mode: 'catalog', model: '' },
   });
 });
 

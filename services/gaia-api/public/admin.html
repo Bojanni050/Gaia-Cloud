@@ -30,6 +30,7 @@
     --clay: #c08a85;     /* Video capability tag */
     --bronze: #a9765a;   /* Voice */
     --moss: #8fa98f;     /* Kairos */
+    --teal: #7ba7a0;     /* Eleos */
     --ok: #7fbf8f;
     --err: #d98a8a;
   }
@@ -89,6 +90,7 @@
   .role-card.violet  { border-color: color-mix(in srgb, var(--sage) 40%, transparent);   background: color-mix(in srgb, var(--sage) 6%, transparent); }
   .role-card.rose    { border-color: color-mix(in srgb, var(--bronze) 40%, transparent); background: color-mix(in srgb, var(--bronze) 6%, transparent); }
   .role-card.moss    { border-color: color-mix(in srgb, var(--moss) 40%, transparent);   background: color-mix(in srgb, var(--moss) 6%, transparent); }
+  .role-card.teal    { border-color: color-mix(in srgb, var(--teal) 40%, transparent);   background: color-mix(in srgb, var(--teal) 6%, transparent); }
 
   .role-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.1rem; }
   .role-icon { width: 2.5rem; height: 2.5rem; border-radius: 0.8rem; display: flex; align-items: center; justify-content: center; }
@@ -98,6 +100,7 @@
   .role-icon.violet { background: color-mix(in srgb, var(--sage) 18%, transparent);   color: var(--sage); }
   .role-icon.rose   { background: color-mix(in srgb, var(--bronze) 18%, transparent); color: var(--bronze); }
   .role-icon.moss   { background: color-mix(in srgb, var(--moss) 18%, transparent);   color: var(--moss); }
+  .role-icon.teal   { background: color-mix(in srgb, var(--teal) 18%, transparent);   color: var(--teal); }
 
   .role-status { text-align: right; }
   .role-status-badge {
@@ -421,6 +424,30 @@
       </div>
       <div class="status" id="aionModelStatus"></div>
       <div id="aionProvider"></div>
+    </section>
+
+    <!-- Eleos (Main Provider role) -->
+    <section class="role-card teal">
+      <div class="role-card-head">
+        <div class="role-icon teal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </div>
+        <div class="role-status">
+          <span class="role-status-badge inactive" id="eleosBadge">Inactive</span>
+        </div>
+      </div>
+      <p class="role-title">Eleos</p>
+      <p class="role-desc">The check-in faculty — notices a moment worth coming back to (someone said they were having a hard time) and, about a day later, starts a conversation to ask how they are doing. Off unless GAIA_ELEOS=true. Runs on the Main Provider; pick a cheap model here.</p>
+
+      <label>Model for check-ins</label>
+      <div id="eleosDropdown"></div>
+
+      <div class="role-actions-row push-bottom">
+        <button id="eleosClearModelBtn" class="secondary">Clear</button>
+        <button id="eleosSaveModelBtn" disabled>Save selection</button>
+      </div>
+      <div class="status" id="eleosModelStatus"></div>
+      <div id="eleosProvider"></div>
     </section>
 
     <!-- TTS (independent) -->
@@ -993,8 +1020,9 @@
     if (roles.vision && roles.vision.model) caps.push('vision');
     if (roles.kairos && roles.kairos.model) caps.push('kairos');
     if (roles.aion && roles.aion.model) caps.push('aion');
+    if (roles.eleos && roles.eleos.model) caps.push('eleos');
     if (tts && tts.model) caps.push('tts');
-    const allCaps = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'tts'];
+    const allCaps = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos', 'tts'];
     capabilitiesSection.style.display = '';
     capabilitiesBar.innerHTML = allCaps.map((c) =>
       '<span class="cap-chip ' + (caps.includes(c) ? 'active' : '') + '">' + escapeHtml(c) + '</span>'
@@ -1156,11 +1184,15 @@
   const aionModelStatusEl = $('aionModelStatus');
   const aionSaveModelBtn = $('aionSaveModelBtn'), aionClearModelBtn = $('aionClearModelBtn');
   const aionBadgeEl = $('aionBadge');
+  const eleosModelStatusEl = $('eleosModelStatus');
+  const eleosSaveModelBtn = $('eleosSaveModelBtn'), eleosClearModelBtn = $('eleosClearModelBtn');
+  const eleosBadgeEl = $('eleosBadge');
 
   let riqCurrentModel = null;
   let riqCurrentVisionModel = null;
   let kairosCurrentModel = null;
   let aionCurrentModel = null;
+  let eleosCurrentModel = null;
 
   const riqDropdown = createModelDropdown($('riqDropdown'), {
     placeholder: '— retrieve models above first —',
@@ -1181,6 +1213,11 @@
     emptyOptionLabel: '— unset —',
     onChange: () => { aionSaveModelBtn.disabled = false; },
   });
+  const eleosDropdown = createModelDropdown($('eleosDropdown'), {
+    placeholder: '— retrieve models above first —',
+    emptyOptionLabel: '— unset —',
+    onChange: () => { eleosSaveModelBtn.disabled = false; },
+  });
 
   // Each role can be served EITHER by the Main Provider (the dropdown above)
   // OR by its own custom provider (the block below). resolveRoleConfig gives a
@@ -1195,6 +1232,7 @@
     vision: { prefix: 'riqVision' },
     kairos: { prefix: 'kairos' },
     aion: { prefix: 'aion' },
+    eleos: { prefix: 'eleos' },
   };
 
   // Mirrors providerConfigResolver.resolveRoleConfig: a role's own provider
@@ -1266,6 +1304,11 @@
       setCurrent: (m) => { aionCurrentModel = m; },
       ok: (m) => (m ? 'Gaia\'s Aion will use ' + m + '.' : 'Aion model cleared.'),
     },
+    eleos: {
+      statusEl: eleosModelStatusEl, badgeEl: eleosBadgeEl,
+      setCurrent: (m) => { eleosCurrentModel = m; },
+      ok: (m) => (m ? 'Gaia\'s check-ins will use ' + m + '.' : 'Eleos model cleared.'),
+    },
   };
 
   // Populated from the Main Provider config (loadProviderConfig owns the
@@ -1275,7 +1318,7 @@
     const models = (cfg && cfg.catalog) || [];
     const provider = (cfg && cfg.provider) || '';
     const label = providerLabelFor(provider);
-    for (const dd of [riqDropdown, riqVisionDropdown, kairosDropdown, aionDropdown]) {
+    for (const dd of [riqDropdown, riqVisionDropdown, kairosDropdown, aionDropdown, eleosDropdown]) {
       dd.setProviderLabel(label);
       dd.setProviderId(provider);
       dd.setModels(models);
@@ -1284,14 +1327,17 @@
     const vision = cfg && cfg.roles && cfg.roles.vision && cfg.roles.vision.model;
     const kairos = cfg && cfg.roles && cfg.roles.kairos && cfg.roles.kairos.model;
     const aion = cfg && cfg.roles && cfg.roles.aion && cfg.roles.aion.model;
+    const eleos = cfg && cfg.roles && cfg.roles.eleos && cfg.roles.eleos.model;
     riqCurrentModel = reasoning || null;
     riqCurrentVisionModel = vision || null;
     kairosCurrentModel = kairos || null;
     aionCurrentModel = aion || null;
+    eleosCurrentModel = eleos || null;
     if (reasoning) { riqDropdown.setValue(reasoning); riqSaveModelBtn.disabled = false; }
     if (vision) { riqVisionDropdown.setValue(vision); riqSaveVisionModelBtn.disabled = false; }
     if (kairos) { kairosDropdown.setValue(kairos); kairosSaveModelBtn.disabled = false; }
     if (aion) { aionDropdown.setValue(aion); aionSaveModelBtn.disabled = false; }
+    if (eleos) { eleosDropdown.setValue(eleos); eleosSaveModelBtn.disabled = false; }
     applyRolePrecedence(cfg);
     // Badges are set by applyRoleBadges(cfg): the resolved per-role config
     // (custom provider or Main Provider), not just the catalog selection above.
@@ -1307,7 +1353,7 @@
   function applyRoleBadges(cfg) {
     const badges = {
       generation: genBadgeEl, reasoning: riqBadgeEl, vision: riqVisionBadgeEl,
-      kairos: kairosBadgeEl, aion: aionBadgeEl,
+      kairos: kairosBadgeEl, aion: aionBadgeEl, eleos: eleosBadgeEl,
     };
     for (const role of Object.keys(badges)) {
       const el = badges[role];
@@ -1396,6 +1442,22 @@
   aionClearModelBtn.addEventListener('click', () => {
     aionDropdown.setValue('');
     aionSaveModelBtn.click();
+  });
+
+  eleosSaveModelBtn.addEventListener('click', async () => {
+    const model = eleosDropdown.getValue();
+    eleosSaveModelBtn.disabled = true;
+    try {
+      await saveLogosRole('eleos', model, eleosModelStatusEl, eleosBadgeEl,
+        model ? ('Gaia\'s check-ins will use ' + model + '.') : 'Eleos model cleared.');
+    } finally {
+      eleosSaveModelBtn.disabled = false;
+    }
+  });
+
+  eleosClearModelBtn.addEventListener('click', () => {
+    eleosDropdown.setValue('');
+    eleosSaveModelBtn.click();
   });
 
   // ============================================================
@@ -1568,6 +1630,7 @@
   wireRoleProvider('vision', 'riqVision');
   wireRoleProvider('kairos', 'kairos');
   wireRoleProvider('aion', 'aion');
+  wireRoleProvider('eleos', 'eleos');
 
   // ============================================================
   // Logos decision log
@@ -1648,6 +1711,7 @@
   function systemLabel(system) {
     if (system === 'logos' || system === 'reasoniq') return 'Logos';
     if (system === 'aion') return 'Aion';
+    if (system === 'eleos') return 'Eleos';
     if (system === 'native') return 'Gaia (native)';
     return system || '?';
   }

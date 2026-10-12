@@ -329,6 +329,7 @@ async function runTurnCore({
   foundation,
   hypothesisRuntime,
   aion,
+  eleos,
   decisionStore,
   reasonIQ = evaluateLogos,
   onDelta,
@@ -613,6 +614,7 @@ async function runTurnCore({
     foundation,
     reasonIQ,
     aion,
+    eleos,
     evidence,
     intentDecision,
     recalledReflections: reflections,
@@ -672,6 +674,7 @@ async function runDeferredCognition({
   foundation,
   reasonIQ = evaluateLogos,
   aion,
+  eleos,
   evidence,
   intentDecision,
   recalledReflections,
@@ -934,6 +937,24 @@ async function runDeferredCognition({
     }
   }
 
+  // 7c. Eleos — the check-in faculty. It gates on the turn's own words (a
+  //     free lexical check), and only on a real signal asks its model whether
+  //     there is a moment worth coming back to, recording it as an open loop
+  //     for the runtime to deliver later. Never reaches the user now.
+  if (eleos && replyText) {
+    timing.start('deferred.eleos');
+    try {
+      const outcome = await eleos.noteTurn({
+        conversationId,
+        messages,
+        logger: decisionLogger,
+      });
+      timing.end('deferred.eleos', { outcome: outcome && (outcome.created || outcome.updated || outcome.cancelled || outcome.skipped) });
+    } catch (err) {
+      timing.fail('deferred.eleos', (err && err.constructor && err.constructor.name) || 'Error');
+    }
+  }
+
   // 8. DecisionIQ review — post-turn only, observability only.
   try {
     reflectDecisionIQ({ userText, decisionLogger });
@@ -966,6 +987,7 @@ async function performTurn({
   foundation,
   hypothesisRuntime,
   aion,
+  eleos,
   decisionStore,
   reasonIQ,
   userDisplayName,
@@ -990,6 +1012,7 @@ async function performTurn({
     foundation,
     hypothesisRuntime,
     aion,
+    eleos,
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
@@ -1037,6 +1060,7 @@ async function performStreamingTurn({
   reasonIQ,
   hypothesisRuntime,
   aion,
+  eleos,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -1076,6 +1100,7 @@ async function performStreamingTurn({
       foundation,
       hypothesisRuntime,
       aion,
+      eleos,
       decisionStore,
       ...(reasonIQ ? { reasonIQ } : {}),
       onDelta,

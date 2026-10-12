@@ -16,7 +16,7 @@
  *   PUT  /admin/api/provider/config   -> { provider?, baseUrl?, apiKey? }
  *   GET  /admin/api/provider/models   -> retrieve models from provider
  *   PUT  /admin/api/provider/roles    -> { role, mode, model }
- *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/reasoning/vision/kairos/aion)
+ *   PUT  /admin/api/provider/role-provider -> { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? } (generation/reasoning/vision/kairos/aion/eleos)
  *   POST /admin/api/provider/role-models -> { role, provider, baseUrl, apiKey? } -> the role's own provider's model list
  *   POST /admin/api/provider/role-test -> { role, provider?, baseUrl?, model?, apiKey? } -> one minimal chat call, to prove the role's model answers
  *   GET  /admin/api/provider/capabilities -> derived capability availability
@@ -40,7 +40,7 @@ const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
 
-const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion'];
+const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos'];
 
 /**
  * @param {{
@@ -207,7 +207,7 @@ function createAdminRouter({
       res.json(providerStore.getMaskedConfig().generationBackup);
     });
 
-    // --- Per-role custom provider (generation / reasoning / vision / kairos / aion) ---
+    // --- Per-role custom provider (generation / reasoning / vision / kairos / aion / eleos) ---
     // PUT accepts { role, provider?, baseUrl?, model?, apiKey?, useMainProvider? }.
     // An empty apiKey never clears or changes the stored key.
 
@@ -314,6 +314,7 @@ function createAdminRouter({
         vision: roleActive('vision'),
         kairos: roleActive('kairos'),
         aion: roleActive('aion'),
+        eleos: roleActive('eleos'),
         tts: Boolean(ttsConfig.model),
       };
       res.json(capabilities);

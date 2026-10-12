@@ -12,7 +12,7 @@
 
 /**
  * Resolve the configuration for a specific role.
- * @param {"generation"|"reasoning"|"vision"} role
+ * @param {"generation"|"reasoning"|"vision"|"kairos"|"aion"|"eleos"} role
  * @param {{ getConfig: Function }} providerStore
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string }|null}
@@ -49,8 +49,11 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
   // Fall back to environment variables for backwards compatibility.
   // Aion has no selection of its own by default: it borrows the REASONING
   // role, fully resolved (provider store or env), so it works out of the box
-  // without being configured separately.
-  if (role === 'aion') return resolveRoleConfig('reasoning', providerStore, env);
+  // without being configured separately. Eleos (the check-in faculty) does the
+  // same — it answers the same "is there a moment to come back to" kind of
+  // question Logos's model can answer, so it borrows reasoning unless an
+  // operator gives it its own provider/model in the admin panel.
+  if (role === 'aion' || role === 'eleos') return resolveRoleConfig('reasoning', providerStore, env);
   return resolveEnvFallback(role, env);
 }
 
@@ -157,6 +160,21 @@ function resolveEnvFallback(role, env) {
       }
       return resolveEnvFallback('reasoning', env);
 
+    case 'eleos':
+      // The check-in faculty (reasoning/eleos.js). Independent of the
+      // reasoning role so an operator can point it at its own model; falls
+      // back to the reasoning role when no dedicated env is set, so it works
+      // out of the box.
+      if (env.ELEOS_MODEL_BASE_URL && env.ELEOS_MODEL_NAME) {
+        return {
+          provider: env.ELEOS_MODEL_PROVIDER || 'env',
+          baseUrl: env.ELEOS_MODEL_BASE_URL,
+          model: env.ELEOS_MODEL_NAME,
+          apiKey: env.ELEOS_MODEL_API_KEY || '',
+        };
+      }
+      return resolveEnvFallback('reasoning', env);
+
     default:
       return null;
   }
@@ -206,6 +224,7 @@ function deriveCapabilities(providerStore, env = process.env) {
     vision: resolveRoleConfig('vision', providerStore, env) !== null,
     kairos: resolveRoleConfig('kairos', providerStore, env) !== null,
     aion: resolveRoleConfig('aion', providerStore, env) !== null,
+    eleos: resolveRoleConfig('eleos', providerStore, env) !== null,
     tts: resolveTtsConfig(providerStore, env) !== null,
   };
 }

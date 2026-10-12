@@ -124,9 +124,13 @@ function createConversationStore(options = {}) {
    * client field is still stripped.
    * @param {string} id
    * @param {Array<{role: string, content: string, createdAt?: string}>} messages
+   * @param {{ title?: string }} [options] an explicit title for a NEWLY created
+   *   conversation. Used by Gaia-initiated threads (Eleos check-ins) that have
+   *   no user message to derive a title from; ignored once the conversation
+   *   exists, and ignored when blank.
    * @throws {InvalidConversationIdError}
    */
-  function saveConversation(id, messages) {
+  function saveConversation(id, messages, options = {}) {
     if (!isValidId(id)) throw new InvalidConversationIdError(id);
     if (!Array.isArray(messages) || messages.length === 0) return;
 
@@ -136,7 +140,10 @@ function createConversationStore(options = {}) {
     try {
       meta = JSON.parse(fs.readFileSync(metaPath(id), 'utf-8'));
     } catch (_) {
-      meta = { id, title: deriveTitle(messages), createdAt: new Date().toISOString() };
+      const explicitTitle = typeof options.title === 'string' && options.title.trim() !== ''
+        ? options.title.trim()
+        : null;
+      meta = { id, title: explicitTitle || deriveTitle(messages), createdAt: new Date().toISOString() };
     }
     meta.updatedAt = new Date().toISOString();
     meta.messageCount = messages.length;

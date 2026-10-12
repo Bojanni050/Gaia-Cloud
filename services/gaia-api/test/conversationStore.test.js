@@ -232,3 +232,22 @@ test('deleteConversation emits "changed" on the store\'s events emitter', () => 
   store.deleteConversation('conv-1');
   assert.equal(fired, 1);
 });
+
+// --- explicit title (Gaia-initiated threads) -------------------------------
+
+test('saveConversation uses an explicit title for a NEW conversation that has no user message', () => {
+  const store = tempStore();
+  // An Eleos check-in: a conversation whose first (only) message is Gaia's.
+  store.saveConversation('eleos-1', [{ role: 'assistant', content: 'Hoi Bo, hoe gaat het?' }], { title: 'Even terugkomen' });
+  assert.equal(store.getConversation('eleos-1').meta.title, 'Even terugkomen');
+});
+
+test('an explicit title is ignored once the conversation exists (and for blank titles)', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'eerste vraag' }]);
+  store.saveConversation('conv-1', [{ role: 'user', content: 'eerste vraag' }, { role: 'assistant', content: 'antwoord' }], { title: 'iets anders' });
+  assert.equal(store.getConversation('conv-1').meta.title, 'eerste vraag');
+
+  store.saveConversation('conv-2', [{ role: 'assistant', content: 'x' }], { title: '   ' });
+  assert.equal(store.getConversation('conv-2').meta.title, 'Untitled');
+});
