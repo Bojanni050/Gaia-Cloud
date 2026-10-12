@@ -103,6 +103,12 @@ function createApp(env = process.env) {
 
   const hindsightUrl = env.HINDSIGHT_URL || 'http://100.65.0.15:8888';
   const hindsightBudget = env.HINDSIGHT_RECALL_BUDGET || 'mid';
+  // Cap on every Hindsight call this service makes (recall, mental models,
+  // knowledge pages). A per-bank safety cap, NOT a latency target — a call
+  // returns as soon as it is done; this only stops a hung one. Raise it for
+  // headroom (e.g. 8000) so a slow bank is not dropped on a spiky turn.
+  // Unset ⇒ the client default (4000 ms).
+  const hindsightTimeoutMs = Number(env.HINDSIGHT_TIMEOUT_MS) > 0 ? Number(env.HINDSIGHT_TIMEOUT_MS) : undefined;
   // The system-memory bank: the memoryworthiness-gated conversation
   // reflection still writes here, unchanged. The gate lives in turn.js.
   const hindsightBankId = env.HINDSIGHT_BANK_ID || 'bojan';
@@ -118,11 +124,13 @@ function createApp(env = process.env) {
     baseUrl: hindsightUrl,
     bankId: hindsightBankId,
     budget: hindsightBudget,
+    timeoutMs: hindsightTimeoutMs,
   });
   const hindsightLogos = createHindsightClient({
     baseUrl: hindsightUrl,
     bankId: hindsightLogosBankId,
     budget: hindsightBudget,
+    timeoutMs: hindsightTimeoutMs,
   });
   // Gaia's own bank client — a recall source today, and the write target of
   // the Aion pass (see getEffectiveAionWriter below).
@@ -130,6 +138,7 @@ function createApp(env = process.env) {
     baseUrl: hindsightUrl,
     bankId: hindsightOwnBankId,
     budget: hindsightBudget,
+    timeoutMs: hindsightTimeoutMs,
   });
   // The banks Gaia recalls over: the system memory, the derived knowledge, and
   // her own bank — so a derived statement or one of her own memories is as
@@ -148,7 +157,7 @@ function createApp(env = process.env) {
     if (id === hindsightBankId) recallClients.push(hindsightApp);
     else if (id === hindsightLogosBankId) recallClients.push(hindsightLogos);
     else if (id === hindsightOwnBankId) recallClients.push(hindsightOwn);
-    else recallClients.push(createHindsightClient({ baseUrl: hindsightUrl, bankId: id, budget: hindsightBudget }));
+    else recallClients.push(createHindsightClient({ baseUrl: hindsightUrl, bankId: id, budget: hindsightBudget, timeoutMs: hindsightTimeoutMs }));
   }
   const hindsight = createCrossBankRecallClient(
     hindsightApp,
