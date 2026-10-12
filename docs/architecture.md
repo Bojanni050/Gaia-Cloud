@@ -102,17 +102,20 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   surfaceable as a raw memory of Bo's. When the person asks her to remember
   something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
   system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
-- **Recall runs without the cross-encoder reranker** (`enable_reranking: false`
-  on all three banks). Measured live 2026-10-12: the local cross-encoder scored
-  300 candidates and cost 10–18 s per recall on the VPS — far past
-  `hindsightClient.js`'s 4 s timeout, so the richest bank (`bojan`) was dropped
-  on every turn and per-turn memory effectively saw only `gaia`. With reranking
-  off, recall is ~0.2–0.4 s per bank (semantic + BM25 + graph, RRF-ordered) and
-  the per-bank scores are comparable — which the cross-bank merge by
-  `scores.final` needs. To re-enable:
-  `PATCH {HINDSIGHT_URL}/v1/default/banks/<bank>/config` body
-  `{ "updates": { "enable_reranking": true } }`. Owed: a faster/quantized
-  reranker (or more CPU), after which reranking can return.
+- **Recall reranks via a remote API, not the local model.** Hindsight's
+  cross-encoder is pluggable; set to `local`/`flashrank` it scored 300
+  candidates in 10–18 s on the VPS CPU — far past `hindsightClient.js`'s 4 s
+  timeout, so the richest bank (`bojan`) was dropped on every turn (measured
+  live 2026-10-12). It now uses OpenRouter's rerank API
+  (`HINDSIGHT_API_RERANKER_PROVIDER=openrouter`, model
+  `nvidia/llama-nemotron-rerank-vl-1b-v2:free`), configured in Hindsight's own
+  deploy env on the host (`/opt/hindsight/.env`) — **not in git**; the key lives
+  there, file mode 600. After the switch: rerank phase ~2 s; `bojan` ~2.6–2.8 s,
+  `gaia` ~1 s, `gaia-logos` ~2 s. `enable_reranking` stays `true` per bank.
+  Caveat: `bojan` sits close to the 4 s client timeout, so a slow or
+  rate-limited rerank (`:free`) can still drop it — revisit the timeout if that
+  shows up. Sanity check: `Reranker: provider=openrouter` in the container log on
+  startup.
 
 ## Derived lifecycle
 
