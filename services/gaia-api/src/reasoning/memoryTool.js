@@ -23,6 +23,34 @@
  * never reaches the turn.
  */
 
+const { AsyncLocalStorage } = require('node:async_hooks');
+
+/**
+ * Lets the turn that is running hear that `remember` kept something, without the tool knowing about
+ * turns, streams or clients: the turn wraps its generation in `withKeptNotifier`, and `remember` calls
+ * the notifier of whichever turn it is running inside (so two turns at once never hear each other's).
+ * Only the shared bank (`bojan`) is announced; her own bank (`gaia`) is hers and stays unannounced.
+ */
+const turnKept = new AsyncLocalStorage();
+
+/**
+ * @param {(kept: { bank: string, kind: string, text: string }) => void} onKept
+ * @param {() => Promise<any>} fn
+ */
+function withKeptNotifier(onKept, fn) {
+  return turnKept.run({ onKept }, fn);
+}
+
+function announceKept(kept) {
+  const store = turnKept.getStore();
+  if (!store || typeof store.onKept !== 'function') return;
+  try {
+    store.onKept(kept);
+  } catch (_) {
+    /* announcing never touches the turn */
+  }
+}
+
 const SHARED_DOMAIN = 'remembered';
 const OWN_DOMAIN = 'gaia:aion';
 
@@ -93,6 +121,7 @@ function createMemoryTool({ hindsight, ownHindsight, now = () => new Date() } = 
           gaia_remembered_at: now().toISOString(),
         },
       });
+      announceKept({ bank: 'bojan', kind, text });
       return 'Kept.';
     } catch (_) {
       return 'That could not be kept right now.';
@@ -143,6 +172,7 @@ function createMemoryTool({ hindsight, ownHindsight, now = () => new Date() } = 
 
 module.exports = {
   createMemoryTool,
+  withKeptNotifier,
   REMEMBER_TOOL,
   KEEP_TOOL,
   SHARED_DOMAIN,

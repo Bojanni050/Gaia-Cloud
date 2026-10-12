@@ -47,6 +47,7 @@ const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
 const { researchJobView } = require('./researchRoutes');
+const { withKeptNotifier } = require('./reasoning/memoryTool');
 const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require('./logos/logos');
 const { logLogosGate } = require('./logos/logosLog');
 const { shouldRecall } = require('./memoryPolicy');
@@ -1157,30 +1158,37 @@ async function performStreamingTurn({
 
   let coreResult;
   try {
-    coreResult = await runTurnCore({
-      messages,
-      documents,
-      hindsight,
-      attachments,
-      traceId,
-      conversationId,
-      generator,
-      backupGenerator,
-      nativeGenerator,
-      hermes,
-      researchJobs,
-      foundation,
-      conversationSearch,
-      hypothesisRuntime,
-      aion,
-      eleos,
-      decisionStore,
-      ...(reasonIQ ? { reasonIQ } : {}),
-      onDelta,
-      onResearchJob: (job) => emitter.research(researchJobView(job)),
-      userDisplayName,
-      ...(signal ? { signal } : {}),
-    });
+    // A `remember` that keeps something in the shared memory while she answers is announced to the client
+    // as it happens (the frame is only ever written while this stream is open).
+    coreResult = await withKeptNotifier(
+      (kept) => {
+        if (!res.writableEnded) emitter.memory(kept);
+      },
+      () => runTurnCore({
+        messages,
+        documents,
+        hindsight,
+        attachments,
+        traceId,
+        conversationId,
+        generator,
+        backupGenerator,
+        nativeGenerator,
+        hermes,
+        researchJobs,
+        foundation,
+        conversationSearch,
+        hypothesisRuntime,
+        aion,
+        eleos,
+        decisionStore,
+        ...(reasonIQ ? { reasonIQ } : {}),
+        onDelta,
+        onResearchJob: (job) => emitter.research(researchJobView(job)),
+        userDisplayName,
+        ...(signal ? { signal } : {}),
+      })
+    );
   } catch (_) {
     if (signal && signal.aborted) {
       // The client left mid-turn (it interrupted Gaia). There is nobody to write to, and nothing to learn

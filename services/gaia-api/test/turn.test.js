@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { validateMessages, assembleMessages, performTurn, performStreamingTurn, renderAttachmentContext } = require('../src/turn');
+const { createMemoryTool } = require('../src/reasoning/memoryTool');
 
 function fakeRes() {
   return {
@@ -461,6 +462,47 @@ test('performStreamingTurn reports a submitted research job as its own frame', a
   assert.equal(parsed.research.status, 'running');
   assert.equal(parsed.research.resultText, undefined);
   assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('performStreamingTurn announces what remember keeps in the shared memory, as its own frame before the end', async () => {
+  const res = fakeRes();
+  const memoryTool = createMemoryTool({ hindsight: { reflect: async () => {} } });
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      onDelta('Dat onthoud ik.', false);
+      await memoryTool.onToolCall('remember', { text: 'Bo drinkt graag thee', kind: 'preference' });
+      return 'Dat onthoud ik.';
+    },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Onthoud dat ik graag thee drink.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+  });
+
+  const index = res.written.findIndex((chunk) => chunk.includes('"type":"memory"'));
+  assert.ok(index >= 0, 'the client is told something was kept, as it happens');
+  const parsed = JSON.parse(res.written[index].slice('data: '.length));
+  assert.deepEqual(parsed.choices, [{ delta: {} }]); // additive: old readers append nothing
+  assert.deepEqual(parsed.memory, { bank: 'bojan', kind: 'preference', text: 'Bo drinkt graag thee' });
+  assert.ok(index < res.written.length - 1, 'before the stream ends');
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+});
+
+test('performStreamingTurn says nothing about memory when nothing was kept', async () => {
+  const res = fakeRes();
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('Hallo.', false); return 'Hallo.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hoi daar, hoe gaat het' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+  });
+  assert.ok(!res.written.some((chunk) => chunk.includes('"type":"memory"')));
 });
 
 test('performStreamingTurn sends a normal JSON error if Hermes fails before any delta', async () => {
