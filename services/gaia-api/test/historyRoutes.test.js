@@ -8,16 +8,18 @@ const os = require('os');
 const path = require('path');
 const { createHistoryRouter } = require('../src/historyRoutes');
 const { createConversationStore } = require('../src/conversationStore');
+const { createConversationSearch } = require('../src/conversationSearch');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
 function startTestServer() {
   const historyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-routes-'));
   const store = createConversationStore({ historyDir });
+  const search = createConversationSearch({ store });
   const auth = createAuthMiddleware(parseTokens('test-token'));
 
   const app = express();
   app.use(express.json());
-  app.use('/conversations', createHistoryRouter({ store, auth }));
+  app.use('/conversations', createHistoryRouter({ store, auth, search }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -319,3 +321,66 @@ async function readUntilChanged(reader, decoder, getBuffer, setBuffer) {
     setBuffer(getBuffer() + decoder.decode(value, { stream: true }));
   }
 }
+
+// --- GET /conversations/search (literal-text search over saved transcripts) ---
+
+test('GET /conversations/search requires auth', async () => {
+  const ctx = startTestServer();
+  try {
+    const res = await fetch(`${ctx.baseUrl}/conversations/search?q=vps`);
+    assert.equal(res.status, 401);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /conversations/search finds the literal text across saved conversations', async () => {
+  const ctx = startTestServer();
+  try {
+    ctx.store.saveConversation('conv-1', [
+      { role: 'user', content: 'we zetten de VPS om naar Tailscale' },
+      { role: 'assistant', content: 'prima' },
+    ]);
+    ctx.store.saveConversation('conv-2', [{ role: 'user', content: 'iets heel anders over de tuin' }]);
+
+    const res = await fetch(`${ctx.baseUrl}/conversations/search?q=tailscale%20vps`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.results.length, 1);
+    assert.equal(body.results[0].conversationId, 'conv-1');
+    assert.match(body.results[0].snippet, /Tailscale/);
+    assert.equal(body.results[0].role, 'user');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /conversations/search returns 400 without a query, and [] for no matches', async () => {
+  const ctx = startTestServer();
+  try {
+    const missing = await fetch(`${ctx.baseUrl}/conversations/search`, { headers: authHeaders() });
+    assert.equal(missing.status, 400);
+
+    ctx.store.saveConversation('conv-1', [{ role: 'user', content: 'hello' }]);
+    const none = await fetch(`${ctx.baseUrl}/conversations/search?q=zeppelin`, { headers: authHeaders() });
+    const body = await none.json();
+    assert.deepEqual(body.results, []);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /conversations/search answers 503 when search is not wired', async () => {
+  const historyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'history-routes-nosearch-'));
+  const store = createConversationStore({ historyDir });
+  const auth = createAuthMiddleware(parseTokens('test-token'));
+  const app = express();
+  app.use('/conversations', createHistoryRouter({ store, auth }));
+  const server = app.listen(0);
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/conversations/search?q=x`, { headers: authHeaders() });
+    assert.equal(res.status, 503);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

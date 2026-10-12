@@ -77,6 +77,13 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
 
 - **Notebook ≠ memory.** Conversation history (`conversationStore`) saves every
   turn verbatim; it is not Hindsight and not Cognition.
+- **The transcript is readable, literally.** Hindsight holds only what was
+  judged worth remembering, so a lookup that asks what was *actually* said
+  (`conversation_search`, `src/conversationSearch.js`) reads the raw transcripts
+  instead. The turn reaches for it only on a lookup / past-reference signal, and
+  never for the in-flight conversation (already in the prompt verbatim); clients
+  reach the same seam at `GET /conversations/search`. It is the honest
+  counterpart to reflection: the words, not the memory of them.
 - **Provenance points back.** Every derived record carries the raw observation
   ids it was derived from.
 - **Hindsight is derivable.** Sync is Cognition → Hindsight only; the mirror is
@@ -187,3 +194,4 @@ Clients read live Kairos episodes at `GET /kairos/episodes` and stream them at
 `GET /kairos/episodes/stream` (SSE) — both on Gaia API.
 Clients discover Gaia-initiated check-ins at `GET /eleos/checkins` (poll) and
 read the message itself as an ordinary turn in the new conversation it names.
+Clients search the saved transcripts at `GET /conversations/search?q=`.

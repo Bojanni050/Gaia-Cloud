@@ -9,6 +9,7 @@
  * Routes (mounted under /conversations, all Bearer-auth required):
  *   GET    /conversations                  -> { conversations: [...meta] }
  *   GET    /conversations/events           -> text/event-stream, pushed on every change
+ *   GET    /conversations/search?q=&limit= -> { results: [...] } literal-text search over saved transcripts
  *   GET    /conversations/:id              -> { meta, messages }
  *   GET    /conversations/:id/export/:format -> file download (json or markdown)
  *   DELETE /conversations/:id              -> 204
@@ -51,9 +52,10 @@ function formatTurnTime(iso) {
  * @param {{
  *   store: ReturnType<import('./conversationStore').createConversationStore>,
  *   auth: import('express').RequestHandler,
+ *   search?: { search: (query: string, options?: object) => Array<object> } | null,
  * }} deps
  */
-function createHistoryRouter({ store, auth }) {
+function createHistoryRouter({ store, auth, search } = {}) {
   const router = express.Router();
 
   router.get('/', auth, (req, res) => {
@@ -83,6 +85,26 @@ function createHistoryRouter({ store, auth }) {
       clearInterval(heartbeat);
       store.events.off('changed', onChanged);
     });
+  });
+
+  // Literal-text search over the saved transcripts (conversationSearch.js) —
+  // "what did we actually say about X". Must be registered before '/:id', so
+  // "search" is not read as an id. Absent wiring answers 503 rather than
+  // pretending there are no matches.
+  router.get('/search', auth, (req, res) => {
+    if (!search || typeof search.search !== 'function') {
+      return res.status(503).json({ error: 'conversation search is not available' });
+    }
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!query) {
+      return res.status(400).json({ error: 'q is required' });
+    }
+    const limit = Number(req.query.limit);
+    try {
+      res.json({ results: search.search(query, { limit: Number.isFinite(limit) ? limit : undefined }) });
+    } catch (_) {
+      res.status(503).json({ error: 'conversation search is not available' });
+    }
   });
 
   router.get('/:id', auth, (req, res) => {

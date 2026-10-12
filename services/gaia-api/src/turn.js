@@ -44,6 +44,7 @@ const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwar
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
+const { renderConversationHistoryContext } = require('./conversationSearch');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
 const { researchJobView } = require('./researchRoutes');
 const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require('./logos/logos');
@@ -228,7 +229,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, hindsight, aion } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -237,6 +238,11 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   }
   if (foundation && typeof foundation.searchResults === 'function') {
     capabilities.push({ id: 'foundation' });
+  }
+  // Conversation search is real this turn whenever the transcript read is
+  // wired — the literal past, distinct from Hindsight's selected memory.
+  if (conversationSearch && typeof conversationSearch.search === 'function') {
+    capabilities.push({ id: 'conversation_search' });
   }
   // Memory is real this turn whenever Hindsight recall is wired — the
   // capability-awareness block is the one place Gaia learns that, so leaving
@@ -328,6 +334,7 @@ async function runTurnCore({
   hermes,
   researchJobs,
   foundation,
+  conversationSearch,
   hypothesisRuntime,
   aion,
   eleos,
@@ -372,6 +379,18 @@ async function runTurnCore({
     && archiveSignals && archiveSignals.recordedKnowledge
   );
 
+  // Conversation-history read: the literal past. Opened by the signals that
+  // point at what was actually said (a lookup, a past-conversation moment, a
+  // "what do you remember"), never by default — and never for the current
+  // conversation, whose turns are already in the prompt verbatim. This is the
+  // honest counterpart to Hindsight: Hindsight holds what was judged worth
+  // remembering; the transcript holds what was said.
+  const wantConversationHistory = Boolean(
+    conversationSearch && typeof conversationSearch.search === 'function'
+    && archiveSignals
+    && (archiveSignals.exactHistory || archiveSignals.pastLookup || archiveSignals.rememberedKnowledge)
+  );
+
   // Research with sources is the ONE shape that reaches FOR Hermes (see
   // researchReach.js + researchJob.js): the task shape comes from IntentIQ,
   // the permission from the registry. The run is SUBMITTED, never awaited — a
@@ -413,7 +432,7 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, researchJob] = await Promise.all([    hindsight
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob] = await Promise.all([    hindsight
       ? recallRelevantContext(hindsight, userText, { intentDecision })
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
@@ -429,6 +448,12 @@ async function runTurnCore({
     wantFoundation
       ? foundation.searchResults(userText).catch((err) => {
         console.warn(`[gaia:foundation] recall failed (non-fatal): ${err.message}`);
+        return [];
+      })
+      : Promise.resolve([]),
+    wantConversationHistory
+      ? conversationSearch.search(userText, { excludeConversationId: conversationId, limit: 5 }).catch((err) => {
+        console.warn(`[gaia:conversations] search failed (non-fatal): ${err.message}`);
         return [];
       })
       : Promise.resolve([]),
@@ -529,12 +554,13 @@ async function runTurnCore({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, hindsight, aion });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderMemoryContext(reflections);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
+  const conversationHistoryBlock = renderConversationHistoryContext(conversationHits);
   const researchPendingBlock = renderResearchPending(researchJob);
   const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
@@ -548,6 +574,7 @@ async function runTurnCore({
   if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
   if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
   if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
+  if (conversationHistoryBlock) systemMessages.push({ role: 'system', content: conversationHistoryBlock });
   if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
   if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
   if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
@@ -991,6 +1018,7 @@ async function performTurn({
   hermes,
   researchJobs,
   foundation,
+  conversationSearch,
   hypothesisRuntime,
   aion,
   eleos,
@@ -1016,6 +1044,7 @@ async function performTurn({
     hermes,
     researchJobs,
     foundation,
+    conversationSearch,
     hypothesisRuntime,
     aion,
     eleos,
@@ -1091,6 +1120,7 @@ async function performStreamingTurn({
   hermes,
   researchJobs,
   foundation,
+  conversationSearch,
   attachments,
   traceId,
   reasonIQ,
@@ -1140,6 +1170,7 @@ async function performStreamingTurn({
       hermes,
       researchJobs,
       foundation,
+      conversationSearch,
       hypothesisRuntime,
       aion,
       eleos,

@@ -10,7 +10,7 @@
  *   POST /conversation/turn  → SSE stream            (auth required; { ..., stream: true } — Phase B, docs/web-migration-plan.md)
  *   /admin/*                 → operator-only provider/TTS config + Logos decision log (adminRoutes.js) — never part of any client's contract
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
- *   /conversations/*         → chat history: list/read/delete (historyRoutes.js), auth required — written as a
+ *   /conversations/*         → chat history: list/read/search/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
  *   /eleos/*                 → Gaia-initiated check-ins: pending + delivered loops (eleosRoutes.js), auth required —
  *                              the poll counterpart to research jobs; the check-in itself is an ordinary assistant
@@ -64,6 +64,7 @@ const { createFromEnv: createFoundationFromEnv } = require('./foundationClient')
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
+const { createConversationSearch } = require('./conversationSearch');
 const { createEleosIntentStore } = require('./eleosIntentStore');
 const { createEleosPass } = require('./reasoning/eleos');
 const { createEleosVoice } = require('./eleosVoice');
@@ -440,7 +441,11 @@ function createApp(env = process.env) {
   );
 
   const historyStore = createConversationStore(env.HISTORY_PATH !== undefined ? { historyDir: env.HISTORY_PATH } : {});
-  app.use('/conversations', createHistoryRouter({ store: historyStore, auth }));
+  // Literal-text search over the saved transcripts — the read seam behind the
+  // `conversation_search` capability (the turn reaches for it on a lookup) and
+  // the client's own GET /conversations/search.
+  const conversationSearch = createConversationSearch({ store: historyStore });
+  app.use('/conversations', createHistoryRouter({ store: historyStore, auth, search: conversationSearch }));
 
   // ELEOS — the check-in faculty: notice a moment worth coming back to, and
   // later start a new conversation about it. Off unless GAIA_ELEOS=true,
@@ -627,6 +632,7 @@ function createApp(env = process.env) {
         hindsight,
         hypothesisRuntime,
         foundation,
+        conversationSearch,
         aion,
         eleos,
         res,
@@ -679,6 +685,7 @@ function createApp(env = process.env) {
       hindsight,
       hypothesisRuntime,
       foundation,
+      conversationSearch,
       aion,
       eleos,
       attachments,
