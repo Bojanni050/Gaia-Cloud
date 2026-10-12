@@ -1,6 +1,6 @@
 # Background Voice — Gaia Cloud Changes
 
-Status: **proposed** (2026-10-11). Companion to `gaia-desktop/docs/background-voice-spec.md`,
+Status: **C1 implemented on branch `feat/speech-transcribe`** (2026-10-12); C2 and C3 proposed. Companion to `gaia-desktop/docs/background-voice-spec.md`,
 which holds the full desktop design. This file lists only what Gaia Cloud must
 provide. Nothing here is implemented.
 
@@ -23,6 +23,8 @@ cognition.
 - Speech modules are tested to have no dependency on Hermes, IntentIQ/ReasonIQ, the Decision Engine, the Orchestrator or the Response Engine (`test/mimoTts.test.js`, `test/mistralTts.test.js`). The new STT module must keep that property.
 
 ## C1. `POST /speech/transcribe`
+
+**Implemented** (`src/speech/mistralStt.js`, `src/speech/sttLog.js`, routes in `server.js`, admin routes `GET/PUT /admin/api/stt/config` and `GET /admin/api/stt/log`, `resolveSttConfig`, `providerStore.saveSttConfig`; 53 new tests). Deviations from the text below: the body is the raw audio (`Content-Type: audio/*`), not a JSON wrapper; the language hint is `?language=nl` or the `X-Gaia-Language` header; the limit is 1 MiB (413 above it); `GET /speech/stt-info` returns `{ configured, provider, languages, maxBytes }`; configuration is `GAIA_STT_*` env or the admin API. Not yet done: an admin UI section (API only) and a successful live call against the real provider (the Phase 0 test key had been revoked, which the live run showed as the intended calm 502).
 
 Transcribes one finished utterance.
 

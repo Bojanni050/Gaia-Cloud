@@ -59,6 +59,14 @@ const DEFAULT_ROLES = Object.freeze({
   aion: { mode: 'catalog', model: '' },
 });
 
+const DEFAULT_STT = Object.freeze({
+  provider: '',
+  baseUrl: '',
+  apiKey: '',
+  model: '',
+  useMainProvider: false,
+});
+
 const DEFAULT_TTS = Object.freeze({
   provider: '',
   baseUrl: '',
@@ -197,6 +205,31 @@ function createProviderStore(options = {}) {
   }
 
   /**
+   * Save independent speech-to-text configuration (provider, baseUrl, apiKey, model).
+   * Independent from the main provider by default; `useMainProvider` borrows
+   * the main provider's own provider/baseUrl/apiKey instead (see
+   * providerConfigResolver.js's resolveSttConfig).
+   * @param {{ provider?: string, baseUrl?: string, apiKey?: string, model?: string, useMainProvider?: boolean }} partial
+   */
+  function saveSttConfig(partial) {
+    const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
+    const currentStt = current.stt || { ...DEFAULT_STT };
+    const next = {
+      ...current,
+      stt: {
+        provider: partial.provider !== undefined ? partial.provider : currentStt.provider,
+        baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentStt.baseUrl,
+        apiKey: partial.apiKey !== undefined ? partial.apiKey : currentStt.apiKey,
+        model: partial.model !== undefined ? partial.model : currentStt.model,
+        useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentStt.useMainProvider),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    writeRaw(next);
+    return next;
+  }
+
+  /**
    * Save the independent backup generation provider
    * ({ provider, baseUrl, model, apiKey }). apiKey is optional — omitting
    * it or sending an empty string keeps the previously stored key (an
@@ -287,10 +320,12 @@ function createProviderStore(options = {}) {
         roleProviders: maskedRoleProviders(null),
         generationBackup: { ...DEFAULT_BACKUP, hasApiKey: false, maskedApiKey: null },
         tts: { ...DEFAULT_TTS, hasApiKey: false, maskedApiKey: null },
+        stt: { ...DEFAULT_STT, hasApiKey: false, maskedApiKey: null },
         updatedAt: null,
       };
     }
     const tts = config.tts || { ...DEFAULT_TTS };
+    const stt = config.stt || { ...DEFAULT_STT };
     const backup = config.generationBackup || { ...DEFAULT_BACKUP };
     return {
       provider: config.provider || null,
@@ -317,6 +352,14 @@ function createProviderStore(options = {}) {
         maskedApiKey: maskKey(tts.apiKey),
         useMainProvider: Boolean(tts.useMainProvider),
       },
+      stt: {
+        provider: stt.provider || '',
+        baseUrl: stt.baseUrl || '',
+        model: stt.model || '',
+        hasApiKey: Boolean(stt.apiKey),
+        maskedApiKey: maskKey(stt.apiKey),
+        useMainProvider: Boolean(stt.useMainProvider),
+      },
       updatedAt: config.updatedAt || null,
     };
   }
@@ -327,7 +370,7 @@ function createProviderStore(options = {}) {
     } catch (_) { /* already gone */ }
   }
 
-  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveRoleProvider, saveTtsConfig, saveBackupConfig, getMaskedConfig, clear, storePath };
+  return { getConfig, saveProviderConfig, saveCatalog, saveRoleSelection, saveRoleProvider, saveTtsConfig, saveSttConfig, saveBackupConfig, getMaskedConfig, clear, storePath };
 }
 
-module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS, DEFAULT_BACKUP, DEFAULT_ROLE_PROVIDER, CUSTOM_PROVIDER_ROLES };
+module.exports = { createProviderStore, resolveStorePath, maskKey, DEFAULT_ROLES, DEFAULT_TTS, DEFAULT_STT, DEFAULT_BACKUP, DEFAULT_ROLE_PROVIDER, CUSTOM_PROVIDER_ROLES };

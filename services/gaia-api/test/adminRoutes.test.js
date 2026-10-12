@@ -947,3 +947,96 @@ test('PUT /admin/api/provider/backup/config rejects an empty body', async () => 
     await ctx.close();
   }
 });
+
+// --- STT (speech recognition) config --------------------------------------------------------
+
+test('GET /admin/api/stt/config returns STT defaults', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/stt/config`, { headers: authHeaders() });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.provider, '');
+    assert.equal(body.model, '');
+    assert.equal(body.hasApiKey, false);
+    assert.equal(body.useMainProvider, false);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/stt/config saves STT config and never echoes the key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/stt/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'stt-secret', model: 'voxtral-mini-latest' }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.provider, 'mistral');
+    assert.equal(body.model, 'voxtral-mini-latest');
+    assert.equal(body.hasApiKey, true);
+    assert.ok(!JSON.stringify(body).includes('stt-secret'));
+    assert.equal(ctx.providerStore.getConfig().stt.apiKey, 'stt-secret');
+    // TTS config is untouched
+    assert.equal(ctx.providerStore.getMaskedConfig().tts.provider, '');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/stt/config keeps the stored key when a later save sends no key', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/stt/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'stt-secret', model: 'm1' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/stt/config`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ model: 'm2', apiKey: '   ' }),
+    });
+    const stored = ctx.providerStore.getConfig().stt;
+    assert.equal(stored.model, 'm2');
+    assert.equal(stored.apiKey, 'stt-secret');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('PUT /admin/api/stt/config rejects a body with no valid fields', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/stt/config`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify({ nonsense: 1 }),
+    });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('the STT admin routes require auth', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    for (const [method, route] of [['GET', 'config'], ['PUT', 'config'], ['GET', 'log']]) {
+      const res = await fetch(`${ctx.baseUrl}/admin/api/stt/${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: method === 'PUT' ? '{}' : undefined });
+      assert.equal(res.status, 401, `${method} stt/${route}`);
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/capabilities reports stt once a model is saved', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    ctx.providerStore.saveSttConfig({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', model: 'voxtral-mini-latest' });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/capabilities`, { headers: authHeaders() });
+    const body = await res.json();
+    assert.equal(body.stt, true);
+    assert.equal(body.tts, false);
+  } finally {
+    await ctx.close();
+  }
+});

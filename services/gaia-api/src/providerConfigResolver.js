@@ -99,6 +99,47 @@ function resolveTtsConfig(providerStore, env = process.env) {
 }
 
 /**
+ * Resolve speech-to-text configuration — independent from the main provider
+ * by default (like TTS), with `stt.useMainProvider` borrowing the main
+ * provider's own provider/baseUrl/apiKey instead of a second copy of it.
+ * Environment fallback: GAIA_STT_BASE_URL / GAIA_STT_MODEL / GAIA_STT_AUTH_TOKEN.
+ * @param {{ getConfig: Function }} providerStore
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string }|null}
+ */
+function resolveSttConfig(providerStore, env = process.env) {
+  const stored = providerStore ? providerStore.getConfig() : null;
+
+  if (stored && stored.stt && stored.stt.useMainProvider && stored.stt.model && stored.apiKey) {
+    return {
+      provider: stored.provider || 'openrouter',
+      baseUrl: stored.baseUrl || '',
+      model: stored.stt.model,
+      apiKey: stored.apiKey,
+    };
+  }
+
+  if (stored && stored.stt && stored.stt.provider && stored.stt.model) {
+    return {
+      provider: stored.stt.provider,
+      baseUrl: stored.stt.baseUrl || '',
+      model: stored.stt.model,
+      apiKey: stored.stt.apiKey || '',
+    };
+  }
+
+  if (env.GAIA_STT_BASE_URL && env.GAIA_STT_MODEL) {
+    return {
+      provider: 'env',
+      baseUrl: env.GAIA_STT_BASE_URL,
+      model: env.GAIA_STT_MODEL,
+      apiKey: env.GAIA_STT_AUTH_TOKEN || '',
+    };
+  }
+  return null;
+}
+
+/**
  * Environment variable fallback — preserves existing .env-based config
  * when no provider store config exists.
  */
@@ -197,7 +238,7 @@ function resolveBackupConfig(providerStore, env = process.env) {
  * Derive capability availability from the provider store's role selections.
  * @param {{ getConfig: Function }} providerStore
  * @param {NodeJS.ProcessEnv} [env]
- * @returns {{ generation: boolean, reasoning: boolean, vision: boolean, tts: boolean }}
+ * @returns {{ generation: boolean, reasoning: boolean, vision: boolean, tts: boolean, stt: boolean }}
  */
 function deriveCapabilities(providerStore, env = process.env) {
   return {
@@ -207,7 +248,8 @@ function deriveCapabilities(providerStore, env = process.env) {
     kairos: resolveRoleConfig('kairos', providerStore, env) !== null,
     aion: resolveRoleConfig('aion', providerStore, env) !== null,
     tts: resolveTtsConfig(providerStore, env) !== null,
+    stt: resolveSttConfig(providerStore, env) !== null,
   };
 }
 
-module.exports = { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities };
+module.exports = { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig, resolveSttConfig, resolveEnvFallback, deriveCapabilities };

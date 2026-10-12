@@ -15,6 +15,9 @@
  *   POST /speech             → audio/*             (auth required; { text } → Gaia's voice, src/speech/mimoTts.js or
  *                              src/speech/mistralTts.js per the TTS provider — presentation-only, always *after* a text
  *                              reply exists, never a turn decision)
+ *   POST /speech/transcribe  → { text, language }  (auth required; one utterance of audio in the request body -> text,
+ *                              src/speech/mistralStt.js — an input transport only: the client sends the text as an ordinary turn)
+ *   GET  /speech/stt-info    → { configured, provider, languages, maxBytes }  (auth required)
  *   GET  /speech/info        → voice description    (auth required; { configured, provider, languages } — so clients
  *                              know whether a non-English reply is worth speaking; judges no text)
  *
@@ -53,7 +56,7 @@ const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
 const { createProviderStore } = require('./providerStore');
-const { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig } = require('./providerConfigResolver');
+const { resolveRoleConfig, resolveBackupConfig, resolveTtsConfig, resolveSttConfig } = require('./providerConfigResolver');
 const { createFromEnv: createFoundationFromEnv } = require('./foundationClient');
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
@@ -65,6 +68,8 @@ const { HERMES_OUTBOX_DIR } = require('./researchReach');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { createTtsLog } = require('./speech/ttsLog');
+const { createSttLog } = require('./speech/sttLog');
+const mistralStt = require('./speech/mistralStt');
 const { getUserIdentity } = require('./identity');
 const { createVersionRouter } = require('./versionRoutes');
 
@@ -272,7 +277,9 @@ function createApp(env = process.env) {
   // in-memory by design: a restart clears it, same as a fresh pair of
   // ears on the next shift.
   const ttsLog = createTtsLog();
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog }));
+  // Listening activity tail (GET /admin/api/stt/log) — never carries audio or text.
+  const sttLog = createSttLog();
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog, sttLog }));
 
   // v3.0: no live IntentIQ pre-flight — Logos reflects after delivery.
 
@@ -344,6 +351,24 @@ function createApp(env = process.env) {
           ? Number(env.GAIA_AION_IDLE_MS)
           : 5 * 60 * 1000,
       });
+
+  /**
+   * The speech-to-text client for the current configuration (provider store,
+   * else GAIA_STT_* env), plus the resolved config so POST /speech/transcribe
+   * can log which provider/model handled it. `stt` is null when unconfigured.
+   */
+  function getEffectiveStt() {
+    const config = resolveSttConfig(providerStore, env);
+    if (!config || !config.baseUrl || !config.model) return { stt: null, config };
+    return {
+      stt: mistralStt.createMistralStt({
+        baseUrl: config.baseUrl,
+        model: config.model,
+        authToken: config.apiKey,
+      }),
+      config,
+    };
+  }
 
   function getEffectiveTts() {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
@@ -624,6 +649,66 @@ function createApp(env = process.env) {
     res.json({ configured, provider, languages: languagesForTtsProvider(provider) });
   });
 
+  // Speech recognition info — whether POST /speech/transcribe can work, which
+  // provider backs it, and the limits clients must respect (one utterance at a
+  // time, MAX_AUDIO_BYTES). Describes the capability, never judges audio.
+  app.get('/speech/stt-info', auth, (req, res) => {
+    const config = resolveSttConfig(providerStore, env);
+    const configured = Boolean(config && config.baseUrl && config.model);
+    res.json({
+      configured,
+      provider: config ? config.provider : null,
+      languages: mistralStt.LANGUAGES,
+      maxBytes: mistralStt.MAX_AUDIO_BYTES,
+    });
+  });
+
+  // Speech recognition: ONE finished utterance of audio in, text out. The body
+  // is the raw audio (Content-Type audio/*, 16 kHz mono WAV from Desktop);
+  // an optional language hint comes as ?language=nl or X-Gaia-Language. The
+  // audio exists in memory for this request only and is never stored; the
+  // activity log records bytes, timing and outcome but never audio or text.
+  // This is an input transport: the client sends the returned text to
+  // POST /conversation/turn as an ordinary user message.
+  app.post(
+    '/speech/transcribe',
+    auth, // auth BEFORE the body parser: unauthenticated audio is never buffered
+    express.raw({ type: () => true, limit: mistralStt.MAX_AUDIO_BYTES }),
+    async (req, res) => {
+      const audio = req.body;
+      const { stt: effectiveStt, config: sttConfig } = getEffectiveStt();
+      const logBase = {
+        provider: sttConfig ? sttConfig.provider : null,
+        model: sttConfig ? sttConfig.model : null,
+        bytes: Buffer.isBuffer(audio) ? audio.length : 0,
+      };
+      if (!Buffer.isBuffer(audio) || audio.length === 0) {
+        sttLog.record({ ...logBase, outcome: 'bad-request', error: 'no audio', status: 400, durationMs: 0 });
+        return res.status(400).json({ error: 'audio must be sent as the request body' });
+      }
+      if (!effectiveStt) {
+        sttLog.record({ ...logBase, outcome: 'not-configured', error: 'speech recognition is not configured', status: 503, durationMs: 0 });
+        return res.status(503).json({ error: 'speech recognition is not configured' });
+      }
+      const started = process.hrtime.bigint();
+      try {
+        const { text, language } = await effectiveStt.transcribe(audio, {
+          mimeType: req.get('content-type'),
+          language: req.query.language || req.get('x-gaia-language'),
+        });
+        const durationMs = Math.round((Number(process.hrtime.bigint() - started) / 1e6) * 100) / 100;
+        sttLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs });
+        return res.status(200).json({ text, language });
+      } catch (_) {
+        // Calm, generic — same posture as POST /speech: never forward the
+        // underlying error, provider name, or endpoint.
+        const durationMs = Math.round((Number(process.hrtime.bigint() - started) / 1e6) * 100) / 100;
+        sttLog.record({ ...logBase, outcome: 'error', error: 'gaia could not listen right now', status: 502, durationMs });
+        return res.status(502).json({ error: 'gaia could not listen right now' });
+      }
+    }
+  );
+
   app.post('/speech', auth, async (req, res) => {
     const text = req.body && req.body.text;
     if (typeof text !== 'string' || text.trim() === '') {
@@ -688,6 +773,9 @@ function createApp(env = process.env) {
   app.use((err, req, res, next) => {
     if (err && err.type === 'entity.parse.failed') {
       return res.status(400).json({ error: 'request body must be valid JSON' });
+    }
+    if (err && err.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'request body is too large' });
     }
     return res.status(500).json({ error: 'something went wrong' });
   });
