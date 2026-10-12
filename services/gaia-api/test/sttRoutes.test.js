@@ -242,6 +242,25 @@ test('a provider error status is also a calm 502', async () => {
   }
 });
 
+test('the operator log says why a transcription failed, without the key or the provider words', async () => {
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    await withMockedFetch(sttProvider({ status: 401 }), async (originalFetch) => {
+      await withServer(createApp(sttEnv()), async (port) => {
+        const res = await post(originalFetch, port);
+        assert.ok(!(await res.text()).includes('401'), 'the client gets the calm message only');
+        const log = await originalFetch(`http://127.0.0.1:${port}/admin/api/stt/log`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+        const { entries } = await log.json();
+        assert.equal(entries[0].error, 'gaia could not listen right now (provider answered 401)');
+        assert.ok(!JSON.stringify(entries).includes(SECRET_KEY));
+      });
+    });
+  } finally {
+    console.error = originalError;
+  }
+});
+
 // --- Privacy: what the operator log may hold ----------------------------------------------
 
 test('the admin listening log records bytes, timing and outcome, never the audio or the words', async () => {
