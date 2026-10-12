@@ -28,6 +28,11 @@
  *   GET  /admin/api/tts/voices        -> list saved voices from the TTS provider (Mistral only)
  *   GET  /admin/api/tts/log           -> recent speech-synthesis attempts, newest first
  *
+ *   STT (independent, listening):
+ *   GET  /admin/api/stt/config        -> masked speech-to-text config
+ *   PUT  /admin/api/stt/config        -> { provider?, baseUrl?, apiKey?, model?, useMainProvider? }
+ *   GET  /admin/api/stt/log           -> recent transcription attempts, newest first (never audio or text)
+ *
  *   Logos:
  *   GET  /admin/api/logos/decisions   -> durable Logos decision log
  */
@@ -53,10 +58,11 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'ele
  *   listTtsVoicesFn?: (options: { baseUrl: string, apiKey?: string }) => Promise<Array<{ id: string, name: string }>>,
  *   probeChatFn?: typeof probeChatCompletion,
  *   ttsLog?: { list: () => object[] },
+ *   sttLog?: { list: () => object[] },
  * }} deps
  */
 function createAdminRouter({
-  providerStore, decisionStore, auth, ttsLog,
+  providerStore, decisionStore, auth, ttsLog, sttLog,
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
@@ -301,6 +307,7 @@ function createAdminRouter({
       const roles = config && config.roles ? config.roles : {};
       const roleProviders = config && config.roleProviders ? config.roleProviders : {};
       const ttsConfig = config && config.tts ? config.tts : {};
+      const sttConfig = config && config.stt ? config.stt : {};
       // A custom-provider role is active when it names its own endpoint, or
       // when it has a model picked from the Main Provider's catalog.
       const roleActive = (r) => {
@@ -316,6 +323,7 @@ function createAdminRouter({
         aion: roleActive('aion'),
         eleos: roleActive('eleos'),
         tts: Boolean(ttsConfig.model),
+        stt: Boolean(sttConfig.model),
       };
       res.json(capabilities);
     });
@@ -405,6 +413,37 @@ function createAdminRouter({
         }
         res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
       }
+    });
+
+    // --- STT (independent, listening) routes ---
+
+    router.get('/api/stt/config', auth, (req, res) => {
+      res.json({ ...providerStore.getMaskedConfig().stt, mainProviderConfigured: mainProviderConfigured() });
+    });
+
+    router.put('/api/stt/config', auth, (req, res) => {
+      const body = req.body || {};
+      const allowed = {};
+      if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
+      if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
+      if (typeof body.model === 'string') allowed.model = body.model.trim();
+      if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+      if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
+
+      if (Object.keys(allowed).length === 0) {
+        return res.status(400).json({ error: 'no valid fields supplied' });
+      }
+
+      providerStore.saveSttConfig(allowed);
+      res.json({ ...providerStore.getMaskedConfig().stt, mainProviderConfigured: mainProviderConfigured() });
+    });
+
+    router.get('/api/stt/log', auth, (req, res) => {
+      // The listening activity tail (src/speech/sttLog.js) — what POST
+      // /speech/transcribe attempted and how it ended. Operator-only; it
+      // never carries audio or transcripts (the log strips them), only
+      // provider, model, byte counts, timing and outcome.
+      res.json({ entries: sttLog ? sttLog.list() : [] });
     });
 
     router.get('/api/tts/log', auth, (req, res) => {
