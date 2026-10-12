@@ -117,6 +117,8 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   mode 600. After the switch: rerank ~0.3–1.1 s; `bojan` ~1.9 s, `gaia` ~0.7 s,
   `gaia-logos` ~1.8 s. `enable_reranking` stays `true` per bank. Sanity check on
   startup: `Reranker: provider=cohere` then `RRF passthrough provider initialized`.
+  The per-call cap is configurable — `HINDSIGHT_TIMEOUT_MS` (default 4000 ms;
+  8000 ms on the VPS) — a safety cap, not a latency target.
 
 ## Derived lifecycle
 
