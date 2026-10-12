@@ -102,20 +102,21 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   surfaceable as a raw memory of Bo's. When the person asks her to remember
   something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
   system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
-- **Recall reranks via a remote API, not the local model.** Hindsight's
+- **Recall reranks via a remote API, with an RRF fallback.** Hindsight's
   cross-encoder is pluggable; set to `local`/`flashrank` it scored 300
   candidates in 10–18 s on the VPS CPU — far past `hindsightClient.js`'s 4 s
   timeout, so the richest bank (`bojan`) was dropped on every turn (measured
-  live 2026-10-12). It now uses OpenRouter's rerank API
-  (`HINDSIGHT_API_RERANKER_PROVIDER=openrouter`, model
-  `nvidia/llama-nemotron-rerank-vl-1b-v2:free`), configured in Hindsight's own
-  deploy env on the host (`/opt/hindsight/.env`) — **not in git**; the key lives
-  there, file mode 600. After the switch: rerank phase ~2 s; `bojan` ~2.6–2.8 s,
-  `gaia` ~1 s, `gaia-logos` ~2 s. `enable_reranking` stays `true` per bank.
-  Caveat: `bojan` sits close to the 4 s client timeout, so a slow or
-  rate-limited rerank (`:free`) can still drop it — revisit the timeout if that
-  shows up. Sanity check: `Reranker: provider=openrouter` in the container log on
-  startup.
+  live 2026-10-12). It now uses Jina's rerank API (Cohere-compatible:
+  `HINDSIGHT_API_RERANKER_PROVIDER=cohere`,
+  `..._COHERE_BASE_URL=https://api.jina.ai/v1/rerank`, model
+  `jina-reranker-v3.5`) with **`HINDSIGHT_API_RERANKER_1_PROVIDER=rrf`** as a
+  second chain member — a reranker failure (Jina rate-limits: `429`) degrades to
+  RRF order instead of failing the recall, which a bare 429 otherwise does
+  (HTTP 500 for the whole bank). Config lives in Hindsight's own deploy env on
+  the host (`/opt/hindsight/.env`) — **not in git**; the key lives there, file
+  mode 600. After the switch: rerank ~0.3–1.1 s; `bojan` ~1.9 s, `gaia` ~0.7 s,
+  `gaia-logos` ~1.8 s. `enable_reranking` stays `true` per bank. Sanity check on
+  startup: `Reranker: provider=cohere` then `RRF passthrough provider initialized`.
 
 ## Derived lifecycle
 
