@@ -31,7 +31,7 @@
  *   correlationId?: string|null,
  *   timestamp?: string,
  * }} entry
- * @param {(line: string) => void} [sink] injectable for tests; defaults to console.log
+ * @param {(line: string) => void} [sink] injectable for tests; defaults to console.log. A non-function (e.g. a console-like object passed through a loose `logger`) is ignored and falls back to console.log, so a logging call can never crash its caller.
  */
 function logLlmCall(entry, sink = (line) => console.log(line)) {
   const record = {
@@ -48,7 +48,8 @@ function logLlmCall(entry, sink = (line) => console.log(line)) {
     contextId: entry.contextId || null,
     correlationId: entry.correlationId || null,
   };
-  sink(JSON.stringify(record));
+  const write = typeof sink === 'function' ? sink : (line) => console.log(line);
+  write(JSON.stringify(record));
   return record;
 }
 
