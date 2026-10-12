@@ -94,13 +94,20 @@ function renderMemoryContext(reflections) {
  * memory-anchored follow-up (assistant-originated referents — see
  * memoryPolicy.shouldRecall) can open the gate even without a lexical
  * past-reference cue in the query text.
+ *
+ * `pastReference` is the caller's own judgment that this turn is asking about
+ * the past (the turn detected a literal-lookup signal — what was actually
+ * said). It OPENS the gate, so a past-facing turn consults Hindsight even when
+ * the query carries no lexical past cue of its own: memory and the transcript
+ * are two halves of "what do you know about this", and a lookup should reach
+ * for both, not one.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {string} query
- * @param {{ intentDecision?: object|null }} [options]
+ * @param {{ intentDecision?: object|null, pastReference?: boolean }} [options]
  */
 async function recallRelevantContext(hindsight, query, options = {}) {
   if (!query || !query.trim()) return [];
-  if (!shouldRecall(query, { intentDecision: options.intentDecision })) return [];
+  if (!options.pastReference && !shouldRecall(query, { intentDecision: options.intentDecision })) return [];
   try {
     return await hindsight.recall(query);
   } catch (_) {

@@ -83,7 +83,9 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   instead. The turn reaches for it only on a lookup / past-reference signal, and
   never for the in-flight conversation (already in the prompt verbatim); clients
   reach the same seam at `GET /conversations/search`. It is the honest
-  counterpart to reflection: the words, not the memory of them.
+  counterpart to reflection: the words, not the memory of them. A past-facing
+  turn opens Hindsight recall too (`recallRelevantContext`'s `pastReference`),
+  so what she understands and what was actually said are consulted together.
 - **Provenance points back.** Every derived record carries the raw observation
   ids it was derived from.
 - **Hindsight is derivable.** Sync is Cognition → Hindsight only; the mirror is

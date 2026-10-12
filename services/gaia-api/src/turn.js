@@ -433,7 +433,7 @@ async function runTurnCore({
   );
   timing.start('memory_recall');
   const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob] = await Promise.all([    hindsight
-      ? recallRelevantContext(hindsight, userText, { intentDecision })
+      ? recallRelevantContext(hindsight, userText, { intentDecision, pastReference: wantConversationHistory })
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
     wantPatterns

@@ -76,3 +76,45 @@ test('a plain turn never searches the transcripts', async () => {
 
   assert.equal(spy.calls.length, 0, 'no lookup signal, no transcript search');
 });
+
+test('a past-facing lookup consults Hindsight as well, even without a lexical memory cue', async () => {
+  const spy = searchSpy();
+  const recalls = [];
+  const hindsight = {
+    recall: async (q) => { recalls.push(q); return []; },
+    reflect: async () => {},
+  };
+  const { generator } = capturingGenerator();
+
+  // "wat zei ik over de vps" opens the transcript read (exactHistory) but
+  // carries none of memoryPolicy's own past-reference cues — so the transcript
+  // and Hindsight must be tied together on the turns where "the past" is the
+  // question, or a lookup would reach only one of the two.
+  await performTurn({
+    messages: [{ role: 'user', content: 'wat zei ik over de vps?' }],
+    documents,
+    conversationId: 'current-1',
+    conversationSearch: spy.client,
+    hindsight,
+    generator,
+  });
+
+  assert.equal(spy.calls.length, 1, 'the transcript is searched');
+  assert.equal(recalls.length, 1, 'and Hindsight is consulted too');
+});
+
+test('a plain turn leaves Hindsight closed', async () => {
+  const recalls = [];
+  const hindsight = { recall: async (q) => { recalls.push(q); return []; }, reflect: async () => {} };
+  const { generator } = capturingGenerator();
+
+  await performTurn({
+    messages: [{ role: 'user', content: 'hoi, hoe gaat het vandaag?' }],
+    documents,
+    conversationId: 'current-1',
+    hindsight,
+    generator,
+  });
+
+  assert.equal(recalls.length, 0);
+});
