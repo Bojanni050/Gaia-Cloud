@@ -44,6 +44,67 @@ test('GET /research/jobs separates running from finished-but-unseen', async () =
   assert.equal(res.body.finished[0].conversationId, 'c1');
 });
 
+test('a job waiting on a person carries the question and its choices', async () => {
+  const { app, store } = buildApp();
+  const job = store.create({ conversationId: 'c1', skillId: 'grounded-citations', question: 'a', runId: 'run_1' });
+  store.update(job.id, {
+    status: 'awaiting_approval',
+    approval: { command: 'python3 sources.py', description: 'schrijft weg', choices: ['once', 'deny'] },
+  });
+
+  const res = await request(app).get('/research/jobs');
+
+  assert.deepEqual(res.body.finished[0].approval, {
+    command: 'python3 sources.py',
+    description: 'schrijft weg',
+    choices: ['once', 'deny'],
+  });
+});
+
+test('a running job carries no approval field', async () => {
+  const { app, store } = buildApp();
+  store.create({ conversationId: 'c1', skillId: 'grounded-citations', question: 'a', runId: 'run_1' });
+
+  const res = await request(app).get('/research/jobs');
+
+  assert.equal(res.body.running[0].approval, null);
+});
+
+test('POST /research/jobs/:id/approval forwards the decision and maps failures', async () => {
+  const { app, store } = buildApp();
+  const job = store.create({ conversationId: 'c1', skillId: 'grounded-citations', question: 'a', runId: 'run_1' });
+  store.update(job.id, { status: 'awaiting_approval', approval: { command: 'x', description: '', choices: ['once', 'deny'] } });
+
+  const seen = [];
+  const app2 = express();
+  app2.use(express.json());
+  app2.use('/research', createResearchRouter({
+    store,
+    auth,
+    answerApproval: async (jobId, choice) => {
+      seen.push({ jobId, choice });
+      if (choice === 'deny') return { ok: false, status: 409, error: 'approval_not_pending' };
+      return { ok: true, status: 204, error: null };
+    },
+  }));
+
+  assert.equal((await request(app2).post(`/research/jobs/${job.id}/approval`).send({ choice: 'once' })).status, 204);
+  assert.deepEqual(seen, [{ jobId: job.id, choice: 'once' }]);
+
+  const refused = await request(app2).post(`/research/jobs/${job.id}/approval`).send({ choice: 'deny' });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.error, 'approval_not_pending');
+});
+
+test('POST /research/jobs/:id/approval says so when approvals are not wired', async () => {
+  const { app, store } = buildApp();
+  const job = store.create({ conversationId: 'c1', skillId: 'grounded-citations', question: 'a', runId: 'run_1' });
+
+  const res = await request(app).post(`/research/jobs/${job.id}/approval`).send({ choice: 'once' });
+
+  assert.equal(res.status, 503);
+});
+
 test('a document travels as a reference, not as bytes', async () => {
   const { app, store } = buildApp();
   const job = store.create({ conversationId: 'c1', skillId: 'grounded-citations', question: 'a', runId: 'run_1' });

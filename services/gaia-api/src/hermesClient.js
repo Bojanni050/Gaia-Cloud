@@ -202,16 +202,53 @@ function createHermesClient({ baseUrl, model, authToken, fetchImpl = fetch, time
       throw new Error('hermes run unreadable');
     }
     const data = await response.json().catch(() => null);
-    if (!data) return { status: null, output: null, error: null, raw: null };
+    if (!data) return { status: null, output: null, error: null, approval: null, raw: null };
     return {
       status: data.status || null,
       output: typeof data.output === 'string' ? data.output : null,
       error: data.error || null,
+      // Present while the run is parked on a human decision: the flagged
+      // command (already redacted by Hermes) plus the choices a caller may
+      // send back through answerApproval().
+      approval: data.approval || null,
       raw: data,
     };
   }
 
-  return { chat, stream, submitRun, getRun };
+  /**
+   * Answers a run's pending approval — the human decision, forwarded. This is
+   * the ONE place Gaia can grant a Hermes run permission to run a command it
+   * flagged, so it is deliberately a plain forward: the decision is the
+   * caller's (ultimately a person's), never this module's.
+   *
+   * @param {string} runId
+   * @param {{ choice: string, requestId?: string }} decision choice is one of
+   *   the run's own `choices` ('once' | 'session' | 'always' | 'deny')
+   * @returns {Promise<{ ok: boolean, status: number, error: string|null }>}
+   */
+  async function answerApproval(runId, { choice, requestId } = {}) {
+    const body = { choice: String(choice || '').trim().toLowerCase() };
+    if (requestId) body.request_id = String(requestId);
+    let response;
+    try {
+      response = await fetchImpl(`${root}/runs/${encodeURIComponent(runId)}/approval`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      console.error(`[hermes] approval unreachable at ${root}: ${error.message}`);
+      throw new Error('hermes unreachable');
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.error(`[hermes] approval responded ${response.status} at ${root}: ${text.slice(0, 200)}`);
+      return { ok: false, status: response.status, error: text.slice(0, 200) || 'hermes rejected the decision' };
+    }
+    return { ok: true, status: response.status, error: null };
+  }
+
+  return { chat, stream, submitRun, getRun, answerApproval };
 }
 
 function parseSseFrame(frame) {

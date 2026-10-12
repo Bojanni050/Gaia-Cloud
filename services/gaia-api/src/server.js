@@ -59,7 +59,7 @@ const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library')
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
 const { createResearchJobStore } = require('./researchJobStore');
-const { startResearchJob, pollResearchJobs, saveResearchMessage, resolveOutboxDir } = require('./researchJob');
+const { startResearchJob, pollResearchJobs, saveResearchMessage, answerJobApproval, resolveOutboxDir } = require('./researchJob');
 const { createResearchRouter } = require('./researchRoutes');
 const { HERMES_OUTBOX_DIR } = require('./researchReach');
 const { createHistoryRouter } = require('./historyRoutes');
@@ -431,7 +431,16 @@ function createApp(env = process.env) {
         }),
       }
     : undefined;
-  app.use('/research', createResearchRouter({ store: researchStore, auth }));
+  app.use('/research', createResearchRouter({
+    store: researchStore,
+    auth,
+    answerApproval: (jobId, choice) => answerJobApproval({
+      jobId,
+      choice,
+      hermes,
+      store: researchStore,
+    }),
+  }));
 
   if (researchJobs) {
     const pollMs = Number(env.GAIA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_RESEARCH_POLL_MS) : 20000;

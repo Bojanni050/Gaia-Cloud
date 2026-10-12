@@ -14,6 +14,13 @@
  * a poll cycle; the job simply stays `running` and is retried next cycle, or
  * lands as `failed` with a reason.
  *
+ * An approval is not a failure and not a hang: when a run parks on
+ * `waiting_for_approval` the job goes to `awaiting_approval` carrying the
+ * flagged command (redacted by Hermes before it left), and the question is
+ * written into the conversation like the findings are. The person answers
+ * through the poll endpoint, answerJobApproval() forwards the decision, and
+ * the run carries on. Nobody answering is the `blocked` case.
+ *
  * A conversationId is REQUIRED: the findings are written into the conversation
  * (saveResearchMessage), so a job without one would have nowhere to land and a
  * client would only ever see "finished" with no content. startResearchJob
@@ -25,12 +32,12 @@ const path = require('path');
 const { buildReachPrompt, HERMES_OUTBOX_DIR } = require('./researchReach');
 
 const TERMINAL_FAILURES = new Set(['failed', 'cancelled', 'interrupted']);
-// A run parked on a human approval is NOT "still running": with nobody to
-// answer it, it stays parked indefinitely (observed live 2026-10-11: 30+
-// minutes, still `waiting_for_approval`). Gaia has no human to offer mid-run,
-// so the job closes as blocked and the person is told why — instead of a job
-// that never finishes and a conversation that never gets its findings.
-const BLOCKED_STATES = new Set(['waiting_for_approval']);
+// A run parked on an approval is NOT finished and NOT a failure: it is a
+// QUESTION for a person. Gaia keeps the job alive in `awaiting_approval`,
+// surfaces the flagged command through the poll endpoint and the conversation,
+// and forwards the answer with answerJobApproval(). Only when the run parks
+// but no readable question comes with it does the job close as `blocked`.
+const APPROVAL_STATES = new Set(['waiting_for_approval']);
 
 const MIME_BY_EXT = Object.freeze({
   '.pdf': 'application/pdf',
@@ -150,6 +157,13 @@ function renderResearchMessage(job) {
       : 'Het onderzoek is klaar, maar er kwam geen tekst terug.';
     return `Onderzoek afgerond${skill}.\n\n${body}${fileLine}`;
   }
+  if (job.status === 'awaiting_approval') {
+    const approval = job.approval || {};
+    return `Hermes wil voor dit onderzoek een commando uitvoeren en vraagt om`
+      + ` goedkeuring${approval.description ? ` (${approval.description})` : ''}:\n\n`
+      + '```\n' + (approval.command || '(onbekend commando)') + '\n```\n\n'
+      + 'Zeg of het mag en ik laat het doorlopen.';
+  }
   if (job.status === 'blocked') {
     return `Het onderzoek${skill} is gestopt: Hermes wilde een commando uitvoeren dat zonder`
       + ' goedkeuring niet mag, en er was niemand om die te geven. Er is niets stuk —'
@@ -176,6 +190,75 @@ function saveResearchMessage({ job, historyStore } = {}) {
     console.warn(`[gaia:research] could not write the findings into the conversation: ${err && err.message}`);
     return false;
   }
+}
+
+/**
+ * Narrows Hermes' approval payload to what a person needs to decide: the
+ * flagged command (already redacted by Hermes before it leaves), its
+ * description, and the choices the run itself offers.
+ * @returns {{ command: string, description: string, choices: string[] }|null}
+ */
+function normalizeApproval(approval) {
+  if (!approval || typeof approval !== 'object') return null;
+  const command = typeof approval.command === 'string' ? approval.command : '';
+  if (!command) return null;
+  const choices = Array.isArray(approval.choices) && approval.choices.length > 0
+    ? approval.choices.filter((c) => typeof c === 'string')
+    : ['once', 'deny'];
+  return {
+    command,
+    description: typeof approval.description === 'string' ? approval.description : '',
+    choices,
+  };
+}
+
+/** @returns {boolean} whether this is a new question rather than a re-read of the same one */
+function approvalIsNew(job, approval) {
+  if (job.status !== 'awaiting_approval') return true;
+  const previous = job.approval || {};
+  return previous.command !== approval.command || previous.description !== approval.description;
+}
+
+/**
+ * Answers a parked run's approval with the person's decision. The job goes
+ * back to `running` — a deny does not fail the run, it blocks that one
+ * command and the agent carries on — and the next poll cycle picks up
+ * whatever the run does next.
+ *
+ * @param {{ jobId: string, choice: string, hermes: object, store: object }} input
+ * @returns {Promise<{ ok: boolean, job: object|null, error: string|null, status: number }>}
+ */
+async function answerJobApproval({ jobId, choice, hermes, store } = {}) {
+  const job = store && typeof store.get === 'function' ? store.get(jobId) : null;
+  if (!job) return { ok: false, job: null, error: 'unknown research job', status: 404 };
+  if (job.status !== 'awaiting_approval') {
+    return { ok: false, job, error: 'this job is not waiting for a decision', status: 409 };
+  }
+  if (!job.runId) return { ok: false, job, error: 'the run is gone', status: 409 };
+
+  const allowed = (job.approval && job.approval.choices) || ['once', 'deny'];
+  const wanted = String(choice || '').trim().toLowerCase();
+  if (!allowed.includes(wanted)) {
+    return { ok: false, job, error: `choice must be one of: ${allowed.join(', ')}`, status: 400 };
+  }
+  if (!hermes || typeof hermes.answerApproval !== 'function') {
+    return { ok: false, job, error: 'hermes is not configured', status: 503 };
+  }
+
+  let result;
+  try {
+    result = await hermes.answerApproval(job.runId, { choice: wanted });
+  } catch (err) {
+    return { ok: false, job, error: (err && err.message) || 'hermes unreachable', status: 502 };
+  }
+  if (!result || !result.ok) {
+    return { ok: false, job, error: (result && result.error) || 'hermes rejected the decision', status: 502 };
+  }
+
+  // The decision is in; the run resumes. Clearing `approval` means the next
+  // park (a new question) counts as new and gets its own message.
+  const updated = store.update(job.id, { status: 'running', approval: null, error: null });
+  return { ok: true, job: updated || job, error: null, status: 204 };
 }
 
 /**
@@ -223,12 +306,20 @@ async function pollResearchJobs({ hermes, store, library, outboxDir = resolveOut
         file: file || job.file || null,
       });
       if (updated) changed.push(updated);
-    } else if (BLOCKED_STATES.has(state.status)) {
-      const updated = store.update(job.id, {
-        status: 'blocked',
-        error: 'approval_required',
-      });
-      if (updated) changed.push(updated);
+    } else if (APPROVAL_STATES.has(state.status)) {
+      const approval = normalizeApproval(state.approval);
+      if (!approval) {
+        // Parked with nothing readable to ask: close it honestly rather than
+        // leave a job that never finishes.
+        const updated = store.update(job.id, { status: 'blocked', error: 'approval_required' });
+        if (updated) changed.push(updated);
+      } else if (approvalIsNew(job, approval)) {
+        // A question for a person. It travels the same way the findings do:
+        // into the conversation, plus the poll endpoint for the client.
+        const updated = store.update(job.id, { status: 'awaiting_approval', approval });
+        if (updated) changed.push(updated);
+      }
+      // Same question, still unanswered: no change, so no second message.
     } else if (TERMINAL_FAILURES.has(state.status)) {
       const updated = store.update(job.id, {
         status: 'failed',
@@ -258,7 +349,9 @@ module.exports = {
   importOutboxFile,
   renderResearchMessage,
   saveResearchMessage,
+  answerJobApproval,
+  normalizeApproval,
   resolveOutboxDir,
   TERMINAL_FAILURES,
-  BLOCKED_STATES,
+  APPROVAL_STATES,
 };

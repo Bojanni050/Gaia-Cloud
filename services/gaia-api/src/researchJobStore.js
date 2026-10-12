@@ -19,8 +19,9 @@
  *   { id, conversationId, skillId, question, status, runId,
  *     createdAt, updatedAt, resultText, file, error, messageSaved,
  *     deliveredAt }
- * status: 'running' → 'done' | 'failed' | 'blocked'
- * ('blocked' = the run parked on an approval nobody could give; see
+ * status: 'running' → 'done' | 'failed' | 'blocked' | 'awaiting_approval'
+ * ('awaiting_approval' = the run parked on a question for a person, carried in
+ * `approval`; 'blocked' = parked with nothing readable to ask — see
  * src/researchJob.js)
  */
 

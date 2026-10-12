@@ -21,6 +21,7 @@ const {
   importOutboxFile,
   renderResearchMessage,
   saveResearchMessage,
+  answerJobApproval,
 } = require('../src/researchJob');
 
 function tempDir(prefix) {
@@ -99,7 +100,7 @@ test('a completed run closes the job with its findings', async () => {
   assert.equal(stored.resultText, 'Bevindingen met bronnen.');
 });
 
-test('a run parked on an approval closes as blocked instead of hanging forever', async () => {
+test('a run parked with nothing readable to ask closes as blocked instead of hanging', async () => {
   const { store, hermes } = setup({ runState: { status: 'waiting_for_approval', output: null, error: null } });
   const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
 
@@ -112,6 +113,102 @@ test('a run parked on an approval closes as blocked instead of hanging forever',
   // Delivered, not left in limbo: the person learns why nothing came back.
   assert.equal(store.listRunning().length, 0);
   assert.deepEqual(store.listUndelivered().map((j) => j.id), [job.id]);
+});
+
+// --- the question for a person --------------------------------------------------
+
+function parkedRunState(overrides = {}) {
+  return {
+    status: 'waiting_for_approval',
+    output: null,
+    error: null,
+    approval: {
+      command: 'python3 scripts/sources.py --write',
+      description: 'schrijft bronnen weg in de cache',
+      choices: ['once', 'session', 'always', 'deny'],
+      ...overrides,
+    },
+  };
+}
+
+test('a run parked on an approval becomes a question, not a closed job', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState() });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  const changed = await pollResearchJobs({ hermes, store });
+
+  assert.deepEqual(changed.map((j) => j.id), [job.id]);
+  const stored = store.get(job.id);
+  assert.equal(stored.status, 'awaiting_approval');
+  assert.equal(stored.approval.command, 'python3 scripts/sources.py --write');
+  assert.equal(stored.approval.description, 'schrijft bronnen weg in de cache');
+  assert.deepEqual(stored.approval.choices, ['once', 'session', 'always', 'deny']);
+  // Still alive: the run is waiting, not finished.
+  assert.equal(store.listRunning().length, 0);
+  assert.deepEqual(store.listUndelivered().map((j) => j.id), [job.id]);
+});
+
+test('the same unanswered question is not asked twice', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState() });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  assert.equal((await pollResearchJobs({ hermes, store })).length, 1);
+  assert.equal((await pollResearchJobs({ hermes, store })).length, 0, 'no second message for the same question');
+  assert.equal(store.get(job.id).status, 'awaiting_approval');
+});
+
+test('the person\'s decision is forwarded, and the job goes back to running', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState() });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+  await pollResearchJobs({ hermes, store });
+
+  const answered = [];
+  hermes.answerApproval = async (runId, decision) => { answered.push({ runId, decision }); return { ok: true, status: 200, error: null }; };
+
+  const result = await answerJobApproval({ jobId: job.id, choice: 'once', hermes, store });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(answered, [{ runId: 'run_1', decision: { choice: 'once' } }]);
+  const stored = store.get(job.id);
+  assert.equal(stored.status, 'running');
+  assert.equal(stored.approval, null, 'the next park must count as a new question');
+});
+
+test('a decision the run does not offer is refused without calling Hermes', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState({ choices: ['once', 'deny'] }) });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+  await pollResearchJobs({ hermes, store });
+
+  let called = false;
+  hermes.answerApproval = async () => { called = true; return { ok: true }; };
+
+  const result = await answerJobApproval({ jobId: job.id, choice: 'always', hermes, store });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 400);
+  assert.equal(called, false);
+  assert.equal(store.get(job.id).status, 'awaiting_approval');
+});
+
+test('answering a job that is not waiting, or does not exist, is refused', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState() });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  assert.equal((await answerJobApproval({ jobId: job.id, choice: 'once', hermes, store })).status, 409);
+  assert.equal((await answerJobApproval({ jobId: 'rj_nope', choice: 'once', hermes, store })).status, 404);
+});
+
+test('a Hermes that refuses the decision leaves the question standing', async () => {
+  const { store, hermes } = setup({ runState: parkedRunState() });
+  const job = await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+  await pollResearchJobs({ hermes, store });
+
+  hermes.answerApproval = async () => ({ ok: false, status: 409, error: 'approval_not_pending' });
+  const result = await answerJobApproval({ jobId: job.id, choice: 'once', hermes, store });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 502);
+  assert.equal(store.get(job.id).status, 'awaiting_approval', 'still answerable');
 });
 
 test('a failed run closes the job with the reason', async () => {
@@ -225,6 +322,15 @@ test('renderResearchMessage reports the findings, and the document when there is
   const blocked = renderResearchMessage({ status: 'blocked', skillId: 'grounded-citations', error: 'approval_required' });
   assert.match(blocked, /zonder goedkeuring niet mag/);
   assert.match(blocked, /niets stuk/);
+
+  const question = renderResearchMessage({
+    status: 'awaiting_approval',
+    skillId: 'grounded-citations',
+    approval: { command: 'python3 sources.py', description: 'schrijft weg', choices: ['once', 'deny'] },
+  });
+  assert.match(question, /vraagt om goedkeuring/);
+  assert.match(question, /python3 sources\.py/);
+  assert.match(question, /schrijft weg/);
 });
 
 test('saveResearchMessage appends Gaia\'s findings to the conversation', () => {
