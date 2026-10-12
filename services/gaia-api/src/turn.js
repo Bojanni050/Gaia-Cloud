@@ -206,7 +206,8 @@ function adaptHermesToGenerator(hermes) {
     adapter.generate = (messages) => hermes.chat(messages);
   }
   if (typeof hermes.stream === 'function') {
-    adapter.stream = (messages, { onDelta } = {}) => hermes.stream(messages, { onDelta });
+    adapter.stream = (messages, { onDelta, signal } = {}) =>
+      hermes.stream(messages, { onDelta, ...(signal ? { signal } : {}) });
   }
   return typeof adapter.generate === 'function' || typeof adapter.stream === 'function' ? adapter : null;
 }
@@ -335,6 +336,7 @@ async function runTurnCore({
   onDelta,
   onResearchJob,
   userDisplayName,
+  signal,
 }) {
   const userText = latestUserText(messages);
   const { primary, backup } = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes });
@@ -577,16 +579,20 @@ async function runTurnCore({
   // involved unless a legacy caller adapted it as the primary above.
   let output = null;
   let notConfigured = false;
+  // The client already left (it disconnected while memory was being recalled): do not start generating.
+  if (signal && signal.aborted) throw abortError();
   timing.start('generation');
   try {
     if (onDelta) {
-      output = await streamWithFailover(assembled, { primary, backup, onDelta });
+      output = await streamWithFailover(assembled, { primary, backup, onDelta, ...(signal ? { signal } : {}) });
     } else {
       output = await generateWithFailover(assembled, { primary, backup });
     }
     timing.end('generation');
   } catch (err) {
     try { timing.end('generation'); } catch (_) { /* never break a turn */ }
+    // An aborted turn is not a failed one: let the caller handle the interruption.
+    if (signal && signal.aborted) throw err;
     if (isNotConfiguredError(err)) {
       notConfigured = true;
     }
@@ -1036,6 +1042,36 @@ async function performTurn({
   return formatReply(replyText, researchExtras);
 }
 
+function abortError() {
+  const error = new Error('turn aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+/**
+ * Saves a turn the client cut off. The user's question stands; whatever part of the reply was already
+ * streamed is kept and marked `interrupted: true`, so a transcript reader (and the next turn's history)
+ * sees exactly what was said, no more. Never throws.
+ */
+function recordInterruptedTurn({ historyStore, conversationId, messages, partial, traceId }) {
+  try {
+    console.log(JSON.stringify({
+      kind: 'turn.interrupted',
+      traceId: traceId || null,
+      partialChars: partial ? partial.length : 0,
+    }));
+  } catch (_) { /* never break anything */ }
+  if (!historyStore || !conversationId) return;
+  try {
+    const saved = partial && partial.trim().length > 0
+      ? [...messages, { role: 'assistant', content: partial, interrupted: true }]
+      : messages;
+    historyStore.saveConversation(conversationId, saved);
+  } catch (_) {
+    // Saving a transcript is never worth failing over.
+  }
+}
+
 /**
  * Performs one conversational turn, STREAMED. Same direct-generation
  * pipeline as performTurn; delivery is SSE through the Response Engine's
@@ -1064,6 +1100,7 @@ async function performStreamingTurn({
   historyStore,
   decisionStore,
   userDisplayName,
+  signal,
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -1075,9 +1112,14 @@ async function performStreamingTurn({
 
   let timeToFirstTokenMs = null;
   let contentEmitted = false;
+  // What the user has actually been sent so far: the reply as far as it got, if they cut it off.
+  let streamed = '';
   const onDelta = trackFirstToken(
     (chunk, isReasoning) => {
-      if (chunk && !isReasoning) contentEmitted = true;
+      if (chunk && !isReasoning) {
+        contentEmitted = true;
+        streamed += chunk;
+      }
       emitter.delta(chunk, { reasoning: isReasoning });
     },
     { onFirstToken: (ms) => { timeToFirstTokenMs = ms; } }
@@ -1106,8 +1148,16 @@ async function performStreamingTurn({
       onDelta,
       onResearchJob: (job) => emitter.research(researchJobView(job)),
       userDisplayName,
+      ...(signal ? { signal } : {}),
     });
   } catch (_) {
+    if (signal && signal.aborted) {
+      // The client left mid-turn (it interrupted Gaia). There is nobody to write to, and nothing to learn
+      // from a reply nobody finished hearing: save what was said, marked interrupted, and stop. No
+      // reflection, no deferred cognition.
+      recordInterruptedTurn({ historyStore, conversationId, messages, partial: streamed, traceId });
+      return;
+    }
     emitter.fail();
     return;
   }

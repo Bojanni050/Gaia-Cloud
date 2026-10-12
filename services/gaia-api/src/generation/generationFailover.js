@@ -90,7 +90,9 @@ async function streamWithFailover(messages, { primary, backup, onDelta, signal }
     try {
       return await runStream(primary, trackingDelta);
     } catch (err) {
+      // An aborted turn (the client left) must never start a second generation on the backup.
       const mayFailover = !visibleOutput
+        && !(signal && signal.aborted)
         && hasGenerator(backup)
         && isRetryableGenerationError(err);
       if (!mayFailover) throw err;
