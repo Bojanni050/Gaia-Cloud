@@ -78,6 +78,17 @@ function buildUserPrompt(cluster) {
 }
 
 /**
+ * The deterministic episode id for a cluster — shared by the synthesizer (which
+ * creates it) and the worker (which checks existence to skip a re-synthesis).
+ * @param {string} bankId
+ * @param {string} clusterId
+ * @returns {string}
+ */
+function episodeIdFor(bankId, clusterId) {
+  return `kei_${bankId}_${clusterId}`;
+}
+
+/**
  * Parse and validate the model output. Throws when the shape is wrong; the
  * caller treats a throw as "this cluster failed, retry later", never as a
  * partial episode.
@@ -184,7 +195,7 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
       .map((o) => toSourceRef(o.bron_object_id))
       .filter(Boolean);
     return {
-      id: `kei_${bankId}_${cluster.id}`,
+      id: episodeIdFor(bankId, cluster.id),
       bank_id: bankId,
       start_time: cluster.start_time,
       end_time: cluster.end_time,
@@ -204,4 +215,5 @@ module.exports = {
   buildUserPrompt,
   validateSynthesis,
   createSynthesizer,
+  episodeIdFor,
 };

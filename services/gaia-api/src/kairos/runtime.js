@@ -13,7 +13,7 @@
  */
 
 const { createKairosWorker } = require('./worker');
-const { createSynthesizer } = require('./synthesizer');
+const { createSynthesizer, episodeIdFor } = require('./synthesizer');
 const { emitEpisode } = require('./emitter');
 const { resolveRoleConfig } = require('../providerConfigResolver');
 
@@ -76,6 +76,17 @@ function createKairosRuntime({
         } catch (error) {
           logger.warn?.(`[kairos] hindsight mirror failed for ${episode.id}: ${error.message}`);
         }
+      }
+    },
+    // Skip a cluster whose episode already exists (no second model call): a
+    // conservative watermark re-fetches observations, never re-spends tokens.
+    episodeIdFor: (clusterId) => episodeIdFor(bankId, clusterId),
+    readEpisode: async (id) => {
+      if (!cognition || typeof cognition.getKairosEpisode !== 'function') return null;
+      try {
+        return await cognition.getKairosEpisode(id);
+      } catch (_) {
+        return null; // 404 (not synthesized yet) or an unreachable store.
       }
     },
     emit: emitEpisode,

@@ -177,6 +177,13 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   setting, not in git): the mirror keeps working, but a backfill episode no
   longer also triggers a consolidation round on top of its retain. Live evidence
   (2026-10-12, backfill running): Hindsight CPU ~48% → ~32% after the change.
+- **The watermark is `captured_at`-safe.** The worker clusters on `observed_at`
+  (event time) but Foundation's read seam filters on `captured_at` (ingest
+  time); for a backfill those diverge (capture-rs ingests a year of events over
+  a few days). `computeSafeWatermark` may only name a `captured_at` below which
+  every observation is finalized, and never moves backwards — so a mid-run
+  failure can never skip observations. A cluster whose episode already exists is
+  skipped (no second model call), so the conservative re-fetch costs nothing.
 
 ## Eleos — coming back to a moment, unprompted
 

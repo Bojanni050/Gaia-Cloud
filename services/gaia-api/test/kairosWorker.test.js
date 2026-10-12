@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createKairosWorker } = require('../src/kairos/worker');
+const { createKairosWorker, computeSafeWatermark } = require('../src/kairos/worker');
 const { INACTIVITY_THRESHOLD_MS } = require('../src/kairos/clusterer');
 
 function obs(observedAt, app, capturedAt, id) {
@@ -35,7 +35,7 @@ test('no observations => no work, no watermark write', async () => {
     now: () => new Date('2026-10-04T23:00:00Z'),
   });
   const r = await worker.runOnce();
-  assert.deepEqual(r, { processed: 0, emitted: 0, failed: 0 });
+  assert.deepEqual(r, { processed: 0, emitted: 0, skipped: 0, failed: 0 });
   assert.equal(wrote, false);
 });
 
@@ -144,4 +144,67 @@ test('emit is best-effort: a throwing emitter never fails the episode', async ()
   const r = await worker.runOnce();
   assert.equal(r.processed, 2);
   assert.ok(watermark, 'watermark still advanced despite the emit error');
+});
+
+// --- computeSafeWatermark: the captured_at-axis guarantee -------------------
+
+test('computeSafeWatermark: everything finalized => the batch max captured_at', () => {
+  const batch = [obs('2026-01-01T00:00:00Z', 'A', '2026-09-23T00:00:00Z', 'a'), obs('2026-01-02T00:00:00Z', 'A', '2026-10-01T00:00:00Z', 'b')];
+  const finalized = [{ observations: batch }];
+  assert.equal(computeSafeWatermark(batch, finalized, null), new Date('2026-10-01T00:00:00Z').toISOString());
+});
+
+test('computeSafeWatermark: never past the earliest UNfinalized captured_at', () => {
+  // Backfill shape: event order != captured_at order. `a` is finalized but was
+  // captured LATER than unfinalized `b`; the watermark must stay below b.
+  const a = obs('2025-12-24T00:00:00Z', 'A', '2026-10-05T00:00:00Z', 'a');
+  const b = obs('2026-01-01T00:00:00Z', 'A', '2026-09-24T00:00:00Z', 'b');
+  const batch = [a, b];
+  const wm = computeSafeWatermark(batch, [{ observations: [a] }], null);
+  // b (unfinalized) is the earliest captured_at; only observations strictly
+  // below it are safe — none here, so nothing advances.
+  assert.equal(wm, null);
+});
+
+test('computeSafeWatermark: advances to the max captured_at strictly below the cut', () => {
+  const a = obs('2025-12-24T00:00:00Z', 'A', '2026-09-23T00:00:00Z', 'a');
+  const b = obs('2025-12-25T00:00:00Z', 'A', '2026-09-25T00:00:00Z', 'b');
+  const c = obs('2026-01-01T00:00:00Z', 'A', '2026-10-01T00:00:00Z', 'c'); // unfinalized
+  const wm = computeSafeWatermark([a, b, c], [{ observations: [a, b] }], null);
+  assert.equal(wm, new Date('2026-09-25T00:00:00Z').toISOString());
+});
+
+test('computeSafeWatermark is monotonic: it never moves backwards', () => {
+  const a = obs('2025-12-24T00:00:00Z', 'A', '2026-09-23T00:00:00Z', 'a');
+  const b = obs('2026-01-01T00:00:00Z', 'A', '2026-10-01T00:00:00Z', 'b');
+  const current = new Date('2026-10-05T00:00:00Z').toISOString();
+  // Safe value would be 2026-09-23 (only a is finalized), i.e. lower than current.
+  assert.equal(computeSafeWatermark([a, b], [{ observations: [a] }], current), current);
+});
+
+// --- skip-if-exists: a conservative re-fetch never re-spends tokens ---------
+
+test('a cluster whose episode already exists is skipped, not re-synthesized', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  let synthCalls = 0;
+  let watermark = null;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => [obs(t1, 'Outlook', t1, 'a'), obs(t2, 'VS Code', t2, 'b')],
+    synthesize: async (cluster) => { synthCalls += 1; return { id: cluster.id, summary: 's' }; },
+    saveEpisode: async () => {},
+    episodeIdFor: (cid) => `e_${cid}`,
+    // The first cluster is already stored; the second is not.
+    readEpisode: async (id) => (id === 'e_cluster_a_a' ? { id } : null),
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  const r = await worker.runOnce();
+  assert.equal(r.skipped, 1);
+  assert.equal(r.processed, 1);
+  assert.equal(synthCalls, 1, 'the already-stored cluster is not synthesized again');
+  assert.ok(watermark, 'a skipped (already-done) cluster still advances the watermark');
 });
