@@ -171,6 +171,12 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
 - **Auditable.** `GET /kairos/episodes/:id/evidence` walks `sources` back to
   Foundation and returns the raw observations an interpretation was built from.
 - Off by default: `GAIA_KAIROS_ENABLED=true` starts the worker.
+- When on, each episode is also mirrored into Hindsight's `gaia-logos` bank
+  (`gaia:kairos_episode`, versioned) so it is recallable. **Auto-consolidation is
+  off for that bank** (`enable_auto_consolidation=false` — a Hindsight bank
+  setting, not in git): the mirror keeps working, but a backfill episode no
+  longer also triggers a consolidation round on top of its retain. Live evidence
+  (2026-10-12, backfill running): Hindsight CPU ~48% → ~32% after the change.
 
 ## Eleos — coming back to a moment, unprompted
 
