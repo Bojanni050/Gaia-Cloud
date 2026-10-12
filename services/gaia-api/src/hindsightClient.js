@@ -11,6 +11,18 @@
  * currently has no auth of its own (Tailscale membership is the only
  * access control, same posture as the other Tailscale-bound services).
  */
+/** The operation a Hindsight URL belongs to, for the failure log line. */
+function opForUrl(url) {
+  const s = String(url || '');
+  if (s.includes('/memories/recall')) return 'recall';
+  if (s.includes('/memories/list')) return 'memories_list';
+  if (s.includes('/memories/')) return 'memories_item';
+  if (s.includes('/memories')) return 'memories_write';
+  if (s.includes('/mental-models')) return 'mental_model';
+  if (s.includes('/knowledge-base')) return 'knowledge_base';
+  return 'other';
+}
+
 function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fetch, timeoutMs = 4000 }) {
   const root = String(baseUrl || '').replace(/\/+$/, '');
   if (!root) {
@@ -22,6 +34,31 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
 
   const headers = { 'Content-Type': 'application/json' };
   const bankUrl = (path = '') => `${root}/v1/default/banks/${bankId}${path}`;
+
+  // One seam for every Hindsight HTTP call: on failure it emits a structured,
+  // content-free line (so a timed-out or dropped call is visible instead of
+  // silently swallowed by the best-effort recall path) and then rethrows. The
+  // `op`/`bank` say where and which store; never any memory content.
+  const rawFetch = fetchImpl;
+  function request(url, options = {}) {
+    const startedAt = Date.now();
+    return rawFetch(url, options).catch((error) => {
+      try {
+        const timedOut = Boolean(error) && (error.name === 'TimeoutError' || error.name === 'AbortError');
+        console.warn(JSON.stringify({
+          kind: 'hindsight.call_failed',
+          bank: bankId,
+          op: opForUrl(url),
+          reason: timedOut ? 'timeout' : 'unreachable',
+          timeoutMs,
+          ms: Date.now() - startedAt,
+        }));
+      } catch (_) {
+        // Observability must never break a call.
+      }
+      throw error;
+    });
+  }
 
   /**
    * `budget` defaults to Hindsight's own default (`'mid'`, 300 candidates)
@@ -65,7 +102,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (options.tagsMatch) body.tags_match = options.tagsMatch;
     let response;
     try {
-      response = await fetchImpl(bankUrl('/memories/recall'), {
+      response = await request(bankUrl('/memories/recall'), {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -123,7 +160,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
 
     let response;
     try {
-      response = await fetchImpl(bankUrl('/memories'), {
+      response = await request(bankUrl('/memories'), {
         method: 'POST',
         headers,
         body: JSON.stringify({ async: true, items: [item] }),
@@ -149,7 +186,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function getMentalModel(mentalModelId) {
     let response;
     try {
-      response = await fetchImpl(bankUrl(`/mental-models/${mentalModelId}`), {
+      response = await request(bankUrl(`/mental-models/${mentalModelId}`), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -183,7 +220,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function retainSync(item) {
     let response;
     try {
-      response = await fetchImpl(bankUrl('/memories'), {
+      response = await request(bankUrl('/memories'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -228,7 +265,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     const qs = params.toString();
     let response;
     try {
-      response = await fetchImpl(bankUrl(`/memories/list${qs ? `?${qs}` : ''}`), {
+      response = await request(bankUrl(`/memories/list${qs ? `?${qs}` : ''}`), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -256,7 +293,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function getMemory(id) {
     let response;
     try {
-      response = await fetchImpl(bankUrl(`/memories/${encodeURIComponent(id)}`), {
+      response = await request(bankUrl(`/memories/${encodeURIComponent(id)}`), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -293,7 +330,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (reason) body.reason = reason;
     let response;
     try {
-      response = await fetchImpl(bankUrl(`/memories/${encodeURIComponent(id)}`), {
+      response = await request(bankUrl(`/memories/${encodeURIComponent(id)}`), {
         method: 'PATCH',
         headers,
         body: JSON.stringify(body),
@@ -328,7 +365,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function createKnowledgeFolder({ name, parentId } = {}) {
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl('/folders'), {
+      response = await request(knowledgeBaseUrl('/folders'), {
         method: 'POST',
         headers,
         body: JSON.stringify({ name, parent_id: parentId ?? null }),
@@ -368,7 +405,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     }
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl('/pages'), {
+      response = await request(knowledgeBaseUrl('/pages'), {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
@@ -398,7 +435,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function getKnowledgePage(pageId) {
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl(`/pages/${encodeURIComponent(pageId)}`), {
+      response = await request(knowledgeBaseUrl(`/pages/${encodeURIComponent(pageId)}`), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -437,7 +474,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (limit) params.set('limit', String(limit));
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl(`/search?${params.toString()}`), {
+      response = await request(knowledgeBaseUrl(`/search?${params.toString()}`), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -470,7 +507,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function getKnowledgeTree() {
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl('/tree'), {
+      response = await request(knowledgeBaseUrl('/tree'), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(timeoutMs),
@@ -516,7 +553,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (typeof options.maxTokens === 'number') body.max_tokens = options.maxTokens;
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
+      response = await request(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
         method: 'PATCH',
         headers,
         body: JSON.stringify(body),
@@ -540,7 +577,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function deleteKnowledgeNode(nodeId) {
     let response;
     try {
-      response = await fetchImpl(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
+      response = await request(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
         method: 'DELETE',
         headers,
         signal: AbortSignal.timeout(timeoutMs),

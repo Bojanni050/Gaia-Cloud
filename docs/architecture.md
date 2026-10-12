@@ -118,7 +118,11 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   `gaia-logos` ~1.8 s. `enable_reranking` stays `true` per bank. Sanity check on
   startup: `Reranker: provider=cohere` then `RRF passthrough provider initialized`.
   The per-call cap is configurable — `HINDSIGHT_TIMEOUT_MS` (default 4000 ms;
-  8000 ms on the VPS) — a safety cap, not a latency target.
+  8000 ms on the VPS) — a safety cap, not a latency target. A failed or
+  timed-out Hindsight call logs a content-free `hindsight.call_failed` line
+  (bank, op, reason `timeout`/`unreachable`, ms) to the container log, so a
+  dropped call is visible instead of silently swallowed by the best-effort
+  recall path.
 
 ## Derived lifecycle
 
