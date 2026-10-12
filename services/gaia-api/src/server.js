@@ -776,11 +776,14 @@ function createApp(env = process.env) {
         const durationMs = Math.round((Number(process.hrtime.bigint() - started) / 1e6) * 100) / 100;
         sttLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs });
         return res.status(200).json({ text, language });
-      } catch (_) {
+      } catch (err) {
         // Calm, generic — same posture as POST /speech: never forward the
-        // underlying error, provider name, or endpoint.
+        // underlying error, provider name, or endpoint. The operator log
+        // (never the client) also gets the fixed reason phrase, e.g.
+        // "provider answered 401", so a key or model problem is visible.
         const durationMs = Math.round((Number(process.hrtime.bigint() - started) / 1e6) * 100) / 100;
-        sttLog.record({ ...logBase, outcome: 'error', error: 'gaia could not listen right now', status: 502, durationMs });
+        const reason = err && typeof err.reason === 'string' ? ` (${err.reason})` : '';
+        sttLog.record({ ...logBase, outcome: 'error', error: `gaia could not listen right now${reason}`, status: 502, durationMs });
         return res.status(502).json({ error: 'gaia could not listen right now' });
       }
     }

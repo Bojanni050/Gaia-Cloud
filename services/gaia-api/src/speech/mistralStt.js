@@ -43,6 +43,17 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 
 /**
+ * A calm failure that also carries `reason`: a short, fixed phrase (at most a
+ * status code) for the operator-only listening log. It never holds the
+ * provider's own words, the endpoint or the key.
+ */
+function failure(message, reason) {
+  const error = new Error(message);
+  error.reason = reason;
+  return error;
+}
+
+/**
  * Languages Voxtral transcribes with a hint (same set it speaks) — advertised
  * to clients via GET /speech/stt-info. Auto-detection also works without one.
  */
@@ -144,12 +155,12 @@ function createMistralStt(options = {}) {
       });
     } catch (error) {
       console.error(`[gaia:stt] unreachable at ${baseUrl}: ${error.message}`);
-      throw new Error('speech recognition unreachable');
+      throw failure('speech recognition unreachable', 'provider unreachable');
     }
 
     if (!response.ok) {
       console.error(`[gaia:stt] responded ${response.status} at ${baseUrl}`);
-      throw new Error('speech recognition responded with an error');
+      throw failure('speech recognition responded with an error', `provider answered ${response.status}`);
     }
 
     let data;
@@ -157,12 +168,12 @@ function createMistralStt(options = {}) {
       data = await response.json();
     } catch (_) {
       console.error(`[gaia:stt] unreadable response at ${baseUrl}`);
-      throw new Error('speech recognition returned an unreadable response');
+      throw failure('speech recognition returned an unreadable response', 'provider response unreadable');
     }
 
     if (!data || typeof data.text !== 'string') {
       console.error(`[gaia:stt] no text field in response at ${baseUrl}`);
-      throw new Error('speech recognition returned no text');
+      throw failure('speech recognition returned no text', 'provider response had no text');
     }
     // Empty text is a valid answer (silence or noise), not an error.
     return {
