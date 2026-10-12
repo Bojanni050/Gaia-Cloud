@@ -11,8 +11,12 @@
  * signal in exactly those cases.
  *
  * Routes (mounted under /research, Bearer-auth required):
- *   GET  /research/jobs          → { running: [...], finished: [...] }
- *        `finished` holds the jobs this client has not acknowledged yet, so a
+ *   GET  /research/jobs          → { running: [...], awaiting: [...], finished: [...] }
+ *        Three lists, because they are three different things: work in
+ *        progress, a QUESTION for a person (never mixed with finished work —
+ *        a client that acknowledged a finished job must not also silence an
+ *        unanswered question), and work that ended but has not been seen yet.
+ *        `finished` holds the jobs this client has not acknowledged, so a
  *        client that never polls loses nothing and one that polls twice sees
  *        each result once.
  *   POST /research/jobs/:id/ack  → mark one job as seen (204)
@@ -75,6 +79,7 @@ function createResearchRouter({ store, auth, answerApproval }) {
     try {
       res.json({
         running: store.listRunning().map(clientShape),
+        awaiting: store.listAwaiting().map(clientShape),
         finished: store.listUndelivered().map(clientShape),
       });
     } catch (_) {

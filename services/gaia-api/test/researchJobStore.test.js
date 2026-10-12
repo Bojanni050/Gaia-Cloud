@@ -44,15 +44,20 @@ test('update: a terminal status is recorded, and unknown ids return null', () =>
   assert.equal(store.update('rj_nope', { status: 'done' }), null);
 });
 
-test('listRunning / listUndelivered split by status and acknowledgement', () => {
+test('listRunning / listAwaiting / listUndelivered split by status and acknowledgement', () => {
   const { store } = tempStore();
   const running = store.create({ skillId: 'grounded-citations', question: 'a', runId: 'run_1' });
   const done = store.create({ skillId: 'grounded-citations', question: 'b', runId: 'run_2' });
   const failed = store.create({ skillId: 'grounded-citations', question: 'c', runId: 'run_3' });
+  const awaiting = store.create({ skillId: 'grounded-citations', question: 'd', runId: 'run_4' });
   store.update(done.id, { status: 'done', resultText: 'x' });
   store.update(failed.id, { status: 'failed', error: 'timeout' });
+  store.update(awaiting.id, { status: 'awaiting_approval', approval: { command: 'rm -rf x', description: '', choices: ['once', 'deny'] } });
 
   assert.deepEqual(store.listRunning().map((j) => j.id), [running.id]);
+  assert.deepEqual(store.listAwaiting().map((j) => j.id), [awaiting.id]);
+  // A question is not finished work: acknowledging a result must never also
+  // silence an unanswered question.
   assert.deepEqual(store.listUndelivered().map((j) => j.id).sort(), [done.id, failed.id].sort());
 
   store.markDelivered(done.id);

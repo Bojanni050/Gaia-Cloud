@@ -54,11 +54,14 @@ test('a job waiting on a person carries the question and its choices', async () 
 
   const res = await request(app).get('/research/jobs');
 
-  assert.deepEqual(res.body.finished[0].approval, {
+  assert.deepEqual(res.body.awaiting.map((j) => j.id), [job.id]);
+  assert.deepEqual(res.body.awaiting[0].approval, {
     command: 'python3 sources.py',
     description: 'schrijft weg',
     choices: ['once', 'deny'],
   });
+  // A question is not finished work.
+  assert.deepEqual(res.body.finished, []);
 });
 
 test('a running job carries no approval field', async () => {

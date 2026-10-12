@@ -143,9 +143,11 @@ test('a run parked on an approval becomes a question, not a closed job', async (
   assert.equal(stored.approval.command, 'python3 scripts/sources.py --write');
   assert.equal(stored.approval.description, 'schrijft bronnen weg in de cache');
   assert.deepEqual(stored.approval.choices, ['once', 'session', 'always', 'deny']);
-  // Still alive: the run is waiting, not finished.
+  // Still alive: the run is waiting, not finished — and the question is its
+  // own list, so acknowledging a result cannot silence it.
   assert.equal(store.listRunning().length, 0);
-  assert.deepEqual(store.listUndelivered().map((j) => j.id), [job.id]);
+  assert.deepEqual(store.listAwaiting().map((j) => j.id), [job.id]);
+  assert.deepEqual(store.listUndelivered(), []);
 });
 
 test('the same unanswered question is not asked twice', async () => {

@@ -104,9 +104,16 @@ function createResearchJobStore(options = {}) {
     return readAll().filter((job) => job.status === 'running');
   }
 
+  /** @returns {Array<object>} jobs whose run is waiting on a person */
+  function listAwaiting() {
+    return readAll().filter((job) => job.status === 'awaiting_approval');
+  }
+
   /** @returns {Array<object>} finished jobs the client has not seen yet */
   function listUndelivered() {
-    return readAll().filter((job) => job.status !== 'running' && !job.deliveredAt);
+    return readAll().filter(
+      (job) => job.status !== 'running' && job.status !== 'awaiting_approval' && !job.deliveredAt
+    );
   }
 
   /** @returns {object|null} the updated job */
@@ -125,7 +132,7 @@ function createResearchJobStore(options = {}) {
     return update(id, { deliveredAt: now().toISOString() });
   }
 
-  return { create, get, list, listRunning, listUndelivered, update, markDelivered, jobsDir };
+  return { create, get, list, listRunning, listAwaiting, listUndelivered, update, markDelivered, jobsDir };
 }
 
 module.exports = { createResearchJobStore, resolveJobsDir, MAX_JOBS };
