@@ -65,6 +65,20 @@ test('formatReply carries turn-level extras on success and never on failure', ()
   assert.equal('research' in failed.body, false);
 });
 
+test('the memory frame is additive: empty delta, its own type, and what she kept', () => {
+  const res = fakeRes();
+  const emitter = createStreamEmitter(res);
+  emitter.memory({ bank: 'bojan', kind: 'preference', text: 'Bo likes tea' });
+  const frame = JSON.parse(res.written[0].replace(/^data: /, '').trim());
+  assert.deepEqual(frame.choices, [{ delta: {} }]);
+  assert.equal(frame.type, 'memory');
+  assert.deepEqual(frame.memory, { bank: 'bojan', kind: 'preference', text: 'Bo likes tea' });
+  const before = res.written.length;
+  emitter.memory(null);
+  emitter.memory('not an object');
+  assert.equal(res.written.length, before, 'an empty report writes nothing');
+});
+
 test('the research frame is additive: empty delta, its own type, and metadata only', () => {
   const res = fakeRes();
   const emitter = createStreamEmitter(res);

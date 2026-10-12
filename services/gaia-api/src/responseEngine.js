@@ -187,6 +187,19 @@ function createStreamEmitter(res) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'research', research: payload })}\n\n`);
   }
 
+  /**
+   * Reports that Gaia kept something in the shared memory (the `bojan` bank) during this turn, as an
+   * extension frame in the same family as `step` and `research`: a fact about the turn, never content.
+   * A client uses it to show a small light next to the reply. `payload` is `{ bank, kind, text }`: what
+   * was kept is the statement she wrote down, never the person's message or anything from the bank.
+   * @param {{ bank: string, kind?: string, text?: string }} payload
+   */
+  function memory(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    ensureHeaders();
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'memory', memory: payload })}\n\n`);
+  }
+
   /** Finalizes a successful stream. */
   function finish() {
     ensureHeaders();
@@ -212,7 +225,7 @@ function createStreamEmitter(res) {
     res.end();
   }
 
-  return { delta, step, research, finish, fail };
+  return { delta, step, research, memory, finish, fail };
 }
 
 /**
