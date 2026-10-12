@@ -184,6 +184,14 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   every observation is finalized, and never moves backwards — so a mid-run
   failure can never skip observations. A cluster whose episode already exists is
   skipped (no second model call), so the conservative re-fetch costs nothing.
+- **Only activity observations are clustered.** Kairos folds
+  `source_type === 'system-observation'` (what capture-rs feeds). `chat-import`
+  (Chronicle-Gaia already summarizes those) and `document` are filtered out
+  *before* clustering — one owner per job. A missing or unknown `source_type` is
+  skipped too, never silently kept, and the per-source counts are logged. The
+  skipped observations count as done for the watermark (a chat-only batch still
+  advances), but chats are re-seen next poll when an open capture-run keeps the
+  watermark back — cheap, and deliberately accepted.
 
 ## Eleos — coming back to a moment, unprompted
 

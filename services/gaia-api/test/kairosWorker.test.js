@@ -1,10 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createKairosWorker, computeSafeWatermark } = require('../src/kairos/worker');
+const { createKairosWorker, computeSafeWatermark, selectClusterable } = require('../src/kairos/worker');
 const { INACTIVITY_THRESHOLD_MS } = require('../src/kairos/clusterer');
 
-function obs(observedAt, app, capturedAt, id) {
+function obs(observedAt, app, capturedAt, id, sourceType = 'system-observation') {
   return {
     id,
     bron_object_id: `ingest:${id}`,
@@ -12,6 +12,7 @@ function obs(observedAt, app, capturedAt, id) {
     observed_at: new Date(observedAt).toISOString(),
     captured_at: new Date(capturedAt || observedAt).toISOString(),
     observed_app: app,
+    source_type: sourceType,
   };
 }
 
@@ -207,4 +208,111 @@ test('a cluster whose episode already exists is skipped, not re-synthesized', as
   assert.equal(r.processed, 1);
   assert.equal(synthCalls, 1, 'the already-stored cluster is not synthesized again');
   assert.ok(watermark, 'a skipped (already-done) cluster still advances the watermark');
+});
+
+// --- source selection: only activity observations are clustered -------------
+
+test('selectClusterable: whitelist system-observation; nothing is silently kept', () => {
+  const out = selectClusterable([
+    obs('2026-10-04T10:00:00Z', 'Outlook', '2026-10-04T10:00:00Z', 'a'),
+    obs('2026-10-04T10:00:00Z', 'chatgpt', '2026-10-04T10:00:00Z', 'k', 'chat-import'),
+    obs('2026-10-04T10:00:00Z', 'doc', '2026-10-04T10:00:00Z', 'd', 'document'),
+    { id: 'x' }, // missing source_type
+  ]);
+  assert.deepEqual(out.clusterable.map((o) => o.id), ['a']);
+  assert.deepEqual(out.skipped.map((o) => o.id).sort(), ['d', 'k', 'x']);
+  assert.deepEqual(out.skippedByType, { 'chat-import': 1, document: 1, '(missing)': 1 });
+});
+
+test('a mixed batch clusters only captures; a chat is never inside an episode', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const observations = [
+    obs(t1, 'Outlook', t1, 'a'),
+    obs(t2, 'VS Code', t2, 'b'),
+    obs(t2, 'chatgpt', t2, 'k', 'chat-import'),
+  ];
+  const clusters = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => { clusters.push(cluster); return { id: cluster.id, summary: 's' }; },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  const r = await worker.runOnce();
+  assert.ok(clusters.length > 0);
+  for (const c of clusters) {
+    assert.equal(c.observations.some((o) => o.id === 'k'), false, 'a chat observation is never clustered');
+  }
+  assert.equal(r.processed, clusters.length);
+});
+
+test('a chat-only batch advances the watermark to the end (no stall)', async () => {
+  let watermark = null;
+  const observations = [
+    obs('2026-10-04T10:00:00Z', 'chatgpt', '2026-10-04T10:00:00Z', 'k1', 'chat-import'),
+    obs('2026-10-04T11:00:00Z', 'claude', '2026-10-04T11:00:00Z', 'k2', 'chat-import'),
+  ];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async () => { throw new Error('should not run'); },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  const r = await worker.runOnce();
+  assert.equal(r.processed, 0);
+  assert.equal(watermark, new Date('2026-10-04T11:00:00Z').toISOString());
+});
+
+test('an unknown/missing source_type is skipped, logged and never clustered', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const logged = [];
+  const clusters = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info: (l) => logged.push(l), warn() {}, error() {} },
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => [obs(t1, 'A', t1, 'a', 'weird-type'), obs(t2, 'A', t2, 'b')],
+    synthesize: async (cluster) => { clusters.push(cluster); return { id: cluster.id, summary: 's' }; },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  for (const c of clusters) assert.equal(c.observations.some((o) => o.id === 'a'), false);
+  assert.ok(logged.some((l) => l.includes('weird-type')), 'the skipped source_type is logged');
+});
+
+test('an open capture-run caps the watermark; chats after it neither hold nor advance it past the run', async () => {
+  const early = '2026-10-04T10:00:00Z';
+  const runStart = '2026-10-04T22:59:50Z';
+  const observations = [
+    obs(early, 'A', early, 'a'),
+    obs(runStart, 'B', runStart, 'r1'),
+    obs('2026-10-04T22:59:59Z', 'B', '2026-10-04T22:59:59Z', 'r2'),
+    obs('2026-10-04T23:30:00Z', 'chatgpt', '2026-10-04T23:30:00Z', 'k', 'chat-import'),
+  ];
+  let watermark = null;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => ({ id: cluster.id, summary: 's' }),
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  // Only 'a' is finalized; the r1-r2 run is open, so the watermark stays at 'a'.
+  assert.equal(watermark, new Date(early).toISOString());
 });

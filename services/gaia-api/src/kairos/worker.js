@@ -40,6 +40,38 @@
 
 const { groupObservations } = require('./clusterer');
 
+// Kairos synthesizes NARRATIVE activity episodes. Only screen/activity
+// observations belong in that: `source_type === 'system-observation'` (what
+// capture-rs feeds). Chats (`chat-import`) are already summarized by
+// Chronicle-Gaia; documents are not activity either. Everything else is
+// deliberately left out — one owner per job.
+const CLUSTERABLE_SOURCE_TYPE = 'system-observation';
+
+/**
+ * Split a fetched batch into the observations Kairos may cluster and the ones
+ * it must leave alone. Pure, no I/O, and never silently keeps an unknown source:
+ * a missing or unrecognised `source_type` goes to `skipped` too.
+ *
+ * @param {Array<{source_type?: string}>} observations
+ * @returns {{ clusterable: Array, skipped: Array, skippedByType: Record<string, number> }}
+ */
+function selectClusterable(observations) {
+  const clusterable = [];
+  const skipped = [];
+  const skippedByType = {};
+  for (const o of Array.isArray(observations) ? observations : []) {
+    const type = o && typeof o.source_type === 'string' ? o.source_type : null;
+    if (type === CLUSTERABLE_SOURCE_TYPE) {
+      clusterable.push(o);
+    } else {
+      skipped.push(o);
+      const key = type || '(missing)';
+      skippedByType[key] = (skippedByType[key] || 0) + 1;
+    }
+  }
+  return { clusterable, skipped, skippedByType };
+}
+
 /**
  * The largest `captured_at` below which every observation is finalized, without
  * ever moving backwards. Pure. See the module header for the reasoning.
@@ -138,11 +170,22 @@ function createKairosWorker({
       return { processed: 0, emitted: 0, skipped: 0, failed: 0 };
     }
 
-    const clusters = groupObservations(observations, { now: now().toISOString() });
+    // Source selection is the boundary: only activity observations are clustered.
+    // The skipped ones count as finalized for THIS batch's watermark (so a
+    // chat-only batch still advances), but are never clustered, never
+    // synthesized and never persisted.
+    const { clusterable, skipped, skippedByType } = selectClusterable(observations);
+    if (skipped.length > 0) {
+      logger.info?.(`[kairos] skipped ${skipped.length} non-clusterable observations by source_type: ${JSON.stringify(skippedByType)}`);
+    }
+
+    const clusters = groupObservations(clusterable, { now: now().toISOString() });
     const finalized = [];
+    if (skipped.length > 0) finalized.push({ observations: skipped });
+    let finalizedClusters = 0;
     let processed = 0;
     let emitted = 0;
-    let skipped = 0;
+    let skippedEpisodes = 0;
 
     const advance = async () => {
       const next = computeSafeWatermark(observations, finalized, since);
@@ -161,13 +204,15 @@ function createKairosWorker({
         if (existing) {
           // Already synthesized in an earlier run (re-fetched on a conservative
           // watermark): finalize it WITHOUT a second model call.
-          skipped += 1;
+          skippedEpisodes += 1;
+          finalizedClusters += 1;
           finalized.push(cluster);
           continue;
         }
         const episode = await synthesize(cluster, bankId);
         await saveEpisode(episode);
         processed += 1;
+        finalizedClusters += 1;
         finalized.push(cluster);
         if (emit) {
           emitted += 1;
@@ -182,15 +227,15 @@ function createKairosWorker({
         // are re-fetched. The watermark still advances over the safe prefix.
         logger.error?.(`[kairos] synthesis failed for ${cluster.id}, stopping batch: ${error.message}`);
         await advance();
-        return { processed, emitted, skipped, failed: clusters.length - finalized.length };
+        return { processed, emitted, skipped: skippedEpisodes, failed: clusters.length - finalizedClusters };
       }
     }
 
     await advance();
-    return { processed, emitted, skipped, failed: 0 };
+    return { processed, emitted, skipped: skippedEpisodes, failed: 0 };
   }
 
   return { runOnce };
 }
 
-module.exports = { createKairosWorker, computeSafeWatermark };
+module.exports = { createKairosWorker, computeSafeWatermark, selectClusterable, CLUSTERABLE_SOURCE_TYPE };
