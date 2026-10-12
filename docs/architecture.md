@@ -102,6 +102,17 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   surfaceable as a raw memory of Bo's. When the person asks her to remember
   something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
   system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
+- **Recall runs without the cross-encoder reranker** (`enable_reranking: false`
+  on all three banks). Measured live 2026-10-12: the local cross-encoder scored
+  300 candidates and cost 10–18 s per recall on the VPS — far past
+  `hindsightClient.js`'s 4 s timeout, so the richest bank (`bojan`) was dropped
+  on every turn and per-turn memory effectively saw only `gaia`. With reranking
+  off, recall is ~0.2–0.4 s per bank (semantic + BM25 + graph, RRF-ordered) and
+  the per-bank scores are comparable — which the cross-bank merge by
+  `scores.final` needs. To re-enable:
+  `PATCH {HINDSIGHT_URL}/v1/default/banks/<bank>/config` body
+  `{ "updates": { "enable_reranking": true } }`. Owed: a faster/quantized
+  reranker (or more CPU), after which reranking can return.
 
 ## Derived lifecycle
 
