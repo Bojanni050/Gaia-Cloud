@@ -12,9 +12,11 @@ const { pool } = require('./db/pool');
 const { NotFoundError, ValidationError } = require('./errors');
 
 const COLUMNS = `
-  id, bank_id, start_time, end_time, summary, primary_app, involved_apps,
+  id, bank_id, start_time, end_time, title, summary, primary_app, involved_apps,
   epistemic_status, sources, created_at, updated_at
 `;
+
+const MAX_TITLE_CHARS = 200;
 
 const EPISTEMIC_STATUS = 'interpretation';
 const DEFAULT_LIMIT = 20;
@@ -32,27 +34,34 @@ function clampLimit(value) {
  * idempotent update rather than a duplicate.
  */
 async function create(bankId, {
-  id, startTime, endTime, summary, primaryApp = '', involvedApps = [], sources = [],
+  id, startTime, endTime, title = '', summary, primaryApp = '', involvedApps = [], sources = [],
 }) {
   if (!id) throw new ValidationError('id is required');
   if (!startTime || !endTime) throw new ValidationError('start_time and end_time are required');
   if (typeof summary !== 'string' || summary.trim() === '') {
     throw new ValidationError('summary is required');
   }
+  if (title != null && typeof title !== 'string') {
+    throw new ValidationError('title must be a string');
+  }
+  // Storage-only, like summary: a title may be absent (''), and empty is kept
+  // empty rather than guessed — the client decides how to fall back.
+  const cleanTitle = (title || '').trim().slice(0, MAX_TITLE_CHARS);
   const { rows } = await pool.query(
     `INSERT INTO kairos_episodes
-       (id, bank_id, start_time, end_time, summary, primary_app, involved_apps, epistemic_status, sources)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (id, bank_id, start_time, end_time, title, summary, primary_app, involved_apps, epistemic_status, sources)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (bank_id, id) DO UPDATE SET
        start_time = EXCLUDED.start_time,
        end_time = EXCLUDED.end_time,
+       title = EXCLUDED.title,
        summary = EXCLUDED.summary,
        primary_app = EXCLUDED.primary_app,
        involved_apps = EXCLUDED.involved_apps,
        sources = EXCLUDED.sources,
        updated_at = now()
      RETURNING ${COLUMNS}`,
-    [id, bankId, startTime, endTime, summary.trim(), primaryApp, involvedApps, EPISTEMIC_STATUS, sources],
+    [id, bankId, startTime, endTime, cleanTitle, summary.trim(), primaryApp, involvedApps, EPISTEMIC_STATUS, sources],
   );
   return rows[0];
 }
@@ -139,6 +148,7 @@ module.exports = {
   EPISTEMIC_STATUS,
   DEFAULT_LIMIT,
   MAX_LIMIT,
+  MAX_TITLE_CHARS,
   create,
   list,
   get,

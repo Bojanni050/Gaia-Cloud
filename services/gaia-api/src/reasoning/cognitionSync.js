@@ -89,6 +89,7 @@ function kairosMetadata(record, version) {
     gaia_kairos_episode_version: String(version),
     gaia_kairos_episode_start: record.start_time != null ? String(record.start_time) : '',
     gaia_kairos_episode_end: record.end_time != null ? String(record.end_time) : '',
+    gaia_kairos_episode_title: String(record.title || ''),
     gaia_kairos_episode_primary_app: String(record.primary_app || ''),
     gaia_kairos_episode_apps: JSON.stringify(Array.isArray(record.involved_apps) ? record.involved_apps : []),
     gaia_kairos_episode_status: String(record.epistemic_status || 'interpretation'),

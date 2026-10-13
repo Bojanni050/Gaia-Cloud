@@ -11,6 +11,7 @@ function row(overrides = {}) {
     bank_id: 'gaia',
     start_time: '2026-10-04T10:01:02.000Z',
     end_time: '2026-10-04T10:02:41.000Z',
+    title: 'Offerte beantwoorden',
     summary: 'Bojan bekeek een inkomende e-mail en antwoordde.',
     primary_app: 'Outlook',
     involved_apps: ['Outlook'],
@@ -37,6 +38,7 @@ test('create() upserts with the writer-owned id and always interpretation', asyn
     id: row().id,
     startTime: row().start_time,
     endTime: row().end_time,
+    title: '  Offerte beantwoorden  ',
     summary: row().summary,
     primaryApp: 'Outlook',
     involvedApps: ['Outlook'],
@@ -45,9 +47,34 @@ test('create() upserts with the writer-owned id and always interpretation', asyn
   assert.equal(e.epistemic_status, 'interpretation');
   assert.match(fake.calls[0].sql, /INSERT INTO kairos_episodes/);
   assert.match(fake.calls[0].sql, /ON CONFLICT \(bank_id, id\) DO UPDATE/);
+  assert.match(fake.calls[0].sql, /title = EXCLUDED\.title/);
   assert.equal(fake.calls[0].params[0], row().id); // id — writer-owned
-  assert.equal(fake.calls[0].params[7], 'interpretation'); // epistemic_status literal
-  assert.deepEqual(fake.calls[0].params[8], ['foundation:obs1', 'foundation:obs9']);
+  assert.equal(fake.calls[0].params[4], 'Offerte beantwoorden'); // title, trimmed
+  assert.equal(fake.calls[0].params[8], 'interpretation'); // epistemic_status literal
+  assert.deepEqual(fake.calls[0].params[9], ['foundation:obs1', 'foundation:obs9']);
+});
+
+test('create() keeps an absent title empty and caps a long one', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ title: '' })] }));
+  pool.query = fake.pool.query;
+
+  await kairos.create('gaia', {
+    id: 'e1', startTime: 'x', endTime: 'y', summary: 's',
+  });
+  assert.equal(fake.calls[0].params[4], '');
+
+  await kairos.create('gaia', {
+    id: 'e2', startTime: 'x', endTime: 'y', summary: 's', title: 'a'.repeat(500),
+  });
+  assert.equal(fake.calls[1].params[4].length, kairos.MAX_TITLE_CHARS);
+});
+
+test('create() rejects a non-string title', async () => {
+  await assert.rejects(
+    () => kairos.create('gaia', { id: 'e1', startTime: 'x', endTime: 'y', summary: 's', title: 42 }),
+    /title must be a string/,
+  );
 });
 
 test('get() throws NotFoundError when missing', async () => {

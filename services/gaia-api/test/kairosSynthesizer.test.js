@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  MAX_TITLE_CHARS,
   buildUserPrompt,
   validateSynthesis,
   createSynthesizer,
@@ -54,9 +55,23 @@ test('buildUserPrompt frames observations as data and collapses them to one line
 });
 
 test('validateSynthesis accepts a clean object', () => {
-  const v = validateSynthesis({ summary: 'Bojan las en beantwoordde een e-mail.', primary_app: 'Outlook' }, ['Outlook']);
+  const v = validateSynthesis({ title: 'Offerte beantwoorden', summary: 'Bojan las en beantwoordde een e-mail.', primary_app: 'Outlook' }, ['Outlook']);
+  assert.equal(v.title, 'Offerte beantwoorden');
   assert.equal(v.summary, 'Bojan las en beantwoordde een e-mail.');
   assert.equal(v.primaryApp, 'Outlook');
+});
+
+test('validateSynthesis collapses a multi-line title to one line and caps it', () => {
+  const v = validateSynthesis({ title: 'Eerste regel\nTweede regel', summary: 's' }, ['Outlook']);
+  assert.equal(v.title, 'Eerste regel Tweede regel');
+
+  const long = validateSynthesis({ title: 'x'.repeat(400), summary: 's' }, ['Outlook']);
+  assert.equal(long.title.length, MAX_TITLE_CHARS);
+});
+
+test('validateSynthesis keeps an absent title empty rather than failing the episode', () => {
+  const v = validateSynthesis({ summary: 's' }, ['Outlook']);
+  assert.equal(v.title, '', 'no title => honest empty, the episode is still produced');
 });
 
 test('validateSynthesis parses a JSON string', () => {
@@ -84,7 +99,7 @@ test('synthesize() produces one interpretation episode carrying source observati
   const fetchImpl = async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ choices: [{ message: { content: '{"summary":"Bojan mailde Bas.","primary_app":"Outlook"}' } }] }),
+    json: async () => ({ choices: [{ message: { content: '{"title":"Offerte aan Bas","summary":"Bojan mailde Bas.","primary_app":"Outlook"}' } }] }),
   });
   const synth = createSynthesizer({
     resolveConfig: () => ({ baseUrl: 'https://x', model: 'flash', apiKey: 'k' }),
@@ -94,6 +109,7 @@ test('synthesize() produces one interpretation episode carrying source observati
   assert.equal(ep.epistemic_status, 'interpretation');
   assert.equal(ep.bank_id, 'gaia');
   assert.equal(ep.id, 'kei_gaia_cluster_a_b');
+  assert.equal(ep.title, 'Offerte aan Bas');
   assert.deepEqual(ep.sources, ['foundation:obs1', 'foundation:obs2']);
   assert.deepEqual(ep.involved_apps, ['Outlook']);
   assert.equal(ep.primary_app, 'Outlook');

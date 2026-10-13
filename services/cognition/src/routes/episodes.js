@@ -40,6 +40,7 @@ router.post('/', asyncRoute(async (req, res) => {
     id: req.body.id,
     startTime: req.body.start_time,
     endTime: req.body.end_time,
+    title: req.body.title,
     summary: req.body.summary,
     primaryApp: req.body.primary_app,
     involvedApps: req.body.involved_apps,
