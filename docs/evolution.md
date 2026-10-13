@@ -195,7 +195,7 @@ The next milestone introduces the first reflective layer: Hindsight. Gaia will b
 
 **What was built.**
 - `frontend/src/gaia/integration/memory/`: `MemoryProvider` (abstract contract), `HindsightProvider` (concrete — talks to Hindsight's real HTTP API), `errors.js` (`MemoryUnavailableError`, `MemoryNotFoundError`), `index.js` (`getMemoryProvider()`).
-- A dedicated **`gaia`** bank was created on the existing Hindsight deployment on the Strato VPS — Gaia's own memory, not the general-purpose "bojan" bank other tools already write to, and not the separate `hindsight-friend` tenant behind an unrelated MCP integration. Mission text seeded from architecture.md §6 (reflection and pattern formation, not raw logging).
+- A dedicated **`gaia`** bank was created on the existing Hindsight deployment on the Contabo VPS — Gaia's own memory, not the general-purpose "bojan" bank other tools already write to, and not the separate `hindsight-friend` tenant behind an unrelated MCP integration. Mission text seeded from architecture.md §6 (reflection and pattern formation, not raw logging).
 - `storeReflection` retains asynchronously (Hindsight's extraction step is LLM-backed and can take 10-20s+; a conversational turn must never block on it — consistent with the asynchronous REFLECT step in the streaming lifecycle, architecture.md §10). `retrieveRelevantContext` maps Hindsight's `recall` results into the `Reflection` shape the contract already declared. `listProvenance`, `editMemory`, and `forget` are wired against Hindsight's history/curate endpoints.
 - Verified end-to-end against the live server (retain → async operation → recall returned the stored content), plus 19 unit tests mirroring `HermesProvider.test.js`'s structure.
 
