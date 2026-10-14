@@ -1149,6 +1149,7 @@ async function performStreamingTurn({
   desktopClient,
   desktopRoots,
   desktopPlaces,
+  desktopIndex,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -1170,6 +1171,7 @@ async function performStreamingTurn({
       conversationId,
       roots: desktopRoots,
       places: desktopPlaces,
+      index: desktopIndex,
       ...(signal ? { signal } : {}),
     })
     : undefined;

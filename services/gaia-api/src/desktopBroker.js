@@ -57,14 +57,17 @@ const DEFAULTS = Object.freeze({
 const TERMINAL = new Set(['completed', 'failed', 'denied', 'expired']);
 
 /** The one tool the model sees; its `skill` enum is the registry's skill ids. */
-function buildDesktopTool(roots = [], places = {}) {
+function buildDesktopTool(roots = [], places = {}, index = false) {
   const skills = getCapabilityProfile('desktop').skills.map((s) => s.id);
   const known = [['Desktop', places.desktop], ['Documents', places.documents], ['Downloads', places.downloads]]
     .filter(([, path]) => path)
     .map(([label, path]) => `${label} = ${path}`);
   const where = known.length ? ` This person's own folders are: ${known.join('; ')}. Start there.` : '';
+  const how = index
+    ? ' A fast search index of the whole computer is available: use where "index" (kind "folders" or "files", path = an allowed folder or drive to look in) to find any file or folder by name in a moment, then continue with the full path from the result. It only shows what lies inside the allowed folders.'
+    : ' Look for a folder with where "folders" (the path is where to look, up to 3 levels down), and for a file with where "names" inside the folder you found, then continue with the full path from the result. Start with the person\'s own folders above, then the allowed folders; avoid searching a whole drive.';
   const allowed = roots.length
-    ? ` You may only use paths inside: ${roots.join(', ')}.${where} When you do not know where a file or folder is, find it yourself instead of asking: look for a folder with where "folders" (the path is where to look, up to 3 levels down), and for a file with where "names" inside the folder you found, then continue with the full path from the result. Start with the person's own folders above, then the allowed folders; avoid searching a whole drive. Ask the person only if that finds nothing.`
+    ? ` You may only use paths inside: ${roots.join(', ')}.${where} When you do not know where a file or folder is, find it yourself instead of asking.${how} Ask the person only if that finds nothing.`
     : ' When you do not know where a file or folder is, search for it or ask the person — never guess a path.';
   return Object.freeze({
     type: 'function',
@@ -77,7 +80,7 @@ function buildDesktopTool(roots = [], places = {}) {
           skill: { type: 'string', enum: skills, description: 'What to do: read/list files, search files, write a file, or run a terminal command.' },
           input: {
             type: 'object',
-            description: 'Arguments for the skill (every `path` a full absolute path), e.g. { path } for file-read, { query, path, where } for file-search, { path, content } for file-write, { command } for run-command. For file-search, `where` is "names" (default: FILE names only, never folders), "folders" (folder names, up to 3 levels below `path`: how you find a folder) or "contents" (text inside files: slow, so only on a narrowed folder and only when the person wants text found inside files). Searching a whole drive is slow and gives nothing; narrow the path first.',
+            description: 'Arguments for the skill (every `path` a full absolute path), e.g. { path } for file-read, { query, path, where } for file-search, { path, content } for file-write, { command } for run-command. For file-search, `where` is "names" (default: FILE names only, never folders), "folders" (folder names, up to 3 levels below `path`: how you find a folder), "contents" (text inside files: slow, so only on a narrowed folder and only when the person wants text found inside files)' + (index ? ' or "index" (instant, by name, files and folders; add `kind`: "folders", "files" or leave it out for both)' : '') + '. Searching a whole drive is slow and gives nothing; narrow the path first.',
           },
         },
         required: ['skill', 'input'],
@@ -287,12 +290,12 @@ function createDesktopBroker(options = {}) {
    * offered to the primary generator for this turn only.
    * @param {{ emit: (view: object) => void, conversationId?: string, signal?: AbortSignal }} turn
    */
-  function forTurn({ emit, conversationId, signal, roots, places } = {}) {
+  function forTurn({ emit, conversationId, signal, roots, places, index } = {}) {
     const execute = (skill, input) => run({ skill, input, conversationId, emit, signal });
     const allowedRoots = cleanRoots(roots);
     return {
       execute,
-      tools: [allowedRoots.length ? buildDesktopTool(allowedRoots, cleanPlaces(places)) : DESKTOP_TOOL],
+      tools: [allowedRoots.length ? buildDesktopTool(allowedRoots, cleanPlaces(places), index === true) : DESKTOP_TOOL],
       onToolCall: async (name, args) => {
         if (name !== 'desktop') return 'Unknown action.';
         return execute(args && args.skill, args && args.input);

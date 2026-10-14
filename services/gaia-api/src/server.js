@@ -668,6 +668,7 @@ function createApp(env = process.env) {
         desktopClient: Boolean(req.body && req.body.desktop === true),
         desktopRoots: req.body && req.body.desktopRoots,
         desktopPlaces: req.body && req.body.desktopPlaces,
+        desktopIndex: Boolean(req.body && req.body.desktopIndex === true),
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),

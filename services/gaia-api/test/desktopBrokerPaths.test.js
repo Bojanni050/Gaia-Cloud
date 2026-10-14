@@ -65,6 +65,19 @@ test('known places and the folder search are named in the tool, and only trusted
   assert.match(tools[0].function.parameters.properties.input.description, /"folders" \(folder names/);
 });
 
+test('the index search is offered only when the desktop says it is there', () => {
+  const broker = createDesktopBroker({ logger() {} });
+  const without = broker.forTurn({ roots: ['D:\\'] }).tools[0].function;
+  assert.ok(!without.description.includes('where "index"'));
+  assert.ok(!without.parameters.properties.input.description.includes('"index"'));
+
+  const withIndex = broker.forTurn({ roots: ['D:\\'], index: true }).tools[0].function;
+  assert.match(withIndex.description, /where "index"/);
+  assert.match(withIndex.parameters.properties.input.description, /"folders" \(folder names[^)]*\), "contents" \(text[^)]*\) or "index"/);
+  // only a real boolean true switches it on
+  assert.ok(!broker.forTurn({ roots: ['D:\\'], index: 'true' }).tools[0].function.description.includes('where "index"'));
+});
+
 test('without reported folders the default tool is used', () => {
   const { DESKTOP_TOOL } = require('../src/desktopBroker');
   const broker = createDesktopBroker({ logger() {} });
