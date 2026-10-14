@@ -24,12 +24,15 @@
  * THE FRAME FAMILY (this module's wire vocabulary): every frame this module
  * writes is one `data:` JSON line ending in a blank line, terminated by
  * `data: [DONE]`. Content frames keep the original OpenAI-compatible
- * `{ choices: [{ delta }] }` shape untouched. Three EXTENSION frames were
- * added alongside it:
+ * `{ choices: [{ delta }] }` shape untouched. Extension frames were added
+ * alongside it, all with the same shape:
  *
  *   { choices: [{ delta: {} }], type: 'step',     step: {...} }     plan progress
  *   { choices: [{ delta: {} }], type: 'research', research: {...} } background job
  *   { choices: [{ delta: {} }], type: 'error',    error: '...' }    calm failure
+ *   { choices: [{ delta: {} }], type: 'memory',   memory: {...} }   something kept in memory
+ *   { choices: [{ delta: {} }], type: 'desktop',  desktop: {...} }  an action on the client's computer
+ *   { choices: [{ delta: {} }], type: 'title',    title: {...} }    the conversation's own name
  *
  * Both deliberately carry an EMPTY `choices[0].delta` next to their type:
  * a client written against the original contract reads that as "no content
@@ -213,6 +216,22 @@ function createStreamEmitter(res) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'desktop', desktop: payload })}\n\n`);
   }
 
+  /**
+   * Names the conversation, as an extension frame in the same family as
+   * `memory` and `research`: the one-line title Gaia wrote for this thread
+   * when it was first named (conversationTitle.js). A fact about the
+   * conversation, never content, and only ever said once — the client puts it
+   * on the thread it is already showing, and the durable copy is the store's
+   * (`GET /conversations`), so a client that misses the frame has lost
+   * immediacy, not the name. `payload` is `{ text }`.
+   * @param {{ text: string }} payload
+   */
+  function title(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    ensureHeaders();
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'title', title: payload })}\n\n`);
+  }
+
   /** Finalizes a successful stream. */
   function finish() {
     ensureHeaders();
@@ -238,7 +257,7 @@ function createStreamEmitter(res) {
     res.end();
   }
 
-  return { delta, step, research, memory, desktop, finish, fail };
+  return { delta, step, research, memory, desktop, title, finish, fail };
 }
 
 /**

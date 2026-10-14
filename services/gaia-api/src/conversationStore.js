@@ -57,11 +57,21 @@ class ConversationNotFoundError extends Error {
 
 const MAX_TITLE_CHARS = 60;
 
+/**
+ * Whitespace collapsed to single spaces, trimmed, and capped — the shape of
+ * every title this store writes, whether it was derived, chosen by the
+ * server (Eleos) or written by Gaia's own model (conversationTitle.js).
+ */
+function normalizeTitle(text, max = MAX_TITLE_CHARS) {
+  const collapsed = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+  return collapsed.length > max ? `${collapsed.slice(0, max)}…` : collapsed;
+}
+
 function deriveTitle(messages) {
   const firstUser = (messages || []).find((m) => m && m.role === 'user' && m.content);
   if (!firstUser) return 'Untitled';
-  const text = firstUser.content.trim().replace(/\s+/g, ' ');
-  return text.length > MAX_TITLE_CHARS ? `${text.slice(0, MAX_TITLE_CHARS)}…` : text || 'Untitled';
+  return normalizeTitle(firstUser.content) || 'Untitled';
 }
 
 /**
@@ -127,10 +137,11 @@ function createConversationStore(options = {}) {
    * `true`, so a client cannot invent other markers.
    * @param {string} id
    * @param {Array<{role: string, content: string, createdAt?: string}>} messages
-   * @param {{ title?: string }} [options] an explicit title for a NEWLY created
-   *   conversation. Used by Gaia-initiated threads (Eleos check-ins) that have
-   *   no user message to derive a title from; ignored once the conversation
-   *   exists, and ignored when blank.
+   * @param {{ title?: string }} [options] an explicit, chosen title for a NEWLY
+   *   created conversation. Used by Gaia-initiated threads (Eleos check-ins)
+   *   that have no user message to derive a title from, and by the first turn's
+   *   AI-written name (conversationTitle.js, through turn.js); ignored once the
+   *   conversation exists, and ignored when blank.
    * @throws {InvalidConversationIdError}
    */
   function saveConversation(id, messages, options = {}) {
@@ -143,10 +154,13 @@ function createConversationStore(options = {}) {
     try {
       meta = JSON.parse(fs.readFileSync(metaPath(id), 'utf-8'));
     } catch (_) {
-      const explicitTitle = typeof options.title === 'string' && options.title.trim() !== ''
-        ? options.title.trim()
-        : null;
-      meta = { id, title: explicitTitle || deriveTitle(messages), createdAt: new Date().toISOString() };
+      // `titleSource` records whether the name was chosen (an explicit title,
+      // or an AI name written in afterwards — see setTitle) or derived from
+      // the opening sentence. Only a derived name may later be replaced.
+      const explicitTitle = typeof options.title === 'string' ? normalizeTitle(options.title) : '';
+      meta = explicitTitle
+        ? { id, title: explicitTitle, titleSource: 'chosen', createdAt: new Date().toISOString() }
+        : { id, title: deriveTitle(messages), titleSource: 'derived', createdAt: new Date().toISOString() };
     }
     meta.updatedAt = new Date().toISOString();
     meta.messageCount = messages.length;
@@ -169,7 +183,7 @@ function createConversationStore(options = {}) {
     events.emit('changed');
   }
 
-  /** @returns {Array<{id, title, createdAt, updatedAt, messageCount}>} newest first */
+  /** @returns {Array<{id, title, titleSource, createdAt, updatedAt, messageCount}>} newest first */
   function listConversations() {
     if (!fs.existsSync(historyDir)) return [];
     const entries = fs.readdirSync(historyDir, { withFileTypes: true }).filter((e) => e.isDirectory());
@@ -199,6 +213,59 @@ function createConversationStore(options = {}) {
     return { meta, messages };
   }
 
+  /**
+   * The stored name of `id`, or null when it has none yet (or its meta cannot
+   * be read). A caller asking "does this conversation already have a name?"
+   * wants this, not getConversation: a conversation without a title is the
+   * normal state on its first turn, and that is exactly when a name may be
+   * written.
+   * @param {string} id
+   * @returns {string|null}
+   */
+  function getTitle(id) {
+    if (!isValidId(id)) return null;
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath(id), 'utf-8'));
+      return typeof meta.title === 'string' && meta.title.trim() !== '' ? meta.title : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Writes `title` as the conversation's name, for a name that arrives AFTER
+   * the transcript was already saved — the AI-written title that came back too
+   * late for the reply (conversationTitle.js, through turn.js). A name that was
+   * already CHOSEN is never overwritten (an explicit title, or an earlier
+   * setTitle), so this is safe to call twice and can never rename a
+   * conversation behind the person's back. Returns the stored title, or null
+   * when there is nothing to write: an invalid id, a blank title, or no
+   * transcript yet to name.
+   * @param {string} id
+   * @param {string} title
+   * @returns {string|null}
+   */
+  function setTitle(id, title) {
+    if (!isValidId(id)) return null;
+    const clean = normalizeTitle(title);
+    if (!clean) return null;
+    let meta;
+    try {
+      meta = JSON.parse(fs.readFileSync(metaPath(id), 'utf-8'));
+    } catch (_) {
+      return null;
+    }
+    if (meta.titleSource === 'chosen') {
+      return typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
+    }
+    meta.title = clean;
+    meta.titleSource = 'chosen';
+    meta.updatedAt = new Date().toISOString();
+    fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');
+    events.emit('changed');
+    return clean;
+  }
+
   /** @throws {InvalidConversationIdError | ConversationNotFoundError} */
   function deleteConversation(id) {
     if (!isValidId(id)) throw new InvalidConversationIdError(id);
@@ -207,7 +274,7 @@ function createConversationStore(options = {}) {
     events.emit('changed');
   }
 
-  return { saveConversation, listConversations, getConversation, deleteConversation, historyDir, events };
+  return { saveConversation, listConversations, getConversation, getTitle, setTitle, deleteConversation, historyDir, events };
 }
 
 module.exports = {
@@ -215,6 +282,7 @@ module.exports = {
   resolveHistoryDir,
   isValidId,
   deriveTitle,
+  normalizeTitle,
   InvalidConversationIdError,
   ConversationNotFoundError,
 };

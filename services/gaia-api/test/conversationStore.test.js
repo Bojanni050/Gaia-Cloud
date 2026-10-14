@@ -251,3 +251,65 @@ test('an explicit title is ignored once the conversation exists (and for blank t
   store.saveConversation('conv-2', [{ role: 'assistant', content: 'x' }], { title: '   ' });
   assert.equal(store.getConversation('conv-2').meta.title, 'Untitled');
 });
+
+test('a title says where it came from: derived from the opening sentence, or chosen', () => {
+  const store = tempStore();
+  store.saveConversation('derived-1', [{ role: 'user', content: 'waarom crasht mijn site?' }]);
+  assert.equal(store.getConversation('derived-1').meta.titleSource, 'derived');
+
+  store.saveConversation('chosen-1', [{ role: 'assistant', content: 'Hoi!' }], { title: 'Even terugkomen' });
+  assert.equal(store.getConversation('chosen-1').meta.titleSource, 'chosen');
+
+  // An explicit title is normalized like every other title.
+  store.saveConversation('chosen-2', [{ role: 'assistant', content: 'Hoi!' }], { title: '  Even    terugkomen  ' });
+  assert.equal(store.getConversation('chosen-2').meta.title, 'Even terugkomen');
+});
+
+// --- getTitle / setTitle (the name that arrives after the reply) ------------
+
+test('getTitle reports the stored name, or null when the conversation has none yet', () => {
+  const store = tempStore();
+  assert.equal(store.getTitle('conv-1'), null, 'no transcript yet');
+  store.saveConversation('conv-1', [{ role: 'user', content: 'de vps is down' }]);
+  assert.equal(store.getTitle('conv-1'), 'de vps is down');
+  assert.equal(store.getTitle('../escape'), null, 'an invalid id is never readable');
+  assert.equal(store.getTitle('does-not-exist'), null);
+});
+
+test('setTitle names an existing conversation and reports the change', () => {
+  const store = tempStore();
+  let fired = 0;
+  store.events.on('changed', () => { fired += 1; });
+  store.saveConversation('conv-1', [{ role: 'user', content: 'de vps is down' }]);
+
+  assert.equal(store.setTitle('conv-1', '  VPS omzetten   naar Tailscale '), 'VPS omzetten naar Tailscale');
+  const meta = store.getConversation('conv-1').meta;
+  assert.equal(meta.title, 'VPS omzetten naar Tailscale');
+  assert.equal(meta.titleSource, 'chosen');
+  assert.equal(fired, 2, 'the save and the rename both announced themselves');
+  assert.equal(store.listConversations()[0].title, 'VPS omzetten naar Tailscale');
+});
+
+test('setTitle never overwrites a chosen name — it can only upgrade a derived one', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'de vps is down' }], { title: 'VPS omzetten naar Tailscale' });
+  assert.equal(store.setTitle('conv-1', 'iets anders'), 'VPS omzetten naar Tailscale');
+  assert.equal(store.getConversation('conv-1').meta.title, 'VPS omzetten naar Tailscale');
+});
+
+test('setTitle writes nothing for a blank title, an invalid id, or a conversation that does not exist', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'de vps is down' }]);
+  assert.equal(store.setTitle('conv-1', '   '), null);
+  assert.equal(store.setTitle('../escape', 'iets'), null);
+  assert.equal(store.setTitle('does-not-exist', 'iets'), null);
+  assert.equal(store.getConversation('conv-1').meta.title, 'de vps is down');
+});
+
+test('setTitle caps a long name the same way a derived title is capped', () => {
+  const store = tempStore();
+  store.saveConversation('conv-1', [{ role: 'user', content: 'kort' }]);
+  const title = store.setTitle('conv-1', 'y'.repeat(200));
+  assert.ok(title.length < 200);
+  assert.ok(title.endsWith('…'));
+});

@@ -3216,3 +3216,141 @@ test('deferred reasoning: a deep turn shares one correlationId across gate, resu
   assert.equal(gate.correlationId, result.correlationId, 'gate and result share the correlationId');
   assert.equal(modelCalls[0], gate.correlationId, 'the reasoning input carries the same correlationId');
 });
+
+// --- the conversation's AI-written name (conversationTitle.js) --------------
+
+test('performStreamingTurn names a brand-new conversation and streams the name before the end', async () => {
+  const res = fakeRes();
+  const saved = [];
+  const asked = [];
+  const historyStore = {
+    getTitle: () => null,
+    saveConversation: (id, messages, options) => saved.push({ id, messages, options }),
+    setTitle: () => {},
+  };
+  const hermes = {
+    stream: async (messages, { onDelta }) => {
+      onDelta('Dan kijk ik even mee.', false);
+      return 'Dan kijk ik even mee.';
+    },
+    chat: async (messages) => {
+      asked.push(messages);
+      return '"VPS omzetten naar Tailscale"';
+    },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'kun je kijken waarom de vps niet bereikbaar is?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    conversationId: 'conv-1',
+    historyStore,
+  });
+
+  const index = res.written.findIndex((chunk) => chunk.includes('"type":"title"'));
+  assert.ok(index >= 0, 'the name reaches the client on the turn that made it');
+  const parsed = JSON.parse(res.written[index].slice('data: '.length));
+  assert.deepEqual(parsed.choices, [{ delta: {} }]); // additive: old readers append nothing
+  assert.deepEqual(parsed.title, { text: 'VPS omzetten naar Tailscale' });
+  assert.ok(index < res.written.length - 1, 'before the stream ends');
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+
+  // The namer is the generator that just answered, and it sees the exchange —
+  // not just the opening sentence it is replacing.
+  assert.equal(asked.length, 1);
+  assert.match(asked[0][1].content, /kun je kijken waarom de vps niet bereikbaar is\?/);
+  assert.match(asked[0][1].content, /Dan kijk ik even mee\./);
+
+  // The name is stored WITH the transcript, as a chosen title.
+  assert.deepEqual(saved[0].options, { title: 'VPS omzetten naar Tailscale' });
+});
+
+test('performStreamingTurn never renames a conversation that already has a title', async () => {
+  const res = fakeRes();
+  const saved = [];
+  let asked = 0;
+  const historyStore = {
+    getTitle: () => 'VPS omzetten naar Tailscale',
+    saveConversation: (id, messages, options) => saved.push({ id, messages, options }),
+    setTitle: () => {},
+  };
+  const hermes = {
+    stream: async (messages, { onDelta }) => { onDelta('Ja, hoor.', false); return 'Ja, hoor.'; },
+    chat: async () => { asked += 1; return 'Iets anders'; },
+  };
+
+  await performStreamingTurn({
+    messages: [
+      { role: 'user', content: 'kun je kijken waarom de vps niet bereikbaar is?' },
+      { role: 'assistant', content: 'Dan kijk ik even mee.' },
+      { role: 'user', content: 'en nu?' },
+    ],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    conversationId: 'conv-1',
+    historyStore,
+  });
+
+  assert.equal(asked, 0, 'no naming call on a later turn');
+  assert.ok(!res.written.some((chunk) => chunk.includes('"type":"title"')));
+  assert.deepEqual(saved[0].options, {});
+});
+
+test('performStreamingTurn leaves a store that cannot report titles completely alone (backward compatible)', async () => {
+  const res = fakeRes();
+  const saved = [];
+  const historyStore = { saveConversation: (id, messages, options) => saved.push({ id, messages, options }) };
+  const hermes = {
+    stream: async (messages, { onDelta }) => { onDelta('Hallo.', false); return 'Hallo.'; },
+    chat: async () => { throw new Error('must never be asked'); },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hoi daar, hoe gaat het' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    conversationId: 'conv-1',
+    historyStore,
+  });
+
+  assert.ok(!res.written.some((chunk) => chunk.includes('"type":"title"')));
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+  assert.deepEqual(saved[0].options, {});
+});
+
+test('performStreamingTurn keeps the reply, and the transcript, when naming fails', async () => {
+  const res = fakeRes();
+  const saved = [];
+  const late = [];
+  const historyStore = {
+    getTitle: () => null,
+    saveConversation: (id, messages, options) => saved.push({ id, messages, options }),
+    setTitle: (id, title) => late.push({ id, title }),
+  };
+  const hermes = {
+    stream: async (messages, { onDelta }) => { onDelta('Ik kijk even mee.', false); return 'Ik kijk even mee.'; },
+    chat: async () => { throw new Error('provider down'); },
+  };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'de vps is niet bereikbaar' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res,
+    conversationId: 'conv-1',
+    historyStore,
+  });
+
+  assert.ok(!res.written.some((chunk) => chunk.includes('"type":"title"')));
+  assert.equal(res.written.at(-1), 'data: [DONE]\n\n');
+  assert.deepEqual(saved[0].options, {}, 'the derived title stands');
+  assert.deepEqual(late, [], 'and nothing is written afterwards either');
+});
+

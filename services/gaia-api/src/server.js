@@ -65,6 +65,7 @@ const { createFromEnv: createFoundationFromEnv } = require('./foundationClient')
 const { createLibraryStore, resolveAttachmentsForPrompt } = require('./library');
 const { createLibraryRouter } = require('./libraryRoutes');
 const { createConversationStore } = require('./conversationStore');
+const { generateConversationTitle } = require('./conversationTitle');
 const { createConversationSearch } = require('./conversationSearch');
 const { createEleosIntentStore } = require('./eleosIntentStore');
 const { createEleosPass } = require('./reasoning/eleos');
@@ -741,8 +742,25 @@ function createApp(env = process.env) {
     // lives here, not inside it, for the same reason performStreamingTurn
     // keeps reflectOnTurn's save separate from producing the reply.
     if (result.status === 200 && conversationId) {
+      // Asked BEFORE the save: only a conversation that has no title yet gets
+      // a name (see conversationTitle.js). This route has already answered the
+      // person, so unlike the streaming path there is no frame to ride and no
+      // deadline to keep — the name is written when it is ready and reaches
+      // clients through the store (`GET /conversations`, and the changed event
+      // the history stream already relays).
+      const needsTitle =
+        typeof historyStore.getTitle === 'function' && historyStore.getTitle(conversationId) === null;
       try {
         historyStore.saveConversation(conversationId, [...messages, { role: 'assistant', content: result.body.reply }]);
+        if (needsTitle) {
+          void generateConversationTitle({
+            generator: getEffectiveNativeGenerator(),
+            messages,
+            replyText: result.body.reply,
+          }).then((title) => {
+            if (title) historyStore.setTitle(conversationId, title);
+          });
+        }
       } catch (_) {
         // Never surface a history-write failure as a turn failure.
       }

@@ -30,6 +30,13 @@
  * Chat history (conversationStore.js) is saved as a fire-and-forget side
  * effect AFTER a turn succeeds. Conversation history remembers everything;
  * Hindsight receives only what Memoryworthiness judged worth remembering.
+ *
+ * The conversation's NAME (conversationTitle.js) is the one model call a turn
+ * makes about itself rather than for the person: on a conversation's first
+ * turn only, the same generator that just answered is asked for a one-line
+ * title, bounded by TITLE_DEADLINE_MS so the reply never waits on it, delivered
+ * as a `title` frame and saved with the transcript. A name is not worth a
+ * failover, so only the primary generator is ever asked.
  */
 
 const { buildSystemPrompt } = require('./foundation');
@@ -45,6 +52,7 @@ const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
+const { generateConversationTitle, withDeadline, TITLE_DEADLINE_MS } = require('./conversationTitle');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
 const { researchJobView } = require('./researchRoutes');
 const { withKeptNotifier } = require('./reasoning/memoryTool');
@@ -1272,6 +1280,29 @@ async function performStreamingTurn({
   // The reply either already streamed as deltas or is written here as one
   // final delta — exactly once (responseEngine.deliverReply).
   deliverReply(emitter, replyText, { contentEmitted });
+
+  // The conversation's own name: only on its first turn (the store has no
+  // title yet — a store that cannot tell us is never asked to guess), and only
+  // when the same generator that just answered is available. The exchange is
+  // handed over with it, so the name says what the thread is ABOUT instead of
+  // repeating the opening sentence; conversationStore.deriveTitle stays the
+  // fallback for a name that never comes. The wait is bounded — a slow
+  // provider costs the reply nothing but the frame below, and the late name is
+  // written into the transcript instead (after the save, further down).
+  let title = null;
+  let pendingTitle = null;
+  if (
+    historyStore &&
+    conversationId &&
+    typeof historyStore.getTitle === 'function' &&
+    historyStore.getTitle(conversationId) === null
+  ) {
+    const titleGenerator = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes }).primary;
+    pendingTitle = generateConversationTitle({ generator: titleGenerator, messages, replyText });
+    title = await withDeadline(pendingTitle, TITLE_DEADLINE_MS);
+    if (title) emitter.title({ text: title });
+  }
+
   emitter.finish();
 
   const deferredCognition = startDeferredCognition();
@@ -1281,7 +1312,19 @@ async function performStreamingTurn({
   // allowed to affect the already-sent response.
   if (historyStore && conversationId) {
     try {
-      historyStore.saveConversation(conversationId, [...messages, { role: 'assistant', content: replyText }]);
+      historyStore.saveConversation(
+        conversationId,
+        [...messages, { role: 'assistant', content: replyText }],
+        title ? { title } : {}
+      );
+      // A name that missed the deadline still belongs on the conversation: it
+      // arrives here, after the transcript exists, and only ever fills a title
+      // that is still derived (setTitle refuses to rename a chosen one).
+      if (!title && pendingTitle) {
+        void pendingTitle.then((late) => {
+          if (late) historyStore.setTitle(conversationId, late);
+        });
+      }
     } catch (_) {
       // Never break a turn that already completed successfully.
     }
