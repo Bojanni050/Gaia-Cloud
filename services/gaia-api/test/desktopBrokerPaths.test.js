@@ -78,6 +78,17 @@ test('the index search is offered only when the desktop says it is there', () =>
   assert.ok(!broker.forTurn({ roots: ['D:\\'], index: 'true' }).tools[0].function.description.includes('where "index"'));
 });
 
+test('the terminal is offered as a fallback, with its confirmation and time limit named', () => {
+  const { DESKTOP_TOOL } = require('../src/desktopBroker');
+  const broker = createDesktopBroker({ logger() {} });
+  for (const tool of [DESKTOP_TOOL, broker.forTurn({ roots: ['D:\\'] }).tools[0], broker.forTurn({ roots: ['D:\\'], index: true }).tools[0]]) {
+    const text = tool.function.description;
+    assert.match(text, /offer to run a terminal command with the skill "run-command"/);
+    assert.match(text, /confirms it first/);
+    assert.match(text, /15 seconds/);
+  }
+});
+
 test('without reported folders the default tool is used', () => {
   const { DESKTOP_TOOL } = require('../src/desktopBroker');
   const broker = createDesktopBroker({ logger() {} });
