@@ -83,6 +83,21 @@ test('POST confirm passes a human nuanced statement through', async () => {
   assert.equal(confirmCall[2].statement, 'only late at night');
 });
 
+test('POST confirm on an already confirmed statement answers with it, not with a transition error', async () => {
+  const cognition = fakeCognition();
+  const mirrored = [];
+  cognition.getHypothesis = async (id) => { cognition.calls.push(['get', id]); return { id, status: 'confirmed', scope: 'macro', statement: 'settled' }; };
+
+  const res = await request(appWith({ cognition, sync: { syncHypothesis: async (r) => mirrored.push(r) } }))
+    .post('/cognition/hypotheses/h2/confirm').send({});
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.hypothesis.status, 'confirmed');
+  assert.deepEqual(res.body.superseded, []);
+  assert.ok(!cognition.calls.some((c) => c[0] === 'confirm'));
+  assert.equal(mirrored.length, 0);
+});
+
 test('POST reopen refuses a missing reason (human action must state why)', async () => {
   const cognition = fakeCognition();
   const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h1/reopen').send({});

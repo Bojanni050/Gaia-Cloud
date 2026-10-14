@@ -179,6 +179,16 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     const existing = typeof cognition.getHypothesis === 'function'
       ? await cognition.getHypothesis(id).catch(() => null)
       : null;
+
+    // A statement the person has already settled: this click says yes again.
+    // Answer with the record instead of letting the store refuse the repeat
+    // transition — `confirmed -> confirmed` is a 409, which the person reads as
+    // "it failed", while in truth their judgement is already in place. Nothing
+    // is written and nothing is mirrored twice.
+    if (existing && String(existing.status) === 'confirmed') {
+      return res.json({ hypothesis: existing, superseded: [] });
+    }
+
     const isMacro = !existing || existing.scope !== 'micro';
     if (isMacro && !String(rationale).trim()) {
       return res.status(400).json({ error: 'a rationale is required to confirm a macro statement' });
