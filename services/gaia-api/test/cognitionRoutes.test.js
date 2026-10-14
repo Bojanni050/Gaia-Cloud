@@ -98,6 +98,32 @@ test('POST confirm on an already confirmed statement answers with it, not with a
   assert.equal(mirrored.length, 0);
 });
 
+test('POST confirm retries a failed scope lookup instead of blaming the client', async () => {
+  const cognition = fakeCognition();
+  let lookups = 0;
+  cognition.getHypothesis = async (id) => {
+    cognition.calls.push(['get', id]);
+    if (lookups++ === 0) throw new Error('cognition get timed out');
+    return { id, status: 'testing', scope: 'micro' };
+  };
+
+  const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h2/confirm').send({});
+
+  assert.equal(res.status, 200);
+  assert.ok(cognition.calls.some((c) => c[0] === 'confirm'));
+});
+
+test('POST confirm says it could not read the statement rather than calling it macro', async () => {
+  const cognition = fakeCognition();
+  cognition.getHypothesis = async () => { throw new Error('cognition get 404'); };
+
+  const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h2/confirm').send({});
+
+  assert.equal(res.status, 503);
+  assert.match(res.body.error, /could not be read/);
+  assert.ok(!cognition.calls.some((c) => c[0] === 'confirm'));
+});
+
 test('POST reopen refuses a missing reason (human action must state why)', async () => {
   const cognition = fakeCognition();
   const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h1/reopen').send({});

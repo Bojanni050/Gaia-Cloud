@@ -176,9 +176,16 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     // default) may only be confirmed with a stated rationale — the API
     // refuses a bare click even if a client forgot the UI step. A micro
     // statement may be confirmed without one.
-    const existing = typeof cognition.getHypothesis === 'function'
-      ? await cognition.getHypothesis(id).catch(() => null)
-      : null;
+    //
+    // The friction applies only to a scope that was actually read. A failed
+    // lookup used to land in the same bucket as "macro", which blamed the
+    // client for a request it made correctly: a bare click on a micro
+    // statement came back as the rationale error. It is retried once, and if
+    // the record still cannot be read the route says so rather than guessing.
+    // A client that cannot look a statement up at all keeps the strict default.
+    const canRead = typeof cognition.getHypothesis === 'function';
+    let existing = canRead ? await cognition.getHypothesis(id).catch(() => null) : null;
+    if (canRead && !existing) existing = await cognition.getHypothesis(id).catch(() => null);
 
     // A statement the person has already settled: this click says yes again.
     // Answer with the record instead of letting the store refuse the repeat
@@ -187,6 +194,10 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     // is written and nothing is mirrored twice.
     if (existing && String(existing.status) === 'confirmed') {
       return res.json({ hypothesis: existing, superseded: [] });
+    }
+
+    if (canRead && !existing) {
+      return res.status(503).json({ error: 'the statement could not be read' });
     }
 
     const isMacro = !existing || existing.scope !== 'micro';
