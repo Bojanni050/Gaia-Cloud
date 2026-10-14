@@ -21,6 +21,14 @@ or a store address.
 Capabilities are the only optional layer. **Hindsight, SOUL, Logos and Cognition
 are load-bearing** and are never folded into the capability set.
 
+**`desktop`** (Desktop Commander) is a capability of the *person's own computer*,
+not of the server: Gaia-Cloud never executes anything on it. Gaia-Desktop runs
+Desktop Commander locally and is the executor; Gaia claims `desktop` on a turn
+only when such an executor is connected (`turn.js` `generationCapabilities`).
+Reads may run freely; writes and commands need the person's confirmation in the
+client. The registry entry and awareness are in place; the executor seam and the
+client side are still to be built.
+
 ## Boundaries that are load-bearing
 
 - **Foundation holds raw reality.** Everything entering it is an `observation`,

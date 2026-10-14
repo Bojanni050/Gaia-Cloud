@@ -189,21 +189,21 @@ function createGaiaGenerator(options = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-  function requestBody(messages, stream, withTools) {
+  function requestBody(messages, stream, withTools, activeTools = tools) {
     const body = { model, stream, messages };
-    if (withTools) body.tools = tools;
+    if (withTools) body.tools = activeTools;
     return body;
   }
 
   /** One non-streaming request. Returns { content, toolCalls }. */
-  async function postNonStreaming(messages, withTools) {
+  async function postNonStreaming(messages, withTools, activeTools) {
     const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(requestBody(messages, false, withTools)),
+        body: JSON.stringify(requestBody(messages, false, withTools, activeTools)),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -247,14 +247,14 @@ function createGaiaGenerator(options = {}) {
   }
 
   /** One streaming request; forwards content via onDelta. Returns { content, toolCalls }. */
-  async function postStreaming(messages, { signal, onDelta }, withTools) {
+  async function postStreaming(messages, { signal, onDelta }, withTools, activeTools) {
     const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(requestBody(messages, true, withTools)),
+        body: JSON.stringify(requestBody(messages, true, withTools, activeTools)),
         signal,
       });
     } catch (error) {
@@ -317,7 +317,7 @@ function createGaiaGenerator(options = {}) {
   }
 
   /** Execute the tool calls of one round and append the assistant + tool messages. */
-  async function appendToolRound(messages, assistantContent, calls) {
+  async function appendToolRound(messages, assistantContent, calls, dispatch = onToolCall) {
     const assistantMessage = {
       role: 'assistant',
       content: assistantContent || null,
@@ -331,7 +331,7 @@ function createGaiaGenerator(options = {}) {
     for (const call of calls) {
       let resultText = 'Unknown action.';
       try {
-        resultText = String((await onToolCall(call.name, parseToolArguments(call.arguments))) || 'Done.');
+        resultText = String((await dispatch(call.name, parseToolArguments(call.arguments))) || 'Done.');
       } catch (error) {
         resultText = 'That could not be done.';
         console.warn(`[gaia:native] tool ${call.name} failed: ${error.message}`);
@@ -349,7 +349,16 @@ function createGaiaGenerator(options = {}) {
    */
   async function runToolLoop(messages, mode) {
     let current = messages;
-    let withTools = toolsAvailable;
+    // Per-call tools (e.g. the desktop tool, which exists only on a turn with a connected client) ride
+    // on top of the constructor's tools; the call's own handler serves its own tools only.
+    const extraTools = Array.isArray(mode.tools) && mode.tools.length > 0 && typeof mode.onToolCall === 'function'
+      ? mode.tools : [];
+    const extraNames = new Set(extraTools.map((t) => t && t.function && t.function.name).filter(Boolean));
+    const activeTools = extraTools.length > 0 ? [...(tools || []), ...extraTools] : tools;
+    const dispatch = extraNames.size === 0
+      ? onToolCall
+      : (name, args) => (extraNames.has(name) ? mode.onToolCall(name, args) : (onToolCall ? onToolCall(name, args) : 'Unknown action.'));
+    let withTools = extraTools.length > 0 || toolsAvailable;
     let toolRounds = 0;
     let fallbackUsed = false;
 
@@ -373,8 +382,8 @@ function createGaiaGenerator(options = {}) {
       let result;
       try {
         result = mode.stream
-          ? await postStreaming(current, roundMode, withTools)
-          : await postNonStreaming(current, withTools);
+          ? await postStreaming(current, roundMode, withTools, activeTools)
+          : await postNonStreaming(current, withTools, activeTools);
       } catch (error) {
         const toolsRejected = withTools
           && error instanceof GenerationError
@@ -404,7 +413,7 @@ function createGaiaGenerator(options = {}) {
         throw new GenerationError('native generator exhausted tool rounds', { retryable: false, code: 'tool_rounds' });
       }
       toolRounds += 1;
-      current = await appendToolRound(current, result.content, calls);
+      current = await appendToolRound(current, result.content, calls, dispatch);
     }
   }
 
@@ -414,7 +423,8 @@ function createGaiaGenerator(options = {}) {
 
   return {
     generate: (messages) => runToolLoop(messages, { stream: false }),
-    stream: (messages, { signal, onDelta } = {}) => runToolLoop(messages, { stream: true, signal, onDelta }),
+    stream: (messages, { signal, onDelta, tools: callTools, onToolCall: callOnToolCall } = {}) =>
+      runToolLoop(messages, { stream: true, signal, onDelta, tools: callTools, onToolCall: callOnToolCall }),
     toolNames,
   };
 }

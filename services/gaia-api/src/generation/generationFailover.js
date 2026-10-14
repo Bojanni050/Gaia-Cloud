@@ -64,13 +64,19 @@ async function generateWithFailover(messages, { primary, backup } = {}) {
  * `(chunk, isReasoning)`; only non-reasoning chunks count as visible
  * output. Failover runs only before the first visible chunk.
  * @param {Array} messages
- * @param {{ primary?: object|null, backup?: object|null, onDelta?: Function, signal?: AbortSignal }} options
+ * Per-call `tools` + `onToolCall` (e.g. the desktop tool) are offered to the PRIMARY only; the backup
+ * stays a plain provider with no agency.
+ * @param {{ primary?: object|null, backup?: object|null, onDelta?: Function, signal?: AbortSignal, tools?: Array<object>, onToolCall?: Function }} options
  * @returns {Promise<string>} full accumulated text
  */
-async function streamWithFailover(messages, { primary, backup, onDelta, signal } = {}) {
-  const runStream = async (generator, deltaForwarder) => {
+async function streamWithFailover(messages, { primary, backup, onDelta, signal, tools, onToolCall } = {}) {
+  const runStream = async (generator, deltaForwarder, callTools) => {
     if (typeof generator.stream === 'function') {
-      return generator.stream(messages, { ...(signal ? { signal } : {}), ...(deltaForwarder ? { onDelta: deltaForwarder } : {}) });
+      return generator.stream(messages, {
+        ...(signal ? { signal } : {}),
+        ...(deltaForwarder ? { onDelta: deltaForwarder } : {}),
+        ...(callTools && callTools.length > 0 && typeof onToolCall === 'function' ? { tools: callTools, onToolCall } : {}),
+      });
     }
     // Non-streaming generator behind a streaming transport: produce the
     // full text, then deliver it as one delta (Response Engine dedupes).
@@ -88,7 +94,7 @@ async function streamWithFailover(messages, { primary, backup, onDelta, signal }
       }
       : undefined;
     try {
-      return await runStream(primary, trackingDelta);
+      return await runStream(primary, trackingDelta, tools);
     } catch (err) {
       // An aborted turn (the client left) must never start a second generation on the backup.
       const mayFailover = !visibleOutput

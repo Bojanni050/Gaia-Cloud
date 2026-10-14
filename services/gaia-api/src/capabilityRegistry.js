@@ -132,6 +132,23 @@ const CAPABILITY_REGISTRY = Object.freeze({
     ]),
   }),
 
+  // Desktop — hands on the person's OWN machine (Desktop Commander, run by
+  // Gaia-Desktop locally; Gaia-Cloud never executes anything itself). Only a
+  // capability when a desktop executor is connected THIS turn. Reads may run
+  // freely; writes and commands need the person's confirmation in the client.
+  // Skills are non-routing metadata: nothing here auto-selects them.
+  desktop: Object.freeze({
+    id: 'desktop',
+    type: 'capability',
+    description: "working on the person's own computer when a turn asks for it — reading, searching and (with their confirmation) changing files or running commands",
+    skills: Object.freeze([
+      Object.freeze({ id: 'file-read', category: 'files', routing: false, description: 'read and list files on the connected computer (no confirmation needed)' }),
+      Object.freeze({ id: 'file-search', category: 'files', routing: false, description: 'search file names and contents on the connected computer (no confirmation needed)' }),
+      Object.freeze({ id: 'file-write', category: 'files', routing: false, description: 'create or edit files on the connected computer; the person confirms first' }),
+      Object.freeze({ id: 'run-command', category: 'system', routing: false, description: 'run a terminal command on the connected computer; the person confirms first' }),
+    ]),
+  }),
+
   tool: Object.freeze({
     id: 'tool',
     type: 'capability',
