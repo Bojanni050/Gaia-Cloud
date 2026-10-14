@@ -12,6 +12,7 @@
  *   /library/*               → file library: upload/list/download/delete (libraryRoutes.js), auth required
  *   /conversations/*         → chat history: list/read/search/delete (historyRoutes.js), auth required — written as a
  *                              fire-and-forget side effect of a successful /conversation/turn, never by direct upload
+ *   /desktop/*               → confirmation flow for the `desktop` capability (desktopRoutes.js), auth required
  *   /eleos/*                 → Gaia-initiated check-ins: pending + delivered loops (eleosRoutes.js), auth required —
  *                              the poll counterpart to research jobs; the check-in itself is an ordinary assistant
  *                              message in a server-started conversation
@@ -71,6 +72,8 @@ const { createEleosVoice } = require('./eleosVoice');
 const { createEleosRuntime } = require('./eleosRuntime');
 const { createEleos } = require('./eleos');
 const { createEleosRouter } = require('./eleosRoutes');
+const { createDesktopBroker } = require('./desktopBroker');
+const { createDesktopRouter } = require('./desktopRoutes');
 const { generateWithFailover } = require('./generation/generationFailover');
 const { createResearchJobStore } = require('./researchJobStore');
 const { startResearchJob, pollResearchJobs, saveResearchMessage, answerJobApproval, resolveOutboxDir } = require('./researchJob');
@@ -511,6 +514,23 @@ function createApp(env = process.env) {
   if (eleos) eleos.start();
   app.use('/eleos', createEleosRouter({ store: eleosStore, auth }));
 
+  // DESKTOP — Gaia reaching for the person's OWN computer (Desktop Commander, run by Gaia-Desktop).
+  // Gaia-Cloud executes nothing there: the broker turns a tool call into an action the connected client
+  // carries out, and reads run freely while writes and commands wait for the person's confirmation
+  // (src/desktopBroker.js, docs/desktop-capability.md). Off unless a deployment opts in
+  // (GAIA_DESKTOP=true); even then a turn offers it only when the client declares `desktop: true`.
+  const desktopBroker = env.GAIA_DESKTOP === 'true'
+    ? createDesktopBroker({
+      confirmTimeoutMs: Number(env.GAIA_DESKTOP_CONFIRM_TIMEOUT_MS) || undefined,
+      resultTimeoutMs: Number(env.GAIA_DESKTOP_RESULT_TIMEOUT_MS) || undefined,
+      logger: (line) => {
+        console.log(line);
+        try { decisionStore.append(JSON.parse(line)); } catch (_) { /* observability only */ }
+      },
+    })
+    : undefined;
+  if (desktopBroker) app.use('/desktop', createDesktopRouter({ broker: desktopBroker, auth }));
+
   // RESEARCH JOBS — Gaia reaching FOR a Hermes skill, off the turn's clock.
   //
   // A research turn submits a run at Hermes and answers immediately; the
@@ -644,6 +664,8 @@ function createApp(env = process.env) {
         conversationSearch,
         aion,
         eleos,
+        desktopBroker,
+        desktopClient: Boolean(req.body && req.body.desktop === true),
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),

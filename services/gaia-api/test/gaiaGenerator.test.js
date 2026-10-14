@@ -294,3 +294,40 @@ test('stream() does not expose draft content emitted before a tool call', async 
   assert.equal(result, 'Final answer.');
   assert.deepEqual(deltas, ['Final answer.']);
 });
+
+// --- per-call tools (desktop) ------------------------------------------------------
+
+test('stream() offers per-call tools on top of constructor tools and routes each call to its own handler', async () => {
+  const { createGaiaGenerator } = require('../src/generation/gaiaGenerator');
+  const sent = [];
+  let round = 0;
+  const sse = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
+  const fetchImpl = async (url, init) => {
+    sent.push(JSON.parse(init.body));
+    round += 1;
+    const body = round === 1
+      ? sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'desktop', arguments: '{"skill":"file-read","input":{}}' } }] } }] }) + 'data: [DONE]\n\n'
+      : sse({ choices: [{ delta: { content: 'klaar' } }] }) + 'data: [DONE]\n\n';
+    const encoder = new TextEncoder();
+    return { ok: true, status: 200, body: new ReadableStream({ start(c) { c.enqueue(encoder.encode(body)); c.close(); } }) };
+  };
+  const ctorTool = { type: 'function', function: { name: 'remember', parameters: { type: 'object', properties: {} } } };
+  const callTool = { type: 'function', function: { name: 'desktop', parameters: { type: 'object', properties: {} } } };
+  const handled = [];
+  const gen = createGaiaGenerator({
+    baseUrl: 'http://x', model: 'm', fetchImpl,
+    tools: [ctorTool], onToolCall: async (name) => { handled.push(`ctor:${name}`); return 'no'; },
+  });
+  const out = await gen.stream([{ role: 'user', content: 'hi' }], {
+    onDelta() {},
+    tools: [callTool],
+    onToolCall: async (name) => { handled.push(`call:${name}`); return 'file data'; },
+  });
+  assert.equal(out, 'klaar');
+  assert.deepEqual(sent[0].tools.map((t) => t.function.name), ['remember', 'desktop']);
+  assert.deepEqual(handled, ['call:desktop']);
+  // And the next call without per-call tools is back to the constructor's tools only.
+  round = 1;
+  await gen.stream([{ role: 'user', content: 'hi' }], { onDelta() {} });
+  assert.deepEqual(sent.at(-1).tools.map((t) => t.function.name), ['remember']);
+});

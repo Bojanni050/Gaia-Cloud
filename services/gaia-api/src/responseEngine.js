@@ -200,6 +200,19 @@ function createStreamEmitter(res) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'memory', memory: payload })}\n\n`);
   }
 
+  /**
+   * Announces a desktop action (or a change in its status) to the client, as an extension frame in the
+   * same family as `memory` and `research`. The client shows a confirmation prompt for
+   * `awaiting_confirmation`, runs the action locally once `approved`, and clears the prompt on any
+   * terminal status. `payload` is the broker's action view: ids, skill, policy, status, summary, input.
+   * @param {object} payload
+   */
+  function desktop(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    ensureHeaders();
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: {} }], type: 'desktop', desktop: payload })}\n\n`);
+  }
+
   /** Finalizes a successful stream. */
   function finish() {
     ensureHeaders();
@@ -225,7 +238,7 @@ function createStreamEmitter(res) {
     res.end();
   }
 
-  return { delta, step, research, memory, finish, fail };
+  return { delta, step, research, memory, desktop, finish, fail };
 }
 
 /**

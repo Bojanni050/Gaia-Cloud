@@ -620,7 +620,14 @@ async function runTurnCore({
   timing.start('generation');
   try {
     if (onDelta) {
-      output = await streamWithFailover(assembled, { primary, backup, onDelta, ...(signal ? { signal } : {}) });
+      output = await streamWithFailover(assembled, {
+        primary, backup, onDelta,
+        ...(signal ? { signal } : {}),
+        // The desktop tool exists only for a streamed turn with a connected executor.
+        ...(desktop && Array.isArray(desktop.tools) && typeof desktop.onToolCall === 'function'
+          ? { tools: desktop.tools, onToolCall: desktop.onToolCall }
+          : {}),
+      });
     } else {
       output = await generateWithFailover(assembled, { primary, backup });
     }
@@ -1138,7 +1145,8 @@ async function performStreamingTurn({
   hypothesisRuntime,
   aion,
   eleos,
-  desktop,
+  desktopBroker,
+  desktopClient,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -1151,6 +1159,16 @@ async function performStreamingTurn({
   }
 
   const emitter = createStreamEmitter(res);
+
+  // The desktop is real this turn only when the server runs the broker AND the client declared that
+  // it can carry out actions. The frames ride this turn's open stream; nothing else can reach the client.
+  const desktop = desktopBroker && desktopClient === true
+    ? desktopBroker.forTurn({
+      emit: (view) => { if (!res.writableEnded) emitter.desktop(view); },
+      conversationId,
+      ...(signal ? { signal } : {}),
+    })
+    : undefined;
 
   let timeToFirstTokenMs = null;
   let contentEmitted = false;
