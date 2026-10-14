@@ -59,8 +59,13 @@ function explain(text) {
   lines.push(`  skill task shapes         : ${signals.skillTasks.length ? signals.skillTasks.join(', ') : 'none'}`);
   lines.push('');
 
-  if (gated || wantConversationHistory || wantFoundation || wantPatterns) {
-    lines.push('verdict: at least one memory path opens — this turn can reach memory.');
+  const anyMemoryPath = gated || wantConversationHistory || wantFoundation;
+  if (anyMemoryPath) {
+    lines.push('verdict: at least one memory path opens — the passive path can reach memory.');
+  } else if (wantPatterns) {
+    lines.push('verdict: NO memory path opens — Hindsight, transcript and Foundation are all');
+    lines.push('         shut. Only pattern awareness opens. If this turn still shows her');
+    lines.push('         stored memory, it came from an on-demand search_memory call, not the gate.');
   } else {
     lines.push('verdict: NO memory path opens. Gaia sees only the conversation in');
     lines.push('         the prompt, and "I cannot look that up" is the honest answer');
