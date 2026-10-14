@@ -188,6 +188,24 @@ test('confirm() promotes corroborated -> confirmed and does NOT write to Hindsig
   assert.equal(fake.calls[1].params.length, 3, 'confirm writes no document id — sync is Logos\' job');
 });
 
+test('confirm() settles a proposed statement directly — the override does not wait for a machine test', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async (sql) => {
+    call += 1;
+    if (call === 1) return { rows: [row()] }; // get() — the default row is `proposed`
+    assert.match(sql, /UPDATE hypotheses SET status = 'confirmed'/);
+    // `tested_at` lives in the RETURNING list; the SET clause must not touch it.
+    assert.doesNotMatch(sql.slice(0, sql.indexOf('WHERE')), /tested_at/, 'confirm must not fabricate a test');
+    return { rows: [row({ status: 'confirmed' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.confirm('gaia', 'h1');
+  assert.equal(h.status, 'confirmed');
+  assert.equal(h.tested_at, null, 'the record keeps saying confirmed without a test');
+});
+
 test('confirm() refuses when the counter-hypothesis is missing', async () => {
   const fake = makeFakePool();
   fake.setImpl(async () => ({ rows: [row({ status: 'corroborated', counter_hypothesis: null })] }));

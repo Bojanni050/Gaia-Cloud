@@ -14,6 +14,16 @@
  * `rejected` is terminal in VALID_TRANSITIONS: every automatic verb refuses it.
  * reopen() is the single human-initiated exception (like supersede()).
  *
+ * A human may also settle a `proposed` statement directly. The machine's
+ * testing is the honest path to `corroborated`, but it is not a precondition
+ * for the Absolute Override: the review surface offers a statement as soon as
+ * it is proposed, and refusing the confirm there left the override unreachable
+ * for everything the machine had not yet picked up — which, in practice, was
+ * everything. This widens nothing on the machine's side: `confirm()` is only
+ * ever called from the two human routes (services/gaia-api's
+ * `/cognition/hypotheses/:id/confirm` and this service's own). `tested_at`
+ * stays null, so the record still tells the truth — confirmed without a test.
+ *
  * Cognition only persists. It never forms, judges, tests, confirms, rejects or
  * refines on its own initiative — every judgment is Logos's, and only a human
  * reaches `confirmed` (Absolute Override). It does NOT write to Hindsight:
@@ -34,7 +44,7 @@ const SCOPES = ['micro', 'macro'];
 const QUESTION_SHAPES = ['yes_no', 'open', 'choice'];
 
 const VALID_TRANSITIONS = {
-  proposed: ['testing', 'rejected'],
+  proposed: ['testing', 'confirmed', 'rejected'],
   testing: ['corroborated', 'confirmed', 'rejected', 'proposed'],
   corroborated: ['confirmed', 'rejected', 'testing'],
   confirmed: [],
