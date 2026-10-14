@@ -666,6 +666,8 @@ function createApp(env = process.env) {
         eleos,
         desktopBroker,
         desktopClient: Boolean(req.body && req.body.desktop === true),
+        desktopRoots: req.body && req.body.desktopRoots,
+        desktopPlaces: req.body && req.body.desktopPlaces,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),

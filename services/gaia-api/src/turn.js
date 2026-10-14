@@ -1147,6 +1147,8 @@ async function performStreamingTurn({
   eleos,
   desktopBroker,
   desktopClient,
+  desktopRoots,
+  desktopPlaces,
   historyStore,
   decisionStore,
   userDisplayName,
@@ -1166,6 +1168,8 @@ async function performStreamingTurn({
     ? desktopBroker.forTurn({
       emit: (view) => { if (!res.writableEnded) emitter.desktop(view); },
       conversationId,
+      roots: desktopRoots,
+      places: desktopPlaces,
       ...(signal ? { signal } : {}),
     })
     : undefined;
