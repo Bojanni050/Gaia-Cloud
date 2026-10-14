@@ -159,3 +159,59 @@ test('invalidateByTags invalidates matching valid units only', async () => {
   assert.equal(hindsight.patches[0].factId, 'a');
   assert.equal(hindsight.patches[0].reason, 'reconciliation');
 });
+
+test('a rejection retires the active fact instead of retaining the text', async () => {
+  const hindsight = fakeHindsight();
+  const sync = createCognitionSync({ hindsight });
+
+  await sync.syncHypothesis(hyp());
+  const rejected = await sync.syncHypothesis(hyp({ status: 'rejected', rejection_reason: 'not true' }));
+
+  assert.equal(rejected.invalidated, 'fact-gaia-hyp-h1-v1');
+  assert.equal(rejected.documentId, null);
+  // Nothing new was written: a rejected statement must not come back as a fact.
+  assert.equal(hindsight.retained.length, 1);
+  assert.equal(hindsight.patches.length, 1);
+  assert.equal(hindsight.patches[0].state, 'invalidated');
+  assert.equal(hindsight.patches[0].reason, 'not true');
+});
+
+test('a rejection in a cold process finds the active fact in Hindsight', async () => {
+  const hindsight = fakeHindsight({
+    seeded: [{ id: 'fact-1', metadata: { gaia_hypothesis_id: 'h1', gaia_hypothesis_version: '1', gaia_hypothesis_status: 'testing' }, tags: ['gaia:hypothesis'] }],
+  });
+  const sync = createCognitionSync({ hindsight });
+
+  const rejected = await sync.syncHypothesis(hyp({ status: 'rejected', rejection_reason: 'fixed since 2026-10-11' }));
+
+  assert.equal(rejected.invalidated, 'fact-1');
+  assert.equal(hindsight.retained.length, 0);
+  assert.equal(hindsight.patches[0].factId, 'fact-1');
+  assert.equal(hindsight.patches[0].reason, 'fixed since 2026-10-11');
+});
+
+test('a change in a cold process supersedes the version already in Hindsight', async () => {
+  const hindsight = fakeHindsight({
+    seeded: [{ id: 'fact-1', metadata: { gaia_hypothesis_id: 'h1', gaia_hypothesis_version: '1', gaia_hypothesis_status: 'testing' }, tags: ['gaia:hypothesis'] }],
+  });
+  const sync = createCognitionSync({ hindsight });
+
+  const res = await sync.syncHypothesis(hyp({ status: 'corroborated' }));
+
+  // Seeded v1, so the next version is v2 — and v1 is retired.
+  assert.equal(res.documentId, 'gaia-hyp-h1-v2');
+  assert.equal(hindsight.patches[0].factId, 'fact-1');
+});
+
+test('reopening after a rejection mints a fresh active version', async () => {
+  const hindsight = fakeHindsight();
+  const sync = createCognitionSync({ hindsight });
+
+  await sync.syncHypothesis(hyp());
+  await sync.syncHypothesis(hyp({ status: 'rejected', rejection_reason: 'wrong' }));
+  const reopened = await sync.syncHypothesis(hyp({ status: 'testing' }));
+
+  assert.equal(reopened.documentId, 'gaia-hyp-h1-v2');
+  assert.equal(hindsight.retained.length, 2);
+  assert.equal(hindsight.patches.length, 1);
+});

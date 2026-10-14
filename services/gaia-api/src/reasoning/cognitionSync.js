@@ -15,8 +15,18 @@
  * Each state change becomes a new superseding version (document_id
  * `gaia-hyp-{id}-v{N}` / `gaia-ptn-{id}-v{N}`); the previous active unit is
  * invalidated ("superseded by …") so exactly one active version remains,
- * while the audit trail stays behind. `reconcile()` re-pushes every current
- * Cognition record and is the basis of the one-time tag reconciliation.
+ * while the audit trail stays behind. The one exception is a REJECTION: that is
+ * not a new version of the statement but its retirement, so the active unit is
+ * invalidated with the reason and nothing is retained — Hindsight's native,
+ * reversible invalidation IS the rejected state, and the statement leaves
+ * recall instead of being put back in front of her. `reconcile()` re-pushes
+ * every current Cognition record and is the basis of the one-time tag
+ * reconciliation.
+ *
+ * The version/status maps below live in memory only, so they are seeded from
+ * Hindsight on first use (see `ensureSeeded`). Without that, the first change
+ * after a restart looks like a first version: it retains a second active unit
+ * and never retires the one already in Hindsight.
  *
  * Boundary: pure mapping, no reasoning, no status judgment. The manager/Logos
  * owns state; this file only speaks to Hindsight via the injected client.
@@ -111,6 +121,16 @@ function tagsForHypothesis(record) {
 }
 
 /**
+ * Why a statement was retired, in whichever spelling the caller used: a
+ * Cognition row carries `rejection_reason`, the manager's records are
+ * camelCase.
+ */
+function rejectionReason(record) {
+  const reason = record && (record.rejection_reason || record.rejectionReason || record.reason);
+  return String(reason || 'rejected by the person');
+}
+
+/**
  * Page through every Kairos episode Cognition holds (its list endpoint is
  * paged). Tolerates a plain array so callers/tests can stub it simply.
  * @param {object} cognition
@@ -136,6 +156,19 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
   const activeHyps = new Map(); // id -> { version, factId, status }
   const activePatterns = new Map();
   const activeKairos = new Map();
+  let seeded = false;
+
+  /**
+   * Seed the tracking maps once per process, on first use. Best effort: if
+   * Hindsight is unreachable the caller carries on cold, exactly as before,
+   * and the next call tries again.
+   */
+  async function ensureSeeded() {
+    if (seeded) return;
+    try {
+      await loadActive();
+    } catch (_) { /* cold maps; the caller's own Hindsight call decides */ }
+  }
 
   async function retainAndSupersede({ tracked, id, documentId, content, context, tags, metadata }) {
     await hindsight.retainSync({ content, context, tags, metadata, documentId });
@@ -153,24 +186,45 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
   /** Mirror one derived statement. Increments its version on every change. */
   async function syncHypothesis(record) {
     if (!record || record.id == null) return null;
-    const t = activeHyps.get(String(record.id)) || { version: 0, factId: null, status: null };
+    const id = String(record.id);
+    await ensureSeeded();
+
+    // A rejection is not a new version of the statement — it retires it.
+    // Retaining the text would put the rejected statement straight back into
+    // recall as a fresh active fact, which is the opposite of what a rejection
+    // means. Hindsight's invalidation carries the reason and stays reversible,
+    // so a reopen mints a fresh version below.
+    if (String(record.status) === 'rejected') {
+      const previous = activeHyps.get(id);
+      const factId = previous && previous.factId ? previous.factId : null;
+      if (factId) {
+        try {
+          await hindsight.patchMemoryState(factId, 'invalidated', rejectionReason(record));
+        } catch (_) { /* an already-gone unit is harmless */ }
+      }
+      activeHyps.set(id, { version: previous ? previous.version : 0, factId: null, status: 'rejected' });
+      return { documentId: null, factId: null, version: previous ? previous.version : 0, invalidated: factId };
+    }
+
+    const t = activeHyps.get(id) || { version: 0, factId: null, status: null };
     const version = t.version + 1;
     const documentId = `gaia-hyp-${record.id}-v${version}`;
     const factId = await retainAndSupersede({
       tracked: activeHyps,
-      id: String(record.id),
+      id,
       documentId,
       content: String(record.statement || ''),
       context: HYPOTHESIS_CONTEXT,
       tags: tagsForHypothesis(record),
       metadata: hypothesisMetadata(record, version),
     });
-    activeHyps.set(String(record.id), { version, factId, status: record.status || null });
+    activeHyps.set(id, { version, factId, status: record.status || null });
     return { documentId, factId, version };
   }
 
   async function syncPattern(record) {
     if (!record || record.id == null) return null;
+    await ensureSeeded();
     const t = activePatterns.get(String(record.id)) || { version: 0, factId: null, status: null };
     const version = t.version + 1;
     const documentId = `gaia-ptn-${record.id}-v${version}`;
@@ -194,6 +248,7 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
    */
   async function syncKairosEpisode(record) {
     if (!record || record.id == null) return null;
+    await ensureSeeded();
     const t = activeKairos.get(String(record.id)) || { version: 0, factId: null };
     const version = t.version + 1;
     const documentId = `gaia-kep-${record.id}-v${version}`;
@@ -247,6 +302,7 @@ function createCognitionSync({ hindsight, cognition, now = () => new Date() } = 
         activeKairos.set(id, { version, factId: u.id != null ? String(u.id) : null });
       }
     }
+    seeded = true;
   }
 
   /** Invalidate every currently-valid unit carrying any of `tags`. */
