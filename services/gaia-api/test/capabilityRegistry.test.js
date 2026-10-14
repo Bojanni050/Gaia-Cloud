@@ -193,6 +193,45 @@ test('v3.0 Hermes isolation: a configured generator never calls Hermes on the li
   assert.equal(hermesCalls, 0, 'Hermes must never be called when generation is configured');
 });
 
+// --- desktop: the person's own computer -----------------------------------------
+
+test('desktop is a registered capability whose skills are metadata only (never routing)', () => {
+  const desktop = getCapabilityProfile('desktop');
+  assert.ok(desktop, 'desktop must be in the registry — awareness renders from it');
+  assert.equal(desktop.type, 'capability');
+  for (const id of ['file-read', 'file-search', 'file-write', 'run-command']) {
+    assert.ok(hasSkill('desktop', id), `missing desktop skill: ${id}`);
+  }
+  assert.equal(routingSkills('desktop').length, 0, 'nothing auto-selects a desktop action');
+  const block = renderCapabilityAwareness([{ id: 'desktop' }]);
+  assert.match(block, /- desktop: working on the person's own computer/);
+  assert.match(block, /skills: file-read, file-search, file-write, run-command/);
+});
+
+test('a turn claims desktop ONLY when a desktop executor is connected', async () => {
+  const { performTurn } = require('../src/turn');
+  const documents = { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' };
+  const capture = async (extra) => {
+    let captured = null;
+    await performTurn({
+      messages: [{ role: 'user', content: 'hallo' }],
+      documents,
+      generator: { generate: async (messages) => { captured = messages; return 'ok'; } },
+      ...extra,
+    });
+    return (captured || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
+  };
+
+  const without = await capture({});
+  assert.ok(without && !/- desktop:/.test(without.content), 'no executor ⇒ never claimed');
+
+  const inert = await capture({ desktop: {} });
+  assert.ok(inert && !/- desktop:/.test(inert.content), 'a desktop object without execute ⇒ never claimed');
+
+  const connected = await capture({ desktop: { execute: async () => ({}) } });
+  assert.match(connected.content, /- desktop:/);
+});
+
 // --- Boundary ------------------------------------------------------------------
 
 test('boundary: the registry is pure frozen data — zero requires, zero I/O', () => {
