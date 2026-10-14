@@ -33,8 +33,27 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # Cognition had no test job at all, even though the deploy script rebuilds
+  # it — a broken lifecycle could reach the VPS with nothing having checked
+  # it. The suite is pure (fake pools, no database, no network), so this
+  # costs a few seconds and runs in parallel with the gaia-api job.
+  test-cognition:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/cognition
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/cognition/package-lock.json
+      - run: npm ci
+      - run: npm test
+
   deploy:
-    needs: test
+    needs: [test, test-cognition]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # One deploy at a time: two pushes seconds apart used to run
