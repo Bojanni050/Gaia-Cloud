@@ -3,13 +3,17 @@ name: deploy
 on:
   push:
     branches: [main]
-    # This resets /root/gaia to origin/main on the VPS unconditionally —
-    # scoped to gaia-api's own path so a docs/proxy/cognition-only push
-    # doesn't also reset the checkout for no reason. (A push that touched
-    # gaia-api *and* something else still runs — paths filters are OR'd
-    # against the changed files, not AND'd.)
+    # This resets /root/gaia to origin/main on the VPS unconditionally and
+    # rebuilds *both* services (cognition first, then gaia-api), so it runs
+    # for a push that touches either one. Cognition-only pushes used to be
+    # excluded, which meant a change to the derived-knowledge store shipped
+    # nowhere until some later gaia-api push happened to drag it along.
+    # Docs/proxy-only pushes still don't run — nothing there is baked into
+    # an image. (A push that touches one of these *and* something else still
+    # runs — paths filters are OR'd against the changed files, not AND'd.)
     paths:
       - 'services/gaia-api/**'
+      - 'services/cognition/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
@@ -53,7 +57,7 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_CLIENT_SECRET }}
           tags: tag:ci
 
-      - name: Deploy gaia-api on the VPS
+      - name: Deploy on the VPS
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.DEPLOY_HOST }}
