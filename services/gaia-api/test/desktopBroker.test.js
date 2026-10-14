@@ -235,3 +235,9 @@ test('streamed turn WITHOUT the client declaring desktop: no capability, no tool
   assert.equal(seen.tools, undefined);
   assert.equal(seen.claimed, false);
 });
+
+test('the desktop tool tells the model to use full absolute paths', () => {
+  const tool = DESKTOP_TOOL;
+  assert.match(tool.function.description, /full absolute Windows path/);
+  assert.match(tool.function.parameters.properties.input.description, /full absolute path/);
+});
