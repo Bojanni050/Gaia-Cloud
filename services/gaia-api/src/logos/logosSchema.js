@@ -210,6 +210,13 @@ function isValidHypothesisScope(v) {
  */
 
 /**
+ * @typedef {Object} OpenQuestion
+ * @property {string} question - ONE question, one readable sentence
+ * @property {'yes_no'|'open'|'choice'} shape - the control the person answers it with: 'yes_no' the Ja/Nee pair, 'open' free text, 'choice' one button per option (v1.2; the recognizer in questionShape.js fills it when the model omits it)
+ * @property {string[]} options - the alternatives, only when shape is 'choice' (2..5, each a few words)
+ */
+
+/**
  * @typedef {Object} Conclusion
  * @property {string} statement
  * @property {'fact'|'inference'|'hypothesis'} basis
@@ -229,7 +236,7 @@ function isValidHypothesisScope(v) {
  * @property {string[]} uncertainties
  * @property {string[]} informationGaps
  * @property {Observation[]} observations - v1.0: concrete derived information (fact-shaped, never hypotheses)
- * @property {string[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; Logos NEVER asks the user about them
+ * @property {OpenQuestion[]} openQuestions - v1.0: unresolved questions — durable cognitive information where appropriate; Logos NEVER asks the user about them. v1.2: each carries the shape the person answers it with (see OpenQuestion)
  * @property {KnowledgeRelationship[]} relationships - v1.1: explicit relationships between existing knowledge — endpoint-validated, persisted via the cognition adapter as gaia:relationship world facts
  * @property {Reflection|null} reflection - v1.0: background self-assessment; observability-only, never persisted as memory
  * @property {Conclusion[]} conclusions

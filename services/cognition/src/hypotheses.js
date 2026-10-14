@@ -29,6 +29,9 @@ const METHODS = ['asserted', 'derived', 'tested'];
 // V3 epistemic entrenchment. `macro` is the safe default enforced by the
 // column default: an unclassified statement is one a human must look at.
 const SCOPES = ['micro', 'macro'];
+// v1.2 — the shape of an open question, i.e. the control a person answers it
+// with: the Ja/Nee pair, free text, or one button per option.
+const QUESTION_SHAPES = ['yes_no', 'open', 'choice'];
 
 const VALID_TRANSITIONS = {
   proposed: ['testing', 'rejected'],
@@ -74,11 +77,17 @@ function assertScope(s) {
   }
 }
 
+function assertQuestionShape(shape) {
+  if (shape !== undefined && shape !== null && !QUESTION_SHAPES.includes(shape)) {
+    throw new ValidationError(`unknown question_shape: ${shape}`);
+  }
+}
+
 const COLUMNS = `
   id, bank_id, kind, statement, confidence, status, verification_plan,
   evidence_memory_ids, evidence_for, evidence_against, persistence, method,
   sources, supersedes_id, superseded_by_id,
-  counter_hypothesis, scope,
+  counter_hypothesis, scope, question_shape, question_options, answer, answered_at,
   confirmed_document_id, rejection_reason, verwerp_bron,
   tested_at, confirmed_at, rejected_at, created_at, updated_at
 `;
@@ -88,23 +97,30 @@ async function propose(bankId, {
   evidenceFor = [], evidenceAgainst = [], persistence = 'ephemeral', method = 'asserted',
   sources = [], kind = 'hypothesis', supersedesId = null,
   counterHypothesis = null, scope = undefined,
+  questionShape = null, questionOptions = [],
 } = {}) {
   if (!statement) throw new ValidationError('statement is required');
   assertKind(kind);
   assertPersistence(persistence);
   assertMethod(method);
   assertScope(scope);
+  assertQuestionShape(questionShape);
+  // Options belong to a choice and to nothing else — the table stays honest
+  // about what a record actually is, whatever a caller sends.
+  const options = questionShape === 'choice'
+    ? (Array.isArray(questionOptions) ? questionOptions : [])
+    : [];
   const { rows } = await pool.query(
     `INSERT INTO hypotheses
        (bank_id, statement, confidence, verification_plan, evidence_memory_ids,
         evidence_for, evidence_against, persistence, method, sources, kind, supersedes_id,
-        counter_hypothesis, scope)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'macro'))
+        counter_hypothesis, scope, question_shape, question_options)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'macro'), $15, $16)
      RETURNING ${COLUMNS}`,
     [bankId, statement, confidence, verificationPlan, evidenceMemoryIds,
       evidenceFor, evidenceAgainst, persistence, method, sources, kind, supersedesId,
       (typeof counterHypothesis === 'string' && counterHypothesis.trim()) ? counterHypothesis.trim() : null,
-      scope ?? null],
+      scope ?? null, questionShape, options],
   );
   return rows[0];
 }
@@ -288,6 +304,33 @@ async function supersede(bankId, id, { supersededById, reason } = {}) {
   return rows[0];
 }
 
+/**
+ * The human answer to an open question (v1.2). Answering is NOT a lifecycle
+ * transition — the statement keeps its status; the answer is recorded on the
+ * record, with the moment it was given, and the question is thereby dealt with
+ * (it leaves the review surface). Only an open question can be answered, only
+ * while it is still open, and an empty answer is refused: a blank answer is not
+ * an answer. Re-answering overwrites, so a person who misclicked a choice button
+ * is not stuck with it.
+ */
+async function answer(bankId, id, { answer: value } = {}) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) throw new ValidationError('an answer is required');
+  const current = await get(bankId, id);
+  if (current.kind !== 'open_question') {
+    throw new ValidationError('only an open question can be answered');
+  }
+  if (current.status === 'rejected' || current.status === 'confirmed') {
+    throw new InvalidTransitionError(current.status, 'answered');
+  }
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET answer = $3, answered_at = now(), updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id, text],
+  );
+  return rows[0];
+}
+
 const RELATIONS = ['supports', 'weakens', 'contradicts', 'irrelevant'];
 
 function clampConfidence(value) {
@@ -362,6 +405,6 @@ async function softDelete(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, confirm, reject, reopen, supersede, applyEvidence, softDelete,
-  VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES,
+  propose, list, get, update, markTesting, markCorroborated, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
+  VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES, QUESTION_SHAPES,
 };

@@ -8,13 +8,18 @@
  *   observation   → Foundation's Ingestie Gateway (POST /api/ingest/*) — a
  *                   registered raw record, NEVER a Hindsight write.
  *   openQuestion  → Cognition record (kind open_question), mirrored to
- *                   Hindsight as gaia:open_question by cognitionSync.
+ *                   Hindsight as gaia:open_question by cognitionSync. The
+ *                   question carries the shape it is answered with
+ *                   (question_shape/question_options), so the review card can
+ *                   offer that control instead of always Ja/Nee.
  *   relationship  → Cognition record (kind relationship), mirrored as
  *                   gaia:relationship.
  *
  * Pure mapping. Open questions / relationships carry a `proposed` lifecycle
  * (Cognition owns it); observations have no lifecycle.
  */
+
+const { normalizeOpenQuestion } = require('../logos/logosValidate');
 
 function renderRelationship(relationship) {
   const from = `${relationship.fromKind}:${relationship.fromId != null ? relationship.fromId : relationship.fromStatement}`;
@@ -32,6 +37,8 @@ function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
       confidence: extra.confidence,
       method: extra.method || 'derived',
       sources: extra.sources || [],
+      question_shape: extra.questionShape,
+      question_options: extra.questionOptions,
     });
     if (sync && record) {
       try { await sync.syncHypothesis(record); } catch (_) { /* mirroring never breaks the turn */ }
@@ -54,10 +61,20 @@ function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
     return { submitted: Boolean(foundation) };
   }
 
+  /**
+   * An open question, with the shape the person answers it with. Accepts the
+   * validated { question, shape, options } as well as the v1.0 bare string, and
+   * falls back to reading the shape off the text when a caller passes a string
+   * directly. An unreadable question is refused here too — the same guard as the
+   * validator's, so no route to the card can bypass it.
+   */
   async function retainOpenQuestion(question) {
-    const statement = String(question || '').trim();
-    if (!statement) throw new Error('open question is required');
-    return proposeKind('open_question', statement);
+    const normalized = normalizeOpenQuestion(question);
+    if (!normalized) throw new Error('open question is required');
+    return proposeKind('open_question', normalized.question, {
+      questionShape: normalized.shape,
+      questionOptions: normalized.options,
+    });
   }
 
   async function retainRelationship(relationship) {

@@ -28,9 +28,13 @@ function analysisFields(result) {
     .slice(0, MAX_ANALYSIS_ITEMS)
     .map((o) => truncate(o.statement));
   const openQuestions = (Array.isArray(result.openQuestions) ? result.openQuestions : [])
-    .filter((q) => typeof q === 'string' && q)
+    .map((q) => (q && typeof q === 'object' ? q : { question: q }))
+    .filter((q) => typeof q.question === 'string' && q.question)
     .slice(0, MAX_ANALYSIS_ITEMS)
-    .map((q) => truncate(q));
+    // The shape rides along in brackets: the admin log shows WHICH control the
+    // question will get on the review card, which is the only way to see the
+    // recognizer's verdict without opening the desktop.
+    .map((q) => truncate(q.shape ? `${q.question} [${q.shape}]` : q.question));
   const reflection = result.reflection && typeof result.reflection === 'object'
     ? {
         goalAchieved: typeof result.reflection.goalAchieved === 'boolean' ? result.reflection.goalAchieved : null,

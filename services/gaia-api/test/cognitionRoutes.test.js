@@ -143,3 +143,63 @@ test('an unresolved relationship id stays as the bare id, never a broken half', 
   const res = await request(appWith({ cognition })).get('/cognition/hypotheses');
   assert.equal(res.body.hypotheses[0].statement, 'observation:x weakens hypothesis:missing');
 });
+
+// === v1.2 — the shape an open question is answered with ====================
+
+test('GET sends the shape along, and reads it off a question written before it existed', async () => {
+  const cognition = fakeCognition();
+  cognition.listHypotheses = async () => ([
+    { id: 'q1', kind: 'open_question', status: 'proposed', statement: 'Zal Bo het bestand gebruiken (openen/inhouden)?' },
+    { id: 'q2', kind: 'open_question', status: 'proposed', statement: 'Klopt dit verband?', question_shape: 'yes_no', question_options: [] },
+    { id: 'q3', kind: 'open_question', status: 'proposed', statement: 'Is dit nog open?', question_shape: 'open' },
+  ]);
+
+  const res = await request(appWith({ cognition })).get('/cognition/hypotheses');
+  assert.equal(res.status, 200);
+  // No stored shape (a record written before v1.2): derived from the statement.
+  assert.equal(res.body.hypotheses.find((h) => h.id === 'q1').question_shape, 'choice');
+  assert.deepEqual(res.body.hypotheses.find((h) => h.id === 'q1').question_options, ['openen', 'inhouden']);
+  // A stored shape is never overwritten.
+  assert.equal(res.body.hypotheses.find((h) => h.id === 'q3').question_shape, 'open');
+});
+
+test('GET leaves an answered question out of the review list', async () => {
+  const cognition = fakeCognition();
+  cognition.listHypotheses = async () => ([
+    { id: 'q1', kind: 'open_question', status: 'proposed', statement: 'Is dit nog open?' },
+    { id: 'q2', kind: 'open_question', status: 'proposed', statement: 'Is dat nog open?', answer: 'ja', answered_at: '2026-10-14T09:00:00Z' },
+  ]);
+
+  const res = await request(appWith({ cognition })).get('/cognition/hypotheses');
+  assert.deepEqual(res.body.hypotheses.map((h) => h.id), ['q1']);
+});
+
+test('POST answer records the human answer and does not mirror it', async () => {
+  const cognition = fakeCognition();
+  cognition.answerHypothesis = async (id, o) => {
+    cognition.calls.push(['answer', id, o]);
+    return { id, kind: 'open_question', status: 'proposed', answer: o.answer, answered_at: '2026-10-14T09:00:00Z' };
+  };
+  const mirrored = [];
+  const res = await request(appWith({ cognition, sync: { syncHypothesis: async (r) => mirrored.push(r) } }))
+    .post('/cognition/hypotheses/q1/answer').send({ answer: 'openen' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.answer, 'openen');
+  assert.equal(cognition.calls.at(-1)[2].answer, 'openen');
+  // Answering is not a confirmation: the statement keeps its status, and the
+  // person's own answer is not quietly turned into a mirrored fact.
+  assert.equal(res.body.status, 'proposed');
+  assert.equal(mirrored.length, 0);
+});
+
+test('POST answer refuses an empty answer', async () => {
+  const cognition = fakeCognition();
+  cognition.answerHypothesis = async () => { throw new Error('must not be called'); };
+
+  for (const body of [{}, { answer: '   ' }]) {
+    const res = await request(appWith({ cognition })).post('/cognition/hypotheses/q1/answer').send(body);
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /answer is required/);
+  }
+});

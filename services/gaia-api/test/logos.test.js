@@ -139,7 +139,90 @@ test('parseAndValidateReasoningOutput: unreadable open questions are dropped, re
     'What is causing the intermittent timeouts?',
   ];
   const result = parseAndValidateReasoningOutput(JSON.stringify(output));
-  assert.deepEqual(result.openQuestions, ['What is causing the intermittent timeouts?']);
+  assert.deepEqual(result.openQuestions.map((q) => q.question), ['What is causing the intermittent timeouts?']);
+  // v1.2: every surviving question carries the shape it is answered with.
+  assert.equal(result.openQuestions[0].shape, 'open');
+  assert.deepEqual(result.openQuestions[0].options, []);
+});
+
+// === v1.2 — the shape of an open question ==================================
+
+test('v1.2 shape: an "or"-question written as a slash group becomes a choice with its options', () => {
+  const result = parseAndValidateReasoningOutput(JSON.stringify({
+    interpretation: 'the file stays',
+    openQuestions: [
+      'Zal Bo het gevonden bestand verder willen gebruiken (openen/inhouden)?',
+      'Wil Bo met de testomgeving doorwerken (eenmalig/deze sessie/altijd)?',
+    ],
+  }));
+  assert.deepEqual(result.openQuestions[0], {
+    question: 'Zal Bo het gevonden bestand verder willen gebruiken (openen/inhouden)?',
+    shape: 'choice',
+    options: ['openen', 'inhouden'],
+  });
+  assert.deepEqual(result.openQuestions[1].options, ['eenmalig', 'deze sessie', 'altijd']);
+});
+
+test('v1.2 shape: yes/no questions are recognised, a bare "A of B?" is not claimed', () => {
+  const result = parseAndValidateReasoningOutput(JSON.stringify({
+    interpretation: 'x',
+    openQuestions: [
+      'Is dit nog open?',
+      'Klopt dit verband?',
+      'Heeft Bo het bestand al gebruikt?',
+      'Does the separation extend to synchronous reasoning?',
+      // The alternatives cannot be read off the text (the first one swallows
+      // the subject and the verb), so this stays a free-text answer instead of
+      // a wrong pair of buttons.
+      'Wil Bo het bestand openen of inhouden?',
+      'Welke vervolgstap weegt het zwaarst?',
+    ],
+  }));
+  assert.deepEqual(result.openQuestions.map((q) => q.shape), [
+    'yes_no', 'yes_no', 'yes_no', 'yes_no', 'open', 'open',
+  ]);
+  assert.deepEqual(result.openQuestions.map((q) => q.options), [[], [], [], [], [], []]);
+});
+
+test('v1.2 shape: a shape the model states itself wins over the text', () => {
+  const result = parseAndValidateReasoningOutput(JSON.stringify({
+    interpretation: 'x',
+    openQuestions: [
+      // The text looks like a slash group, but the model says free text.
+      { question: 'Wat weegt het zwaarst (snelheid/rust)?', shape: 'open' },
+      // The text says nothing, but the model names the alternatives.
+      { question: 'Welke vervolgstap weegt het zwaarst?', shape: 'choice', options: ['snelheid', 'rust'] },
+    ],
+  }));
+  assert.deepEqual(result.openQuestions[0], {
+    question: 'Wat weegt het zwaarst (snelheid/rust)?', shape: 'open', options: [],
+  });
+  assert.deepEqual(result.openQuestions[1], {
+    question: 'Welke vervolgstap weegt het zwaarst?', shape: 'choice', options: ['snelheid', 'rust'],
+  });
+});
+
+test('v1.2 shape: a choice without two usable options degrades to a free-text answer', () => {
+  const result = parseAndValidateReasoningOutput(JSON.stringify({
+    interpretation: 'x',
+    openQuestions: [
+      { question: 'Welke richting kiezen we?', shape: 'choice' },
+      { question: 'Welke richting kiezen we?', shape: 'choice', options: ['die ene optie'] },
+      { question: 'Welke richting kiezen we?', shape: 'choice', options: ['a', 'b', ''] },
+      { question: 'Klopt dit?', shape: 'onzin' },
+    ],
+  }));
+  assert.deepEqual(result.openQuestions.map((q) => q.shape), ['open', 'open', 'choice', 'yes_no']);
+  assert.deepEqual(result.openQuestions[2].options, ['a', 'b']);
+});
+
+test('v1.2 shape: options stay short and few; a long paragraph is not a button', () => {
+  const longOption = 'een alternatief dat veel te lang is om ooit op een knop te passen';
+  const result = parseAndValidateReasoningOutput(JSON.stringify({
+    interpretation: 'x',
+    openQuestions: [{ question: 'Welke stap is het beste?', shape: 'choice', options: [longOption, 'kort', 'kort', 'a', 'b', 'c', 'd', 'e'] }],
+  }));
+  assert.deepEqual(result.openQuestions[0].options, ['kort', 'a', 'b', 'c', 'd']);
 });
 
 // --- reasonPrompt -----------------------------------------------------
@@ -838,7 +921,8 @@ test('v1.0 validation: observations, openQuestions and reflection parse and keep
   assert.match(result.observations[0].statement, /explicitly decided/);
   assert.deepEqual(result.observations[0].evidence, [{ id: 'evidence-1', source: 'conversation' }]);
   assert.equal(result.observations[0].relatedHypothesisId, null);
-  assert.deepEqual(result.openQuestions, ['Does the separation extend to synchronous reasoning for exceptional cases?']);
+  assert.deepEqual(result.openQuestions.map((q) => q.question), ['Does the separation extend to synchronous reasoning for exceptional cases?']);
+  assert.equal(result.openQuestions[0].shape, 'yes_no');
   assert.equal(result.reflection.goalAchieved, true);
   assert.match(result.reflection.learned, /deliberate user decision/);
   assert.match(result.reflection.hypothesisImpact, /gained support/);
@@ -924,7 +1008,9 @@ test('v1.0 logging: the result line counts observations/open questions and repor
   // v1.1: the analysis content itself is logged, so the admin decision log
   // can show what ReasonIQ derived instead of bare counts.
   assert.deepEqual(record.observations, ['The user explicitly decided that ReasonIQ must not participate in the conversation loop.']);
-  assert.deepEqual(record.openQuestions, ['Does the separation extend to synchronous reasoning for exceptional cases?']);
+  // v1.2: the shape rides along in the log, so the admin can see which control
+  // the question will get without opening the desktop.
+  assert.deepEqual(record.openQuestions, ['Does the separation extend to synchronous reasoning for exceptional cases? [yes_no]']);
   assert.equal(record.reflection.goalAchieved, true);
   assert.match(record.reflection.learned, /deliberate user decision/);
   assert.equal(record.reflection.unresolved, null);
@@ -976,6 +1062,7 @@ test('v1.1 logging: long analysis content is truncated and lists are bounded', a
   assert.ok(record.observations[0].length <= 301);
   assert.ok(record.observations[0].endsWith('…'));
   assert.equal(record.openQuestions.length, 20);
+  assert.ok(record.openQuestions[0].endsWith('question 0 [open]'));
   assert.equal(record.reflection.learned.length, 301);
   assert.ok(record.reflection.goalAchieved === null);
 });

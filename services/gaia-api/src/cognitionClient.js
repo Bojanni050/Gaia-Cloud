@@ -98,6 +98,11 @@ function createCognitionClient({
     superseded_by_id: supersededById,
     ...(reason !== undefined ? { reason } : {}),
   });
+  // v1.2 — the human's answer to an open question. Stored on the record; not a
+  // lifecycle transition.
+  const answerHypothesis = (id, { answer } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/answer`, {
+    ...(answer !== undefined ? { answer } : {}),
+  });
 
   // --- Patterns ---
   const listPatterns = () => request('GET', '/patterns').then((r) => (r && r.patterns) || []);
@@ -132,6 +137,7 @@ function createCognitionClient({
     rejectHypothesis,
     reopenHypothesis,
     supersedeHypothesis,
+    answerHypothesis,
     listPatterns,
     getPattern,
     createPattern,

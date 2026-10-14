@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { recognizeQuestionShape } = require('./logos/questionShape');
 
 /**
  * GaiaChat review surface — the human-in-the-loop Absolute Override.
@@ -14,12 +15,19 @@ const express = require('express');
  *   POST /cognition/hypotheses/:id/reject      { reason }  (verwerp_bron "mens")
  *   POST /cognition/hypotheses/:id/reopen      { reason }  — the human lift of a rejection
  *   POST /cognition/hypotheses/:id/confirm     { supersedes?: [ids], rationale?, statement? }
+ *   POST /cognition/hypotheses/:id/answer      { answer }  — the human's answer to an open question
  *
  * `confirm` is the ONLY path to `confirmed` (Absolute Override). It updates
  * Cognition, mirrors the record to Hindsight (cognitionSync emits
  * gaia:confirmed_fact), and performs active supersession: every id the caller
  * names in `supersedes` is marked rejected with verwerp_bron 'consolidatie' and
  * a pointer to the confirmed statement.
+ *
+ * An open question is not confirmed but ANSWERED: the human supplies the fact
+ * the question was missing, and the question drops off the list. Its
+ * `question_shape` tells the client which control to offer — the Ja/Nee pair,
+ * free text, or one button per option — so an "openen/inhouden" question is
+ * never answered with a yes/no that means nothing.
  *
  * Cognition owns the lifecycle; this router only carries the human's verdict.
  */
@@ -78,6 +86,28 @@ async function expandRelationships(records, cognition) {
   }));
 }
 
+/**
+ * The review list: what still waits on the human. Two adjustments here.
+ *
+ * An answered open question has been dealt with, so it leaves the list. The
+ * record keeps its answer and stays in Cognition; only the review surface stops
+ * showing it. (Confirmed and rejected statements stay: the card renders the
+ * rejected state, and the drawer is where the person sees their own history.)
+ *
+ * An open question written before the shape existed (v1.2) has none, so the
+ * shape is read off the statement — the same recognizer the validator uses —
+ * and sent along. A shape the model supplied itself is never overwritten.
+ */
+function reviewableQuestions(records) {
+  return (Array.isArray(records) ? records : [])
+    .filter((record) => !(record && record.kind === 'open_question' && record.answered_at))
+    .map((record) => {
+      if (!record || record.kind !== 'open_question' || record.question_shape) return record;
+      const { shape, options } = recognizeQuestionShape(record.statement);
+      return { ...record, question_shape: shape, question_options: options };
+    });
+}
+
 function createCognitionRouter({ cognition, sync, auth } = {}) {
   if (!cognition) throw new Error('cognitionRoutes requires a cognition client');
   const router = express.Router();
@@ -92,7 +122,7 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
   router.get('/hypotheses', asyncRoute(async (req, res) => {
     const { status } = req.query;
     const list = await cognition.listHypotheses(status ? { status } : {});
-    const expanded = await expandRelationships(Array.isArray(list) ? list : [], cognition);
+    const expanded = await expandRelationships(reviewableQuestions(list), cognition);
     res.json({ hypotheses: expanded });
   }));
 
@@ -122,6 +152,19 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     const record = await cognition.reopenHypothesis(req.params.id, { reason });
     await mirror(record);
     res.json(record);
+  }));
+
+  // The human's answer to an open question. Recorded on the record, with the
+  // moment it was given; the question then leaves the review list. Answering is
+  // NOT a confirmation — the statement keeps its status and nothing is mirrored,
+  // because the answer is the person's own, and Gaia does not quietly turn it
+  // into a fact.
+  router.post('/hypotheses/:id/answer', asyncRoute(async (req, res) => {
+    const answer = (req.body && req.body.answer) || '';
+    if (!String(answer).trim()) {
+      return res.status(400).json({ error: 'an answer is required' });
+    }
+    res.json(await cognition.answerHypothesis(req.params.id, { answer }));
   }));
 
   router.post('/hypotheses/:id/confirm', asyncRoute(async (req, res) => {
@@ -165,4 +208,4 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
   return router;
 }
 
-module.exports = { createCognitionRouter, REVIEW_STATUSES };
+module.exports = { createCognitionRouter, reviewableQuestions, REVIEW_STATUSES };

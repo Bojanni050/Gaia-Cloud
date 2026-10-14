@@ -23,6 +23,8 @@ router.post('/', asyncRoute(async (req, res) => {
     supersedesId: req.body.supersedes_id,
     counterHypothesis: req.body.counter_hypothesis,
     scope: req.body.scope,
+    questionShape: req.body.question_shape,
+    questionOptions: req.body.question_options,
   });
   res.status(201).json(h);
 }));
@@ -95,6 +97,12 @@ router.post('/:id/reject', asyncRoute(async (req, res) => {
 router.post('/:id/reopen', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;
   res.json(await hypotheses.reopen(bankId, id, { reason: req.body.reason }));
+}));
+
+// The human's answer to an open question (v1.2) — stored, not a transition.
+router.post('/:id/answer', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.answer(bankId, id, { answer: req.body.answer }));
 }));
 
 // Consolidation — a newer statement supersedes this one.

@@ -24,6 +24,10 @@ function row(overrides = {}) {
     superseded_by_id: null,
     counter_hypothesis: 'a plausible opposing reading',
     scope: 'macro',
+    question_shape: null,
+    question_options: [],
+    answer: null,
+    answered_at: null,
     confirmed_document_id: null,
     rejection_reason: null,
     verwerp_bron: null,
@@ -466,4 +470,105 @@ test('softDelete() throws NotFoundError when nothing was deleted', async () => {
     () => hypotheses.softDelete('gaia', 'missing'),
     (err) => err.name === 'NotFoundError',
   );
+});
+
+// === v1.2 — open questions carry the shape they are answered with ==========
+
+test('propose() stores the question shape and its options', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({
+    rows: [row({ kind: 'open_question', question_shape: 'choice', question_options: ['openen', 'inhouden'] })],
+  }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.propose('gaia', {
+    statement: 'Zal Bo het bestand gebruiken (openen/inhouden)?',
+    kind: 'open_question',
+    questionShape: 'choice',
+    questionOptions: ['openen', 'inhouden'],
+  });
+
+  assert.equal(h.question_shape, 'choice');
+  assert.equal(fake.calls[0].params[14], 'choice');
+  assert.deepEqual(fake.calls[0].params[15], ['openen', 'inhouden']);
+});
+
+test('propose() keeps options only for a choice, and refuses an unknown shape', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ kind: 'open_question', question_shape: 'open' })] }));
+  pool.query = fake.pool.query;
+
+  await hypotheses.propose('gaia', {
+    statement: 'Is dit nog open?', kind: 'open_question', questionShape: 'open', questionOptions: ['ja', 'nee'],
+  });
+  assert.deepEqual(fake.calls[0].params[15], [], 'options belong to a choice and to nothing else');
+
+  await assert.rejects(
+    () => hypotheses.propose('gaia', { statement: 'x', questionShape: 'multiple' }),
+    (err) => err.name === 'ValidationError',
+  );
+});
+
+test('answer() records the human answer and when it was given', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ kind: 'open_question', question_shape: 'choice' })] };
+    return { rows: [row({ kind: 'open_question', answer: 'openen', answered_at: '2026-10-14T09:00:00Z' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.answer('gaia', 'h1', { answer: '  openen  ' });
+  assert.equal(h.answer, 'openen');
+  assert.equal(h.answered_at, '2026-10-14T09:00:00Z');
+  assert.match(fake.calls[1].sql, /UPDATE hypotheses SET answer = \$3, answered_at = now\(\)/);
+  assert.equal(fake.calls[1].params[2], 'openen', 'the answer is trimmed');
+});
+
+test('answer() refuses an empty answer before it ever reaches the database', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ kind: 'open_question' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(() => hypotheses.answer('gaia', 'h1', { answer: '   ' }), /an answer is required/);
+  await assert.rejects(() => hypotheses.answer('gaia', 'h1', {}), /an answer is required/);
+  assert.equal(fake.calls.length, 0);
+});
+
+test('answer() is only for an open question, and not one already settled', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ kind: 'hypothesis' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.answer('gaia', 'h1', { answer: 'ja' }),
+    /only an open question can be answered/,
+  );
+
+  fake.setImpl(async () => ({ rows: [row({ kind: 'open_question', status: 'rejected' })] }));
+  await assert.rejects(
+    () => hypotheses.answer('gaia', 'h1', { answer: 'ja' }),
+    (err) => err.name === 'InvalidTransitionError',
+  );
+
+  fake.setImpl(async () => ({ rows: [row({ kind: 'open_question', status: 'confirmed' })] }));
+  await assert.rejects(
+    () => hypotheses.answer('gaia', 'h1', { answer: 'ja' }),
+    (err) => err.name === 'InvalidTransitionError',
+  );
+});
+
+test('answer() overwrites an earlier answer rather than refusing the correction', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ kind: 'open_question', answer: 'openen' })] };
+    return { rows: [row({ kind: 'open_question', answer: 'inhouden' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.answer('gaia', 'h1', { answer: 'inhouden' });
+  assert.equal(h.answer, 'inhouden');
 });

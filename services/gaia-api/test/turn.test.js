@@ -2977,7 +2977,11 @@ function v1ReasoningResult(overrides = {}) {
       evidence: [{ id: 'hindsight-1', source: 'hindsight' }],
       relatedHypothesisId: null,
     }],
-    openQuestions: ['Does the separation extend to synchronous reasoning for exceptional cases?'],
+    openQuestions: [{
+      question: 'Does the separation extend to synchronous reasoning for exceptional cases?',
+      shape: 'yes_no',
+      options: [],
+    }],
     reflection: { goalAchieved: true, learned: 'The boundary is deliberate.', unresolved: null, hypothesisImpact: null },
     conclusions: [], sufficientForConclusion: false, confidence: 0.7,
     ...overrides,
@@ -2992,7 +2996,7 @@ function cognitionRuntimeFor() {
     retained,
     cognition: {
       retainObservation: async (o) => { retained.push({ kind: 'observation', ...o }); return { factId: 'obs-fact-1' }; },
-      retainOpenQuestion: async (q) => { retained.push({ kind: 'open-question', statement: q }); return { factId: 'oq-fact-1' }; },
+      retainOpenQuestion: async (q) => { retained.push({ kind: 'open-question', ...q }); return { factId: 'oq-fact-1' }; },
     },
   };
 }
@@ -3041,7 +3045,10 @@ test('v1.0 background analysis: observations and open questions reach Hindsight 
   assert.match(observations[0].statement, /explicitly decided/);
   assert.deepEqual(observations[0].evidence, [{ id: 'hindsight-1', source: 'hindsight' }]);
   assert.equal(questions.length, 1, 'the open question was stored — identified, never asked');
-  assert.match(questions[0].statement, /synchronous reasoning/);
+  assert.match(questions[0].question, /synchronous reasoning/);
+  // v1.2: the question carries the shape the person answers it with, all the
+  // way from Logos's output to the review surface.
+  assert.equal(questions[0].shape, 'yes_no');
 });
 
 test('v1.0 background analysis: a memory-discarded turn still stores legitimate analysis products — the same §15 rule as hypotheses', async () => {

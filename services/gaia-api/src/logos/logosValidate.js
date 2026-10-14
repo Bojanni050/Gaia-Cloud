@@ -12,6 +12,7 @@
  */
 
 const { isValidEpistemicStatus, isValidVerdict, isValidHypothesisStatus, isValidHypothesisScope, CONTRADICTION_SIGNIFICANCE, RELATIONSHIP_NODE_KINDS, RELATIONSHIP_TYPES } = require('./logosSchema');
+const { SHAPES: QUESTION_SHAPES, recognizeQuestionShape, cleanOptions } = require('./questionShape');
 
 class MalformedLogosOutputError extends Error {
   constructor(reason) {
@@ -45,6 +46,36 @@ function isReadableStatement(raw) {
   // "??", "???" or "!!" are strong signals of a model glitch, not prose.
   if (/[?!]{2,}/.test(s)) return false;
   return true;
+}
+
+// An open question is normalised to { question, shape, options } so the desktop
+// review card can offer the control the question actually needs instead of
+// always Ja/Nee: a yes/no question is answered with the Ja/Nee pair, an open one
+// with free text, a choice one with a button per option. Accepts the v1.0 bare
+// string (records and callers written before the shape existed) as well as the
+// v1.2 object, and returns null for an unreadable question — the same guard that
+// keeps any other model glitch off the card.
+function normalizeOpenQuestion(item) {
+  const raw = item && typeof item === 'object' && !Array.isArray(item) ? item : { question: item };
+  const question = asString(raw.question).trim();
+  if (!question || !isReadableStatement(question)) return null;
+  const suggested = recognizeQuestionShape(question);
+  let shape = QUESTION_SHAPES.includes(raw.shape) ? raw.shape : null;
+  let options = [];
+  if (shape === 'choice') {
+    // The model's own options win; the text is only consulted when it named
+    // fewer than two usable ones. A "choice" without alternatives is not a
+    // choice, so it falls back to the free-text control.
+    options = cleanOptions(raw.options);
+    if (options.length < 2) options = suggested.options;
+    if (options.length < 2) shape = 'open';
+  } else if (!shape) {
+    // No shape from the model: read it off the question itself.
+    shape = suggested.shape;
+    options = suggested.options;
+  }
+  if (shape !== 'choice') options = [];
+  return { question, shape, options };
 }
 
 function asArray(value) {
@@ -430,7 +461,7 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting, 
     uncertainties: asArray(parsed.uncertainties).map((u) => asString(u)).filter(Boolean),
     informationGaps: asArray(parsed.informationGaps).map((g) => asString(g)).filter(Boolean),
     observations: asArray(parsed.observations).map(coerceObservation),
-    openQuestions: asArray(parsed.openQuestions).map((q) => asString(q)).filter((q) => q.trim() && isReadableStatement(q)),
+    openQuestions: asArray(parsed.openQuestions).map(normalizeOpenQuestion).filter(Boolean),
     relationships: asArray(parsed.relationships).map(coerceRelationship),
     reflection: coerceReflection(parsed.reflection),
     conclusions: asArray(parsed.conclusions).map(coerceConclusion),
@@ -440,4 +471,4 @@ function parseAndValidateReasoningOutput(rawText, knownEvidence, knownExisting, 
   return resolveProvenance(body, knownEvidence, knownExisting, knownPatterns);
 }
 
-module.exports = { parseAndValidateReasoningOutput, parseAndValidateLogosOutput: parseAndValidateReasoningOutput, MalformedReasoningOutputError, MalformedLogosOutputError, clampConfidence };
+module.exports = { parseAndValidateReasoningOutput, parseAndValidateLogosOutput: parseAndValidateReasoningOutput, MalformedReasoningOutputError, MalformedLogosOutputError, clampConfidence, normalizeOpenQuestion };

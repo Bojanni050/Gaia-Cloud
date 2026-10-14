@@ -59,7 +59,16 @@ Rules:
   observation to the input evidence ids it stands on; never invent an id.
 - openQuestions are unresolved questions worth keeping (an uncertain interpretation,
   a hypothesis needing more evidence, an unfinished goal). You identify them;
-  you NEVER ask the user about them — that is Gaia's decision, later.
+  you NEVER ask the user about them — that is Gaia's decision, later. Each entry
+  is ONE question in ONE readable sentence: never two questions crammed into one
+  entry, and never a question that bundles its alternatives into the surrounding
+  sentence. State for each how the person would answer it:
+    "yes_no" — answerable with yes or no;
+    "open"   — needs a free-text answer;
+    "choice" — the person picks one of the alternatives you list in "options"
+               (at most 5, a few words each, never a sentence).
+  Use "open" when in doubt, and give "options" ONLY when the alternatives are
+  genuinely the choices — never when the sentence merely happens to contain "of".
 - relationships connect EXISTING knowledge you were given or just derived:
   observation↔hypothesis, hypothesis↔pattern, pattern↔pattern, or new
   evidence↔existing knowledge. Each endpoint must be locatable in the input
@@ -122,7 +131,11 @@ Schema:
     "evidence": [string],           // input evidence IDS this observation stands on
     "relatedHypothesisId": string|null // EXISTING hypothesis this is relevant to, when one does
   }],
-  "openQuestions": [string],        // unresolved questions — identified, never asked
+  "openQuestions": [{               // unresolved questions — identified, never asked here
+    "question": string,             // ONE question, one readable sentence
+    "shape": "yes_no"|"open"|"choice",
+    "options": [string]             // the alternatives when shape is "choice"; [] otherwise
+  }],
   "relationships": [{              // explicit links between existing knowledge
     "fromKind": "evidence"|"observation"|"hypothesis"|"pattern",
     "fromId": string|null,          // evidence/hypothesis/pattern id when it has one
