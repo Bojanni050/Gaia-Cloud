@@ -169,10 +169,12 @@ function createApp(env = process.env) {
   // On-demand memory: the tools Gaia may call during a turn. `remember`
   // writes to the shared system-memory bank (`bojan`); `keep` writes to HER
   // own bank (`gaia`) — the explicit, in-conversation counterpart to Aion.
+  // `search_memory` reads back through the SAME cross-bank client the turn's
+  // gated recall uses, so her on-demand lookup spans every recall bank.
   // Off with GAIA_MEMORY_TOOL=false.
   const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
     ? null
-    : createMemoryTool({ hindsight: hindsightApp, ownHindsight: hindsightOwn });
+    : createMemoryTool({ hindsight: hindsightApp, ownHindsight: hindsightOwn, searchHindsight: hindsight });
   const memoryToolOptions = memoryTool
     ? { tools: memoryTool.TOOLS, onToolCall: memoryTool.onToolCall }
     : {};

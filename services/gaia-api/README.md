@@ -63,6 +63,33 @@ Export routes (`/export/json` and `/export/markdown`) return the conversation as
 Non-streaming in this phase. The streaming variant grows behind the same
 path (SSE/WebSocket) — clients were built with that seam ready.
 
+## On-demand memory (tools)
+
+The turn's own recall is *gated* (`memoryPolicy.shouldRecall`): it only runs
+when the phrasing carries a past-reference or durable-context cue. That left a
+real gap — on a turn whose wording missed the cues, Gaia had no way to open her
+own memory and could honestly answer "I cannot look that up". `reasoning/memoryTool.js`
+closes it with three verbs the generation model may call:
+
+- `remember` — writes to the shared system-memory bank (`bojan`).
+- `keep` — writes to HER own bank (`gaia`) — the in-conversation counterpart to Aion.
+- `search_memory` — reads back, ungated, through the **same cross-bank client**
+  the turn's gated recall uses (so `bojan`, `gaia` and `gaia-logos` are all in
+  scope), rendered through the same `condenseMemoryContext` (including the
+  `(uncertain)` marker). A failure or an empty result is stated plainly, never
+  thrown.
+
+All three are off with `GAIA_MEMORY_TOOL=false`; without a generation model that
+supports tools the turn falls back to plain generation. `search_memory` is only
+offered when a recall client is wired.
+
+To explain after the fact why a given turn did or did not reach memory, run
+`npm run why:recall -- "wat zei je vorige week over het project?"` — it replays
+the turn's lexical gates (Hindsight recall, transcript search, Foundation read,
+pattern recall) using the same modules, with no server or network. For turns
+that already ran, the durable per-turn record is `GET /admin/api/logos/decisions`
+(the `recall.measure` line carries the gate and per-source counts).
+
 Also part of the client contract, a **file library** (`library.js`,
 `libraryRoutes.js`) — storage and browsing only in this phase, nothing
 here feeds Logos, Hermes, or Hindsight yet:

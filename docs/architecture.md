@@ -110,6 +110,10 @@ observation · ingest ─────▶ hypothesis · pattern ·              �
   surfaceable as a raw memory of Bo's. When the person asks her to remember
   something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
   system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
+  The tools also read back: `search_memory` opens an **ungated** lookup through
+  the same cross-bank recall client the turn uses, so a phrasing that missed the
+  lexical recall gate is no longer a dead end — she can reach for her memory
+  herself instead of answering "I cannot look that up".
 - **Recall reranks via a remote API, with an RRF fallback.** Hindsight's
   cross-encoder is pluggable; set to `local`/`flashrank` it scored 300
   candidates in 10–18 s on the VPS CPU — far past `hindsightClient.js`'s 4 s

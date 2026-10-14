@@ -13,17 +13,29 @@
  *              notices, a feeling, a moment. The same bank Aion keeps in the
  *              background, under the same `gaia:aion` tag.
  *
+ * A third verb reads back: `search_memory` is the on-demand counterpart to the
+ * per-turn gated recall (`memory.js`'s `recallRelevantContext`). Recall only
+ * runs when the turn carried a past-reference cue; on a turn that didn't, Gaia
+ * had no way to open her own memory and could honestly answer "I cannot look
+ * that up". This tool lets her reach for it herself — ungated, across every bank
+ * the turn's recall spans (the cross-bank client `server.js` builds), rendered
+ * through the same `condenseMemoryContext` the passive path uses.
+ *
  * INVARIANT: the `gaia` bank is HERS ALONE. No client can write to it — the
  * only writers are this `keep` tool and the background Aion pass, both of
  * which are her own decisions (see SOUL's Memory section: nobody decides what
  * goes into her own memory, and a request to remember something belongs to the
  * shared bank instead). There is deliberately no user-facing write path.
  *
- * Boundary: schemas + two writes. They reason about nothing, and a failure
- * never reaches the turn.
+ * Boundary: schemas, one read and two writes. They reason about nothing, and a
+ * failure never reaches the turn.
  */
 
 const { AsyncLocalStorage } = require('node:async_hooks');
+// Same renderer the passive recall path uses (`renderMemoryContext`), so an
+// on-demand lookup and a gated one show her memory the same way — including
+// the "(uncertain)" marker for low-confidence items.
+const { condenseMemoryContext } = require('../memory');
 
 /**
  * Lets the turn that is running hear that `remember` kept something, without the tool knowing about
@@ -94,17 +106,35 @@ const KEEP_TOOL = Object.freeze({
   },
 });
 
+const SEARCH_TOOL = Object.freeze({
+  type: 'function',
+  function: {
+    name: 'search_memory',
+    description: "Look something up in your memory — what you have come to understand about the person and the world, and what you keep as your own. Use this when you need to recall something that is not already in this conversation, instead of saying you cannot look it up. Give a short search phrase; you will get back the remembered statements that match, or none.",
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What to look for, as a short search phrase.' },
+      },
+      required: ['query'],
+    },
+  },
+});
+
 /**
- * @param {{ hindsight?: object, ownHindsight?: object, now?: () => Date }} options
+ * @param {{ hindsight?: object, ownHindsight?: object, searchHindsight?: object,
+ *           now?: () => Date }} options
  *   `hindsight` is the shared system-memory client (`bojan`); `ownHindsight`
- *   is her own bank (`gaia`). When `ownHindsight` is absent, the `keep` tool
- *   is not offered.
+ *   is her own bank (`gaia`); `searchHindsight` is the cross-bank recall client
+ *   the turn's gated recall uses. When `ownHindsight` is absent, the `keep` tool
+ *   is not offered; when `searchHindsight` is absent, `search_memory` is not.
  */
-function createMemoryTool({ hindsight, ownHindsight, now = () => new Date() } = {}) {
+function createMemoryTool({ hindsight, ownHindsight, searchHindsight, now = () => new Date() } = {}) {
   if (!hindsight || typeof hindsight.reflect !== 'function') {
     throw new Error('memoryTool requires a hindsight client');
   }
   const ownReady = Boolean(ownHindsight && typeof ownHindsight.reflect === 'function');
+  const searchReady = Boolean(searchHindsight && typeof searchHindsight.recall === 'function');
 
   async function remember(args) {
     const text = String((args && args.text) || '').replace(/\s+/g, ' ').trim();
@@ -151,6 +181,20 @@ function createMemoryTool({ hindsight, ownHindsight, now = () => new Date() } = 
     }
   }
 
+  async function searchMemory(args) {
+    const query = String((args && args.query) || '').replace(/\s+/g, ' ').trim();
+    if (!query) return 'Nothing to search for.';
+    if (!searchReady) return 'That could not be looked up right now.';
+    try {
+      const results = await searchHindsight.recall(query);
+      const lines = condenseMemoryContext(results);
+      if (lines.length === 0) return 'Nothing in memory about that.';
+      return lines.join('\n');
+    } catch (_) {
+      return 'That could not be looked up right now.';
+    }
+  }
+
   /**
    * @param {string} name
    * @param {object} args
@@ -159,14 +203,20 @@ function createMemoryTool({ hindsight, ownHindsight, now = () => new Date() } = 
   async function onToolCall(name, args) {
     if (name === 'remember') return remember(args);
     if (name === 'keep') return keep(args);
+    if (name === 'search_memory') return searchMemory(args);
     return 'Unknown action.';
   }
 
+  const TOOLS = [REMEMBER_TOOL];
+  if (searchReady) TOOLS.push(SEARCH_TOOL);
+  if (ownReady) TOOLS.push(KEEP_TOOL);
+
   return {
     onToolCall,
-    TOOLS: ownReady ? [REMEMBER_TOOL, KEEP_TOOL] : [REMEMBER_TOOL],
+    TOOLS,
     TOOL: REMEMBER_TOOL,
     KEEP_TOOL,
+    SEARCH_TOOL,
   };
 }
 
@@ -175,6 +225,7 @@ module.exports = {
   withKeptNotifier,
   REMEMBER_TOOL,
   KEEP_TOOL,
+  SEARCH_TOOL,
   SHARED_DOMAIN,
   OWN_DOMAIN,
 };

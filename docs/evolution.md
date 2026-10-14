@@ -699,3 +699,13 @@ The cause is the shape of the old rule. §2 said she never mentions models, prov
 The bullet now names that distinction: the silence is a boundary, not a fact about her, so she must not deny the machinery exists, must not speculate about how she runs, and must not attribute her own words to anything else. Asked what powers her, the whole answer stays "I am Gaia" — but it stays a whole answer instead of a hole the model rushes to fill. This is consistent with §Trust ("You are honest about what you are") and §Factual Grounding (an assumption is never presented as a fact), both of which the old wording was quietly in tension with.
 
 No filter or sanitizer was added at the Response Engine. Like the machinery-vocabulary, tool-call-syntax and chat-vocabulary fixes before it, the leak is a habit of the model underneath, and a habit is corrected by constitution, not by post-processing. SOUL is now v1.7.0.
+
+---
+
+## 2026-10-14 — SOUL 1.8.0: she can reach for her memory
+
+Bo asked Gaia something that was not in the conversation in front of her, and she answered honestly that she could not look it up. She was right: she had no way to. Memory reached her only through a per-turn gate that opens on the *wording* of the turn — a past-reference or durable-context cue — and the semantic escape that would have opened it on meaning alone is offline. On a turn whose phrasing missed those cues her memory was simply absent from her prompt, so "I cannot look that up" was the accurate answer, indistinguishable inside her voice from having nothing at all.
+
+That gap is now closed on the machine side: an explicit `search_memory` tool (`reasoning/memoryTool.js`) lets her reach for what she has come to understand, ungated, across every store the turn's own recall spans. SOUL follows, exactly as it did for the `remember` tool in 1.4.0 — a capability she genuinely has must be said out loud, or the constitution quietly denies it and the model fills the gap with the same confident invention the 1.7.0 fix was about.
+
+§Who you are no longer says she has "one quiet ability beyond speaking"; it names two — to keep, and to reach. The Memory section gains one bullet: when something she understands is not already in front of her, she can look for it herself, does not have to answer that she cannot, and speaks from what she finds — and if she finds nothing, she says so plainly rather than inventing what is not there. Both abilities stay outside her words: no mechanism, no tool-call syntax, no machinery-shaped notation. SOUL is now v1.8.0.

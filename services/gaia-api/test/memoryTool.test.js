@@ -123,3 +123,58 @@ test('two turns at once only hear their own keeps', async () => {
   assert.deepEqual(a, ['for a']);
   assert.deepEqual(b, ['for b']);
 });
+
+// --- search_memory: reading back on demand --------------------------------------------------
+
+function fakeRecall(results, { boom } = {}) {
+  const queries = [];
+  return {
+    queries,
+    async recall(query) {
+      queries.push(query);
+      if (boom) throw new Error('down');
+      return results;
+    },
+  };
+}
+
+test('search_memory is offered when a recall client is present, and only then', () => {
+  const withSearch = createMemoryTool({
+    hindsight: fakeHindsight(),
+    ownHindsight: fakeHindsight(),
+    searchHindsight: fakeRecall([]),
+  });
+  assert.deepEqual(withSearch.TOOLS.map((t) => t.function.name), ['remember', 'search_memory', 'keep']);
+
+  const withoutSearch = createMemoryTool({ hindsight: fakeHindsight(), ownHindsight: fakeHindsight() });
+  assert.deepEqual(withoutSearch.TOOLS.map((t) => t.function.name), ['remember', 'keep']);
+});
+
+test('search_memory reads back through the recall client and renders the matches', async () => {
+  const recall = fakeRecall([
+    { text: 'Bo works on Gaia', scores: { final: 0.9 } },
+    { text: 'Bo prefers late nights', scores: { final: 0.4 } },
+  ]);
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), searchHindsight: recall });
+
+  const result = await tool.onToolCall('search_memory', { query: '  what do I know about Bo  ' });
+
+  assert.equal(result, '- Bo works on Gaia\n- Bo prefers late nights (uncertain)');
+  assert.deepEqual(recall.queries, ['what do I know about Bo']);
+});
+
+test('search_memory says so plainly when memory has nothing, or the query is empty', async () => {
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), searchHindsight: fakeRecall([]) });
+  assert.equal(await tool.onToolCall('search_memory', { query: 'unheard of' }), 'Nothing in memory about that.');
+  assert.equal(await tool.onToolCall('search_memory', { query: '   ' }), 'Nothing to search for.');
+});
+
+test('a failed lookup never throws — it reports calmly', async () => {
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), searchHindsight: fakeRecall([], { boom: true }) });
+  assert.equal(await tool.onToolCall('search_memory', { query: 'anything' }), 'That could not be looked up right now.');
+});
+
+test('search_memory is a calm no-op when no lookup path is wired', async () => {
+  const tool = createMemoryTool({ hindsight: fakeHindsight() });
+  assert.equal(await tool.onToolCall('search_memory', { query: 'anything' }), 'That could not be looked up right now.');
+});

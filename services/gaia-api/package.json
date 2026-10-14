@@ -14,7 +14,8 @@
     "eval:hypothesis": "node eval/run-hypothesis.js",
     "eval:pattern": "node eval/run-pattern.js",
     "eval:memory": "node eval/run-memoryworthiness.js",
-    "reconcile:hindsight": "node scripts/reconcile-hindsight-tags.js"
+    "reconcile:hindsight": "node scripts/reconcile-hindsight-tags.js",
+    "why:recall": "node scripts/why-recall.js"
   },
   "dependencies": {
     "express": "^4.19.2",
