@@ -81,6 +81,13 @@ function buildDesktopTool() {
 
 const DESKTOP_TOOL = buildDesktopTool();
 
+const PATH_NOT_ABSOLUTE = 'Nothing was done: every path must be a full absolute path such as C:\\Users\\name\\Documents\\notes, and this one was missing or relative. Do not guess one. Ask the person for the full path, or list a parent folder you do know (for example C:\\Users) to find it, then try again.';
+
+/** A drive path (C:\ or C:/), a UNC path (\\host\share) or a rooted path (/...) — what the desktop accepts. */
+function isAbsolutePath(path) {
+  return typeof path === 'string' && /^(?:[a-zA-Z]:[\\/]|[\\/]{2}|\/)/.test(path.trim());
+}
+
 function policyFor(skill) {
   return SKILL_POLICY[skill] || 'confirm';
 }
@@ -178,6 +185,12 @@ function createDesktopBroker(options = {}) {
   function run({ skill, input, conversationId, emit, signal }) {
     if (typeof skill !== 'string' || !hasSkill('desktop', skill)) {
       return Promise.resolve('That is not something the desktop can do.');
+    }
+    // The desktop only accepts full paths, so a relative one is caught here: the model gets a
+    // usable correction at once, and the person is never shown a prompt for an action that
+    // could not run. (The desktop repeats this check; this is the early, friendlier one.)
+    if (skill !== 'run-command' && !isAbsolutePath(input && input.path)) {
+      return Promise.resolve(PATH_NOT_ABSOLUTE);
     }
     const policy = policyFor(skill);
     const action = {

@@ -40,7 +40,7 @@ test('summary is built from the args, not by the model, and is bounded', () => {
 
 test('auto action: announced as approved, completes with a data-labelled result', async () => {
   const { broker, turn, frames } = harness();
-  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'a.txt' } });
+  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'C:/a.txt' } });
   await tick();
   assert.equal(frames[0].status, 'approved');
   assert.equal(frames[0].policy, 'auto');
@@ -65,7 +65,7 @@ test('confirm action: waits for approval, then for the result', async () => {
 
 test('a result for an unapproved action is refused — the prompt cannot be skipped', async () => {
   const { broker, turn, frames } = harness();
-  const pending = turn.onToolCall('desktop', { skill: 'file-write', input: { path: 'a', content: 'b' } });
+  const pending = turn.onToolCall('desktop', { skill: 'file-write', input: { path: 'C:/a', content: 'b' } });
   await tick();
   const { id } = frames[0];
   assert.deepEqual(broker.complete(id, { ok: true, output: 'wrote it' }), { ok: false, code: 'not_approved' });
@@ -88,7 +88,7 @@ test('answering twice, or after a terminal state, is a wrong_state; unknown ids 
 
 test('failed results are labelled as failures; output is bounded', async () => {
   const { broker, turn, frames } = harness({ maxOutputChars: 10 });
-  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'a' } });
+  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'C:/a' } });
   await tick();
   broker.complete(frames[0].id, { ok: false, output: 'x'.repeat(100) });
   const text = await pending;
@@ -132,7 +132,7 @@ test('unknown skills and tool names are refused without creating an action', asy
 
 test('audit lines carry ids, skill, policy, status — never content', async () => {
   const { broker, turn, frames, logs } = harness();
-  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'secret.txt' } });
+  const pending = turn.onToolCall('desktop', { skill: 'file-read', input: { path: 'C:/secret.txt' } });
   await tick();
   broker.complete(frames[0].id, { ok: true, output: 'top secret' });
   await pending;
@@ -196,7 +196,7 @@ test('streamed turn: desktop frames reach the client and the tool result reaches
     stream: async (messages, { onDelta, tools, onToolCall }) => {
       sawDesktopCapability = messages.some((m) => m.role === 'system' && /- desktop:/.test(m.content));
       assert.equal(tools[0].function.name, 'desktop');
-      const call = onToolCall('desktop', { skill: 'file-read', input: { path: 'a.txt' } });
+      const call = onToolCall('desktop', { skill: 'file-read', input: { path: 'C:/a.txt' } });
       await tick();
       const frame = JSON.parse(written.find((w) => w.includes('"type":"desktop"')).slice(5));
       assert.equal(frame.desktop.policy, 'auto');
