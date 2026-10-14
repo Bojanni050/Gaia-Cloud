@@ -78,6 +78,17 @@ test('the index search is offered only when the desktop says it is there', () =>
   assert.ok(!broker.forTurn({ roots: ['D:\\'], index: 'true' }).tools[0].function.description.includes('where "index"'));
 });
 
+test('the model is told to read the whole result and to stop once it has found what was asked', () => {
+  const { DESKTOP_TOOL } = require('../src/desktopBroker');
+  const broker = createDesktopBroker({ logger() {} });
+  for (const tool of [DESKTOP_TOOL, broker.forTurn({ roots: ['D:\\'] }).tools[0], broker.forTurn({ roots: ['D:\\'], index: true }).tools[0]]) {
+    assert.match(tool.function.description, /Read the whole result before you say something was not found/);
+    assert.match(tool.function.description, /stop searching and answer with its full path/);
+  }
+  const withIndex = broker.forTurn({ roots: ['D:\\'], index: true }).tools[0].function.description;
+  assert.match(withIndex, /use it FIRST, with where "index"/);
+});
+
 test('the terminal is offered as a fallback, with its confirmation and time limit named', () => {
   const { DESKTOP_TOOL } = require('../src/desktopBroker');
   const broker = createDesktopBroker({ logger() {} });
