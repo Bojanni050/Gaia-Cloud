@@ -40,9 +40,10 @@
  */
 
 const { buildSystemPrompt } = require('./foundation');
-const { recallRelevantContext, renderMemoryContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
+const { recallRelevantContext, renderDualRecallContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
 const { searchRelevantKnowledgePages, renderKnowledgePageContext } = require('./knowledgePages');
 const { assembleEvidence } = require('./reasoning/evidenceAssembler');
+const { fetchEvidenceForReflections } = require('./reasoning/evidenceRecall');
 const {
   evaluateMemoryWorthiness, shouldRetainToHindsight, applyCapabilityOutcomeOverride,
   metadataForMemoryDecision, logMemoryWorthiness,
@@ -482,6 +483,23 @@ async function runTurnCore({
   ]);
   timing.end('memory_recall');
 
+  // Dual Recall — de terugweg. A recalled Hindsight item carries the raw
+  // Foundation observation ids it was built from (gaia_*_sources, see
+  // reasoning/evidenceRecall.js); fetch those literal records so the prompt can
+  // lay the evidence beside the interpretation it supports. Gated hard (no
+  // sources ⇒ no fetch) and fail-soft: a missing source is silence, never a
+  // broken turn.
+  timing.start('evidence_recall');
+  let dualRecall = null;
+  try {
+    dualRecall = await fetchEvidenceForReflections(foundation, reflections, {
+      pastReference: wantConversationHistory,
+    });
+  } catch (_) {
+    dualRecall = null;
+  }
+  timing.end('evidence_recall');
+
   // The moment the run exists, tell the transport — a client can then show
   // that something is running in the background while this reply streams,
   // instead of finding out on its next poll.
@@ -573,7 +591,7 @@ async function runTurnCore({
   // (gated) pattern guidance. Both transports build the exact same prompt.
   const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop });
   const systemPrompt = buildSystemPrompt(documents, messages);
-  const memoryBlock = renderMemoryContext(reflections);
+  const memoryBlock = renderDualRecallContext(reflections, dualRecall ? dualRecall.evidenceByFactId : null);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;

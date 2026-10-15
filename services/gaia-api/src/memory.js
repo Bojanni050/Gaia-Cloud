@@ -56,34 +56,89 @@ function formatReflectionLine(reflection) {
   return isUncertain ? `- ${summary} (uncertain)` : `- ${summary}`;
 }
 
-/** @param {Array<{text: string, scores: {final: number|null}}>} reflections */
-function condenseMemoryContext(reflections) {
+/**
+ * The selection step shared by both renderers: the same dedupe and the same
+ * 6-line cap, but each surviving line keeps the reflection it came from, so a
+ * caller can attach that item's Foundation evidence beneath it.
+ * @param {Array<{id?: string, text: string, scores: {final: number|null}}>} reflections
+ * @returns {Array<{reflection: object, line: string}>}
+ */
+function condenseMemoryEntries(reflections) {
   if (!reflections || reflections.length === 0) return [];
   const seen = new Set();
-  const lines = [];
+  const entries = [];
   for (const reflection of reflections) {
     const line = formatReflectionLine(reflection);
     if (!line || seen.has(line)) continue;
     seen.add(line);
-    lines.push(line);
-    if (lines.length >= MAX_MEMORY_LINES) break;
+    entries.push({ reflection, line });
+    if (entries.length >= MAX_MEMORY_LINES) break;
   }
-  return lines;
+  return entries;
 }
+
+/** @param {Array<{text: string, scores: {final: number|null}}>} reflections */
+function condenseMemoryContext(reflections) {
+  return condenseMemoryEntries(reflections).map((entry) => entry.line);
+}
+
+const MEMORY_CONTEXT_HEADER = [
+  'From your long-term memory (Hindsight), things you have come to understand',
+  'that may be relevant to this conversation. Use only what genuinely applies;',
+  'do not force it in, and do not announce that you are consulting memory.',
+  'Items marked (uncertain) are not confirmed — hold them as a possibility,',
+  'not a settled fact.',
+];
+
+// Added only when the terugweg actually resolved raw records — the note would
+// be a lie when nothing could be fetched.
+const MEMORY_EVIDENCE_NOTE = [
+  'Indented lines marked [observatie] are the literal Foundation records each',
+  'item was built from — the raw words, not a summary. Prefer them when the',
+  'exact wording matters.',
+];
+
+const EVIDENCE_LINE_PREFIX = '  - [observatie] ';
 
 /** @param {Array<{text: string, scores: {final: number|null}}>} reflections */
 function renderMemoryContext(reflections) {
   const lines = condenseMemoryContext(reflections);
   if (lines.length === 0) return null;
-  return [
-    'From your long-term memory (Hindsight), things you have come to understand',
-    'that may be relevant to this conversation. Use only what genuinely applies;',
-    'do not force it in, and do not announce that you are consulting memory.',
-    'Items marked (uncertain) are not confirmed — hold them as a possibility,',
-    'not a settled fact.',
-    '',
-    ...lines,
-  ].join('\n');
+  return [...MEMORY_CONTEXT_HEADER, '', ...lines].join('\n');
+}
+
+/**
+ * Dual Recall — renders the Hindsight block and, beneath each item that has
+ * them, the literal Foundation observations it was built from (see
+ * reasoning/evidenceRecall.js). `evidenceByFactId` maps a recalled item's id
+ * (its Hindsight fact/observation id) to the raw fragment texts. With no
+ * evidence the output is byte-for-byte `renderMemoryContext`.
+ * @param {Array<{id?: string, text: string, scores: {final: number|null}}>} reflections
+ * @param {Map<string, string[]>|null|undefined} evidenceByFactId
+ * @returns {string|null}
+ */
+function renderDualRecallContext(reflections, evidenceByFactId) {
+  const entries = condenseMemoryEntries(reflections);
+  if (entries.length === 0) return null;
+  const evidence = evidenceByFactId instanceof Map ? evidenceByFactId : null;
+  const body = [];
+  let hasEvidence = false;
+  for (const { reflection, line } of entries) {
+    body.push(line);
+    const texts = evidence && reflection && reflection.id != null
+      ? evidence.get(reflection.id)
+      : null;
+    if (!Array.isArray(texts)) continue;
+    for (const text of texts) {
+      if (!text) continue;
+      hasEvidence = true;
+      body.push(`${EVIDENCE_LINE_PREFIX}${text}`);
+    }
+  }
+  const header = hasEvidence
+    ? [...MEMORY_CONTEXT_HEADER, ...MEMORY_EVIDENCE_NOTE]
+    : MEMORY_CONTEXT_HEADER;
+  return [...header, '', ...body].join('\n');
 }
 
 /**
@@ -226,7 +281,9 @@ async function fetchMentalModelContext(hindsight, { now = Date.now } = {}) {
 
 module.exports = {
   condenseMemoryContext,
+  condenseMemoryEntries,
   renderMemoryContext,
+  renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
   MENTAL_MODEL_IDS,

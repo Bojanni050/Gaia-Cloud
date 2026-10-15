@@ -3354,3 +3354,69 @@ test('performStreamingTurn keeps the reply, and the transcript, when naming fail
   assert.deepEqual(late, [], 'and nothing is written afterwards either');
 });
 
+// --- Dual Recall (de terugweg) ------------------------------------------------
+
+test('the terugweg lays the literal Foundation records beside the recalled item that cites them', async () => {
+  let seenMessages;
+  const hermes = { chat: async (messages) => { seenMessages = messages; return 'ok'; } };
+  const hindsight = {
+    recall: async () => [{
+      id: 'h1',
+      text: 'The team decided on a single stream emitter in March',
+      scores: { final: 0.9 },
+      metadata: { gaia_hypothesis_sources: JSON.stringify(['foundation:obs-42']) },
+    }],
+    reflect: async () => {},
+  };
+  const asked = [];
+  const foundation = {
+    fetchIngestObjects: async (ids) => {
+      asked.push(...ids);
+      return ids.map((id) => ({ object: { id, content: 'the exact words from the source' } }));
+    },
+  };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Weet je nog wat we besloten over de stream emitter?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    foundation,
+  });
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(asked, ['obs-42'], 'the bare Foundation id is fetched, resolved through the shared seam');
+  const memoryBlock = seenMessages
+    .map((m) => m.content)
+    .find((c) => /long-term memory \(Hindsight\)/.test(c));
+  assert.ok(memoryBlock, 'the memory block is in the prompt');
+  assert.match(memoryBlock, /\[observatie\] the exact words from the source/);
+  await flushBackground();
+});
+
+test('a recalled item with no provenance never causes a Foundation call', async () => {
+  let seenMessages;
+  const hermes = { chat: async (messages) => { seenMessages = messages; return 'ok'; } };
+  const hindsight = {
+    recall: async () => [{ id: 'h1', text: 'plain memory', scores: { final: 0.9 } }],
+    reflect: async () => {},
+  };
+  let calls = 0;
+  const foundation = { fetchIngestObjects: async () => { calls += 1; return []; } };
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Weet je nog wat we besloten over de stream emitter?' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight,
+    foundation,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(calls, 0, 'no sources anywhere ⇒ nul-kosten');
+  const memoryBlock = seenMessages.map((m) => m.content).find((c) => /long-term memory \(Hindsight\)/.test(c));
+  assert.match(memoryBlock, /- plain memory/);
+  assert.doesNotMatch(memoryBlock, /\[observatie\]/);
+  await flushBackground();
+});
+

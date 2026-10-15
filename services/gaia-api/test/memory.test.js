@@ -7,6 +7,7 @@ const { createHindsightClient } = require('../src/hindsightClient');
 const {
   condenseMemoryContext,
   renderMemoryContext,
+  renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
   MENTAL_MODEL_IDS,
@@ -276,6 +277,28 @@ test('renderMemoryContext renders a block when there is something to show', () =
   assert.match(block, /long-term memory \(Hindsight\)/);
   assert.match(block, /- Bo prefers async updates$/m);
 });
+
+test('renderDualRecallContext without evidence is byte-for-byte renderMemoryContext', () => {
+  const reflections = [reflection('Bo prefers async updates', 0.9), reflection('B', 0.4)];
+  assert.equal(renderDualRecallContext(reflections, null), renderMemoryContext(reflections));
+  assert.equal(renderDualRecallContext(reflections, new Map()), renderMemoryContext(reflections));
+  assert.equal(renderDualRecallContext(null, new Map()), null);
+});
+
+test('renderDualRecallContext lays the literal Foundation records under the item that cited them', () => {
+  const item = { id: 'h1', text: 'Bo prefers async updates', scores: { final: 0.9 } };
+  const other = { id: 'h2', text: 'Unrelated memory', scores: { final: 0.9 } };
+  const evidence = new Map([['h1', ['raw words from the source email', 'a second exact fragment']]]);
+
+  const block = renderDualRecallContext([item, other], evidence);
+
+  assert.match(block, /literal Foundation records/);
+  assert.match(block, /- Bo prefers async updates\n {2}- \[observatie\] raw words from the source email\n {2}- \[observatie\] a second exact fragment/);
+  // The item with no evidence still renders, but never fabricates any.
+  assert.match(block, /- Unrelated memory$/m);
+  assert.equal((block.match(/\n {2}- \[observatie\] /g) || []).length, 2);
+});
+
 
 test('recallRelevantContext skips the call for a policy-trivial query and never throws on failure', async () => {
   let called = false;
