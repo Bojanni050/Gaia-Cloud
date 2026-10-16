@@ -396,8 +396,8 @@ function createApp(env = process.env) {
     };
   }
 
-  function getEffectiveTts() {
-    const providerTtsConfig = resolveTtsConfig(providerStore, env);
+  function getEffectiveTts(language) {
+    const providerTtsConfig = resolveTtsConfig(providerStore, env, language);
     // The resolved config travels with the client so POST /speech can log
     // *what* it spoke with (provider/model/voice) without re-resolving.
     // ElevenLabs needs no base URL (it defaults to its public API).
@@ -798,7 +798,11 @@ function createApp(env = process.env) {
       providerTtsConfig && (providerTtsConfig.baseUrl || providerTtsConfig.provider === 'elevenlabs') && providerTtsConfig.model
     ) || Boolean(tts);
     const provider = providerTtsConfig ? providerTtsConfig.provider : null;
-    res.json({ configured, provider, languages: languagesForTtsProvider(provider) });
+    // The English voice may run on another provider: advertise the union of what both can speak.
+    const englishConfig = resolveTtsConfig(providerStore, env, 'en');
+    const englishProvider = englishConfig ? englishConfig.provider : null;
+    const languages = [...new Set([...languagesForTtsProvider(provider), ...(englishProvider ? languagesForTtsProvider(englishProvider) : [])])];
+    res.json({ configured, provider, languages });
   });
 
   // Speech recognition info — whether POST /speech/transcribe can work, which
@@ -869,7 +873,10 @@ function createApp(env = process.env) {
     if (typeof text !== 'string' || text.trim() === '') {
       return res.status(400).json({ error: 'text must be a non-empty string' });
     }
-    const { tts: effectiveTts, config: ttsConfig } = getEffectiveTts();
+    // The client detects the reply's language (this route judges no text); 'en' uses the English
+    // voice when one is configured, anything else — or no language — the default (Dutch) voice.
+    const language = req.body.language === 'en' || req.body.language === 'nl' ? req.body.language : undefined;
+    const { tts: effectiveTts, config: ttsConfig } = getEffectiveTts(language);
     // Operator diagnostics (GET /admin/api/tts/log): what the voice
     // attempted, with what, and how it ended. Clients never see this —
     // they keep the calm wording below — but "she doesn't speak" without
@@ -878,6 +885,7 @@ function createApp(env = process.env) {
       provider: ttsConfig ? ttsConfig.provider : null,
       model: ttsConfig ? ttsConfig.model : null,
       voiceId: (ttsConfig && ttsConfig.voiceId) || '',
+      language: language || null,
       chars: text.trim().length,
       preview: String(text).slice(0, 80),
     };

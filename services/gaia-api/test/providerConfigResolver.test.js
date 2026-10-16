@@ -350,3 +350,21 @@ test('resolveRoleConfig: aion borrows the reasoning role when it has no selectio
   assert.equal(config.model, 'reasoning-model');
   assert.equal(config.apiKey, 'sk-main');
 });
+
+// --- resolveTtsConfig: two voices ---
+
+test('resolveTtsConfig: language=en uses ttsEn when set, everything else the default voice', () => {
+  const store = createMockStore({
+    tts: { provider: 'mistral', baseUrl: 'https://m/v1', apiKey: 'a', model: 'voxtral', voiceId: 'nl' },
+    ttsEn: { provider: 'elevenlabs', baseUrl: '', apiKey: 'b', model: 'eleven_v3', voiceId: 'en' },
+  });
+  assert.equal(resolveTtsConfig(store, {}, 'en').provider, 'elevenlabs');
+  assert.equal(resolveTtsConfig(store, {}, 'en').voiceId, 'en');
+  assert.equal(resolveTtsConfig(store, {}, 'nl').provider, 'mistral');
+  assert.equal(resolveTtsConfig(store, {}).provider, 'mistral');
+});
+
+test('resolveTtsConfig: language=en falls back to the default voice without an English voice', () => {
+  const store = createMockStore({ tts: { provider: 'mistral', baseUrl: 'https://m/v1', apiKey: 'a', model: 'voxtral' } });
+  assert.equal(resolveTtsConfig(store, {}, 'en').provider, 'mistral');
+});

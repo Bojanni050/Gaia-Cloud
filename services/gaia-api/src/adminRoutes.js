@@ -330,93 +330,97 @@ function createAdminRouter({
     });
 
     // --- TTS (independent) routes ---
+    // Two voices: `tts` (default, Dutch) at /api/tts/*, and the optional English one `ttsEn` at
+    // /api/tts-en/* — same shape, same handlers.
+    for (const [route, slot] of [['tts', 'tts'], ['tts-en', 'ttsEn']]) {
 
-    router.get('/api/tts/config', auth, (req, res) => {
-      res.json({ ...providerStore.getMaskedConfig().tts, mainProviderConfigured: mainProviderConfigured() });
-    });
+      router.get(`/api/${route}/config`, auth, (req, res) => {
+        res.json({ ...providerStore.getMaskedConfig()[slot], mainProviderConfigured: mainProviderConfigured() });
+      });
 
-    router.put('/api/tts/config', auth, (req, res) => {
-      const body = req.body || {};
-      const allowed = {};
-      if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
-      if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
-      if (typeof body.model === 'string') allowed.model = body.model.trim();
-      if (typeof body.voiceId === 'string') allowed.voiceId = body.voiceId.trim();
-      if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
-      if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
+      router.put(`/api/${route}/config`, auth, (req, res) => {
+        const body = req.body || {};
+        const allowed = {};
+        if (typeof body.provider === 'string') allowed.provider = body.provider.trim();
+        if (typeof body.baseUrl === 'string') allowed.baseUrl = body.baseUrl.trim();
+        if (typeof body.model === 'string') allowed.model = body.model.trim();
+        if (typeof body.voiceId === 'string') allowed.voiceId = body.voiceId.trim();
+        if (typeof body.apiKey === 'string' && body.apiKey.trim() !== '') allowed.apiKey = body.apiKey.trim();
+        if (typeof body.useMainProvider === 'boolean') allowed.useMainProvider = body.useMainProvider;
 
-      if (Object.keys(allowed).length === 0) {
-        return res.status(400).json({ error: 'no valid fields supplied' });
-      }
-
-      providerStore.saveTtsConfig(allowed);
-      res.json({ ...providerStore.getMaskedConfig().tts, mainProviderConfigured: mainProviderConfigured() });
-    });
-
-    router.get('/api/tts/models', auth, async (req, res) => {
-      const config = providerStore.getConfig();
-      const tts = config && config.tts ? config.tts : {};
-      const effective = tts.useMainProvider
-        ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
-        : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
-      if (!effective) {
-        return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
-      }
-      if (!effective.baseUrl) {
-        return res.status(400).json({ error: 'set a base URL for the TTS provider' });
-      }
-
-      try {
-        const models = await retrieveModelsFn({
-          provider: effective.provider,
-          baseUrl: effective.baseUrl,
-          apiKey: effective.apiKey,
-        });
-        // TTS doesn't need a persisted catalog — just return the list
-        res.json({ models });
-      } catch (err) {
-        const message = err && err.message ? err.message : 'unknown error';
-        if (message.includes('authentication failed')) {
-          return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
+        if (Object.keys(allowed).length === 0) {
+          return res.status(400).json({ error: 'no valid fields supplied' });
         }
-        res.status(502).json({ error: 'could not retrieve models from TTS provider' });
-      }
-    });
 
-    router.get('/api/tts/voices', auth, async (req, res) => {
-      const config = providerStore.getConfig();
-      const tts = config && config.tts ? config.tts : {};
-      const effective = tts.useMainProvider
-        ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
-        : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
-      if (!effective) {
-        return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
-      }
-      // Only Mistral exposes a voice library (GET /v1/audio/voices) —
-      // MiMo designs its voice from a prompt instead, so there is nothing
-      // to list for any other provider.
-      if (effective.provider !== 'mistral' && effective.provider !== 'elevenlabs') {
-        return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral and ElevenLabs' });
-      }
-      // ElevenLabs falls back to its public base URL, so it needs none stored.
-      if (!effective.baseUrl && effective.provider !== 'elevenlabs') {
-        return res.status(400).json({ error: 'set a base URL for the TTS provider' });
-      }
+        providerStore.saveTtsConfig(allowed, slot);
+        res.json({ ...providerStore.getMaskedConfig()[slot], mainProviderConfigured: mainProviderConfigured() });
+      });
 
-      try {
-        const listFn = effective.provider === 'elevenlabs' ? listElevenLabsVoices : listTtsVoicesFn;
-        const voices = await listFn({
-          baseUrl: effective.baseUrl,
-          authToken: effective.apiKey,
-        });
-        res.json({ voices });
-      } catch (err) {
-        if (err && err.status === 401) {
-          return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
+      router.get(`/api/${route}/models`, auth, async (req, res) => {
+        const config = providerStore.getConfig();
+        const tts = config && config[slot] ? config[slot] : {};
+        const effective = tts.useMainProvider
+          ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
+          : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+        if (!effective) {
+          return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
-        res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
-      }
-    });
+        if (!effective.baseUrl) {
+          return res.status(400).json({ error: 'set a base URL for the TTS provider' });
+        }
+
+        try {
+          const models = await retrieveModelsFn({
+            provider: effective.provider,
+            baseUrl: effective.baseUrl,
+            apiKey: effective.apiKey,
+          });
+          // TTS doesn't need a persisted catalog — just return the list
+          res.json({ models });
+        } catch (err) {
+          const message = err && err.message ? err.message : 'unknown error';
+          if (message.includes('authentication failed')) {
+            return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
+          }
+          res.status(502).json({ error: 'could not retrieve models from TTS provider' });
+        }
+      });
+
+      router.get(`/api/${route}/voices`, auth, async (req, res) => {
+        const config = providerStore.getConfig();
+        const tts = config && config[slot] ? config[slot] : {};
+        const effective = tts.useMainProvider
+          ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
+          : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+        if (!effective) {
+          return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
+        }
+        // Only Mistral exposes a voice library (GET /v1/audio/voices) —
+        // MiMo designs its voice from a prompt instead, so there is nothing
+        // to list for any other provider.
+        if (effective.provider !== 'mistral' && effective.provider !== 'elevenlabs') {
+          return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral and ElevenLabs' });
+        }
+        // ElevenLabs falls back to its public base URL, so it needs none stored.
+        if (!effective.baseUrl && effective.provider !== 'elevenlabs') {
+          return res.status(400).json({ error: 'set a base URL for the TTS provider' });
+        }
+
+        try {
+          const listFn = effective.provider === 'elevenlabs' ? listElevenLabsVoices : listTtsVoicesFn;
+          const voices = await listFn({
+            baseUrl: effective.baseUrl,
+            authToken: effective.apiKey,
+          });
+          res.json({ voices });
+        } catch (err) {
+          if (err && err.status === 401) {
+            return res.status(401).json({ error: 'authentication failed — check your TTS API key' });
+          }
+          res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
+        }
+      });
+    }
 
     // --- STT (independent, listening) routes ---
 

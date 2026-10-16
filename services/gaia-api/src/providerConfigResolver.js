@@ -65,27 +65,37 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ baseUrl: string, model: string, apiKey: string, provider: string, voiceId: string }|null}
  */
-function resolveTtsConfig(providerStore, env = process.env) {
+function resolveTtsConfig(providerStore, env = process.env, language) {
   const stored = providerStore ? providerStore.getConfig() : null;
 
-  if (stored && stored.tts && stored.tts.useMainProvider && stored.tts.model && stored.apiKey) {
-    return {
-      provider: stored.provider || 'openrouter',
-      baseUrl: stored.baseUrl || '',
-      model: stored.tts.model,
-      apiKey: stored.apiKey,
-      voiceId: stored.tts.voiceId || '',
-    };
-  }
+  // `tts` is the default (Dutch) voice; an English reply uses `ttsEn` when that is
+  // configured, and otherwise the default voice — so one voice keeps working as before.
+  const fromStored = (tts) => {
+    if (tts && tts.useMainProvider && tts.model && stored.apiKey) {
+      return {
+        provider: stored.provider || 'openrouter',
+        baseUrl: stored.baseUrl || '',
+        model: tts.model,
+        apiKey: stored.apiKey,
+        voiceId: tts.voiceId || '',
+      };
+    }
+    if (tts && tts.provider && tts.model) {
+      return {
+        provider: tts.provider,
+        baseUrl: tts.baseUrl || '',
+        model: tts.model,
+        apiKey: tts.apiKey || '',
+        voiceId: tts.voiceId || '',
+      };
+    }
+    return null;
+  };
 
-  if (stored && stored.tts && stored.tts.provider && stored.tts.model) {
-    return {
-      provider: stored.tts.provider,
-      baseUrl: stored.tts.baseUrl || '',
-      model: stored.tts.model,
-      apiKey: stored.tts.apiKey || '',
-      voiceId: stored.tts.voiceId || '',
-    };
+  if (stored) {
+    const english = language === 'en' ? fromStored(stored.ttsEn) : null;
+    const resolved = english || fromStored(stored.tts);
+    if (resolved) return resolved;
   }
 
   // Fall back to environment variables

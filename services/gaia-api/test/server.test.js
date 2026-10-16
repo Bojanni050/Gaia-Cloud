@@ -663,6 +663,68 @@ test('GET /speech/info reports the stored Mistral voice with Dutch among its lan
   });
 });
 
+// --- POST /speech with two voices (Dutch default + optional English on another provider) ---
+
+test('POST /speech picks the English voice for language=en and the default voice otherwise', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-api-two-voices-test-'));
+  const storePath = path.join(dir, 'provider-config.json');
+  fs.writeFileSync(storePath, JSON.stringify({
+    provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null,
+    roles: { generation: { mode: 'catalog', model: '' }, reasoning: { mode: 'catalog', model: '' }, vision: { mode: 'catalog', model: '' } },
+    tts: { provider: 'mistral', baseUrl: 'https://mistral.test/v1', apiKey: 'k-nl', model: 'voxtral', voiceId: 'nl-voice' },
+    ttsEn: { provider: 'elevenlabs', baseUrl: 'https://eleven.test/v1', apiKey: 'k-en', model: 'eleven_v3', voiceId: 'en-voice' },
+    updatedAt: new Date().toISOString(),
+  }));
+  const seen = [];
+  const fake = async (url, options = {}) => {
+    const href = String(url);
+    seen.push(href);
+    if (href.startsWith('https://eleven.test')) {
+      const bytes = Buffer.from('EN-AUDIO');
+      return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) };
+    }
+    return { ok: true, json: async () => ({ audio_data: Buffer.from('NL-AUDIO').toString('base64') }) };
+  };
+
+  await withMockedFetch(fake, async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    await withServer(app, async (port) => {
+      const speak = async (payload) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify(payload),
+        });
+        return Buffer.from(await res.arrayBuffer()).toString();
+      };
+
+      assert.equal(await speak({ text: 'Hello there', language: 'en' }), 'EN-AUDIO');
+      assert.ok(seen.at(-1).startsWith('https://eleven.test/v1/text-to-speech/en-voice'));
+      assert.equal(await speak({ text: 'Hallo daar', language: 'nl' }), 'NL-AUDIO');
+      assert.equal(await speak({ text: 'Okay.' }), 'NL-AUDIO');
+      assert.equal(await speak({ text: 'Okay.', language: 'fr' }), 'NL-AUDIO');
+
+      const info = await (await originalFetch(`http://127.0.0.1:${port}/speech/info`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
+      assert.equal(info.provider, 'mistral');
+      assert.ok(info.languages.includes('nl') && info.languages.includes('en'));
+    });
+  });
+});
+
+test('POST /speech speaks English with the default voice when no English voice is configured', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: 'Hello', language: 'en' }),
+      });
+      assert.equal(res.status, 200);
+    });
+  });
+});
+
 // --- webSearch wiring (src/tools/braveSearch.js) ---------------------------
 //
 // No non-streaming ("performTurn") equivalent of the streaming test below:

@@ -29,6 +29,7 @@
  *       model: "...",
  *       voiceId: "...", // saved voice for providers with preset/custom voices (Mistral); ignored by MiMo
  *     },
+ *     ttsEn: { ...same shape as tts },  // optional English voice; `tts` is the default (Dutch) voice
  *     updatedAt: ISO timestamp,
  *   }
  *
@@ -186,12 +187,14 @@ function createProviderStore(options = {}) {
    * instead (see providerConfigResolver.js's resolveTtsConfig).
    * @param {{ provider?: string, baseUrl?: string, apiKey?: string, model?: string, useMainProvider?: boolean }} partial
    */
-  function saveTtsConfig(partial) {
+  function saveTtsConfig(partial, slot = 'tts') {
+    // `tts` is the default (Dutch) voice; `ttsEn` the optional English one.
+    const key = slot === 'ttsEn' ? 'ttsEn' : 'tts';
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
-    const currentTts = current.tts || { ...DEFAULT_TTS };
+    const currentTts = current[key] || { ...DEFAULT_TTS };
     const next = {
       ...current,
-      tts: {
+      [key]: {
         provider: partial.provider !== undefined ? partial.provider : currentTts.provider,
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentTts.baseUrl,
         apiKey: partial.apiKey !== undefined ? partial.apiKey : currentTts.apiKey,
@@ -321,11 +324,22 @@ function createProviderStore(options = {}) {
         roleProviders: maskedRoleProviders(null),
         generationBackup: { ...DEFAULT_BACKUP, hasApiKey: false, maskedApiKey: null },
         tts: { ...DEFAULT_TTS, hasApiKey: false, maskedApiKey: null },
+        ttsEn: { ...DEFAULT_TTS, hasApiKey: false, maskedApiKey: null },
         stt: { ...DEFAULT_STT, hasApiKey: false, maskedApiKey: null },
         updatedAt: null,
       };
     }
     const tts = config.tts || { ...DEFAULT_TTS };
+    const ttsEn = config.ttsEn || { ...DEFAULT_TTS };
+    const maskTts = (t) => ({
+      provider: t.provider || '',
+      baseUrl: t.baseUrl || '',
+      model: t.model || '',
+      voiceId: t.voiceId || '',
+      hasApiKey: Boolean(t.apiKey),
+      maskedApiKey: maskKey(t.apiKey),
+      useMainProvider: Boolean(t.useMainProvider),
+    });
     const stt = config.stt || { ...DEFAULT_STT };
     const backup = config.generationBackup || { ...DEFAULT_BACKUP };
     return {
@@ -344,15 +358,8 @@ function createProviderStore(options = {}) {
         hasApiKey: Boolean(backup.apiKey),
         maskedApiKey: maskKey(backup.apiKey),
       },
-      tts: {
-        provider: tts.provider || '',
-        baseUrl: tts.baseUrl || '',
-        model: tts.model || '',
-        voiceId: tts.voiceId || '',
-        hasApiKey: Boolean(tts.apiKey),
-        maskedApiKey: maskKey(tts.apiKey),
-        useMainProvider: Boolean(tts.useMainProvider),
-      },
+      tts: maskTts(tts),
+      ttsEn: maskTts(ttsEn),
       stt: {
         provider: stt.provider || '',
         baseUrl: stt.baseUrl || '',

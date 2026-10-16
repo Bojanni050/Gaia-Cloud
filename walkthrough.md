@@ -552,3 +552,9 @@
 - Findings: Het admin-token staat alleen in `localStorage`; na het wissen van browsergegevens moet het opnieuw worden geplakt. De server-.env kan het niet aan de pagina geven zonder `/admin` open te zetten.
 - Conclusions: `/admin#token=...` vult het veld in; het fragment gaat nooit naar de server en wordt direct uit de adresbalk gehaald. Het token wordt ook getrimd (een spatie/newline bij plakken gaf een 401), en `localStorage` is nu in try/catch.
 - Actions: `services/gaia-api/public/admin.html` (auth-blok: `readSavedToken`/`saveToken`, hash-token, trim in `authHeaders`); validated: script-syntax ok, niet in de browser getest.
+
+## 2026-10-16 (Twee stemmen: NL default + optionele EN op andere provider)
+
+- Findings: `/speech` kende één stem voor alle talen. Gewenst: een Nederlandse en een Engelse stem apart kiezen, ook bij verschillende providers.
+- Conclusions: De bestaande `tts` blijft de default (NL, ook bij onduidelijke taal); een optionele `ttsEn` heeft dezelfde vorm (eigen provider, key, model, voice). De desktop bepaalt de taal (de heuristiek bestond al) en stuurt `language` mee; de server beoordeelt nog steeds geen tekst. Zonder `ttsEn` of zonder taal verandert er niets, dus oude clients blijven werken. `/speech/info` meldt de unie van de talen van beide stemmen, zodat de desktop-gate Engelse én Nederlandse antwoorden toelaat.
+- Actions: `src/providerStore.js` (`ttsEn`, `saveTtsConfig(partial, slot)`, masking), `src/providerConfigResolver.js` (`resolveTtsConfig(…, language)`), `src/server.js` (`getEffectiveTts(language)`, `language` in `/speech` + ttsLog, unie in `/speech/info`), `src/adminRoutes.js` (routes ook onder `/api/tts-en/*`), `public/admin.html` (tweede Voice-kaart; TTS-JS in `wireTtsVoice`), tests in `server`, `providerStore`, `providerConfigResolver`; validated: 1584/1584 groen, admin-pagina in jsdom doorlopen.

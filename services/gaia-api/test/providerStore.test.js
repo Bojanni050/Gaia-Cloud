@@ -338,3 +338,15 @@ test('saveRoleProvider rejects roles without a custom-provider option', () => {
   assert.throws(() => store.saveRoleProvider('tts', { baseUrl: 'x' }), /does not support a custom provider/);
   assert.throws(() => store.saveRoleProvider('nonsense', { baseUrl: 'x' }), /does not support a custom provider/);
 });
+
+test('saveTtsConfig(…, "ttsEn") stores the English voice separately and masks its key', () => {
+  const store = tempStore();
+  store.saveTtsConfig({ provider: 'mistral', baseUrl: 'https://m/v1', model: 'voxtral', apiKey: 'nl-secret-key-123', voiceId: 'nl' });
+  store.saveTtsConfig({ provider: 'elevenlabs', baseUrl: 'https://e/v1', model: 'eleven_v3', apiKey: 'en-secret-key-456', voiceId: 'en' }, 'ttsEn');
+  const masked = store.getMaskedConfig();
+  assert.equal(masked.tts.provider, 'mistral');
+  assert.equal(masked.ttsEn.provider, 'elevenlabs');
+  assert.equal(masked.ttsEn.voiceId, 'en');
+  assert.equal(masked.ttsEn.hasApiKey, true);
+  assert.ok(!JSON.stringify(masked).includes('en-secret-key-456'));
+});
