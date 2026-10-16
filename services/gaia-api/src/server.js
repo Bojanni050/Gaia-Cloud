@@ -400,7 +400,9 @@ function createApp(env = process.env) {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
     // The resolved config travels with the client so POST /speech can log
     // *what* it spoke with (provider/model/voice) without re-resolving.
-    if (!providerTtsConfig || !providerTtsConfig.baseUrl || !providerTtsConfig.model) {
+    // ElevenLabs needs no base URL (it defaults to its public API).
+    const needsBaseUrl = !providerTtsConfig || providerTtsConfig.provider !== 'elevenlabs';
+    if (!providerTtsConfig || (needsBaseUrl && !providerTtsConfig.baseUrl) || !providerTtsConfig.model) {
       return { tts, config: providerTtsConfig };
     }
     // Mistral speaks its own protocol (POST {base}/audio/speech, base64
@@ -416,6 +418,17 @@ function createApp(env = process.env) {
           authToken: providerTtsConfig.apiKey,
           voiceId: providerTtsConfig.voiceId,
           format: env.GAIA_TTS_FORMAT,
+        }),
+        config: providerTtsConfig,
+      };
+    }
+    if (providerTtsConfig.provider === 'elevenlabs') {
+      return {
+        tts: require('./speech/elevenLabsTts').createElevenLabsTts({
+          baseUrl: providerTtsConfig.baseUrl,
+          model: providerTtsConfig.model,
+          authToken: providerTtsConfig.apiKey,
+          voiceId: providerTtsConfig.voiceId,
         }),
         config: providerTtsConfig,
       };
@@ -440,6 +453,7 @@ function createApp(env = process.env) {
    */
   function languagesForTtsProvider(provider) {
     if (provider === 'mistral') return require('./speech/mistralTts').LANGUAGES;
+    if (provider === 'elevenlabs') return require('./speech/elevenLabsTts').LANGUAGES;
     if (provider === 'xiaomi' || provider === 'env') return require('./speech/mimoTts').LANGUAGES;
     return ['en'];
   }
@@ -781,7 +795,7 @@ function createApp(env = process.env) {
   app.get('/speech/info', auth, (req, res) => {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
     const configured = Boolean(
-      providerTtsConfig && providerTtsConfig.baseUrl && providerTtsConfig.model
+      providerTtsConfig && (providerTtsConfig.baseUrl || providerTtsConfig.provider === 'elevenlabs') && providerTtsConfig.model
     ) || Boolean(tts);
     const provider = providerTtsConfig ? providerTtsConfig.provider : null;
     res.json({ configured, provider, languages: languagesForTtsProvider(provider) });

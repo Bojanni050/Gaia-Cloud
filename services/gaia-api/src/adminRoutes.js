@@ -41,6 +41,7 @@ const path = require('path');
 const { createOpenRouterClient } = require('./logos/openRouterClient');
 const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDiscovery');
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
+const { listVoices: listElevenLabsVoices } = require('./speech/elevenLabsTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
@@ -394,15 +395,17 @@ function createAdminRouter({
       // Only Mistral exposes a voice library (GET /v1/audio/voices) —
       // MiMo designs its voice from a prompt instead, so there is nothing
       // to list for any other provider.
-      if (effective.provider !== 'mistral') {
-        return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral' });
+      if (effective.provider !== 'mistral' && effective.provider !== 'elevenlabs') {
+        return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral and ElevenLabs' });
       }
-      if (!effective.baseUrl) {
+      // ElevenLabs falls back to its public base URL, so it needs none stored.
+      if (!effective.baseUrl && effective.provider !== 'elevenlabs') {
         return res.status(400).json({ error: 'set a base URL for the TTS provider' });
       }
 
       try {
-        const voices = await listTtsVoicesFn({
+        const listFn = effective.provider === 'elevenlabs' ? listElevenLabsVoices : listTtsVoicesFn;
+        const voices = await listFn({
           baseUrl: effective.baseUrl,
           authToken: effective.apiKey,
         });

@@ -469,6 +469,7 @@
         <option value="__main__">— Use Main Provider —</option>
         <option value="xiaomi">Xiaomi MiMo</option>
         <option value="mistral">Mistral Voxtral</option>
+        <option value="elevenlabs">ElevenLabs</option>
         <option value="openai">OpenAI</option>
         <option value="edenai">EdenAI</option>
         <option value="custom">Custom (OpenAI-compatible)</option>
@@ -490,7 +491,7 @@
       <label for="ttsVoice">Voice ID</label>
       <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
       <datalist id="ttsVoiceList"></datalist>
-      <p class="hint">Mistral Voxtral only — leave empty for the default voice. Ignored by MiMo. Save first, then load the list.</p>
+      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: required (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Save first, then load the list.</p>
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="loadTtsVoicesBtn" class="secondary">Get voices</button>
       </div>
@@ -598,6 +599,7 @@
     anthropic: 'https://api.anthropic.com/v1',
     mistral: 'https://api.mistral.ai/v1',
     xiaomi: 'https://api.xiaomimimo.com/v1',
+    elevenlabs: 'https://api.elevenlabs.io/v1',
     nvidia: 'https://integrate.api.nvidia.com/v1',
     litellm: 'http://100.64.144.93:4000/v1',
   };
