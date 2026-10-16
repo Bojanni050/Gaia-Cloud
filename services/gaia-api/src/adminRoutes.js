@@ -31,6 +31,7 @@
  *   STT (independent, listening):
  *   GET  /admin/api/stt/config        -> masked speech-to-text config
  *   PUT  /admin/api/stt/config        -> { provider?, baseUrl?, apiKey?, model?, useMainProvider? }
+ *   GET/POST /admin/api/stt/models   -> models to pick from (GET: saved config, POST: the form's current values)
  *   GET  /admin/api/stt/log           -> recent transcription attempts, newest first (never audio or text)
  *
  *   Logos:
@@ -331,12 +332,12 @@ function createAdminRouter({
     });
 
     /**
-     * Which provider/baseUrl/key a model or voice listing should use. With no `form` it is the saved
+     * Which provider/baseUrl/key a model or voice listing should use (slot: tts, ttsEn or stt). With no `form` it is the saved
      * config; with a `form` (what the admin page currently shows, possibly unsaved) the form wins.
      * The saved API key is only reused for the *same* provider it was saved for — never sent to
      * another provider's endpoint just because the dropdown changed.
      */
-    function resolveTtsTarget(slot, form) {
+    function resolveProviderTarget(slot, form) {
       const config = providerStore.getConfig();
       const saved = config && config[slot] ? config[slot] : {};
       const body = form || {};
@@ -388,7 +389,7 @@ function createAdminRouter({
 
       // GET lists with the saved config; POST with what is in the form right now (unsaved).
       const listModelsHandler = async (req, res) => {
-        const { effective, useMainProvider } = resolveTtsTarget(slot, req.method === 'POST' ? req.body : null);
+        const { effective, useMainProvider } = resolveProviderTarget(slot, req.method === 'POST' ? req.body : null);
         if (!effective) {
           return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
@@ -416,7 +417,7 @@ function createAdminRouter({
       router.post(`/api/${route}/models`, auth, listModelsHandler);
 
       const listVoicesHandler = async (req, res) => {
-        const { effective, useMainProvider } = resolveTtsTarget(slot, req.method === 'POST' ? req.body : null);
+        const { effective, useMainProvider } = resolveProviderTarget(slot, req.method === 'POST' ? req.body : null);
         if (!effective) {
           return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
@@ -473,6 +474,31 @@ function createAdminRouter({
       providerStore.saveSttConfig(allowed);
       res.json({ ...providerStore.getMaskedConfig().stt, mainProviderConfigured: mainProviderConfigured() });
     });
+
+    // Model picker for the listening card. Lists like the TTS pickers (GET = saved, POST = form), then
+    // narrows to models that look like transcription ones — all of them when none match.
+    const listSttModelsHandler = async (req, res) => {
+      const { effective, useMainProvider } = resolveProviderTarget('stt', req.method === 'POST' ? req.body : null);
+      if (!effective) {
+        return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a listening provider first' });
+      }
+      if (!effective.baseUrl) {
+        return res.status(400).json({ error: 'set a base URL for the listening provider' });
+      }
+      try {
+        const models = await retrieveModelsFn({ provider: effective.provider, baseUrl: effective.baseUrl, apiKey: effective.apiKey });
+        const speechLike = models.filter((m) => /voxtral|transcri|whisper|stt|speech/i.test(`${m.id} ${m.name || ''}`));
+        res.json({ models: speechLike.length > 0 ? speechLike : models });
+      } catch (err) {
+        const message = err && err.message ? err.message : 'unknown error';
+        if (message.includes('authentication failed')) {
+          return res.status(401).json({ error: 'authentication failed — check your listening API key' });
+        }
+        res.status(502).json({ error: 'could not retrieve models from the listening provider' });
+      }
+    };
+    router.get('/api/stt/models', auth, listSttModelsHandler);
+    router.post('/api/stt/models', auth, listSttModelsHandler);
 
     router.get('/api/stt/log', auth, (req, res) => {
       // The listening activity tail (src/speech/sttLog.js) — what POST

@@ -1103,3 +1103,41 @@ test('POST /admin/api/tts/voices lists with the form provider and refuses provid
     await ctx.close();
   }
 });
+
+test('POST /admin/api/stt/models lists with the form, narrowing to transcription-like models', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    ctx.setProviderModels([
+      { id: 'mistral-large-latest', name: 'Large', capabilities: [] },
+      { id: 'voxtral-small-latest', name: 'Voxtral Small', capabilities: [] },
+      { id: 'voxtral-mini-transcribe', name: 'Voxtral Mini Transcribe', capabilities: [] },
+    ]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/stt/models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'typed' }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).models.map((m) => m.id), ['voxtral-small-latest', 'voxtral-mini-transcribe']);
+    assert.equal(ctx.getLastRetrieveArgs().apiKey, 'typed');
+
+    // No transcription-like names: everything is offered rather than nothing.
+    ctx.setProviderModels([{ id: 'custom-model-1', name: 'Custom', capabilities: [] }]);
+    const all = await fetch(`${ctx.baseUrl}/admin/api/stt/models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'custom', baseUrl: 'https://x.test/v1', apiKey: 'k' }),
+    });
+    assert.deepEqual((await all.json()).models.map((m) => m.id), ['custom-model-1']);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/stt/models requires a listening provider first', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/admin/api/stt/models`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});

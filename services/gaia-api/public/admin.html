@@ -604,7 +604,11 @@
       <p class="hint" id="sttMainHint" style="display:none;">Using the Main Provider's credentials above. Only works when the Main Provider also offers transcription.</p>
 
       <label for="sttModel">Model</label>
-      <input id="sttModel" type="text" placeholder="e.g. voxtral-small-latest" autocomplete="off">
+      <input id="sttModel" type="text" list="sttModelList" placeholder="e.g. voxtral-small-latest" autocomplete="off">
+      <datalist id="sttModelList"></datalist>
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="loadSttModelsBtn" class="secondary">Get models</button>
+      </div>
 
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="saveSttBtn">Save listening</button>
@@ -1365,6 +1369,32 @@
   wireMainProviderToggle(sttProviderEl, $('sttCredentialFields'), $('sttMainHint'));
   const sttModelEl = $('sttModel'), sttKeyHintEl = $('sttKeyHint'), sttStatusEl = $('sttStatus');
   const saveSttBtn = $('saveSttBtn'), sttBadgeEl = $('sttBadge');
+
+  // Model picker: asks the provider currently shown in the form (unsaved included) for its models.
+  const sttModelListEl = $('sttModelList'), loadSttModelsBtn = $('loadSttModelsBtn');
+  loadSttModelsBtn.addEventListener('click', async () => {
+    loadSttModelsBtn.disabled = true;
+    try {
+      const form = { provider: sttProviderEl.value, baseUrl: sttBaseUrlEl.value.trim() };
+      if (sttApiKeyEl.value.trim()) form.apiKey = sttApiKeyEl.value.trim();
+      const res = await fetch('/admin/api/stt/models', { method: 'POST', headers: authHeaders(), body: JSON.stringify(form) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+      const models = (Array.isArray(body.models) ? body.models : []).filter((m) => m && typeof m.id === 'string' && m.id);
+      sttModelListEl.replaceChildren();
+      for (const model of models) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.label = model.name || model.id;
+        sttModelListEl.appendChild(option);
+      }
+      setStatus(sttStatusEl, models.length + (models.length === 1 ? ' model' : ' models') + ' loaded — pick one or keep typing.', true);
+    } catch (err) {
+      setStatus(sttStatusEl, 'Could not load models — ' + (err && err.message ? err.message : 'check the bearer token, provider and key.'), false);
+    } finally {
+      loadSttModelsBtn.disabled = false;
+    }
+  });
 
   function sttIsConfigured(cfg) {
     return Boolean(cfg && cfg.model && (cfg.useMainProvider ? cfg.mainProviderConfigured : cfg.provider && cfg.baseUrl));

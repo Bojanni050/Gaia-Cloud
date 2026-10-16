@@ -570,3 +570,9 @@
 - Findings: Met het formulier op Mistral (niet opgeslagen) haalde "Get models" ElevenLabs-modellen op: de knoppen lazen de **opgeslagen** config op de server, niet wat de pagina toonde. Risico daarbij: de opgeslagen key van provider A kon naar het endpoint van provider B gaan.
 - Conclusions: `models` en `voices` krijgen ook een POST waarbij het formulier (provider, base URL, getypte key) leidend is; GET blijft de opgeslagen config gebruiken. Een opgeslagen key wordt alleen hergebruikt voor dezelfde provider waarvoor hij is opgeslagen, nooit voor een andere. Hierdoor hoeft niet eerst opgeslagen te worden.
 - Actions: `src/adminRoutes.js` (`resolveTtsTarget`, gedeelde handlers voor GET+POST), `public/admin.html` (`currentTtsForm()`, knoppen sturen POST, hinttekst), `test/adminRoutes.test.js` (+2 tests); validated: 1597 tests groen.
+
+## 2026-10-16 (Listening: Get models)
+
+- Findings: Het Listening-model was een kaal tekstveld; alleen Voice had "Get models".
+- Conclusions: Zelfde aanpak als bij Voice: datalist + knop die het formulier gebruikt (POST, geen eerst-opslaan nodig, opgeslagen key alleen voor dezelfde provider). Mistral's `/models` geeft alle modellen terug, dus de lijst wordt vernauwd tot transcriptie-achtige namen (voxtral/transcri/whisper/stt/speech), en toont alles als niets matcht.
+- Actions: `src/adminRoutes.js` (`resolveTtsTarget` hernoemd naar `resolveProviderTarget`, `GET/POST /api/stt/models`), `public/admin.html` (`sttModelList`, `loadSttModelsBtn`), `test/adminRoutes.test.js` (+2 tests); validated: alle tests groen, niet in de browser geklikt.
