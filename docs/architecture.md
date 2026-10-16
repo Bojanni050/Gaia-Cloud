@@ -3,8 +3,10 @@
 Gaia is a lifelong personal intelligence. This document is the architecture of
 **Gaia-Cloud**, her server side: identity, cognition and memory. Her clients —
 Gaia-Web and Gaia-Desktop — are *representations* of her, never a second place
-she runs. They speak only the uniform Gaia API and never see a model, a provider
-or a store address.
+she runs. The contract is that they speak only the uniform Gaia API and never see
+a model, a provider or a store address. Gaia-Desktop meets it today. Gaia-Web does
+not yet: it still talks to Hermes and Hindsight directly and runs Logos client-side,
+a known interim state (see `evolution.md`), not the intended architecture.
 
 ## The core model
 
@@ -26,8 +28,15 @@ not of the server: Gaia-Cloud never executes anything on it. Gaia-Desktop runs
 Desktop Commander locally and is the executor; Gaia claims `desktop` on a turn
 only when such an executor is connected (`turn.js` `generationCapabilities`).
 Reads may run freely; writes and commands need the person's confirmation in the
-client. The registry entry and awareness are in place; the executor seam and the
-client side are still to be built.
+client. Both halves exist: the server side is `desktopBroker.js` (policy and
+lifecycle) and `desktopRoutes.js`; the executor is Gaia-Desktop
+(`desktop/src/state/desktopActions.js`, with the person's own allowed folders and
+command blocklist, and the Tauri MCP client in `src-tauri/src/mcp/`). The server
+sets the policy and the client may only tighten it. Off unless
+`GAIA_DESKTOP=true`; see `desktop-capability.md` for the full flow.
+
+The set of capabilities and the skills they expose is recorded in one place,
+`src/capabilityRegistry.js` — pure metadata, no routing logic.
 
 ## Boundaries that are load-bearing
 
@@ -60,6 +69,14 @@ conversation, and announced on `GET /research/jobs`. The answer stays Gaia's
 (`src/researchReach.js`, `src/researchJob.js`, `src/researchRoutes.js`). A
 research turn therefore requires a `conversationId` — the findings need a
 conversation to land in; without one the turn simply answers.
+
+The **Response Engine** (`src/responseEngine.js`) is the only place a reply
+reaches a client: capabilities never write to the HTTP response themselves, and
+no provider name, model name, transport detail or stack trace crosses that seam
+(`toCalmError`). Tools offered to the generator (such as `remember`, `search_memory`,
+`conversation_search`, and `desktop` when available) run inside the one inference
+call, bounded by `maxToolRounds` (default 3), so a turn can chain at most three
+tool calls.
 
 After the reply is delivered, `runDeferredCognition` runs fire-and-forget and
 never touches the reply:
@@ -240,6 +257,25 @@ gate (free, bilingual)  ─ signal ─▶  model     due loop ─▶ politeness 
   surviving a closed window or a reconnect. `conversationStore`'s
   `/conversations/events` ping fires too.
 
+## Switches
+
+Behaviour that is optional is controlled by environment flags (read in
+`services/gaia-api/src/server.js`):
+
+| Flag | Default | Turns on / off |
+| --- | --- | --- |
+| `GAIA_KAIROS_ENABLED` | off | the Kairos episode worker |
+| `GAIA_ELEOS` | off | Eleos check-ins (`true` to enable) |
+| `GAIA_DESKTOP` | off | the `desktop` capability and its broker (`true` to enable) |
+| `GAIA_RESEARCH_REACH` | off | research jobs at Hermes (`on` to enable) |
+| `GAIA_AION` | on | the Aion pass (`false` to disable) |
+| `GAIA_MEMORY_TOOL` | on | the `remember` tool (`false` to disable) |
+| `GAIA_HYPOTHESIS_PERSISTENCE` | on | writing hypotheses to Cognition (`false` to disable) |
+
+Models, speech (STT/TTS) and storage paths are configured per role through
+further `GAIA_*` variables and the admin provider settings; they are deployment
+detail and deliberately not listed here.
+
 ## Clients
 
 Clients reach Gaia only through the uniform Gaia API (`services/gaia-api`):
@@ -251,3 +287,5 @@ Clients read live Kairos episodes at `GET /kairos/episodes` and stream them at
 Clients discover Gaia-initiated check-ins at `GET /eleos/checkins` (poll) and
 read the message itself as an ordinary turn in the new conversation it names.
 Clients search the saved transcripts at `GET /conversations/search?q=`.
+Gaia-Desktop answers confirmation prompts and reports results at
+`POST /desktop/actions/:id/decision` and `/result` (see `desktop-capability.md`).
