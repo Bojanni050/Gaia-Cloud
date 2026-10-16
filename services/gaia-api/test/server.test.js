@@ -725,6 +725,36 @@ test('POST /speech speaks English with the default voice when no English voice i
   });
 });
 
+test('POST /speech uses Fish Audio when it is the stored provider, even without a base URL', async () => {
+  const storePath = writeTtsProviderConfig({ provider: 'fishaudio', baseUrl: '', apiKey: 'fish-key', model: 's2.1-pro', voiceId: 'fish-voice' });
+  const seen = [];
+  const fake = async (url, init = {}) => {
+    seen.push({ url: String(url), init });
+    const bytes = Buffer.from('FISH-AUDIO');
+    return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) };
+  };
+  await withMockedFetch(fake, async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: 'Hallo' }),
+      });
+      assert.equal(res.status, 200);
+      assert.equal(Buffer.from(await res.arrayBuffer()).toString(), 'FISH-AUDIO');
+      assert.equal(seen[0].url, 'https://api.fish.audio/v1/tts');
+      assert.equal(seen[0].init.headers.model, 's2.1-pro');
+      assert.equal(JSON.parse(seen[0].init.body).reference_id, 'fish-voice');
+
+      const info = await (await originalFetch(`http://127.0.0.1:${port}/speech/info`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
+      assert.equal(info.configured, true);
+      assert.equal(info.provider, 'fishaudio');
+      assert.ok(info.languages.includes('nl'));
+    });
+  });
+});
+
 // --- webSearch wiring (src/tools/braveSearch.js) ---------------------------
 //
 // No non-streaming ("performTurn") equivalent of the streaming test below:

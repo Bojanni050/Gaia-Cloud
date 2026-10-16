@@ -400,8 +400,8 @@ function createApp(env = process.env) {
     const providerTtsConfig = resolveTtsConfig(providerStore, env, language);
     // The resolved config travels with the client so POST /speech can log
     // *what* it spoke with (provider/model/voice) without re-resolving.
-    // ElevenLabs needs no base URL (it defaults to its public API).
-    const needsBaseUrl = !providerTtsConfig || providerTtsConfig.provider !== 'elevenlabs';
+    // ElevenLabs and Fish Audio need no base URL (they default to their public APIs).
+    const needsBaseUrl = !providerTtsConfig || !['elevenlabs', 'fishaudio'].includes(providerTtsConfig.provider);
     if (!providerTtsConfig || (needsBaseUrl && !providerTtsConfig.baseUrl) || !providerTtsConfig.model) {
       return { tts, config: providerTtsConfig };
     }
@@ -418,6 +418,17 @@ function createApp(env = process.env) {
           authToken: providerTtsConfig.apiKey,
           voiceId: providerTtsConfig.voiceId,
           format: env.GAIA_TTS_FORMAT,
+        }),
+        config: providerTtsConfig,
+      };
+    }
+    if (providerTtsConfig.provider === 'fishaudio') {
+      return {
+        tts: require('./speech/fishAudioTts').createFishAudioTts({
+          baseUrl: providerTtsConfig.baseUrl,
+          model: providerTtsConfig.model,
+          authToken: providerTtsConfig.apiKey,
+          voiceId: providerTtsConfig.voiceId,
         }),
         config: providerTtsConfig,
       };
@@ -454,6 +465,7 @@ function createApp(env = process.env) {
   function languagesForTtsProvider(provider) {
     if (provider === 'mistral') return require('./speech/mistralTts').LANGUAGES;
     if (provider === 'elevenlabs') return require('./speech/elevenLabsTts').LANGUAGES;
+    if (provider === 'fishaudio') return require('./speech/fishAudioTts').LANGUAGES;
     if (provider === 'xiaomi' || provider === 'env') return require('./speech/mimoTts').LANGUAGES;
     return ['en'];
   }
@@ -795,7 +807,7 @@ function createApp(env = process.env) {
   app.get('/speech/info', auth, (req, res) => {
     const providerTtsConfig = resolveTtsConfig(providerStore, env);
     const configured = Boolean(
-      providerTtsConfig && (providerTtsConfig.baseUrl || providerTtsConfig.provider === 'elevenlabs') && providerTtsConfig.model
+      providerTtsConfig && (providerTtsConfig.baseUrl || ['elevenlabs', 'fishaudio'].includes(providerTtsConfig.provider)) && providerTtsConfig.model
     ) || Boolean(tts);
     const provider = providerTtsConfig ? providerTtsConfig.provider : null;
     // The English voice may run on another provider: advertise the union of what both can speak.

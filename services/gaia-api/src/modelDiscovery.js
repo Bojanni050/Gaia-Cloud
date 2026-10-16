@@ -65,6 +65,10 @@ async function retrieveModels({ provider, baseUrl, apiKey, fetchImpl, timeoutMs 
     return retrieveMistralModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
   }
 
+  if (normalizedProvider === 'fishaudio') {
+    return require('./speech/fishAudioTts').listModels();
+  }
+
   if (normalizedProvider === 'elevenlabs') {
     return require('./speech/elevenLabsTts').listModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
   }

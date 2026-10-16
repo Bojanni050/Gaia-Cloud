@@ -470,6 +470,7 @@
         <option value="xiaomi">Xiaomi MiMo</option>
         <option value="mistral">Mistral Voxtral</option>
         <option value="elevenlabs">ElevenLabs</option>
+        <option value="fishaudio">Fish Audio</option>
         <option value="openai">OpenAI</option>
         <option value="edenai">EdenAI</option>
         <option value="custom">Custom (OpenAI-compatible)</option>
@@ -532,6 +533,7 @@
         <option value="xiaomi">Xiaomi MiMo</option>
         <option value="mistral">Mistral Voxtral</option>
         <option value="elevenlabs">ElevenLabs</option>
+        <option value="fishaudio">Fish Audio</option>
         <option value="openai">OpenAI</option>
         <option value="edenai">EdenAI</option>
         <option value="custom">Custom (OpenAI-compatible)</option>
@@ -661,6 +663,7 @@
     mistral: 'https://api.mistral.ai/v1',
     xiaomi: 'https://api.xiaomimimo.com/v1',
     elevenlabs: 'https://api.elevenlabs.io/v1',
+    fishaudio: 'https://api.fish.audio/v1/tts',
     nvidia: 'https://integrate.api.nvidia.com/v1',
     litellm: 'http://100.64.144.93:4000/v1',
   };
@@ -1230,6 +1233,10 @@
       ['eleven_turbo_v2_5', 'Turbo v2.5'],
       ['eleven_v3', 'v3'],
     ];
+    const PRESET_TTS_MODELS = {
+      elevenlabs: ELEVENLABS_MODELS,
+      fishaudio: [['s2.1-pro', 'S2.1 Pro'], ['s2.1-pro-free', 'S2.1 Pro (free tier)'], ['s2-pro', 'S2 Pro'], ['s1', 'S1']],
+    };
     function fillTtsModels(models) {
       ttsModelListEl.replaceChildren();
       for (const [id, name] of models) {
@@ -1240,7 +1247,7 @@
       }
     }
     ttsProviderEl.addEventListener('change', () => {
-      fillTtsModels(ttsProviderEl.value === 'elevenlabs' ? ELEVENLABS_MODELS : []);
+      fillTtsModels(PRESET_TTS_MODELS[ttsProviderEl.value] || []);
     });
     loadTtsModelsBtn.addEventListener('click', async () => {
       loadTtsModelsBtn.disabled = true;
