@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { recognizeQuestionShape } = require('./logos/questionShape');
+const { createReviewRound } = require('./reviewRound');
 
 /**
  * GaiaChat review surface — the human-in-the-loop Absolute Override.
@@ -10,7 +11,9 @@ const { recognizeQuestionShape } = require('./logos/questionShape');
  * /admin): the GaiaChat client lists the derived statements Logos is still
  * weighing and the human moves one forward or lets it go.
  *
- *   GET  /cognition/hypotheses                 pending/testing statements
+ *   GET  /cognition/hypotheses                 pending/testing statements, each under
+ *                                              review marked `review_eligible` / `in_round`
+ *                                              (reviewRound.js — the criterion and the batch)
  *   POST /cognition/hypotheses/:id/test        open active testing
  *   POST /cognition/hypotheses/:id/reject      { reason }  (verwerp_bron "mens")
  *   POST /cognition/hypotheses/:id/reopen      { reason }  — the human lift of a rejection
@@ -108,7 +111,7 @@ function reviewableQuestions(records) {
     });
 }
 
-function createCognitionRouter({ cognition, sync, auth } = {}) {
+function createCognitionRouter({ cognition, sync, auth, reviewRound = createReviewRound() } = {}) {
   if (!cognition) throw new Error('cognitionRoutes requires a cognition client');
   const router = express.Router();
   if (auth) router.use(auth);
@@ -123,7 +126,9 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     const { status } = req.query;
     const list = await cognition.listHypotheses(status ? { status } : {});
     const expanded = await expandRelationships(reviewableQuestions(list), cognition);
-    res.json({ hypotheses: expanded });
+    // The round only makes sense over the COMPLETE list; a status-filtered view
+    // is served as it is.
+    res.json({ hypotheses: status ? expanded : reviewRound.apply(expanded) });
   }));
 
   router.post('/hypotheses/:id/test', asyncRoute(async (req, res) => {
@@ -173,7 +178,8 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
     const statement = req.body && req.body.statement;
 
     // V3 structural friction, server-side: a macro statement (the safe
-    // default) may only be confirmed with a stated rationale — the API
+    // default), or one carrying a counter-hypothesis, may only be confirmed
+    // with a stated rationale — the API
     // refuses a bare click even if a client forgot the UI step. A micro
     // statement may be confirmed without one.
     //
@@ -200,7 +206,11 @@ function createCognitionRouter({ cognition, sync, auth } = {}) {
       return res.status(503).json({ error: 'the statement could not be read' });
     }
 
-    const isMacro = !existing || existing.scope !== 'micro';
+    // A statement that reached the person through weight — macro, or micro with
+    // an active counter-hypothesis — never settles on a bare click.
+    const hasCounter = Boolean(existing && typeof existing.counter_hypothesis === 'string'
+      && existing.counter_hypothesis.trim());
+    const isMacro = !existing || existing.scope !== 'micro' || hasCounter;
     if (isMacro && !String(rationale).trim()) {
       return res.status(400).json({ error: 'a rationale is required to confirm a macro statement' });
     }

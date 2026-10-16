@@ -73,6 +73,22 @@ test('POST confirm refuses a macro statement without a rationale (server-side fr
   assert.ok(!cognition.calls.some((c) => c[0] === 'confirm'));
 });
 
+test('POST confirm also refuses a bare click on a micro statement that carries a counter-hypothesis', async () => {
+  const cognition = fakeCognition();
+  cognition.getHypothesis = async (id) => ({ id, status: 'testing', scope: 'micro', counter_hypothesis: 'the opposite reading' });
+  const refused = await request(appWith({ cognition })).post('/cognition/hypotheses/h2/confirm').send({});
+  assert.equal(refused.status, 400);
+  const ok = await request(appWith({ cognition })).post('/cognition/hypotheses/h2/confirm').send({ rationale: 'I checked both readings' });
+  assert.equal(ok.status, 200);
+});
+
+test('POST confirm still lets a plain micro statement through without a rationale', async () => {
+  const cognition = fakeCognition();
+  cognition.getHypothesis = async (id) => ({ id, status: 'testing', scope: 'micro', counter_hypothesis: null });
+  const res = await request(appWith({ cognition })).post('/cognition/hypotheses/h2/confirm').send({});
+  assert.equal(res.status, 200);
+});
+
 test('POST confirm passes a human nuanced statement through', async () => {
   const cognition = fakeCognition();
   const res = await request(appWith({ cognition }))
