@@ -133,34 +133,6 @@
   .cap-chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 
 
-  /* --- Pick-or-type field: the search lives in the dropdown, never in the field itself --- */
-  .picker { position: relative; width: 100%; }
-  .picker > input { padding-right: 2.4rem; }
-  .picker-btn {
-    all: unset; position: absolute; top: 0; right: 0; bottom: 0; width: 2.4rem; display: flex;
-    align-items: center; justify-content: center; cursor: pointer; color: var(--text-faint);
-  }
-  .picker-btn:hover { color: var(--accent); }
-  .picker-btn svg { width: 0.85rem; height: 0.85rem; transition: transform 0.15s; }
-  .picker.open .picker-btn svg { transform: rotate(180deg); }
-  .picker-panel {
-    position: absolute; z-index: 40; top: 100%; left: 0; right: 0; margin-top: 0.5rem; display: none; flex-direction: column;
-    background: var(--card); border: 1px solid var(--border); border-radius: 1.25rem; padding: 0.65rem;
-    box-shadow: 0 20px 40px -12px rgba(0,0,0,0.6); max-height: 20rem;
-  }
-  .picker.open .picker-panel { display: flex; }
-  .picker-search { margin-bottom: 0.5rem; border-radius: 0.8rem; padding: 0.5rem 0.7rem; font-size: 0.82rem; }
-  .picker-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.3rem; }
-  .picker-opt {
-    display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.65rem; border-radius: 0.8rem; cursor: pointer;
-    border: 1px solid var(--border-soft); background: var(--card-2);
-  }
-  .picker-opt:hover, .picker-opt.hi { border-color: var(--accent-line); background: var(--card); }
-  .picker-opt.sel { box-shadow: inset 0 0 0 1px var(--accent-line); }
-  .picker-opt .pname { font-size: 0.82rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .picker-opt .pid { font-size: 0.7rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .picker-empty { padding: 0.5rem 0.6rem; font-size: 0.82rem; color: var(--text-faint); }
-
   /* --- Model dropdown (searchable, priced) --- */
   .model-dd { position: relative; }
   .model-dd-trigger {
@@ -207,6 +179,8 @@
   .model-dd-opt .prices { width: 3.6rem; flex-shrink: 0; font-size: 0.66rem; color: var(--text-faint); line-height: 1.35; padding-top: 0.1rem; }
   .model-dd-opt .prices b { color: var(--accent); font-weight: 600; }
   .model-dd-opt .body { min-width: 0; flex: 1; border-left: 1px solid var(--border-soft); padding-left: 0.65rem; }
+  .model-dd-opt:not(:has(.prices)) .body { border-left: none; padding-left: 0; }
+  .model-dd-trigger.field { min-height: 2.6rem; }
   .model-dd-opt .row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
   .model-dd-opt .mname { font-size: 0.82rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .model-dd-opt .free-tag { font-size: 0.68rem; color: var(--accent); flex-shrink: 0; }
@@ -885,6 +859,8 @@
   function createModelDropdown(mountEl, opts) {
     opts = opts || {};
     const state = { models: [], value: '', open: false, query: '', providerLabel: opts.providerLabel || '', providerId: opts.providerId || '', emptyOptionLabel: opts.emptyOptionLabel || null };
+    // Lists without prices (voices, speech models) leave the price columns out; `allowCustom` lets a typed id be used as is.
+    const showPrices = opts.showPrices !== false;
 
     const root = document.createElement('div');
     root.className = 'model-dd';
@@ -896,7 +872,7 @@
     const panel = document.createElement('div');
     panel.className = 'model-dd-panel';
     panel.hidden = true;
-    panel.innerHTML = '<input class="model-dd-search" placeholder="Search models…"><div class="model-dd-list" role="listbox"></div>';
+    panel.innerHTML = '<input class="model-dd-search" placeholder="' + escapeHtml(opts.searchPlaceholder || 'Search models…') + '"><div class="model-dd-list" role="listbox"></div>';
     const searchEl = panel.querySelector('.model-dd-search');
     const listEl = panel.querySelector('.model-dd-list');
 
@@ -924,14 +900,14 @@
       const m = state.models.find((x) => x.id === state.value);
       if (!m) {
         const label = state.value ? state.value : (opts.placeholder || 'Select a model…');
-        trigger.innerHTML = '<span class="price"></span><span class="info"><span class="placeholder">' + escapeHtml(label) + '</span></span>' +
+        trigger.innerHTML = (showPrices ? '<span class="price"></span>' : '') + '<span class="info"><span class="placeholder">' + escapeHtml(label) + '</span></span>' +
           '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
         return;
       }
       const free = isFreeModel(m);
       const promptPrice = free ? 'Free' : (formatPricePerMillion(m.pricing && m.pricing.prompt) || '—');
       trigger.innerHTML =
-        '<span class="price">' + escapeHtml(promptPrice) + (free ? '' : '/1M') + '</span>' +
+        (showPrices ? '<span class="price">' + escapeHtml(promptPrice) + (free ? '' : '/1M') + '</span>' : '') +
         '<span class="info">' +
           '<span class="name">' + escapeHtml(getModelTitle(m)) + '</span>' +
           (state.providerLabel ? '<span class="provider">• ' + escapeHtml(state.providerLabel.toLowerCase()) + '</span>' : '') +
@@ -950,8 +926,17 @@
           '</div>'
         );
       }
-      if (list.length === 0 && !state.emptyOptionLabel) {
-        listEl.innerHTML = '<div class="model-dd-empty">No models found — retrieve or fetch models first.</div>';
+      const typed = state.query.trim();
+      if (opts.allowCustom && typed && !state.models.some((x) => x.id === typed)) {
+        parts.push(
+          '<div class="model-dd-opt" data-custom="1" style="align-items:center;">' +
+            '<div class="body" style="border-left:none; padding-left:0;"><span class="mname">Use \u201c' + escapeHtml(typed) + '\u201d</span>' +
+            '<div class="context">as a custom value</div></div>' +
+          '</div>'
+        );
+      }
+      if (list.length === 0 && !state.emptyOptionLabel && !parts.length) {
+        listEl.innerHTML = '<div class="model-dd-empty">' + escapeHtml(opts.emptyText || 'No models found — retrieve or fetch models first.') + '</div>';
         return;
       }
       for (const m of list) {
@@ -962,10 +947,12 @@
         const isSelected = m.id === state.value;
         parts.push(
           '<div class="model-dd-opt' + (isSelected ? ' sel' : '') + '" data-id="' + escapeHtml(m.id) + '" role="option">' +
-            '<div class="prices">' +
-              '<div>In: <b>' + (free ? 'Free' : escapeHtml(promptPrice || '—')) + '</b></div>' +
-              '<div>Out: <b>' + (free ? 'Free' : escapeHtml(completionPrice || '—')) + '</b></div>' +
-            '</div>' +
+            (showPrices
+              ? '<div class="prices">' +
+                  '<div>In: <b>' + (free ? 'Free' : escapeHtml(promptPrice || '—')) + '</b></div>' +
+                  '<div>Out: <b>' + (free ? 'Free' : escapeHtml(completionPrice || '—')) + '</b></div>' +
+                '</div>'
+              : '') +
             '<div class="body">' +
               '<div class="row1"><span class="mname">' + escapeHtml(getModelTitle(m)) + '</span>' + (free ? '<span class="free-tag">Free</span>' : '') + '</div>' +
               '<div class="tags">' +
@@ -1012,7 +999,7 @@
       const optEl = event.target.closest('.model-dd-opt');
       if (!optEl) return;
       event.preventDefault();
-      const id = optEl.dataset.empty ? '' : optEl.dataset.id;
+      const id = optEl.dataset.empty ? '' : optEl.dataset.custom ? state.query.trim() : optEl.dataset.id;
       state.value = id;
       renderTrigger();
       close();
@@ -1856,7 +1843,6 @@
       +     '<button type="button" id="' + prefix + 'FetchModelsBtn" class="secondary">Fetch models</button>'
       +   '</div>'
       +   '<datalist id="' + prefix + 'ModelList"></datalist>'
-      +   '<div class="tags" id="' + prefix + 'ModelCaps" style="margin-top:0.45rem;"></div>'
       +   '<p class="hint" id="' + prefix + 'ModelsHint"></p>'
       + '</div>'
       + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
@@ -1914,20 +1900,6 @@
     const fetchModelsBtn = $(prefix + 'FetchModelsBtn');
     const modelsHintEl = $(prefix + 'ModelsHint');
     const modelListEl = $(prefix + 'ModelList');
-    const modelCapsEl = $(prefix + 'ModelCaps');
-    const modelInputEl = $(prefix + 'Model');
-    const fetchedModels = new Map();
-    // Same capability tags as the Main Provider dropdown, for the model typed or picked here.
-    function renderModelCaps() {
-      const id = modelInputEl.value.trim();
-      const m = fetchedModels.get(id);
-      if (!id || fetchedModels.size === 0) { modelCapsEl.innerHTML = ''; return; }
-      modelCapsEl.innerHTML = m
-        ? (capabilityTagsHtml(m.capabilities) || '<span class="hint">No capabilities reported for this model.</span>')
-        : '<span class="hint">Not in the fetched list — capabilities unknown.</span>';
-    }
-    modelInputEl.addEventListener('input', renderModelCaps);
-    modelInputEl.addEventListener('change', renderModelCaps);
     async function fetchModels(silent) {
       const provider = providerEl.value;
       if (provider === USE_MAIN_PROVIDER) {
@@ -1949,16 +1921,12 @@
         if (!res.ok) throw new Error(await res.text());
         const body = await res.json();
         const models = body.models || [];
-        fetchedModels.clear();
-        for (const m of models) fetchedModels.set(m.id, m);
         modelListEl.innerHTML = models
           .map((m) => {
-            const caps = (m.capabilities || []).map((c) => CAP_LABELS[c] || c).join(', ');
-            return '<option value="' + escapeHtml(m.id) + '" label="' + escapeHtml((m.name || m.id) + (caps ? ' · ' + caps : '')) + '"></option>';
+            return '<option value="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.name || m.id) + '" data-caps="' + escapeHtml((m.capabilities || []).join(',')) + '"></option>';
           })
           .join('');
         modelsHintEl.textContent = models.length + ' models — start typing in Model to pick one.';
-        renderModelCaps();
       } catch (_) {
         modelsHintEl.textContent = 'Could not fetch models — check the base URL and key.';
       } finally {
@@ -2202,105 +2170,58 @@
   // --- Init ---
 
   // ============================================================
-  // Pick-or-type fields. A native <datalist> filters by what is already in the field, so a field that
-  // holds a value only ever offers that one value. These fields keep the datalist as their data
-  // source but open their own dropdown with a search box inside it: the field is for the value, the
-  // search is for finding one. Typing a value that is not in the list still works.
+  // Pick-or-type fields (speech models, voices, a role's own provider model) use the same dropdown as
+  // the Main Provider models: a trigger showing the choice, and a panel with the search box inside it.
+  // The text input stays in the page, hidden, as the value the rest of the code reads and writes; the
+  // <datalist> next to it is the data source (option value = id, label = name, data-caps = capabilities).
+  // A typed id that is not in the list can be used as it is.
   // ============================================================
-  function enhanceDatalist(input) {
+  function mountFieldDropdown(input) {
     const listId = input.getAttribute('list');
     const source = listId ? document.getElementById(listId) : null;
-    if (!source || input.closest('.picker')) return;
+    if (!source || input.dataset.dd) return;
     input.removeAttribute('list');
+    input.dataset.dd = '1';
 
-    const wrap = document.createElement('div');
-    wrap.className = 'picker';
-    // The field may sit in a flex row (role model + "Fetch models"): the wrapper takes over its share.
-    if (input.style.flex) { wrap.style.flex = input.style.flex; input.style.flex = ''; }
-    input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
+    const mount = document.createElement('div');
+    if (input.style.flex) { mount.style.flex = input.style.flex; input.style.flex = ''; }
+    input.insertAdjacentElement('afterend', mount);
+    input.style.display = 'none';
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'picker-btn';
-    btn.setAttribute('aria-label', 'Show options');
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
-    const panel = document.createElement('div');
-    panel.className = 'picker-panel';
-    const search = document.createElement('input');
-    search.type = 'text';
-    search.className = 'picker-search';
-    search.placeholder = 'Search\u2026';
-    search.autocomplete = 'off';
-    const list = document.createElement('div');
-    list.className = 'picker-list';
-    panel.append(search, list);
-    wrap.append(btn, panel);
-
-    const options = () => [...source.options].map((o) => ({ value: o.value, label: o.label && o.label !== o.value ? o.label : '' }));
-
-    function choose(value) {
-      input.value = value;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      close();
-      input.focus();
-    }
-
-    function render() {
-      const q = search.value.trim().toLowerCase();
-      const current = input.value.trim();
-      const shown = options().filter((o) => !q || o.value.toLowerCase().includes(q) || o.label.toLowerCase().includes(q));
-      list.replaceChildren();
-      if (shown.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'picker-empty';
-        empty.textContent = options().length === 0 ? 'Nothing to choose from yet \u2014 use the Get / Fetch button first, or type a value.' : 'No match.';
-        list.appendChild(empty);
-        return;
-      }
-      for (const o of shown) {
-        const row = document.createElement('div');
-        row.className = 'picker-opt' + (o.value === current ? ' sel' : '');
-        row.dataset.value = o.value;
-        const name = document.createElement('span');
-        name.className = 'pname';
-        name.textContent = o.label || o.value;
-        row.appendChild(name);
-        if (o.label) {
-          const id = document.createElement('span');
-          id.className = 'pid';
-          id.textContent = o.value;
-          row.appendChild(id);
-        }
-        row.addEventListener('mousedown', (e) => { e.preventDefault(); choose(o.value); });
-        list.appendChild(row);
-      }
-    }
-    function open() {
-      search.value = '';
-      render();
-      wrap.classList.add('open');
-      search.focus();
-      const sel = list.querySelector('.sel');
-      if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: "nearest" });
-    }
-    function close() { wrap.classList.remove('open'); }
-
-    btn.addEventListener('click', () => (wrap.classList.contains('open') ? close() : open()));
-    input.addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); open(); } });
-    search.addEventListener('input', render);
-    search.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { close(); input.focus(); }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const first = list.querySelector('.picker-opt');
-        if (first) choose(first.dataset.value);
-      }
+    const dd = createModelDropdown(mount, {
+      placeholder: input.getAttribute('placeholder') || 'Select\u2026',
+      searchPlaceholder: 'Search or type an id\u2026',
+      emptyText: 'Nothing to choose from yet \u2014 use the Get / Fetch button, or type an id.',
+      showPrices: false,
+      allowCustom: true,
+      onChange: (id) => {
+        nativeValue.set.call(input, id);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      },
     });
-    document.addEventListener('mousedown', (e) => { if (!wrap.contains(e.target)) close(); });
+    mount.querySelector('.model-dd-trigger').classList.add('field');
+
+    // Code that sets `input.value = ...` (loading saved config) must show up in the dropdown too.
+    const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get() { return nativeValue.get.call(input); },
+      set(v) { nativeValue.set.call(input, v); dd.setValue(v); },
+    });
+    dd.setValue(input.value);
+
+    const syncModels = () => {
+      dd.setModels([...source.options].map((o) => ({
+        id: o.value,
+        name: o.dataset.name || (o.label && o.label !== o.value ? o.label : o.value),
+        capabilities: o.dataset.caps ? o.dataset.caps.split(',') : [],
+      })));
+    };
+    new MutationObserver(syncModels).observe(source, { childList: true });
+    syncModels();
   }
-  document.querySelectorAll('input[list]').forEach(enhanceDatalist);
+  document.querySelectorAll('input[list]').forEach(mountFieldDropdown);
 
   if (tokenEl.value) { loadProviderConfig(); loadTtsConfig(); loadSttConfig(); loadDecisions(); }
   tokenEl.addEventListener('change', () => { loadProviderConfig(); loadTtsConfig(); loadSttConfig(); loadDecisions(); });
