@@ -4,61 +4,70 @@ Status: voorstel ter beoordeling, niet leidend. Bedoeld als aanvulling op
 `Project Gaia - Main Document.pdf` (3 oktober 2026), dat alleen deel 1
 (Foundation) uitwerkt.
 
-## 1. Wat er nu is: twee systemen voor hetzelfde
+Gecorrigeerd na een opmerking van Bo: een eerdere versie stelde dat Foundation
+en Cognition allebei actief afgeleide kennis produceren. Dat klopt niet; zie
+sectie 1.
 
-Het Main Document zegt dat Foundation naast de bron ook Evidence, Hypothesis en
-Fact beheert. `docs/architecture.md` zegt dat Foundation alleen ruwe observaties
-bewaart en dat `services/cognition` de afgeleide levenscyclus bezit. Beide
-kloppen met de code, omdat beide systemen bestaan.
+## 1. Wat er nu is
 
-| | Foundation (`Bojanni050/Foundation`) | Cognition (`services/cognition`) |
-| --- | --- | --- |
-| Objecten | episode, evidence, hypothesis, fact, knowledge_gap | hypothesis, pattern, candidate model, open question, relationship, Kairos-episode |
-| Levenscyclus | status `observation`, `interpretation`, `hypothesis`, `confirmed`, `rejected`; fact hangt aan bevestigende hypothese; supersessie via `supersedes_fact_id` | `proposed`, `testing`, `corroborated` (machine, C ≥ 0.80), `confirmed` (alleen mens), `rejected` |
-| Wie stelt voor | eigen reflectie-engine (`hypothesisReflectionSync.js`, hooguit 3 voorstellen per run) | Logos, na elk antwoord |
-| Wie bevestigt | alleen de mens | alleen de mens (GaiaChat) |
-| Bronkoppeling | evidence naar episode, onafhankelijke bronnen geteld | `sources: ["foundation:<id>"]` |
-| Naar Hindsight | `hindsightSync.js` | `cognitionSync` (bank `gaia-logos`) |
+Foundation (`Bojanni050/Foundation`, laatste commit 5 oktober) heeft de
+epistemische tabellen (episode, evidence, hypothesis, fact, knowledge_gap),
+maar de actieve laag is bewust uitgezet:
 
-Gelezen uit bestanden en schema's; ik heb niet gedraaid hoe ze samenwerken.
+- `server/jobs.js` start de reflectie-engine, de promotie
+  (observation naar hypothesis) en de Hindsight-sync niet meer. De reden in de
+  code: ze vuurden tegen dezelfde gedeelde Hindsight-bank.
+- `POST /reflection/run` en `POST /hindsight/run` geven `410 Gone`.
+- Wat Foundation wel draait: embeddings aanvullen (auto-heal) en gateway-rijen
+  als episode bevriezen (ingest-bridge).
 
-Gevolg: dezelfde vraag ("wat denkt Gaia dat dit betekent, en wie heeft het
-bevestigd?") heeft twee antwoorden, en Hindsight kan van twee kanten gevuld
-worden. Waar het ene systeem een hypothese bevestigt, weet het andere dat niet
-vanzelf.
+In de praktijk is Foundation dus bron plus episodes, en `services/cognition` in
+Cloud de enige actieve afgeleide laag (Logos stelt voor, mens bevestigt,
+spiegel naar Hindsight). Dat komt overeen met `docs/architecture.md`.
 
-## 2. Beslissing nodig: één eigenaar per concept
+De documentatie loopt daar niet gelijk mee:
 
-Regel die ik voorstel, ongeacht de keuze hieronder:
+| Document | Zegt |
+| --- | --- |
+| Main Document (3 okt) | Foundation beheert Evidence, Hypothesis en Fact |
+| Foundation `README.md` | "opslag + epistemiek + één API", "de enige epistemische bron" |
+| Foundation `DEPLOYMENT.md` §3c | de reflectie-engine draait elke 15 minuten (optioneel) |
+| Foundation `jobs.js` | de engine staat bewust uit |
+| `architecture.md` | Foundation bewaart ruwe realiteit, Cognition de afgeleide levenscyclus |
+
+Gelezen uit bestanden; ik heb niet gedraaid wat er op de server staat. Niet
+nagegaan: of de menselijke bevestigroutes voor hypotheses in Foundation nog in
+gebruik zijn, en wat er met de bestaande rijen in de epistemische tabellen
+gebeurt.
+
+## 2. Beslissing nodig: wat is de status van Foundations epistemische laag?
+
+Regel die ik voorstel, ongeacht de keuze:
 
 > Foundation bewaart wat er is gebeurd. Een afgeleid object heeft precies één
 > eigenaar. Alleen een mens bevestigt. Hindsight is herbouwbaar uit zijn bron.
 
-Drie manieren om dat in te vullen:
+Drie mogelijkheden:
 
-**A. Foundation bezit alle epistemische objecten** (het Main Document zoals
-geschreven). Cognition krimpt tot wat Foundation niet heeft, of verdwijnt.
-Voordeel: één levenscyclus, sterkste herkomstregels (onafhankelijke bronnen,
-episodes). Nadeel: Cloud schrijft nu naar Cognition, dus Logos' voorstellen en
-`corroborated` moeten ergens anders heen.
+**A. Bevestigen dat het uit staat en de documenten volgen de werkelijkheid.**
+Foundation is bron, Cognition is de afgeleide laag. Het Main Document, de
+README en `DEPLOYMENT.md` van Foundation worden aangepast. De tabellen blijven
+bestaan als gereserveerd, of worden later opgeruimd. Kleinste ingreep, past bij
+de code zoals die nu draait.
 
-**B. Foundation alleen bron, Cognition alle afgeleide kennis**
-(`architecture.md` zoals geschreven). De epistemische tabellen in Foundation
-worden uitgefaseerd. Voordeel: past bij de huidige Cloud-code. Nadeel: Foundation
-verliest een werkende reflectie-engine en bevestigingsflow, en het Main Document
-moet op meerdere plekken worden herschreven.
+**B. De laag in Foundation terugbrengen** (zoals het Main Document het
+beschrijft). Dan moet Cognition's rol worden herzien en moet het
+Hindsight-conflict worden opgelost: dat was kennelijk de reden voor het
+uitzetten. Grootste ingreep.
 
 **C. Splitsen op aard.** Foundation bezit wat bevestigd moet worden over de
-persoon (hypothesis, fact, knowledge_gap). Cognition bezit wat Gaia zelf
-afleidt over haar werk en tijd (patterns, candidate models, relationships,
-open questions, Kairos-episodes). Voordeel: beide systemen houden een duidelijk
-terrein. Nadeel: de grens moet scherp zijn, en Cloud's hypotheses moeten
-verhuizen.
+persoon (hypothesis, fact), Cognition wat Gaia over haar eigen werk afleidt.
+Vraagt een scherpe grens en het opnieuw inschakelen van delen van Foundation.
 
-Mijn neiging is A of C, omdat het Main Document al leidend is en Foundation de
-strengste bevestigings- en bronregels heeft. Dat is een lezing van de
-bestanden, geen oordeel over welke implementatie beter werkt in de praktijk;
-dat kun jij beter beoordelen.
+Mijn neiging is A: dan klopt alles met wat er draait, en het Main Document
+wordt alleen voor dit deel aangepast. B of C is alleen zinvol als je de
+Foundation-laag bewust terug wilt, en dan eerst met een antwoord op waarom ze
+tegen de gedeelde Hindsight-bank botsten.
 
 ## 3. Wat dan nog mist in het Main Document
 
@@ -70,8 +79,8 @@ die het moet beantwoorden:
   diagram)? Wat mag Logos wel en niet schrijven?
 - **Hindsight:** welke banks bestaan er (`bojan`, `gaia`, `gaia-logos`), wie mag
   erin schrijven, en wat gebeurt er als het geheugen niet bereikbaar is?
-- **Gaia-Cloud + admin:** de uniforme API, SOUL, Cognition (of de uitkomst van
-  sectie 2), het beheeroppervlak, en de schakelaars uit `architecture.md`.
+- **Gaia-Cloud + admin:** de uniforme API, SOUL, Cognition, het
+  beheeroppervlak en de schakelaars uit `architecture.md`.
 - **Clients:** Web en Desktop praten beide alleen met `gaia-api`; de
   bevestigingsflow voor acties op de eigen computer.
 - **Cockpit:** staat in de inhoudsopgave, wordt nergens beschreven.
@@ -86,7 +95,8 @@ die het moet beantwoorden:
 
 ## 5. Waar het document woont
 
-Het Main Document staat nu op minstens twee plekken: `Foundation/docs/` (docx en
-pdf) en `Gaia-Cloud/docs/Project Gaia/` (pdf). Een leidend document met twee
-kopieën raakt vanzelf uit de pas. Voorstel: één bron in markdown naast
-`architecture.md`, en het pdf of docx daaruit genereren.
+Het Main Document staat op twee plekken: `Foundation/docs/` (docx en pdf) en
+`Gaia-Cloud/docs/Project Gaia/` (pdf). De pdf's zijn nu identiek (zelfde
+checksum), maar een leidend document met twee kopieën raakt vanzelf uit de pas.
+Voorstel: één bron in markdown naast `architecture.md`, en het pdf of docx daaruit
+genereren.
