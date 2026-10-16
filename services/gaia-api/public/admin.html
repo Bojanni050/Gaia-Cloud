@@ -365,7 +365,7 @@
         </div>
       </div>
       <p class="role-title">Vision</p>
-      <p class="role-desc">Reads image attachments (OCR). Uses the Main Provider above — pick a multimodal model here, or a custom provider below. Leave unset and it falls back to the Reasoning role.</p>
+      <p class="role-desc">Reads image attachments (OCR). Uses the Main Provider above — pick a multimodal model here, or a custom provider below. Leave unset (Clear) and it falls back to the Reasoning role; &quot;Back to Main Provider&quot; below drops a custom provider.</p>
 
       <label>Vision model</label>
       <div id="riqVisionDropdown"></div>
@@ -1827,10 +1827,11 @@
       +     '<button type="button" id="' + prefix + 'FetchModelsBtn" class="secondary">Fetch models</button>'
       +   '</div>'
       +   '<datalist id="' + prefix + 'ModelList"></datalist>'
+      +   '<div class="tags" id="' + prefix + 'ModelCaps" style="margin-top:0.45rem;"></div>'
       +   '<p class="hint" id="' + prefix + 'ModelsHint"></p>'
       + '</div>'
       + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
-      + '<div class="role-actions-row push-bottom"><button id="' + prefix + 'SaveProviderBtn">Save provider</button></div>'
+      + '<div class="role-actions-row push-bottom"><button type="button" id="' + prefix + 'UseMainBtn" class="secondary">Back to Main Provider</button><button id="' + prefix + 'SaveProviderBtn">Save provider</button></div>'
       + '<div class="status" id="' + prefix + 'ProviderStatus"></div>'
       + '<div class="role-actions-row"><button type="button" id="' + prefix + 'TestBtn" class="secondary">Test connection</button></div>'
       + '<div class="status" id="' + prefix + 'TestStatus"></div>';
@@ -1848,7 +1849,9 @@
     const saveBtn = $(prefix + 'SaveProviderBtn');
     const statusEl = $(prefix + 'ProviderStatus');
     saveBtn.addEventListener('click', async () => {
-      const usingMain = providerEl.value === USE_MAIN_PROVIDER;
+      // A custom provider without a model cannot run anything: that means "use the Main Provider".
+      const noModel = providerEl.value !== USE_MAIN_PROVIDER && !$(prefix + 'Model').value.trim();
+      const usingMain = providerEl.value === USE_MAIN_PROVIDER || noModel;
       const payload = usingMain
         ? { role, useMainProvider: true }
         : {
@@ -1865,7 +1868,7 @@
         if (!res.ok) throw new Error(await res.text());
         currentConfig = await res.json();
         applyRoleProviders(currentConfig);
-        setStatus(statusEl, usingMain ? 'Using the Main Provider.' : 'Custom provider saved.', true);
+        setStatus(statusEl, noModel ? 'No model entered — using the Main Provider.' : usingMain ? 'Using the Main Provider.' : 'Custom provider saved.', true);
         updateCapabilities(currentConfig.roles || {}, currentConfig.tts || {});
         applyRoleBadges(currentConfig);
       } catch (err) {
@@ -1874,13 +1877,32 @@
         saveBtn.disabled = false;
       }
     });
+    $(prefix + 'UseMainBtn').addEventListener('click', () => {
+      providerEl.value = USE_MAIN_PROVIDER;
+      providerEl.dispatchEvent(new Event('change'));
+      saveBtn.click();
+    });
     const fetchModelsBtn = $(prefix + 'FetchModelsBtn');
     const modelsHintEl = $(prefix + 'ModelsHint');
     const modelListEl = $(prefix + 'ModelList');
-    fetchModelsBtn.addEventListener('click', async () => {
+    const modelCapsEl = $(prefix + 'ModelCaps');
+    const modelInputEl = $(prefix + 'Model');
+    const fetchedModels = new Map();
+    // Same capability tags as the Main Provider dropdown, for the model typed or picked here.
+    function renderModelCaps() {
+      const id = modelInputEl.value.trim();
+      const m = fetchedModels.get(id);
+      if (!id || fetchedModels.size === 0) { modelCapsEl.innerHTML = ''; return; }
+      modelCapsEl.innerHTML = m
+        ? (capabilityTagsHtml(m.capabilities) || '<span class="hint">No capabilities reported for this model.</span>')
+        : '<span class="hint">Not in the fetched list — capabilities unknown.</span>';
+    }
+    modelInputEl.addEventListener('input', renderModelCaps);
+    modelInputEl.addEventListener('change', renderModelCaps);
+    async function fetchModels(silent) {
       const provider = providerEl.value;
       if (provider === USE_MAIN_PROVIDER) {
-        modelsHintEl.textContent = 'Using the Main Provider — pick its model in the dropdown above.';
+        if (!silent) modelsHintEl.textContent = 'Using the Main Provider — pick its model in the dropdown above.';
         return;
       }
       fetchModelsBtn.disabled = true;
@@ -1898,16 +1920,23 @@
         if (!res.ok) throw new Error(await res.text());
         const body = await res.json();
         const models = body.models || [];
+        fetchedModels.clear();
+        for (const m of models) fetchedModels.set(m.id, m);
         modelListEl.innerHTML = models
-          .map((m) => '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name || m.id) + '</option>')
+          .map((m) => {
+            const caps = (m.capabilities || []).map((c) => CAP_LABELS[c] || c).join(', ');
+            return '<option value="' + escapeHtml(m.id) + '" label="' + escapeHtml((m.name || m.id) + (caps ? ' · ' + caps : '')) + '"></option>';
+          })
           .join('');
         modelsHintEl.textContent = models.length + ' models — start typing in Model to pick one.';
+        renderModelCaps();
       } catch (_) {
         modelsHintEl.textContent = 'Could not fetch models — check the base URL and key.';
       } finally {
         fetchModelsBtn.disabled = false;
       }
-    });
+    }
+    fetchModelsBtn.addEventListener('click', () => fetchModels(false));
 
     // Test connection — resolves the role exactly as the runtime does. For a
     // custom provider the form's (possibly unsaved) values are sent along; for
@@ -1942,7 +1971,7 @@
       }
     });
 
-    ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl };
+    ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl, fetchModels, loaded: false };
   }
 
   function applyRoleProviders(cfg) {
@@ -1958,6 +1987,10 @@
       $(prefix + 'ApiKey').value = '';
       $(prefix + 'Model').value = rp.model || '';
       $(prefix + 'KeyHint').textContent = rp.hasApiKey ? ('Key saved: ' + rp.maskedApiKey) : 'No key saved yet.';
+      if (!usingMain && rp.baseUrl && rp.model && !block.loaded) {
+        block.loaded = true;
+        block.fetchModels(true);
+      }
     }
     applyRolePrecedence(cfg);
   }
