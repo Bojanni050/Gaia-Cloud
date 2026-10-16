@@ -304,6 +304,31 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
 }
 
 /**
+ * The vision fallback: turns images into disclaimer-prefixed descriptions (ocrResolver.js, the same
+ * step used when the primary model cannot see) so a turn can be retried as plain text. An image that
+ * cannot be described stays in the prompt as "could not be read" rather than vanishing. Never throws.
+ * @param {Array<{ filename: string, imageBytes: Buffer, imageMimeType: string }>} images
+ * @param {Function} [describeImage]
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<Array<{ filename: string, content: string|null }>>}
+ */
+async function describeImagesAsText(images, describeImage, signal) {
+  const describe = describeImage
+    || ((image) => require('./ocrResolver').resolveImageText(image.imageBytes, image.imageMimeType));
+  const out = [];
+  for (const image of images) {
+    if (signal && signal.aborted) break;
+    let content = null;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      content = (await describe(image)) || null;
+    } catch (_) { /* degrade to "could not be read" */ }
+    out.push({ filename: image.filename, content });
+  }
+  return out;
+}
+
+/**
  * THE SHARED DIRECT-GENERATION PIPELINE — one implementation, two
  * transports.
  *
@@ -335,6 +360,7 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
  *   logos?: Function, // preferred alias for reasonIQ above
  *   onDelta?: Function,
  *   userDisplayName?: string,
+ *   describeImage?: (image: { filename: string, imageBytes: Buffer, imageMimeType: string }) => Promise<string|null>, // vision fallback; default: ocrResolver
  * }} input
  * @returns {Promise<{ executionResult: object|null, replyText: string|null, timing: object, notConfigured: boolean, startDeferredCognition: () => Promise<void> }>}
  */
@@ -362,6 +388,7 @@ async function runTurnCore({
   onResearchJob,
   userDisplayName,
   signal,
+  describeImage,
 }) {
   const userText = latestUserText(messages);
   const { primary, backup } = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes });
@@ -597,28 +624,32 @@ async function runTurnCore({
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
   const conversationHistoryBlock = renderConversationHistoryContext(conversationHits);
   const researchPendingBlock = renderResearchPending(researchJob);
-  const attachmentBlock = renderTextAttachmentContext(textAttachments);
   const patternBlock = renderPatternContextBlock(
     patternUsage,
     new Map(recalledPatterns.filter((c) => c && c.id != null).map((c) => [String(c.id), c]))
   );
 
-  const systemMessages = [{ role: 'system', content: systemPrompt }];
-  const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
-  if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
-  if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
-  if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
-  if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
-  if (conversationHistoryBlock) systemMessages.push({ role: 'system', content: conversationHistoryBlock });
-  if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
-  if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
-  if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
-  if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
+  // Built per attempt: the vision fallback below rebuilds it with the images turned into text.
+  const buildAssembled = (textAtts, imageAtts) => {
+    const attachmentBlock = renderTextAttachmentContext(textAtts);
+    const systemMessages = [{ role: 'system', content: systemPrompt }];
+    const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
+    if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
+    if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });
+    if (knowledgePageBlock) systemMessages.push({ role: 'system', content: knowledgePageBlock });
+    if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
+    if (conversationHistoryBlock) systemMessages.push({ role: 'system', content: conversationHistoryBlock });
+    if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
+    if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
+    if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
+    if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });
 
-  // Conversational tone, empathy and follow-up judgment are left entirely
-  // to the inference model, guided by SOUL — no per-turn opportunity /
-  // quality-bar / conversational-state injection.
-  const assembled = assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], multimodalAttachments);
+    // Conversational tone, empathy and follow-up judgment are left entirely
+    // to the inference model, guided by SOUL — no per-turn opportunity /
+    // quality-bar / conversational-state injection.
+    return assembleMessages(null, [...systemMessages, ...messages.map(({ role, content }) => ({ role, content }))], imageAtts);
+  };
+  const assembled = buildAssembled(textAttachments, multimodalAttachments);
 
   const lastUserMsg = assembled.find((m) => m.role === 'user');
   if (lastUserMsg) {
@@ -644,18 +675,47 @@ async function runTurnCore({
   // The client already left (it disconnected while memory was being recalled): do not start generating.
   if (signal && signal.aborted) throw abortError();
   timing.start('generation');
+  // Whether visible text already reached the client: a retry after that would repeat it.
+  let streamedVisible = false;
+  const trackedDelta = onDelta
+    ? (chunk, isReasoning) => {
+      if (chunk && !isReasoning) streamedVisible = true;
+      onDelta(chunk, isReasoning);
+    }
+    : undefined;
+  const generate = (messagesForModel) => (trackedDelta
+    ? streamWithFailover(messagesForModel, {
+      primary, backup, onDelta: trackedDelta,
+      ...(signal ? { signal } : {}),
+      // The desktop tool exists only for a streamed turn with a connected executor.
+      ...(desktop && Array.isArray(desktop.tools) && typeof desktop.onToolCall === 'function'
+        ? { tools: desktop.tools, onToolCall: desktop.onToolCall }
+        : {}),
+    })
+    : generateWithFailover(messagesForModel, { primary, backup }));
   try {
-    if (onDelta) {
-      output = await streamWithFailover(assembled, {
-        primary, backup, onDelta,
-        ...(signal ? { signal } : {}),
-        // The desktop tool exists only for a streamed turn with a connected executor.
-        ...(desktop && Array.isArray(desktop.tools) && typeof desktop.onToolCall === 'function'
-          ? { tools: desktop.tools, onToolCall: desktop.onToolCall }
-          : {}),
-      });
-    } else {
-      output = await generateWithFailover(assembled, { primary, backup });
+    try {
+      output = await generate(assembled);
+    } catch (err) {
+      // Vision fallback. The pictures went straight to the model (GAIA_NATIVE_SUPPORTS_VISION) and the
+      // model, or its provider, could not take them. Describe them with the vision model and try once
+      // more as plain text — only when nothing was shown yet, and never for an interrupted turn.
+      const mayFallBack = multimodalAttachments.length > 0
+        && !streamedVisible
+        && !(signal && signal.aborted)
+        && !isNotConfiguredError(err);
+      if (!mayFallBack) throw err;
+      const described = await describeImagesAsText(multimodalAttachments, describeImage, signal);
+      try {
+        console.log(JSON.stringify({
+          kind: 'vision.fallback',
+          traceId: traceId || null,
+          reason: err && err.name ? err.name : 'error',
+          images: multimodalAttachments.length,
+          described: described.filter((d) => d.content).length,
+        }));
+      } catch (_) { /* never break a turn */ }
+      output = await generate(buildAssembled([...textAttachments, ...described], []));
     }
     timing.end('generation');
   } catch (err) {
@@ -1068,6 +1128,7 @@ async function performTurn({
   decisionStore,
   reasonIQ,
   userDisplayName,
+  describeImage,
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -1095,6 +1156,7 @@ async function performTurn({
     decisionStore,
     ...(reasonIQ ? { reasonIQ } : {}),
     userDisplayName,
+    ...(describeImage ? { describeImage } : {}),
   });
   void timing;
 
@@ -1180,6 +1242,7 @@ async function performStreamingTurn({
   decisionStore,
   userDisplayName,
   signal,
+  describeImage,
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -1249,6 +1312,7 @@ async function performStreamingTurn({
         onResearchJob: (job) => emitter.research(researchJobView(job)),
         userDisplayName,
         ...(signal ? { signal } : {}),
+        ...(describeImage ? { describeImage } : {}),
       })
     );
   } catch (_) {

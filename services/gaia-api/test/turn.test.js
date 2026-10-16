@@ -3420,3 +3420,130 @@ test('a recalled item with no provenance never causes a Foundation call', async 
   await flushBackground();
 });
 
+
+// --- Vision fallback: pictures sent straight to a model that cannot take them ---
+
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', 'base64');
+const hasImageBlock = (messages) => messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url'));
+const imageAttachment = { filename: 'photo.png', imageBytes: TINY_PNG, imageMimeType: 'image/png' };
+
+test('performTurn: when the model rejects the picture, the turn is retried with a description of it', async () => {
+  const seen = [];
+  const generator = {
+    async generate(messages) {
+      seen.push(messages);
+      if (hasImageBlock(messages)) throw new Error('400 image input is not supported');
+      return 'Ik zie een whiteboard.';
+    },
+  };
+  const described = [];
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    documents: DOCUMENTS,
+    generator,
+    attachments: [imageAttachment],
+    describeImage: async (image) => { described.push(image.filename); return '[AI-generated description] a whiteboard'; },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.reply, 'Ik zie een whiteboard.');
+  assert.equal(seen.length, 2);
+  assert.equal(hasImageBlock(seen[1]), false);
+  assert.deepEqual(described, ['photo.png']);
+  const retryText = JSON.stringify(seen[1]);
+  assert.match(retryText, /photo\.png/);
+  assert.match(retryText, /a whiteboard/);
+});
+
+test('performTurn: an undescribable picture still gets a retry, reported as unreadable', async () => {
+  let calls = 0;
+  const generator = {
+    async generate(messages) {
+      calls += 1;
+      if (hasImageBlock(messages)) throw new Error('image input is not supported');
+      return 'Ik kan de afbeelding niet lezen.';
+    },
+  };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    documents: DOCUMENTS,
+    generator,
+    attachments: [imageAttachment],
+    describeImage: async () => null,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(calls, 2);
+});
+
+test('performTurn: a turn without pictures is never retried by the vision fallback', async () => {
+  let calls = 0;
+  let described = 0;
+  const generator = { async generate() { calls += 1; throw new Error('boom'); } };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Hallo' }],
+    documents: DOCUMENTS,
+    generator,
+    describeImage: async () => { described += 1; return 'x'; },
+  });
+  assert.notEqual(result.status, 200);
+  assert.equal(calls, 1);
+  assert.equal(described, 0);
+});
+
+test('performTurn: a picture turn that works the first time does not describe anything', async () => {
+  let described = 0;
+  const generator = { async generate() { return 'Ik zie een rode pixel.'; } };
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    documents: DOCUMENTS,
+    generator,
+    attachments: [imageAttachment],
+    describeImage: async () => { described += 1; return 'x'; },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(described, 0);
+});
+
+test('performStreamingTurn: retries as text only while nothing visible has been streamed', async () => {
+  const attempts = [];
+  const generator = {
+    async stream(messages, { onDelta }) {
+      attempts.push(messages);
+      if (hasImageBlock(messages)) throw new Error('image input is not supported');
+      onDelta('Ik zie een whiteboard.', false);
+      return 'Ik zie een whiteboard.';
+    },
+  };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    documents: DOCUMENTS,
+    generator,
+    res,
+    attachments: [imageAttachment],
+    describeImage: async () => '[AI-generated description] a whiteboard',
+  });
+  assert.equal(attempts.length, 2);
+  assert.match(res.written.join(''), /whiteboard/);
+});
+
+test('performStreamingTurn: no retry once visible text was already streamed (it would repeat itself)', async () => {
+  let attempts = 0;
+  const generator = {
+    async stream(messages, { onDelta }) {
+      attempts += 1;
+      onDelta('Ik zie ', false);
+      throw new Error('connection reset');
+    },
+  };
+  const res = fakeRes();
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Wat zie je?' }],
+    documents: DOCUMENTS,
+    generator,
+    res,
+    attachments: [imageAttachment],
+    describeImage: async () => 'x',
+  });
+  assert.equal(attempts, 1);
+});
