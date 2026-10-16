@@ -20,6 +20,8 @@ This repository is **Gaia Cloud** — her identity, cognition and server-side se
 - Conversation is home.
 - Technology should disappear behind experience.
 
+The fuller set, from which the rest is meant to be derived, is in `docs/principles.md`.
+
 ## Architecture
 
 ```
