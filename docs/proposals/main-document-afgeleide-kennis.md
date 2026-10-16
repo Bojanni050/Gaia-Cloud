@@ -86,6 +86,33 @@ die het moet beantwoorden:
   bevestigingsflow voor acties op de eigen computer.
 - **Cockpit:** staat in de inhoudsopgave, wordt nergens beschreven.
 
+### Kairos, Eleos en Aion ontbreken
+
+Je merkte terecht op dat het Main Document ze niet noemt (nul vermeldingen).
+Alle drie bestaan in Gaia-Cloud en horen in het document. Wat elk hoofdstuk
+minimaal moet vastleggen, uit `architecture.md` en de code:
+
+| Onderdeel | Hoort bij | Wat het is | Beslissingen om vast te leggen |
+| --- | --- | --- | --- |
+| **Kairos** | Logos / Cognition | Vouwt clusters van ruwe Foundation-observaties (activiteit van capture-rs) tot een verhalende episode: altijd `interpretation`, met `sources` terug naar de observaties | Eerst deterministisch clusteren, dan een goedkope modelstap; het model kan geen app noemen die het cluster niet kende; de watermerk-regel (`captured_at`); standaard uit (`GAIA_KAIROS_ENABLED`) |
+| **Eleos** | Gaia-Cloud (gedrag) | Merkt dat iemand het zwaar heeft, bewaart dat als open lus en begint ongeveer een dag later zelf een nieuw gesprek | De beleefdheidsgrens: één check-in per 24 uur, stille uren, uitstel bij recente activiteit; ze spreekt alleen over wat de persoon zelf zei; standaard uit (`GAIA_ELEOS`) |
+| **Aion** | Hindsight (bank `gaia`) | Een achtergrondmoment waarop Gaia zelf beslist wat ze als eigen herinnering bewaart | Bewust zonder poort; een lege lijst is normaal; niemand bepaalt of vraagt wat erin komt; nooit feiten over Bo (die horen bij het systeemgeheugen); standaard aan (`GAIA_AION`) |
+
+De drie Hindsight-schrijfpaden verdienen één plek in het Hindsight-hoofdstuk,
+omdat ze elk een andere bank en een andere regel hebben:
+
+| Pad | Bank | Poort |
+| --- | --- | --- |
+| Reflectie op het gesprek (memoryworthiness) | `bojan` (systeemgeheugen) | ja, deterministisch |
+| `remember`-tool, op verzoek van de persoon | `bojan` | nee, uitdrukkelijk gevraagd |
+| Aion | `gaia` (haar eigen geheugen) | nee, haar eigen oordeel |
+| Spiegel van Cognition (`cognitionSync`) | `gaia-logos` | alleen bevestigde en versioned statements |
+
+Open vraag voor het Main Document: is Aion onderdeel van Logos (reflectie) of
+van Hindsight (geheugen)? In de code is het een eigen schrijfpad naast Logos, en
+in SOUL is het "het deel van haar dat het eigene bewaart", dus ik zou het bij
+Hindsight beschrijven en vanuit Logos ernaar verwijzen.
+
 ## 4. Kleine correcties aan wat er al staat
 
 - "ls iets te groot" moet "Als iets te groot" zijn (deel 7).
