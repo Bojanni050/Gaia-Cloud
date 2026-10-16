@@ -534,3 +534,9 @@
 - Findings: De desktop spreekt alleen via Gaia Cloud's `POST /speech`; de TTS-provider (MiMo of Mistral) wordt server-side gekozen via de providerStore. ElevenLabs ontbrak.
 - Conclusions: ElevenLabs als derde provider (`provider: 'elevenlabs'`) naast MiMo/Mistral, zelfde patroon als `mistralTts.js`, zodat de desktop ongewijzigd blijft. Geen nieuwe dependency (gewone `fetch`). Anders dan Mistral heeft ElevenLabs geen default voice: voice id is verplicht. Base URL valt terug op `https://api.elevenlabs.io/v1`.
 - Actions: `services/gaia-api/src/speech/elevenLabsTts.js` (nieuw: `createElevenLabsTts`, `listVoices`, `listModels`, talen incl. nl), `src/server.js` (getEffectiveTts-tak, talen, `/speech/info` zonder verplichte baseUrl), `src/adminRoutes.js` (voices-route ook voor ElevenLabs), `src/modelDiscovery.js` (elevenlabs-tak), `public/admin.html` (provideroptie, base-URL-autofill, hint), `test/elevenLabsTts.test.js` (nieuw, 9 tests); validated: 217/217 groen op de relevante testbestanden.
+
+## 2026-10-16 (ElevenLabs: standaardstem)
+
+- Findings: De opgegeven URL `.../v1/text-to-speech/kLhAstPcnnPxqzk6gS5i` bevat de stem in het pad; de base URL is alleen `.../v1`.
+- Conclusions: Stem `kLhAstPcnnPxqzk6gS5i` is nu de standaard voice-ID (geen fout meer bij lege voice). Een volledige text-to-speech-URL als base URL wordt ook geaccepteerd (base + voice worden eruit gehaald).
+- Actions: `services/gaia-api/src/speech/elevenLabsTts.js` (`DEFAULT_VOICE_ID`, `splitBaseUrl`), `public/admin.html` (hint), `test/elevenLabsTts.test.js` (+2 tests); validated: 12/12 groen.

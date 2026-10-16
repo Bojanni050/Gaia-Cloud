@@ -46,10 +46,26 @@ test('a per-call voiceId wins, a custom baseUrl is honoured', async () => {
   assert.ok(url.startsWith('https://api.eu.residency.elevenlabs.io/v1/text-to-speech/other?'));
 });
 
-test('synthesize needs a voice id, a model is required to construct', async () => {
+test('a model is required to construct', () => {
   assert.throws(() => createElevenLabsTts({}), /model/);
-  const tts = createElevenLabsTts({ model: 'm', fetchImpl: async () => audioResponse() });
-  await assert.rejects(tts.synthesize('x'), /voice id/);
+});
+
+test('with no voice configured it speaks with the default voice', async () => {
+  let url;
+  const tts = createElevenLabsTts({ model: 'm', fetchImpl: async (u) => { url = u; return audioResponse(); } });
+  await tts.synthesize('x');
+  assert.ok(url.includes('/text-to-speech/kLhAstPcnnPxqzk6gS5i?'));
+});
+
+test('a full text-to-speech URL as base URL yields base + voice', async () => {
+  let url;
+  const tts = createElevenLabsTts({
+    baseUrl: 'https://api.elevenlabs.io/v1/text-to-speech/abc123',
+    model: 'm',
+    fetchImpl: async (u) => { url = u; return audioResponse(); },
+  });
+  await tts.synthesize('x');
+  assert.ok(url.startsWith('https://api.elevenlabs.io/v1/text-to-speech/abc123?'));
 });
 
 test('synthesize fails calmly on network errors, HTTP errors and empty audio', async () => {

@@ -28,6 +28,20 @@
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_BASE_URL = 'https://api.elevenlabs.io/v1';
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
+/** Gaia's chosen voice — used when no voice id is configured. */
+const DEFAULT_VOICE_ID = 'kLhAstPcnnPxqzk6gS5i';
+
+/**
+ * Accepts either the API base (`.../v1`) or a full text-to-speech URL
+ * (`.../v1/text-to-speech/<voice_id>`), returning the base and the voice id it carried, if any.
+ */
+function splitBaseUrl(raw) {
+  const value = String(raw || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const match = value.match(/^(.*?)\/text-to-speech(?:\/([^/?#]+))?(?:[?#].*)?$/);
+  return match
+    ? { baseUrl: match[1], voiceId: match[2] ? decodeURIComponent(match[2]) : '' }
+    : { baseUrl: value, voiceId: '' };
+}
 
 /**
  * Languages the multilingual / flash / turbo v2.5 models speak that Gaia cares about —
@@ -64,11 +78,11 @@ function normalizeFormat(format) {
  * @returns {{ synthesize: (text: string, options?: { voiceId?: string }) => Promise<{ audio: Buffer, mimeType: string }> }}
  */
 function createElevenLabsTts(options = {}) {
-  const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const { baseUrl, voiceId: urlVoiceId } = splitBaseUrl(options.baseUrl);
   const model = options.model || '';
   const authToken = options.authToken || '';
   const format = normalizeFormat(options.format);
-  const defaultVoiceId = options.voiceId || '';
+  const defaultVoiceId = options.voiceId || urlVoiceId || DEFAULT_VOICE_ID;
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
 
@@ -136,7 +150,7 @@ function createElevenLabsTts(options = {}) {
  * @returns {Promise<Array<{ id: string, name: string }>>}
  */
 async function listVoices(options = {}) {
-  const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const { baseUrl } = splitBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
   const headers = {};
@@ -179,7 +193,7 @@ async function listVoices(options = {}) {
  * @returns {Promise<Array<{ id: string, name: string, capabilities: string[] }>>}
  */
 async function listModels(options = {}) {
-  const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const { baseUrl } = splitBaseUrl(options.baseUrl);
   const fetchImpl = options.fetchImpl || fetch;
   const headers = {};
   if (options.apiKey) headers['xi-api-key'] = options.apiKey;
@@ -211,4 +225,6 @@ module.exports = {
   mimeTypeFor,
   LANGUAGES,
   DEFAULT_BASE_URL,
+  DEFAULT_VOICE_ID,
+  splitBaseUrl,
 };
