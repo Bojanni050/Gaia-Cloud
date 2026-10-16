@@ -36,10 +36,11 @@ function hasGenerator(generator) {
  * @param {{ primary?: object|null, backup?: object|null }} generators
  * @returns {Promise<string>}
  */
-async function generateWithFailover(messages, { primary, backup } = {}) {
+async function generateWithFailover(messages, { primary, backup, sessionId } = {}) {
+  const callOptions = sessionId ? { sessionId } : undefined;
   if (hasGenerator(primary) && typeof primary.generate === 'function') {
     try {
-      return await primary.generate(messages);
+      return await primary.generate(messages, callOptions);
     } catch (err) {
       if (!hasGenerator(backup) || typeof backup.generate !== 'function' || !isRetryableGenerationError(err)) {
         throw err;
@@ -47,11 +48,11 @@ async function generateWithFailover(messages, { primary, backup } = {}) {
       try {
         console.log(JSON.stringify({ kind: 'generation.failover', from: 'primary', to: 'backup', mode: 'non-streaming' }));
       } catch (_) { /* never break generation */ }
-      return backup.generate(messages);
+      return backup.generate(messages, callOptions);
     }
   }
   if (hasGenerator(backup) && typeof backup.generate === 'function') {
-    return backup.generate(messages);
+    return backup.generate(messages, callOptions);
   }
   const err = new Error('generation is not configured');
   err.code = 'not_configured';
@@ -69,18 +70,19 @@ async function generateWithFailover(messages, { primary, backup } = {}) {
  * @param {{ primary?: object|null, backup?: object|null, onDelta?: Function, signal?: AbortSignal, tools?: Array<object>, onToolCall?: Function }} options
  * @returns {Promise<string>} full accumulated text
  */
-async function streamWithFailover(messages, { primary, backup, onDelta, signal, tools, onToolCall } = {}) {
+async function streamWithFailover(messages, { primary, backup, onDelta, signal, tools, onToolCall, sessionId } = {}) {
   const runStream = async (generator, deltaForwarder, callTools) => {
     if (typeof generator.stream === 'function') {
       return generator.stream(messages, {
         ...(signal ? { signal } : {}),
+        ...(sessionId ? { sessionId } : {}),
         ...(deltaForwarder ? { onDelta: deltaForwarder } : {}),
         ...(callTools && callTools.length > 0 && typeof onToolCall === 'function' ? { tools: callTools, onToolCall } : {}),
       });
     }
     // Non-streaming generator behind a streaming transport: produce the
     // full text, then deliver it as one delta (Response Engine dedupes).
-    const text = await generator.generate(messages);
+    const text = await generator.generate(messages, sessionId ? { sessionId } : undefined);
     if (deltaForwarder) deltaForwarder(text, false);
     return text;
   };

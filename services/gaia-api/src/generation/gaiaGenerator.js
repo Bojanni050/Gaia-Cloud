@@ -35,6 +35,7 @@
  */
 
 const { logLlmCall } = require('../logos/llmCallLog');
+const { identityHeadersFor } = require('../providerHeaders');
 
 const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_MAX_TOOL_ROUNDS = 3;
@@ -188,6 +189,8 @@ function createGaiaGenerator(options = {}) {
 
   const headers = { 'Content-Type': 'application/json' };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  // Providers that ask for it (OpenCode) get Gaia's own User-Agent and the conversation id as session.
+  const headersFor = (sessionId) => ({ ...headers, ...identityHeadersFor(baseUrl, { sessionId }) });
 
   function requestBody(messages, stream, withTools, activeTools = tools) {
     const body = { model, stream, messages };
@@ -196,13 +199,13 @@ function createGaiaGenerator(options = {}) {
   }
 
   /** One non-streaming request. Returns { content, toolCalls }. */
-  async function postNonStreaming(messages, withTools, activeTools) {
+  async function postNonStreaming(messages, withTools, activeTools, sessionId) {
     const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers,
+        headers: headersFor(sessionId),
         body: JSON.stringify(requestBody(messages, false, withTools, activeTools)),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -247,13 +250,13 @@ function createGaiaGenerator(options = {}) {
   }
 
   /** One streaming request; forwards content via onDelta. Returns { content, toolCalls }. */
-  async function postStreaming(messages, { signal, onDelta }, withTools, activeTools) {
+  async function postStreaming(messages, { signal, onDelta, sessionId }, withTools, activeTools) {
     const startedAt = Date.now();
     let response;
     try {
       response = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
-        headers,
+        headers: headersFor(sessionId),
         body: JSON.stringify(requestBody(messages, true, withTools, activeTools)),
         signal,
       });
@@ -383,7 +386,7 @@ function createGaiaGenerator(options = {}) {
       try {
         result = mode.stream
           ? await postStreaming(current, roundMode, withTools, activeTools)
-          : await postNonStreaming(current, withTools, activeTools);
+          : await postNonStreaming(current, withTools, activeTools, mode.sessionId);
       } catch (error) {
         const toolsRejected = withTools
           && error instanceof GenerationError
@@ -422,9 +425,10 @@ function createGaiaGenerator(options = {}) {
     : [];
 
   return {
-    generate: (messages) => runToolLoop(messages, { stream: false }),
-    stream: (messages, { signal, onDelta, tools: callTools, onToolCall: callOnToolCall } = {}) =>
-      runToolLoop(messages, { stream: true, signal, onDelta, tools: callTools, onToolCall: callOnToolCall }),
+    // `sessionId` (the conversation id) is optional and only ever leaves the server for providers that ask for it.
+    generate: (messages, { sessionId } = {}) => runToolLoop(messages, { stream: false, sessionId }),
+    stream: (messages, { signal, onDelta, tools: callTools, onToolCall: callOnToolCall, sessionId } = {}) =>
+      runToolLoop(messages, { stream: true, signal, onDelta, tools: callTools, onToolCall: callOnToolCall, sessionId }),
     toolNames,
   };
 }

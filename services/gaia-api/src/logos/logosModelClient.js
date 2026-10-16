@@ -17,6 +17,7 @@
  */
 
 const { logLlmCall } = require('./llmCallLog');
+const { identityHeadersFor } = require('../providerHeaders');
 
 const DEFAULT_TIMEOUT_MS = 60000;
 
@@ -106,6 +107,7 @@ function createLogosModelClient(options = {}) {
 
     const headers = { 'Content-Type': 'application/json' };
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+    Object.assign(headers, identityHeadersFor(config.baseUrl));
 
     const responseFormat = options.responseFormat === undefined ? { type: 'json_object' } : options.responseFormat;
     const body = { model: config.model, stream: false, messages };

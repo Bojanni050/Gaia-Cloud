@@ -686,13 +686,14 @@ async function runTurnCore({
   const generate = (messagesForModel) => (trackedDelta
     ? streamWithFailover(messagesForModel, {
       primary, backup, onDelta: trackedDelta,
+      ...(conversationId ? { sessionId: conversationId } : {}),
       ...(signal ? { signal } : {}),
       // The desktop tool exists only for a streamed turn with a connected executor.
       ...(desktop && Array.isArray(desktop.tools) && typeof desktop.onToolCall === 'function'
         ? { tools: desktop.tools, onToolCall: desktop.onToolCall }
         : {}),
     })
-    : generateWithFailover(messagesForModel, { primary, backup }));
+    : generateWithFailover(messagesForModel, { primary, backup, ...(conversationId ? { sessionId: conversationId } : {}) }));
   try {
     try {
       output = await generate(assembled);
