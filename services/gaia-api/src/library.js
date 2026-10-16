@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { resolveImageText, isImageMime } = require('./ocrResolver');
+const { extractDocumentText, isDocumentMime } = require('./documentText');
 
 function resolveLibraryDir(env = process.env) {
   if (env.LIBRARY_PATH) return env.LIBRARY_PATH;
@@ -117,11 +118,11 @@ function createLibraryStore(options = {}) {
 }
 
 // mime types resolved as UTF-8 text and inlined as conversational context
-// verbatim. Images go through ocrResolver.js's vision-model step instead
-// (see resolveAttachmentsForPrompt). Everything else (PDFs, other
-// binaries) is stored and referenced but not read — no extraction
-// pipeline for those yet, and pretending otherwise would mean silently
-// sending garbled bytes to Hermes as if they were prose.
+// verbatim. Images go through ocrResolver.js's vision-model step instead,
+// and PDFs / Word (.docx) files through documentText.js's text extraction
+// (see resolveAttachmentsForPrompt). Everything else (other binaries) is
+// stored and referenced but not read — pretending otherwise would mean
+// silently sending garbled bytes to the model as if they were prose.
 const TEXT_MIME_PREFIXES = ['text/'];
 const TEXT_MIME_EXACT = new Set([
   'application/json',
@@ -130,7 +131,8 @@ const TEXT_MIME_EXACT = new Set([
   'application/x-yaml',
   'application/yaml',
 ]);
-const MAX_ATTACHMENT_CHARS = 8000;
+// Enough for a long document, small enough not to crowd out the conversation itself.
+const MAX_ATTACHMENT_CHARS = 30000;
 
 // Clients often report a useless mime type for plain-text formats: "" or
 // application/octet-stream (Windows has no registered type for .md/.log/.yml),
@@ -176,7 +178,8 @@ function truncate(content) {
  * turn, exactly once, so everything downstream just receives text. Text
  * files resolve verbatim; images go through ocrResolver.js's vision-model
  * step (disclaimer-prefixed — a description is an inference, not a
- * transcript); anything else resolves to `content: null` — the caller
+ * transcript); PDFs and Word files resolve to their extracted text
+ * (documentText.js); anything else resolves to `content: null` — the caller
  * still learns the file was attached, just not what's in it. Never
  * throws: a missing/unreadable file, or a failed OCR call, is skipped or
  * degrades to null — never breaks the turn (same discipline as
@@ -273,6 +276,11 @@ async function resolveAttachmentsForPrompt(store, ids, options = {}) {
 
         results.push({ filename: meta.filename, content: described ? truncate(described) : null });
       }
+    } else if (isDocumentMime(meta.mimeType, meta.filename)) {
+      // PDF / Word: the text is read exactly; a scanned PDF (no text layer) or an unreadable file is null.
+      // eslint-disable-next-line no-await-in-loop
+      const text = await extractDocumentText(buffer, meta.mimeType, meta.filename);
+      results.push({ filename: meta.filename, content: text ? truncate(text) : null });
     } else {
       results.push({ filename: meta.filename, content: null });
     }

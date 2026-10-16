@@ -118,6 +118,29 @@ test('resolveAttachmentsForPrompt reports a non-text, non-image file without con
   assert.equal(attachment.content, null);
 });
 
+test('resolveAttachmentsForPrompt reads the text of a PDF and of a Word file', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name));
+  const store = tempStore();
+  const pdf = store.saveFile(fixture('sample.pdf'), { filename: 'factuur.pdf', mimeType: 'application/pdf' });
+  // Windows often reports a useless type for .docx; the extension decides.
+  const docx = store.saveFile(fixture('sample.docx'), { filename: 'rapport.docx', mimeType: 'application/octet-stream' });
+  const [a, b] = await resolveAttachmentsForPrompt(store, [pdf.id, docx.id]);
+  assert.match(a.content, /Factuur 2026 totaal 1250 euro/);
+  assert.match(b.content, /Kwartaalrapport Gaia/);
+  assert.match(b.content, /omzet is gestegen met 12 procent/);
+});
+
+test('resolveAttachmentsForPrompt reports a scanned PDF (no text layer) without content', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const store = tempStore();
+  const saved = store.saveFile(fs.readFileSync(path.join(__dirname, 'fixtures', 'blank.pdf')), { filename: 'scan.pdf', mimeType: 'application/pdf' });
+  const [attachment] = await resolveAttachmentsForPrompt(store, [saved.id]);
+  assert.equal(attachment.content, null);
+});
+
 test('resolveAttachmentsForPrompt resolves an image via OCR when a vision model is available', async () => {
   const store = tempStore();
   const saved = store.saveFile(Buffer.from([0x89, 0x50, 0x4e, 0x47]), { filename: 'photo.png', mimeType: 'image/png' });
@@ -140,7 +163,7 @@ test('resolveAttachmentsForPrompt reports an image without content when no visio
 
 test('resolveAttachmentsForPrompt truncates content beyond the character cap', async () => {
   const store = tempStore();
-  const huge = 'x'.repeat(9000);
+  const huge = 'x'.repeat(31000);
   const saved = store.saveFile(Buffer.from(huge), { filename: 'big.txt', mimeType: 'text/plain' });
   const [attachment] = await resolveAttachmentsForPrompt(store, [saved.id]);
   assert.ok(attachment.content.length < huge.length);
