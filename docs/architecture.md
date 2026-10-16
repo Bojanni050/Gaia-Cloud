@@ -41,8 +41,10 @@ The set of capabilities and the skills they expose is recorded in one place,
 ## Boundaries that are load-bearing
 
 - **Foundation holds raw reality.** Everything entering it is an `observation`,
-  stamped server-side; a client that claims a status is refused. It never stores
-  a derived statement.
+  stamped server-side; a client that claims a status is refused. Gaia-Cloud never
+  writes a derived statement into it. (Foundation's own epistemic tables and
+  routes still exist, but its automatic layer is switched off; derived knowledge
+  is Cognition's.)
 - **Logos reasons.** Intent interpretation, meaning & evidence, and DecisionIQ
   are prompt-level faculties of one faculty plus an asynchronous background
   reflection — not separate code subsystems. Logos emits *proposals*; it owns no

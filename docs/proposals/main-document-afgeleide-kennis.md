@@ -1,6 +1,6 @@
 # Voorstel — Main Document: afgeleide kennis
 
-Status: voorstel ter beoordeling, niet leidend. Bedoeld als aanvulling op
+Status: optie A gekozen door Bo op 16 oktober 2026 (Foundation is bron, Cognition is de afgeleide laag, de documenten volgen de werkelijkheid). Uitgevoerd in Foundation (README, DEPLOYMENT.md, Main Document-docx) op branch `docs/epistemic-layer-status`. De rest van dit voorstel is nog open. Bedoeld als aanvulling op
 `Project Gaia - Main Document.pdf` (3 oktober 2026), dat alleen deel 1
 (Foundation) uitwerkt.
 
@@ -35,10 +35,11 @@ De documentatie loopt daar niet gelijk mee:
 | Foundation `jobs.js` | de engine staat bewust uit |
 | `architecture.md` | Foundation bewaart ruwe realiteit, Cognition de afgeleide levenscyclus |
 
-Gelezen uit bestanden; ik heb niet gedraaid wat er op de server staat. Niet
-nagegaan: of de menselijke bevestigroutes voor hypotheses in Foundation nog in
-gebruik zijn, en wat er met de bestaande rijen in de epistemische tabellen
-gebeurt.
+Gelezen uit bestanden; ik heb niet gedraaid wat er op de server staat. De
+bevestig- en verwerproutes bestaan in Foundation nog in de code
+(`/api/memory/hypotheses/:id/confirm`), maar volgens Bo loopt het bevestigen in de
+praktijk via Cognition (GaiaChat). Niet nagegaan: wat er met de bestaande rijen
+in Foundations epistemische tabellen gebeurt.
 
 ## 2. Beslissing nodig: wat is de status van Foundations epistemische laag?
 
