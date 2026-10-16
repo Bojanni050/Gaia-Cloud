@@ -3,10 +3,10 @@
 Gaia is a lifelong personal intelligence. This document is the architecture of
 **Gaia-Cloud**, her server side: identity, cognition and memory. Her clients —
 Gaia-Web and Gaia-Desktop — are *representations* of her, never a second place
-she runs. The contract is that they speak only the uniform Gaia API and never see
-a model, a provider or a store address. Gaia-Desktop meets it today. Gaia-Web does
-not yet: it still talks to Hermes and Hindsight directly and runs Logos client-side,
-a known interim state (see `evolution.md`), not the intended architecture.
+she runs. They speak only the uniform Gaia API and never see a model, a provider
+or a store address. Gaia-Web completed its move onto `gaia-api` (its direct
+Hermes, Hindsight and cognition routes are retired), so both clients now meet
+that contract.
 
 ## The core model
 
