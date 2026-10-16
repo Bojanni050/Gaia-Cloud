@@ -546,3 +546,9 @@
 - Findings: Het modelveld bij Voice was een kaal tekstveld, terwijl `GET /admin/api/tts/models` al bestond maar nergens in de UI werd gebruikt.
 - Conclusions: Een `<datalist>` (dropdown mét vrij typen) past bij het voice-ID-veld; voor ElevenLabs staan de bekende modellen direct klaar, "Get models" haalt de live lijst van de opgeslagen provider.
 - Actions: `services/gaia-api/public/admin.html` (`ttsModelList`, knop `loadTtsModelsBtn`, ElevenLabs-presets bij providerwissel); validated: script-syntax ok, niet in de browser geklikt.
+
+## 2026-10-16 (Admin: token via bookmark-fragment)
+
+- Findings: Het admin-token staat alleen in `localStorage`; na het wissen van browsergegevens moet het opnieuw worden geplakt. De server-.env kan het niet aan de pagina geven zonder `/admin` open te zetten.
+- Conclusions: `/admin#token=...` vult het veld in; het fragment gaat nooit naar de server en wordt direct uit de adresbalk gehaald. Het token wordt ook getrimd (een spatie/newline bij plakken gaf een 401), en `localStorage` is nu in try/catch.
+- Actions: `services/gaia-api/public/admin.html` (auth-blok: `readSavedToken`/`saveToken`, hash-token, trim in `authHeaders`); validated: script-syntax ok, niet in de browser getest.

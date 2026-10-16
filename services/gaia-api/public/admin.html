@@ -942,11 +942,22 @@
   }
 
   // --- Auth ---
-  tokenEl.value = localStorage.getItem('gaia_admin_token') || '';
-  tokenEl.addEventListener('change', () => localStorage.setItem('gaia_admin_token', tokenEl.value));
+  // Storage can be blocked or cleared; the page must work without it.
+  function readSavedToken() { try { return localStorage.getItem('gaia_admin_token') || ''; } catch (_) { return ''; } }
+  function saveToken(value) { try { localStorage.setItem('gaia_admin_token', value); } catch (_) { /* ignore */ } }
+  tokenEl.value = readSavedToken();
+  // A bookmark like /admin#token=... fills the token in (and is removed from the address bar).
+  // The fragment is never sent to the server.
+  const hashToken = /^#token=(.+)$/.exec(location.hash);
+  if (hashToken) {
+    try { tokenEl.value = decodeURIComponent(hashToken[1]).trim(); } catch (_) { tokenEl.value = hashToken[1].trim(); }
+    saveToken(tokenEl.value);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  tokenEl.addEventListener('change', () => { tokenEl.value = tokenEl.value.trim(); saveToken(tokenEl.value); });
 
   function authHeaders() {
-    return { 'Authorization': 'Bearer ' + tokenEl.value, 'Content-Type': 'application/json' };
+    return { 'Authorization': 'Bearer ' + tokenEl.value.trim(), 'Content-Type': 'application/json' };
   }
 
   // ============================================================
