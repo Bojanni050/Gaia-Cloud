@@ -486,7 +486,11 @@
       <p class="hint" id="ttsMainHint" style="display:none;">Using the Main Provider's credentials above.</p>
 
       <label for="ttsModel">Model</label>
-      <input id="ttsModel" type="text" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+      <input id="ttsModel" type="text" list="ttsModelList" placeholder="e.g. mimo-v2.5-tts-voicedesign" autocomplete="off">
+      <datalist id="ttsModelList"></datalist>
+      <div class="role-actions-row" style="justify-content:flex-start;">
+        <button id="loadTtsModelsBtn" class="secondary">Get models</button>
+      </div>
 
       <label for="ttsVoice">Voice ID</label>
       <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
@@ -1143,6 +1147,45 @@
       setStatus(ttsStatusEl, 'Could not save voice — check the bearer token.', false);
     } finally {
       saveTtsBtn.disabled = false;
+    }
+  });
+
+  // Model dropdown: known ElevenLabs models are offered at once; "Get models" asks the
+  // saved provider for its live list (any provider), still allowing a typed value.
+  const ttsModelListEl = $('ttsModelList'), loadTtsModelsBtn = $('loadTtsModelsBtn');
+  const ELEVENLABS_MODELS = [
+    ['eleven_multilingual_v2', 'Multilingual v2'],
+    ['eleven_flash_v2_5', 'Flash v2.5'],
+    ['eleven_turbo_v2_5', 'Turbo v2.5'],
+    ['eleven_v3', 'v3'],
+  ];
+  function fillTtsModels(models) {
+    ttsModelListEl.replaceChildren();
+    for (const [id, name] of models) {
+      const option = document.createElement('option');
+      option.value = id;
+      option.label = name || id;
+      ttsModelListEl.appendChild(option);
+    }
+  }
+  ttsProviderEl.addEventListener('change', () => {
+    fillTtsModels(ttsProviderEl.value === 'elevenlabs' ? ELEVENLABS_MODELS : []);
+  });
+  loadTtsModelsBtn.addEventListener('click', async () => {
+    loadTtsModelsBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/api/tts/models', { headers: authHeaders() });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+      const models = (Array.isArray(body.models) ? body.models : [])
+        .filter((m) => m && typeof m.id === 'string' && m.id)
+        .map((m) => [m.id, m.name]);
+      fillTtsModels(models);
+      setStatus(ttsStatusEl, models.length + (models.length === 1 ? ' model' : ' models') + ' loaded — pick one or keep typing.', true);
+    } catch (err) {
+      setStatus(ttsStatusEl, 'Could not load models — ' + (err && err.message ? err.message : 'check the bearer token and saved TTS config.'), false);
+    } finally {
+      loadTtsModelsBtn.disabled = false;
     }
   });
 

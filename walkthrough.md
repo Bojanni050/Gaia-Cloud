@@ -540,3 +540,9 @@
 - Findings: De opgegeven URL `.../v1/text-to-speech/kLhAstPcnnPxqzk6gS5i` bevat de stem in het pad; de base URL is alleen `.../v1`.
 - Conclusions: Stem `kLhAstPcnnPxqzk6gS5i` is nu de standaard voice-ID (geen fout meer bij lege voice). Een volledige text-to-speech-URL als base URL wordt ook geaccepteerd (base + voice worden eruit gehaald).
 - Actions: `services/gaia-api/src/speech/elevenLabsTts.js` (`DEFAULT_VOICE_ID`, `splitBaseUrl`), `public/admin.html` (hint), `test/elevenLabsTts.test.js` (+2 tests); validated: 12/12 groen.
+
+## 2026-10-16 (TTS model-dropdown in admin)
+
+- Findings: Het modelveld bij Voice was een kaal tekstveld, terwijl `GET /admin/api/tts/models` al bestond maar nergens in de UI werd gebruikt.
+- Conclusions: Een `<datalist>` (dropdown mét vrij typen) past bij het voice-ID-veld; voor ElevenLabs staan de bekende modellen direct klaar, "Get models" haalt de live lijst van de opgeslagen provider.
+- Actions: `services/gaia-api/public/admin.html` (`ttsModelList`, knop `loadTtsModelsBtn`, ElevenLabs-presets bij providerwissel); validated: script-syntax ok, niet in de browser geklikt.
