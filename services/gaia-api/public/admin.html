@@ -496,7 +496,7 @@
       <label for="ttsVoice">Voice ID</label>
       <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
       <datalist id="ttsVoiceList"></datalist>
-      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Save first, then load the list.</p>
+      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="ttsLoadVoicesBtn" class="secondary">Get voices</button>
       </div>
@@ -559,7 +559,7 @@
       <label for="ttsEnVoice">Voice ID</label>
       <input id="ttsEnVoice" type="text" list="ttsEnVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
       <datalist id="ttsEnVoiceList"></datalist>
-      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Save first, then load the list.</p>
+      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="ttsEnLoadVoicesBtn" class="secondary">Get voices</button>
       </div>
@@ -1224,6 +1224,14 @@
       }
     });
 
+    // What the form shows right now (unsaved included); the server uses it instead of the saved config.
+    function currentTtsForm() {
+      const provider = ttsProviderEl.value;
+      const body = { provider, baseUrl: ttsBaseUrlEl.value.trim() };
+      if (ttsApiKeyEl.value.trim()) body.apiKey = ttsApiKeyEl.value.trim();
+      return JSON.stringify(body);
+    }
+
     // Model dropdown: known ElevenLabs models are offered at once; "Get models" asks the
     // saved provider for its live list (any provider), still allowing a typed value.
     const ttsModelListEl = $(id + 'ModelList'), loadTtsModelsBtn = $(id + 'LoadModelsBtn');
@@ -1252,7 +1260,7 @@
     loadTtsModelsBtn.addEventListener('click', async () => {
       loadTtsModelsBtn.disabled = true;
       try {
-        const res = await fetch('/admin/api/' + route + '/models', { headers: authHeaders() });
+        const res = await fetch('/admin/api/' + route + '/models', { method: 'POST', headers: authHeaders(), body: currentTtsForm() });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
         const models = (Array.isArray(body.models) ? body.models : [])
@@ -1261,7 +1269,7 @@
         fillTtsModels(models);
         setStatus(ttsStatusEl, models.length + (models.length === 1 ? ' model' : ' models') + ' loaded — pick one or keep typing.', true);
       } catch (err) {
-        setStatus(ttsStatusEl, 'Could not load models — ' + (err && err.message ? err.message : 'check the bearer token and saved TTS config.'), false);
+        setStatus(ttsStatusEl, 'Could not load models — ' + (err && err.message ? err.message : 'check the bearer token, provider and key.'), false);
       } finally {
         loadTtsModelsBtn.disabled = false;
       }
@@ -1275,7 +1283,7 @@
       // provider, URL, or key changed.
       loadTtsVoicesBtn.disabled = true;
       try {
-        const res = await fetch('/admin/api/' + route + '/voices', { headers: authHeaders() });
+        const res = await fetch('/admin/api/' + route + '/voices', { method: 'POST', headers: authHeaders(), body: currentTtsForm() });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
         const voices = Array.isArray(body.voices) ? body.voices : [];
@@ -1289,7 +1297,7 @@
         }
         setStatus(ttsStatusEl, voices.length + (voices.length === 1 ? ' voice' : ' voices') + ' loaded — pick one or keep typing an ID.', true);
       } catch (err) {
-        setStatus(ttsStatusEl, 'Could not load voices — ' + (err && err.message ? err.message : 'check the bearer token and saved TTS config.'), false);
+        setStatus(ttsStatusEl, 'Could not load voices — ' + (err && err.message ? err.message : 'check the bearer token, provider and key.'), false);
       } finally {
         loadTtsVoicesBtn.disabled = false;
       }

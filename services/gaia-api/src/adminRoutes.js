@@ -330,6 +330,35 @@ function createAdminRouter({
       res.json(capabilities);
     });
 
+    /**
+     * Which provider/baseUrl/key a model or voice listing should use. With no `form` it is the saved
+     * config; with a `form` (what the admin page currently shows, possibly unsaved) the form wins.
+     * The saved API key is only reused for the *same* provider it was saved for — never sent to
+     * another provider's endpoint just because the dropdown changed.
+     */
+    function resolveTtsTarget(slot, form) {
+      const config = providerStore.getConfig();
+      const saved = config && config[slot] ? config[slot] : {};
+      const body = form || {};
+      const useMainProvider = form
+        ? (body.useMainProvider === true || body.provider === '__main__')
+        : Boolean(saved.useMainProvider);
+      if (useMainProvider) {
+        return {
+          useMainProvider,
+          effective: config && config.apiKey
+            ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey }
+            : null,
+        };
+      }
+      const provider = form && typeof body.provider === 'string' && body.provider.trim() ? body.provider.trim() : saved.provider;
+      if (!provider) return { useMainProvider, effective: null };
+      const baseUrl = form && typeof body.baseUrl === 'string' && body.baseUrl.trim() ? body.baseUrl.trim() : (provider === saved.provider ? saved.baseUrl || '' : '');
+      const typedKey = form && typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+      const apiKey = typedKey || (provider === saved.provider ? saved.apiKey || '' : '');
+      return { useMainProvider, effective: { provider, baseUrl, apiKey } };
+    }
+
     // --- TTS (independent) routes ---
     // Two voices: `tts` (default, Dutch) at /api/tts/*, and the optional English one `ttsEn` at
     // /api/tts-en/* — same shape, same handlers.
@@ -357,14 +386,11 @@ function createAdminRouter({
         res.json({ ...providerStore.getMaskedConfig()[slot], mainProviderConfigured: mainProviderConfigured() });
       });
 
-      router.get(`/api/${route}/models`, auth, async (req, res) => {
-        const config = providerStore.getConfig();
-        const tts = config && config[slot] ? config[slot] : {};
-        const effective = tts.useMainProvider
-          ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
-          : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+      // GET lists with the saved config; POST with what is in the form right now (unsaved).
+      const listModelsHandler = async (req, res) => {
+        const { effective, useMainProvider } = resolveTtsTarget(slot, req.method === 'POST' ? req.body : null);
         if (!effective) {
-          return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
+          return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
         if (!effective.baseUrl) {
           return res.status(400).json({ error: 'set a base URL for the TTS provider' });
@@ -385,16 +411,14 @@ function createAdminRouter({
           }
           res.status(502).json({ error: 'could not retrieve models from TTS provider' });
         }
-      });
+      };
+      router.get(`/api/${route}/models`, auth, listModelsHandler);
+      router.post(`/api/${route}/models`, auth, listModelsHandler);
 
-      router.get(`/api/${route}/voices`, auth, async (req, res) => {
-        const config = providerStore.getConfig();
-        const tts = config && config[slot] ? config[slot] : {};
-        const effective = tts.useMainProvider
-          ? (config && config.apiKey ? { provider: config.provider || 'openrouter', baseUrl: config.baseUrl || '', apiKey: config.apiKey } : null)
-          : (tts.provider ? { provider: tts.provider, baseUrl: tts.baseUrl || '', apiKey: tts.apiKey || '' } : null);
+      const listVoicesHandler = async (req, res) => {
+        const { effective, useMainProvider } = resolveTtsTarget(slot, req.method === 'POST' ? req.body : null);
         if (!effective) {
-          return res.status(400).json({ error: tts.useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
+          return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
         // Only Mistral exposes a voice library (GET /v1/audio/voices) —
         // MiMo designs its voice from a prompt instead, so there is nothing
@@ -422,7 +446,9 @@ function createAdminRouter({
           }
           res.status(502).json({ error: 'could not retrieve voices from TTS provider' });
         }
-      });
+      };
+      router.get(`/api/${route}/voices`, auth, listVoicesHandler);
+      router.post(`/api/${route}/voices`, auth, listVoicesHandler);
     }
 
     // --- STT (independent, listening) routes ---

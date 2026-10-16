@@ -27,7 +27,9 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
 
   let fakeProviderModels = null;
   let fakeProviderError = null;
-  const retrieveModelsFn = async () => {
+  let lastRetrieveArgs = null;
+  const retrieveModelsFn = async (args) => {
+    lastRetrieveArgs = args;
     if (fakeProviderError) throw fakeProviderError;
     return fakeProviderModels || [];
   };
@@ -60,6 +62,7 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
     decisionStore,
     setModels: (models) => { fakeOpenRouterModels = models; },
     setError: (err) => { fakeOpenRouterError = err; },
+    getLastRetrieveArgs: () => lastRetrieveArgs,
     setProviderModels: (models) => { fakeProviderModels = models; },
     setProviderError: (err) => { fakeProviderError = err; },
     setTtsVoices: (voices) => { fakeTtsVoices = voices; },
@@ -1036,6 +1039,66 @@ test('GET /admin/api/provider/capabilities reports stt once a model is saved', a
     const body = await res.json();
     assert.equal(body.stt, true);
     assert.equal(body.tts, false);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/tts/models lists with the form (unsaved) provider, never sending the saved key to another provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'elevenlabs', baseUrl: 'https://api.elevenlabs.io/v1', apiKey: 'sk_saved_eleven' }),
+    });
+    ctx.setProviderModels([{ id: 'voxtral', name: 'Voxtral', capabilities: [] }]);
+
+    // Form switched to Mistral, no key typed: the saved ElevenLabs key must not travel along.
+    let res = await fetch(`${ctx.baseUrl}/admin/api/tts/models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1' }),
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual({ ...ctx.getLastRetrieveArgs() }, { provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: '' });
+
+    // A typed key is used as-is.
+    await fetch(`${ctx.baseUrl}/admin/api/tts/models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'typed-key' }),
+    });
+    assert.equal(ctx.getLastRetrieveArgs().apiKey, 'typed-key');
+
+    // Same provider as saved, key left blank: the saved key is reused.
+    await fetch(`${ctx.baseUrl}/admin/api/tts/models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'elevenlabs', baseUrl: 'https://api.elevenlabs.io/v1' }),
+    });
+    assert.equal(ctx.getLastRetrieveArgs().apiKey, 'sk_saved_eleven');
+
+    // GET still reflects the saved config.
+    await fetch(`${ctx.baseUrl}/admin/api/tts/models`, { headers: authHeaders() });
+    assert.equal(ctx.getLastRetrieveArgs().provider, 'elevenlabs');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/tts/voices lists with the form provider and refuses providers without a voice library', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    ctx.setTtsVoices([{ id: 'v1', name: 'Voice 1' }]);
+    let res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k' }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).voices[0].id, 'v1');
+
+    res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'k' }),
+    });
+    assert.equal(res.status, 400);
   } finally {
     await ctx.close();
   }
