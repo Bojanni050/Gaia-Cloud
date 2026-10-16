@@ -33,6 +33,11 @@
  *                       https://dashscope.aliyuncs.com/compatible-mode/v1 (Beijing)
  * See https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope
  *
+ * OpenCode (Go plan, https://opencode.ai/zen/go/v1) is likewise a plain OpenAI-shaped /models.
+ * Gaia only speaks /chat/completions, so only the models OpenCode serves on that endpoint work
+ * (GLM, Kimi, DeepSeek, MiMo, ...); the ones served on /responses or /messages do not.
+ * See https://opencode.ai/docs/go
+ *
  * NVIDIA (hosted API catalog, https://integrate.api.nvidia.com/v1) also has
  * no dedicated adapter — same reasoning: plain OpenAI-shaped /models, one
  * universal base URL, nothing provider-specific to normalize. See

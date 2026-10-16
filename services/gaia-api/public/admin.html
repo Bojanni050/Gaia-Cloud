@@ -290,6 +290,7 @@
       <option value="mistral">Mistral</option>
       <option value="alibaba">Alibaba Cloud (Model Studio)</option>
       <option value="nvidia">NVIDIA (NIM / API catalog)</option>
+      <option value="opencode">OpenCode</option>
       <option value="litellm">LiteLLM</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
@@ -672,6 +673,7 @@
     elevenlabs: 'https://api.elevenlabs.io/v1',
     fishaudio: 'https://api.fish.audio/v1/tts',
     nvidia: 'https://integrate.api.nvidia.com/v1',
+    opencode: 'https://opencode.ai/zen/go/v1',
     litellm: 'http://100.64.144.93:4000/v1',
   };
 
@@ -770,7 +772,7 @@
   }
 
   function providerLabelFor(providerId) {
-    const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral' };
+    const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral', opencode: 'OpenCode' };
     if (!providerId) return '';
     return MAP[providerId.toLowerCase()] || (providerId.charAt(0).toUpperCase() + providerId.slice(1));
   }
@@ -1828,6 +1830,7 @@
       +   '<option value="edenai">EdenAI</option>'
       +   '<option value="anthropic">Anthropic</option>'
       +   '<option value="mistral">Mistral</option>'
+      +   '<option value="opencode">OpenCode</option>'
       +   '<option value="litellm">LiteLLM</option>'
       +   '<option value="custom">Custom (OpenAI-compatible)</option>'
       + '</select>'
