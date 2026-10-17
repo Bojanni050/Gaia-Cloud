@@ -82,6 +82,13 @@ router.post('/:id/corroborate', asyncRoute(async (req, res) => {
   res.json(await hypotheses.markCorroborated(bankId, id));
 }));
 
+// Gaia raised this open question herself — a stamp (count + moment), never a
+// status change: the person still answers it, or it simply keeps waiting.
+router.post('/:id/raise', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.raise(bankId, id));
+}));
+
 // Machine expiry (v1.3) — a statement that never gathered evidence and was
 // never touched again lapses with reason `verlopen`. Not a rejection, and not
 // terminal: evidence that arrives later revives it through /revive.

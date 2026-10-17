@@ -50,6 +50,7 @@ const {
 } = require('./memoryWorthiness');
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness, evaluatePatternUsage } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
+const { pickOpenQuestion, renderOpenQuestionRaise, fromQuestionRow } = require('./reasoning/openQuestionReach');
 const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
@@ -636,6 +637,30 @@ async function runTurnCore({
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
   const conversationHistoryBlock = renderConversationHistoryContext(conversationHits);
   const researchPendingBlock = renderResearchPending(researchJob);
+
+  // v1.4 — the one place Gaia may bring her own unanswered question up: at
+  // most one, in the conversation it came from or in a new conversation about
+  // the same subject, never more than three times, and only once a silence has
+  // passed since the last time. Off unless the deployment switches it on
+  // (server.js), and it never blocks the turn: a failure simply means she says
+  // nothing extra.
+  let openQuestionBlock = null;
+  if (hypothesisRuntime && hypothesisRuntime.openQuestions) {
+    try {
+      const rows = await hypothesisRuntime.openQuestions.list();
+      const picked = pickOpenQuestion((Array.isArray(rows) ? rows : []).map(fromQuestionRow), {
+        conversationId,
+        policy: hypothesisRuntime.openQuestions.policy,
+        now: Date.now(),
+      });
+      if (picked) {
+        openQuestionBlock = renderOpenQuestionRaise(picked);
+        // The stamp counts the raising, not her using it, and it is
+        // fire-and-forget: a failed stamp costs one count, never a turn.
+        Promise.resolve(hypothesisRuntime.openQuestions.markRaised(picked.id)).catch(() => {});
+      }
+    } catch (_) { /* never blocks a turn */ }
+  }
   const patternBlock = renderPatternContextBlock(
     patternUsage,
     new Map(recalledPatterns.filter((c) => c && c.id != null).map((c) => [String(c.id), c]))
@@ -652,6 +677,7 @@ async function runTurnCore({
     if (foundationBlock) systemMessages.push({ role: 'system', content: foundationBlock });
     if (conversationHistoryBlock) systemMessages.push({ role: 'system', content: conversationHistoryBlock });
     if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
+    if (openQuestionBlock) systemMessages.push({ role: 'system', content: openQuestionBlock });
     if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
     if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
     if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });

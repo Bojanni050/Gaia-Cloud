@@ -46,6 +46,7 @@ const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createSoftPromotionScan } = require('./reasoning/softPromotionScan');
 const { createExpiryScan } = require('./reasoning/expiryScan');
+const { readReachPolicy } = require('./reasoning/openQuestionReach');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
@@ -265,6 +266,19 @@ function createApp(env = process.env) {
         return loadedPromise;
       },
     };
+
+    // v1.4 — Gaia may bring one of her own unanswered questions up. This is the
+    // only place she speaks first, so it is off unless the person asks for it:
+    // the seam carries the restraint (one per turn, its own conversation first,
+    // never more than three times, a retry term in between) so a turn that is
+    // switched off costs nothing and behaves exactly as before.
+    if (env.GAIA_OPEN_QUESTION_REACH === 'on') {
+      hypothesisRuntime.openQuestions = {
+        list: () => cognition.listHypotheses({ kind: 'open_question' }),
+        markRaised: (id) => cognition.markQuestionRaised(id),
+        policy: readReachPolicy(env),
+      };
+    }
 
     // The periodic catch-up for the machine tier: hypotheses the store holds
     // whose micro soft-promotion no turn will ever trigger again (see

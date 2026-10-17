@@ -88,6 +88,9 @@ function createCognitionClient({
   // when evidence arrives later.
   const expireHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/expire`);
   const reviveHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/revive`);
+  // v1.4 — the raise stamp: Gaia put an open question on the table herself.
+  // Not a status change; the person still answers it, or it keeps waiting.
+  const markQuestionRaised = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/raise`);
   const confirmHypothesis = (id, { statement } = {}) => request(
     'POST',
     `/hypotheses/${encodeURIComponent(id)}/confirm`,
@@ -141,6 +144,7 @@ function createCognitionClient({
     markCorroborated,
     expireHypothesis,
     reviveHypothesis,
+    markQuestionRaised,
     confirmHypothesis,
     rejectHypothesis,
     reopenHypothesis,

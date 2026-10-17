@@ -108,7 +108,7 @@ const COLUMNS = `
   sources, supersedes_id, superseded_by_id,
   counter_hypothesis, scope, question_shape, question_options, answer, answered_at,
   confirmed_document_id, rejection_reason, verwerp_bron,
-  tested_at, confirmed_at, rejected_at, expired_at, created_at, updated_at
+  tested_at, confirmed_at, rejected_at, expired_at, raised_count, raised_at, created_at, updated_at
 `;
 
 async function propose(bankId, {
@@ -465,7 +465,23 @@ async function softDelete(bankId, id) {
   if (rowCount === 0) throw new NotFoundError(`hypothesis not found: ${id}`);
 }
 
+/**
+ * v1.4 — the raise stamp: Gaia put this open question on the table herself.
+ * The judgement (whether it is worth raising, the hard maximum of three
+ * attempts, and the silence that must pass before a retry) lives in Logos;
+ * this service only records that it happened, and when.
+ */
+async function raise(bankId, id) {
+  await get(bankId, id); // throws NotFoundError for an unknown statement
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET raised_count = raised_count + 1, raised_at = now(), updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id],
+  );
+  return rows[0];
+}
+
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, expire, revive, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
+  propose, list, get, update, markTesting, markCorroborated, expire, revive, raise, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
   VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES, QUESTION_SHAPES,
 };
