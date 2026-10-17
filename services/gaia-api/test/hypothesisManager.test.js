@@ -29,7 +29,8 @@ function seeded() {
 
 test('transitions: the lifecycle map is explicit and frozen', () => {
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.proposed, ['testing', 'rejected']);
-  assert.deepEqual(HYPOTHESIS_TRANSITIONS.testing, ['confirmed', 'rejected']);
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.testing, ['corroborated', 'confirmed', 'rejected']);
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.corroborated, ['confirmed', 'rejected', 'testing']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.confirmed, ['testing']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.rejected, []); // terminal; only reopen() leaves it
 });
@@ -99,6 +100,107 @@ test('irrelevant: recorded but adjusts nothing', () => {
   assert.equal(audit.accepted, true);
   assert.equal(audit.to, null);
   assert.equal(JSON.stringify({ ...m.get('hyp-123'), updatedAt: 0 }), before.replace(/"updatedAt":"[^"]+"/, '"updatedAt":0'));
+});
+
+// --- V3 soft-promotion (micro only) -------------------------------------------
+
+test('soft-promotion: a micro hypothesis past the threshold reaches corroborated on its own', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-m1', statement: 'Prefers short answers before noon.',
+      status: 'testing', confidence: 0.7, scope: 'micro',
+      evidenceFor: ['m1'], evidenceAgainst: [],
+    }],
+  });
+  m.applyUpdate({ hypothesisId: 'hyp-m1', evidenceId: 'm2', relation: 'supports', confidenceDelta: 0.1, rationale: 'the same pattern, second time' });
+  const h = m.get('hyp-m1');
+  assert.equal(h.confidence, 0.8);
+  assert.equal(h.status, 'corroborated');
+  // It is a state change like any other: recorded in the history.
+  assert.equal(h.history[h.history.length - 1].to, 'corroborated');
+});
+
+test('soft-promotion: macro is never promoted — the person still owns it', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-x1', statement: 'The service is ready for production.',
+      status: 'testing', confidence: 0.79, scope: 'macro',
+      evidenceFor: ['m1'], evidenceAgainst: [],
+    }],
+  });
+  m.applyUpdate({ hypothesisId: 'hyp-x1', evidenceId: 'm2', relation: 'supports', confidenceDelta: 0.16, rationale: 'two independent signals' });
+  assert.equal(m.get('hyp-x1').confidence, 0.95);
+  assert.equal(m.get('hyp-x1').status, 'testing');
+});
+
+test('soft-promotion: the threshold is policy, not magic', () => {
+  const m = createHypothesisManager({ policy: { softPromoteConfidence: 0.6 } });
+  const { hypothesis } = m.propose({ statement: 'Likes morning summaries.', confidence: 0.55, scope: 'micro' });
+  m.applyUpdate({ hypothesisId: hypothesis.id, evidenceId: 'm1', relation: 'supports', confidenceDelta: 0.1, rationale: 'observed again' });
+  assert.equal(m.get(hypothesis.id).confidence, 0.65);
+  // proposed → testing → corroborated within one update: the first-evidence
+  // step runs before the promotion, so the store's own path is respected.
+  assert.equal(m.get(hypothesis.id).status, 'corroborated');
+});
+
+test('soft-promotion: contradicting evidence blocks the promotion', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-b1', statement: 'Prefers morning meetings.',
+      status: 'testing', confidence: 0.78, scope: 'micro',
+      evidenceFor: ['m1'], evidenceAgainst: ['m2'],
+    }],
+  });
+  m.applyUpdate({ hypothesisId: 'hyp-b1', evidenceId: 'm3', relation: 'supports', confidenceDelta: 0.1, rationale: 'more of the same' });
+  assert.equal(m.get('hyp-b1').confidence, 0.88);
+  assert.equal(m.get('hyp-b1').status, 'testing'); // argued against: not corroborated, whatever the number says
+});
+
+test('soft-promotion: a contradiction demotes an already corroborated micro (§9, machine tier)', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-c1', statement: 'Prefers terse replies.',
+      status: 'corroborated', confidence: 0.85, scope: 'micro',
+      evidenceFor: ['m1'], evidenceAgainst: [],
+    }],
+  });
+  const audit = m.applyUpdate({ hypothesisId: 'hyp-c1', evidenceId: 'm9', relation: 'contradicts', confidenceDelta: 0.15, rationale: 'a long answer was explicitly asked for' });
+  assert.equal(audit.from, 'corroborated');
+  assert.equal(audit.to, 'testing');
+  assert.equal(m.get('hyp-c1').status, 'testing');
+});
+
+test('soft-promotion: a fresh micro claim that arrives at the threshold is promoted in the same turn', () => {
+  const saved = [];
+  const m = createHypothesisManager({ sink: { save: (h) => saved.push(h), update: () => {} } });
+  m.applyReasoningResult({
+    hypotheses: [{ statement: 'Prefers terse replies.', confidence: 0.85, scope: 'micro', evidenceFor: ['m1'] }],
+    hypothesisUpdates: [],
+  });
+  const [h] = m.list();
+  assert.equal(h.scope, 'micro');
+  assert.equal(h.confidence, 0.85);
+  assert.equal(h.status, 'corroborated');
+});
+
+test('soft-promotion: a seeded corroborated record keeps its status through the boot load', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{ id: 'hyp-s1', statement: 'Prefers terse replies.', status: 'corroborated', confidence: 0.82, scope: 'micro' }],
+  });
+  assert.equal(m.get('hyp-s1').status, 'corroborated');
+});
+
+test('soft-promotion: it never reaches confirmed — only a person does', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-n1', statement: 'Prefers terse replies.',
+      status: 'testing', confidence: 0.9, scope: 'micro',
+      evidenceFor: ['m1'], evidenceAgainst: [],
+    }],
+  });
+  m.applyUpdate({ hypothesisId: 'hyp-n1', evidenceId: 'm2', relation: 'supports', confidenceDelta: 0.05, rationale: 'again' });
+  assert.equal(m.get('hyp-n1').status, 'corroborated');
+  assert.equal(m.get('hyp-n1').confirmedAt, null);
 });
 
 // --- confirm / reject via the policy -------------------------------------------

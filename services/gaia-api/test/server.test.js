@@ -743,9 +743,13 @@ test('POST /speech uses Fish Audio when it is the stored provider, even without 
       });
       assert.equal(res.status, 200);
       assert.equal(Buffer.from(await res.arrayBuffer()).toString(), 'FISH-AUDIO');
-      assert.equal(seen[0].url, 'https://api.fish.audio/v1/tts');
-      assert.equal(seen[0].init.headers.model, 's2.1-pro');
-      assert.equal(JSON.parse(seen[0].init.body).reference_id, 'fish-voice');
+      // The process now also runs background jobs (the hypothesis
+      // soft-promotion scan polls Cognition at startup), so the TTS request is
+      // not necessarily the first fetch — find it by its endpoint.
+      const fish = seen.find((s) => s.url.startsWith('https://api.fish.audio/'));
+      assert.ok(fish, 'the speech request was sent to Fish Audio');
+      assert.equal(fish.init.headers.model, 's2.1-pro');
+      assert.equal(JSON.parse(fish.init.body).reference_id, 'fish-voice');
 
       const info = await (await originalFetch(`http://127.0.0.1:${port}/speech/info`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
       assert.equal(info.configured, true);

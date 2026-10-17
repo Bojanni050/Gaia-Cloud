@@ -17,20 +17,34 @@
  * logos/logosSchema.js — THIS map is this codebase's single source of
  * truth):
  *
- *   proposed → testing → confirmed
- *                      ↘ rejected
- *   confirmed → testing   (new contradicting pressure — §9: a confirmed
- *                          hypothesis never silently survives a contradiction)
- *   rejected  → testing   ONLY through reopen(), an explicit human action.
- *                          For every automatic process (applyUpdate,
- *                          applyReasoningResult, setPersistence, the
- *                          lifecycle verbs) `rejected` is a hard terminal
- *                          quarantine — no amount of new evidence revives it.
+ *   proposed → testing → corroborated → confirmed   (corroborated: machine,
+ *            │                                        micro only)
+ *            ↘ rejected
+ *   proposed    → confirmed   (a person may settle a proposal directly)
+ *   corroborated → testing    (a contradiction arrived — same §9 rule as
+ *                              confirmed below)
+ *   confirmed   → testing     (new contradicting pressure — §9: a confirmed
+ *                              hypothesis never silently survives a
+ *                              contradiction)
+ *   rejected    → testing     ONLY through reopen(), an explicit human action.
+ *                              For every automatic process (applyUpdate,
+ *                              applyReasoningResult, setPersistence, the
+ *                              lifecycle verbs) `rejected` is a hard terminal
+ *                              quarantine — no amount of new evidence revives it.
  *
  * Confirming/rejecting is deliberately HARD (§8): an LLM saying "likely"
  * is never enough. Transitions to confirmed/rejected go through
  * evaluateTransition(), which checks the evidence policy below — every
  * threshold is named and documented here, none are magic.
+ *
+ * `corroborated` is the ONE step a machine may take UP on its own (V3
+ * epistemic entrenchment): a `micro` hypothesis — a low-impact preference,
+ * style or routine — whose confidence has built past softPromoteConfidence
+ * is promoted without a human click. It is not a settlement: the tier may
+ * inform retrieval and behaviour but is never presented as settled, and it
+ * still takes a person to reach `confirmed` (Absolute Override). `macro`
+ * claims (the safe default) never take this road — they always wait for a
+ * person. Cognition owns the same tier as `testing → corroborated`.
  *
  * Provenance note (0.3.x): several concepts here are adopted from
  * github.com/alash3al/stash — the four-way evidence verdicts were already
@@ -82,11 +96,13 @@ const DEFAULT_PERSISTENCE = 'ephemeral';
 /**
  * The allowed status transitions. Anything not listed here is refused,
  * e.g. proposed → confirmed (a proposal must at least pass through
- * testing) and unknown → anything.
+ * testing) and unknown → anything. The `corroborated` edges mirror
+ * Cognition's own table (services/cognition/src/hypotheses.js).
  */
 const HYPOTHESIS_TRANSITIONS = Object.freeze({
   proposed: Object.freeze(['testing', 'rejected']),
-  testing: Object.freeze(['confirmed', 'rejected']),
+  testing: Object.freeze(['corroborated', 'confirmed', 'rejected']),
+  corroborated: Object.freeze(['confirmed', 'rejected', 'testing']),
   confirmed: Object.freeze(['testing']),
   // Terminal for every automatic path. reopen() is the one deliberate,
   // human-initiated exception (mirrors the Cognition store's /reopen route).
@@ -116,10 +132,51 @@ const DEFAULT_POLICY = Object.freeze({
   minOpposeEvidence: 2,
   /** Confidence at-or-below which reject is possible (with enough oppose evidence). */
   rejectConfidence: 0.35,
+  /**
+   * V3 soft-promotion: a `micro` hypothesis whose confidence has reached this
+   * threshold reaches `corroborated` on its own — the machine tier, never
+   * `confirmed`. `macro` (the safe default) always waits for the person.
+   */
+  softPromoteConfidence: 0.8,
 });
 
 /** Statuses always start here when a new hypothesis is proposed. */
 const INITIAL_STATUS = 'proposed';
+
+/**
+ * The V3 soft-promotion gate, as a pure predicate — the ONE place the rule
+ * lives. The manager's `softPromote()` uses it for records it already holds,
+ * and the periodic scan (softPromotionScan.js) uses it for records sitting in
+ * the store that no turn has touched since (they would otherwise stay in
+ * `testing` forever). Deliberately narrow, and every gate is named:
+ *
+ *   - `micro` scope only. A `macro` claim (the safe default) always waits for
+ *     the person, whatever its confidence says.
+ *   - `testing` only: the honest path, the same edge the store allows
+ *     (`proposed → corroborated` would skip the machine's own work).
+ *   - confidence at or above softPromoteConfidence.
+ *   - no active contradictions: a claim we have argued against is not
+ *     corroborated, whatever its confidence reads.
+ *
+ * Reaching `corroborated` never means settled, and never `confirmed` — a
+ * person still owns the override.
+ *
+ * Accepts either spelling of the fields (the manager's camelCase records and
+ * Cognition's snake_case rows both come through here), and coerces confidence
+ * because a Postgres `numeric` arrives as a string.
+ *
+ * @param {object} h
+ * @param {object} [policy] DEFAULT_POLICY by default
+ * @returns {boolean}
+ */
+function isSoftPromotable(h, policy = DEFAULT_POLICY) {
+  if (!h || h.scope !== 'micro') return false;
+  if (h.status !== 'testing') return false;
+  const confidence = Number(h.confidence);
+  if (!Number.isFinite(confidence) || confidence < policy.softPromoteConfidence) return false;
+  const against = h.evidenceAgainst || h.evidence_against || [];
+  return !Array.isArray(against) || against.length === 0;
+}
 
 function isValidMethod(m) {
   return HYPOTHESIS_METHODS.includes(m);
@@ -266,7 +323,7 @@ function createHypothesisManager(options = {}) {
       remember({
         id: String(h.id),
         statement: h.statement,
-        status: ['proposed', 'testing', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
+        status: ['proposed', 'testing', 'corroborated', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
         method: isValidMethod(h.method) ? h.method : 'asserted',
         persistence: persistenceOf(h.persistence),
         counterHypothesis: typeof h.counterHypothesis === 'string' && h.counterHypothesis.trim() ? h.counterHypothesis.trim() : null,
@@ -352,6 +409,22 @@ function createHypothesisManager(options = {}) {
   function canReject(h) {
     return h.evidenceAgainst.length >= policy.minOpposeEvidence
       && h.confidence <= policy.rejectConfidence;
+  }
+
+  /**
+   * V3 soft-promotion — the one automatic step that moves a hypothesis UP
+   * without a person. The gate itself lives in isSoftPromotable() above so the
+   * periodic scan (softPromotionScan.js) applies the exact same rule to the
+   * same records; this is just the transition.
+   */
+  function softPromote(h) {
+    if (!isSoftPromotable(h, policy)) return false;
+    const res = transition(
+      h,
+      'corroborated',
+      `soft-promotion: micro hypothesis reached confidence ${h.confidence} >= ${policy.softPromoteConfidence}`,
+    );
+    return res.ok;
   }
 
   function transition(h, to, rationale) {
@@ -604,15 +677,18 @@ function createHypothesisManager(options = {}) {
 
     h.updatedAt = now().toISOString();
 
-    // §9: contradicting pressure on a CONFIRMED hypothesis forces it back
-    // to testing immediately and explicitly — recorded, never silent.
-    if (relation === 'contradicts' && h.status === 'confirmed') {
-      stampStatus(h, 'confirmed', 'testing', h.updatedAt);
+    // §9: contradicting pressure on a SETTLED claim forces it back to testing
+    // immediately and explicitly — recorded, never silent. Both settled tiers
+    // demote: `confirmed` (the human's) and `corroborated` (the machine's);
+    // the store allows both edges.
+    if (relation === 'contradicts' && (h.status === 'confirmed' || h.status === 'corroborated')) {
+      const settled = h.status;
+      stampStatus(h, settled, 'testing', h.updatedAt);
       h.status = 'testing';
-      h.history.push({ from: 'confirmed', to: 'testing', at: h.updatedAt, rationale: 'contradicting evidence arrived' });
+      h.history.push({ from: settled, to: 'testing', at: h.updatedAt, rationale: 'contradicting evidence arrived' });
       persistUpdate(prev, h);
       audits.push(makeAudit({
-        hypothesisId: h.id, from: 'confirmed', to: 'testing',
+        hypothesisId: h.id, from: settled, to: 'testing',
         relation, evidenceId: update.evidenceId || null,
         confidenceBefore: prev.confidence, confidenceAfter: h.confidence,
         rationale: update.rationale || 'contradicting evidence',
@@ -627,7 +703,12 @@ function createHypothesisManager(options = {}) {
       h.history.push({ from: 'proposed', to: 'testing', at: h.updatedAt, rationale: 'first evidence applied' });
     }
 
-    persistUpdate(prev, h);
+    // V3 soft-promotion, after the first-evidence step above so a claim can
+    // walk proposed → testing → corroborated within one update. It persists
+    // through its own transition(); when it fired, the trailing persist below
+    // would only repeat the same diff.
+    const promoted = softPromote(h);
+    if (!promoted) persistUpdate(prev, h);
     audits.push(makeAudit({
       hypothesisId: h.id, from: prev.status, to: h.status,
       relation, evidenceId: update.evidenceId || null,
@@ -720,12 +801,19 @@ function createHypothesisManager(options = {}) {
         }
         // Persist AFTER the merge — v1 carries its provenance and state.
         persistSave(target);
+        // V3 soft-promotion: a fresh micro claim that arrived at the
+        // threshold with linked evidence may reach the machine tier in this
+        // same turn (the sink walks the store testing → corroborated).
+        softPromote(target);
       } else if (prevSnapshot && (prevSnapshot.confidence !== target.confidence
         || JSON.stringify(prevSnapshot.evidenceFor) !== JSON.stringify(target.evidenceFor)
         || JSON.stringify(prevSnapshot.evidenceAgainst) !== JSON.stringify(target.evidenceAgainst))) {
         // An EXISTING hypothesis gained links/confidence without an explicit
         // update row — still a persisted-state change.
         persistUpdate(prevSnapshot, target);
+        // The same confidence may have crossed the micro threshold without an
+        // explicit evidence verdict; the promotion is a state change of its own.
+        softPromote(target);
       }
       void duplicateOf;
     }
@@ -808,6 +896,7 @@ module.exports = {
   DEFAULT_PERSISTENCE,
   DEFAULT_POLICY,
   INITIAL_STATUS,
+  isSoftPromotable,
   DEDUP_SIMILARITY_THRESHOLD,
   similarity,
   normalizeStatement,

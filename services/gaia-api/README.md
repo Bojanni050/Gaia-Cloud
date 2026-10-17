@@ -41,6 +41,8 @@ The derived statements Logos is still weighing live in `services/cognition`. The
 
 `rejected` is a hard quarantine, terminal for every automatic path (evidence updates, reasoning output, persistence changes, the lifecycle verbs) in both the manager and Cognition. `POST …/reopen` with a stated reason — the GaiaChat "Heroverwegen" action — is the only way back to `testing`.
 
+`corroborated` is the one tier a machine reaches on its own, and it sits *below* the override: `reasoning/hypothesisManager.js`'s `softPromote()` moves a **micro** statement there once it is in `testing`, its confidence has reached `softPromoteConfidence` (0.80 — a named policy value, not an inline number) and it has no contradicting evidence. It is not a settlement: the tier may inform retrieval and behaviour, is never presented as settled, and `macro` statements (the safe default) never take this road — they always wait for the person. A contradiction demotes a corroborated micro back to `testing`, the same §9 rule a confirmed statement gets. The sink mirrors it into Cognition along the store's own path (`testing` first — `proposed → corroborated` is refused there).
+
 ## Chat history
 
 A separate surface (`conversationStore.js`, `historyRoutes.js`) from the library — same one-directory-per-item layout (`meta.json` + `messages.json`, no shared index), but read/delete only; writing only ever happens as the side effect described above, never by direct client upload:

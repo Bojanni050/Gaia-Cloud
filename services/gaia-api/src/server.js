@@ -44,6 +44,7 @@ const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternA
 const { createCognitionClient } = require('./cognitionClient');
 const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
+const { createSoftPromotionScan } = require('./reasoning/softPromotionScan');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
@@ -198,6 +199,7 @@ function createApp(env = process.env) {
   // failure is logged and never blocks a turn. Disable with
   // GAIA_HYPOTHESIS_PERSISTENCE=false.
   let hypothesisRuntime = null;
+  let softPromotionScan = null;
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
     const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
 
@@ -239,6 +241,16 @@ function createApp(env = process.env) {
         return loadedPromise;
       },
     };
+
+    // The periodic catch-up for the machine tier: hypotheses the store holds
+    // whose micro soft-promotion no turn will ever trigger again (see
+    // reasoning/softPromotionScan.js). Best-effort, never blocks a turn;
+    // stopped again on shutdown below.
+    softPromotionScan = createSoftPromotionScan({
+      cognition,
+      sink: cognitionSink.hypothesis,
+      env,
+    });
   }
   // Durable Logos decision log (adminRoutes.js's
   // /admin/api/logos/decisions) — created here, ahead of the native
@@ -943,6 +955,9 @@ function createApp(env = process.env) {
     env,
   });
   if (kairosRuntime) kairosRuntime.start();
+  // Hypothesis soft-promotion scan — same posture as Kairos: best-effort,
+  // never blocks startup and never affects a turn.
+  if (softPromotionScan) softPromotionScan.start();
 
   // Calm JSON error surface — no stack traces, no provider names.
   app.use((err, req, res, next) => {

@@ -122,6 +122,69 @@ test('a confirmed status change is not mirrored but the record still syncs', asy
   assert.equal(synced.length, 1, 'the record is still synced to Hindsight');
 });
 
+test('updateHypothesis walks the store through testing to reach corroborated', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  // The store record is still `proposed` (created by save, never marked
+  // testing): the machine tier is only reachable from testing.
+  cognition.getHypothesis = async (id) => ({ id, status: 'proposed' });
+  await sink.hypothesis.update('c1',
+    { id: 'c1', status: 'corroborated', evidenceFor: [], evidenceAgainst: [] },
+    { id: 'c1', status: 'proposed', evidenceFor: [], evidenceAgainst: [] });
+
+  const verbs = cognition.calls.map((c) => c[0]).filter((v) => v === 'test' || v === 'corroborate');
+  assert.deepEqual(verbs, ['test', 'corroborate']);
+});
+
+test('updateHypothesis does not re-mark a store record that is already testing', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  cognition.getHypothesis = async (id) => ({ id, status: 'testing' });
+  await sink.hypothesis.update('c1',
+    { id: 'c1', status: 'corroborated', evidenceFor: [], evidenceAgainst: [] },
+    { id: 'c1', status: 'testing', evidenceFor: [], evidenceAgainst: [] });
+
+  assert.ok(!cognition.calls.some((c) => c[0] === 'test'), 'markTesting would be a refused self-transition');
+  assert.ok(cognition.calls.some((c) => c[0] === 'corroborate'));
+});
+
+test('updateHypothesis reaches corroborated through a store that enforces its own transitions', async () => {
+  // A stateful fake with Cognition's real table: proposed → corroborated is
+  // refused there, so this proves the walk really lands the record.
+  const VALID = {
+    proposed: ['testing', 'confirmed', 'rejected'],
+    testing: ['corroborated', 'confirmed', 'rejected', 'proposed'],
+    corroborated: ['confirmed', 'rejected', 'testing'],
+    confirmed: [],
+    rejected: [],
+  };
+  let status = 'proposed';
+  const calls = [];
+  const cognition = {
+    getHypothesis: async () => ({ id: 'c1', status }),
+    markTesting: async () => {
+      assert.ok(VALID[status].includes('testing'), `store refused ${status} to testing`);
+      status = 'testing';
+      calls.push('test');
+      return { id: 'c1', status };
+    },
+    markCorroborated: async () => {
+      assert.ok(VALID[status].includes('corroborated'), `store refused ${status} to corroborated`);
+      status = 'corroborated';
+      calls.push('corroborate');
+      return { id: 'c1', status };
+    },
+  };
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.update('c1', { id: 'c1', status: 'corroborated' }, { id: 'c1', status: 'testing' });
+
+  assert.equal(status, 'corroborated');
+  assert.deepEqual(calls, ['test', 'corroborate']);
+});
+
 test('pattern sink creates and updates Cognition patterns', async () => {
   const cognition = fakeCognition();
   const synced = [];

@@ -28,7 +28,9 @@ proposed ──▶ testing ──▶ corroborated (machine, C >= 0.80) ──▶
 
 - **`corroborated`** is a machine soft-promotion tier: a high-confidence
   micro-hypothesis that may inform retrieval/behavior, but is never presented
-  as settled.
+  as settled. Logos promotes it through `services/gaia-api`'s
+  `HypothesisManager.softPromote()` (C >= 0.80, `micro`, `testing`, no
+  contradicting evidence); this service only stores the step it is given.
 - **`confirmed` is human-only** (Absolute Override). No automated step — not
   model confidence, not corroboration — reaches it.
 - **`rejected` is a hard quarantine, terminal for every automatic path.** Once
