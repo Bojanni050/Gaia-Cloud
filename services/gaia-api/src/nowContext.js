@@ -67,24 +67,27 @@ function plural(count, singular, pluralForm) {
 
 /**
  * e.g. "zaterdag 17 oktober 2026, 18:42 (Europe/Amsterdam)". Null when `now`
- * is unusable or the runtime rejects the timezone.
+ * is unusable or the runtime rejects the timezone. `locale` lets a non-Dutch
+ * prompt (Logos) read the same moment in its own language without a second
+ * date formatter existing in the codebase.
  * @param {Date|number|string} [now]
- * @param {{ timeZone?: string }} [options]
+ * @param {{ timeZone?: string, locale?: string }} [options]
  * @returns {string|null}
  */
 function formatNow(now = Date.now(), options = {}) {
   const date = toDate(now);
   if (!date) return null;
   const timeZone = resolveTimeZone(options);
+  const locale = (options && options.locale) || 'nl-NL';
   try {
-    const day = date.toLocaleDateString('nl-NL', {
+    const day = date.toLocaleDateString(locale, {
       timeZone,
       weekday: 'long',
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     });
-    const time = date.toLocaleTimeString('nl-NL', {
+    const time = date.toLocaleTimeString(locale, {
       timeZone,
       hour: '2-digit',
       minute: '2-digit',

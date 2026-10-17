@@ -801,6 +801,9 @@ async function runTurnCore({
     eleos,
     evidence,
     intentDecision,
+    // The turn's own clock: Logos judges recency against the moment of the
+    // conversation, not against whenever the deferred phase happens to run.
+    now,
     recalledReflections: reflections,
     executionResult,
     messages,
@@ -870,6 +873,7 @@ async function runDeferredCognition({
   userDisplayName,
   decisionLogger,
   timing,
+  now = Date.now(),
 }) {
   // 1. Foundation: the completed turn as a raw observation (Foundation owns
   //    the status — everything enters as `observation`). Fire-and-forget
@@ -931,6 +935,7 @@ async function runDeferredCognition({
         evidenceFor: h.evidenceFor,
         evidenceAgainst: h.evidenceAgainst,
         persistence: h.persistence,
+        updatedAt: h.updatedAt || h.updated_at || null,
       }));
     } catch (_) { /* seeding must never break the deferred phase */ }
     if (typeof hypothesisRuntime.recallHypotheses === 'function') {
@@ -947,6 +952,7 @@ async function runDeferredCognition({
             evidenceFor: rh.evidenceFor || [],
             evidenceAgainst: rh.evidenceAgainst || [],
             persistence: rh.persistence,
+            updatedAt: rh.updatedAt || rh.updated_at || null,
           });
         }
       } catch (_) { /* same posture */ }
@@ -961,6 +967,7 @@ async function runDeferredCognition({
         statement: p.statement,
         status: p.status,
         confidence: typeof p.confidence === 'number' ? p.confidence : null,
+        updatedAt: p.updatedAt || p.updated_at || null,
       }));
     } catch (_) { /* context seeding must never break the deferred phase */ }
   }
@@ -970,6 +977,9 @@ async function runDeferredCognition({
   //     was delivered before this phase started.
   const backgroundReasoningInput = {
     text: userText,
+    // The same instant the turn itself was given: Logos reasons about
+    // recency against the moment of this conversation, not its own clock.
+    now,
     intentHint: intentDecision,
     intentDecision,
     conversationContext: messages,

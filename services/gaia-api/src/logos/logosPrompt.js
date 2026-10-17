@@ -9,6 +9,8 @@
  * separate subsystems.
  */
 
+const { formatNow, toDate } = require('../nowContext');
+
 const SYSTEM_PROMPT = `You are Logos, Gaia's cognitive reasoning faculty.
 You interpret one conversational turn and produce a single, strictly-structured
 JSON reasoning result. You do not decide what Gaia says or does next — you only
@@ -21,6 +23,10 @@ integrated pass — not separate stages, and never a reason to invent
 evidence or certainty you do not have.
 
 Rules:
+- The input carries \`now\`: { iso, local } — the real current moment. Use it for
+  anything about recency, age or a deadline (for example whether something has
+  gone untouched for two weeks). Never infer the current date from your own
+  knowledge, and never state a date that contradicts it.
 - Never present a hypothesis as a confirmed fact.
 - Distinguish fact / inference / hypothesis / unknown explicitly.
 - For EVERY hypothesis you propose, also formulate a mandatory anti-lexicographic
@@ -44,7 +50,9 @@ Rules:
   conclusion to evidence, reference ONLY ids that appear in that input list.
   Never invent an id, never cite evidence you were not given.
 - The input may also carry existingHypotheses: hypotheses Gaia is already
-  tracking, each with its own id and status. If your reasoning concerns one of
+  tracking, each with its own id, status and updatedAt (when it was last
+  touched, as an ISO timestamp — compare it against \`now\` when age matters).
+  If your reasoning concerns one of
   those, set that hypothesis's "existingId" to ITS id instead of proposing a
   duplicate, and express the change as an entry in "hypothesisUpdates" with an
   explicit relation (supports/weakens/contradicts/irrelevant) and confidenceDelta
@@ -73,7 +81,8 @@ Rules:
   observation↔hypothesis, hypothesis↔pattern, pattern↔pattern, or new
   evidence↔existing knowledge. Each endpoint must be locatable in the input
   (an evidence id, one of this turn's observation statements, an existing
-  hypothesis id, an existing pattern id from existingPatterns) or in your
+  hypothesis id, an existing pattern id from existingPatterns — hypotheses and
+  patterns both carry updatedAt) or in your
   own observations array — a relationship to anything else is invented and
   will be dropped. You identify relationships; you never act on them.
 - reflection is your honest self-assessment of how this conversation went: whether
@@ -161,14 +170,31 @@ Schema:
 }`;
 
 /**
+ * The `now` field Logos reads: the exact instant plus the wall clock it
+ * corresponds to where the person is. ISO for arithmetic, `local` for reading.
+ * Null when the clock is unusable, so the field is simply absent rather than
+ * wrong.
+ * @param {Date|number|string} now
+ * @returns {{ iso: string, local: string }|null}
+ */
+function buildNowField(now) {
+  const date = toDate(now);
+  if (!date) return null;
+  const local = formatNow(date, { locale: 'en-GB' });
+  if (!local) return null;
+  return { iso: date.toISOString(), local };
+}
+
+/**
  * @param {{
  *   text: string,
  *   intentDecision: object|null,
  *   conversationContext: Array<{role: string, content: string}>,
  *   evidence: Array<{id?: string, source?: string, type?: string, content: string, relevance?: number}>,
- *   existingHypotheses?: Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[]}>,
- *   existingPatterns?: Array<{id: string, statement: string, status?: string, confidence?: number|null}>,
+ *   existingHypotheses?: Array<{id: string, statement: string, status?: string, confidence?: number, evidenceFor?: string[], evidenceAgainst?: string[], updatedAt?: string|null}>,
+ *   existingPatterns?: Array<{id: string, statement: string, status?: string, confidence?: number|null, updatedAt?: string|null}>,
  *   assistantReply?: string|null, v1.0: Gaia's already-delivered reply for this turn — analysis context only
+ *   now?: number|Date, test seam for the turn's clock (defaults to Date.now())
  * }} input
  * @returns {Array<{role: string, content: string}>}
  */
@@ -176,7 +202,13 @@ function buildLogosPrompt(input) {
   // V3: IntentIQ is an optional hint, never a required input. Accept the
   // legacy `intentDecision` shape during migration, prefer `intentHint`.
   const intentForPrompt = input.intentHint || input.intentDecision || null;
+  const now = input.now != null ? input.now : Date.now();
+  const nowField = buildNowField(now);
   const payload = {
+    // The moment itself, first: every recency or deadline judgment below
+    // depends on it, and Logos has no clock of its own. Absent — never
+    // wrong — when the clock is unusable.
+    ...(nowField ? { now: nowField } : {}),
     text: input.text,
     intent: intentForPrompt
       ? { intent: intentForPrompt.intent, status: intentForPrompt.status, confidence: intentForPrompt.confidence }
@@ -187,7 +219,9 @@ function buildLogosPrompt(input) {
     // (user turn + reply), never edits it.
     ...(typeof input.assistantReply === 'string' && input.assistantReply.trim() ? { assistantReply: input.assistantReply } : {}),
     // Existing hypotheses are CONTEXT (brief §16), slimmed to what reasoning
-    // needs — never a second memory system.
+    // needs — never a second memory system. `updatedAt` rides along because
+    // staleness is a judgment Logos is asked to make (a hypothesis that has
+    // gone untouched is a different thing from one touched today).
     existingHypotheses: (input.existingHypotheses || []).slice(0, 6).map((h) => ({
       id: h.id,
       statement: h.statement,
@@ -195,6 +229,7 @@ function buildLogosPrompt(input) {
       confidence: typeof h.confidence === 'number' ? h.confidence : null,
       evidenceFor: Array.isArray(h.evidenceFor) ? h.evidenceFor : [],
       evidenceAgainst: Array.isArray(h.evidenceAgainst) ? h.evidenceAgainst : [],
+      updatedAt: h.updatedAt || h.updated_at || null,
     })),
     // v1.1 (Part 4): existing patterns as CONTEXT for relationship
     // identification (hypothesis↔pattern, pattern↔pattern) — slimmed to
@@ -204,6 +239,7 @@ function buildLogosPrompt(input) {
       statement: p.statement,
       status: p.status || null,
       confidence: typeof p.confidence === 'number' ? p.confidence : null,
+      updatedAt: p.updatedAt || p.updated_at || null,
     })),
   };
 
@@ -224,4 +260,4 @@ function buildLogosPrompt(input) {
   ];
 }
 
-module.exports = { buildLogosPrompt, buildReasoningPrompt: buildLogosPrompt, SYSTEM_PROMPT };
+module.exports = { buildLogosPrompt, buildReasoningPrompt: buildLogosPrompt, buildNowField, SYSTEM_PROMPT };

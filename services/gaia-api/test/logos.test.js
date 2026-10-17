@@ -241,6 +241,34 @@ test('buildLogosPrompt: embeds text, intent, and evidence in the user message', 
   assert.match(messages[1].content, /OOM errors/);
 });
 
+test('buildLogosPrompt: hands Logos the real moment and each item\'s last-touched time', () => {
+  const now = Date.parse('2026-10-17T18:42:00Z');
+  const messages = buildLogosPrompt({
+    text: 'Is that hypothesis still alive?',
+    now,
+    intentDecision: null,
+    evidence: [],
+    existingHypotheses: [{ id: 'hyp-1', statement: 'X', updatedAt: '2026-10-03T09:00:00Z' }],
+    existingPatterns: [{ id: 'ptn-1', statement: 'Y', updatedAt: '2026-10-16T09:00:00Z' }],
+  });
+  // The rule that makes the field meaningful, not just present.
+  assert.match(messages[0].content, /The input carries `now`/);
+  const payload = JSON.parse(messages[1].content.split('```json\n')[1].split('\n```')[0]);
+  assert.deepEqual(payload.now, {
+    iso: '2026-10-17T18:42:00.000Z',
+    local: 'Saturday, 17 October 2026, 20:42 (Europe/Amsterdam)',
+  });
+  assert.equal(payload.existingHypotheses[0].updatedAt, '2026-10-03T09:00:00Z');
+  assert.equal(payload.existingPatterns[0].updatedAt, '2026-10-16T09:00:00Z');
+});
+
+test('buildLogosPrompt: now is absent, never wrong, when the clock is unusable', () => {
+  const messages = buildLogosPrompt({ text: 'x', now: 'not a date', intentDecision: null, evidence: [] });
+  const payload = JSON.parse(messages[1].content.split('```json\n')[1].split('\n```')[0]);
+  assert.equal('now' in payload, false);
+  assert.equal(payload.existingHypotheses[0], undefined);
+});
+
 // --- reasoningModelClient -----------------------------------------------
 
 test('reasoningModelClient: reports unconfigured with no baseUrl/model', () => {
