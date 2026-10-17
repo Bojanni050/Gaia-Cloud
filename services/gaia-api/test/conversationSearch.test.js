@@ -103,3 +103,11 @@ test('renderConversationHistoryContext is null with nothing, and frames hits as 
   assert.match(block, /\[VPS/);
   assert.match(block, /we zetten de VPS om naar Tailscale/);
 });
+
+test('renderConversationHistoryContext adds the real age next to the calendar date', () => {
+  const now = Date.parse('2026-10-17T18:42:00Z');
+  const block = renderConversationHistoryContext([
+    { title: 'VPS', updatedAt: '2026-10-14T10:00:00Z', role: 'user', snippet: 'we zetten de VPS om' },
+  ], now);
+  assert.match(block, /\[VPS · 14-10-2026 · 3 dagen geleden\] de persoon/);
+});

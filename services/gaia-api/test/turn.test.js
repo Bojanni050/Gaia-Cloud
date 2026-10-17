@@ -60,14 +60,17 @@ test('assembleMessages prepends SOUL exactly once and strips extra fields', () =
 test('performTurn returns the reply on a happy path', async () => {
   const hermes = {
     async chat(messages) {
-      assert.equal(messages.length, 3);
+      assert.equal(messages.length, 4);
       assert.equal(messages[0].role, 'system');
       assert.equal(messages[0].content, 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON');
-      // Capability awareness block (registry: hermes only on this path).
+      // The live moment, handed to her right after the constitution.
       assert.equal(messages[1].role, 'system');
-      assert.match(messages[1].content, /Capabilities you genuinely have THIS turn/);
-      assert.match(messages[1].content, /hermes:/);
-      assert.deepEqual(messages[2], { role: 'user', content: 'hello' });
+      assert.match(messages[1].content, /^Het is nu /);
+      // Capability awareness block (registry: hermes only on this path).
+      assert.equal(messages[2].role, 'system');
+      assert.match(messages[2].content, /Capabilities you genuinely have THIS turn/);
+      assert.match(messages[2].content, /hermes:/);
+      assert.deepEqual(messages[3], { role: 'user', content: 'hello' });
       return 'hi there';
     },
   };
@@ -135,12 +138,14 @@ test('performTurn without attachments produces the same context-aware foundation
   const hermes = { chat: async (messages) => { seenMessages = messages; return 'hi there'; } };
   await performTurn({ messages: [{ role: 'user', content: 'hello' }], documents: DOCUMENTS, hermes });
   // COGNITIVE PARITY: identical assembly to performStreamingTurn — foundation
-  // prompt first, then the capability-awareness block, then history.
-  assert.equal(seenMessages.length, 3);
+  // prompt first, then the live "now" block, then capability-awareness, then
+  // history.
+  assert.equal(seenMessages.length, 4);
   assert.equal(seenMessages[0].role, 'system');
   assert.equal(seenMessages[0].content, 'SOUL\n\n---\n\nPRINCIPLES\n\n---\n\nLEXICON');
-  assert.match(seenMessages[1].content, /Capabilities you genuinely have THIS turn/);
-  assert.deepEqual(seenMessages[2], { role: 'user', content: 'hello' });
+  assert.match(seenMessages[1].content, /^Het is nu /);
+  assert.match(seenMessages[2].content, /Capabilities you genuinely have THIS turn/);
+  assert.deepEqual(seenMessages[3], { role: 'user', content: 'hello' });
 });
 
 test('performTurn with attachments hands them to Hermes as a dedicated system message', async () => {

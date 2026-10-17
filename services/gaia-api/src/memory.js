@@ -9,6 +9,7 @@
  */
 const { shouldRecall, shouldReflect } = require('./memoryPolicy');
 const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
+const { relativeAge } = require('./nowContext');
 
 const MAX_MEMORY_LINES = 6;
 const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.55;
@@ -47,13 +48,25 @@ function normalizeSummary(text) {
  * from them. `type`/`entities`/`tags`/`occurred*` ride along on each
  * reflection for future use (e.g. filtering by type) without needing
  * another round-trip through hindsightClient.js to add them.
+ *
+ * When Hindsight gives an event time (`occurredStart`/`occurredEnd`) the line
+ * also carries its real age — an item from three days ago should not read as
+ * if it were said a minute ago. A reflection without a timestamp renders
+ * byte-for-byte as before, which is what keeps the no-timestamp callers and
+ * their tests unchanged.
+ * @param {{ text?: string, occurredStart?: string|number|Date, occurredEnd?: string|number|Date, scores?: { final?: number|null } }} reflection
+ * @param {number|Date} [now] the turn's single clock
  */
-function formatReflectionLine(reflection) {
+function formatReflectionLine(reflection, now = Date.now()) {
   const summary = normalizeSummary(reflection?.text);
   if (!summary) return null;
   const confidence = reflection?.scores?.final;
   const isUncertain = typeof confidence === 'number' && confidence < UNCERTAIN_CONFIDENCE_THRESHOLD;
-  return isUncertain ? `- ${summary} (uncertain)` : `- ${summary}`;
+  const age = relativeAge(reflection?.occurredStart || reflection?.occurredEnd, now);
+  const flags = [];
+  if (isUncertain) flags.push('uncertain');
+  if (age) flags.push(age);
+  return flags.length ? `- ${summary} (${flags.join(', ')})` : `- ${summary}`;
 }
 
 /**
@@ -61,14 +74,15 @@ function formatReflectionLine(reflection) {
  * 6-line cap, but each surviving line keeps the reflection it came from, so a
  * caller can attach that item's Foundation evidence beneath it.
  * @param {Array<{id?: string, text: string, scores: {final: number|null}}>} reflections
+ * @param {number|Date} [now]
  * @returns {Array<{reflection: object, line: string}>}
  */
-function condenseMemoryEntries(reflections) {
+function condenseMemoryEntries(reflections, now = Date.now()) {
   if (!reflections || reflections.length === 0) return [];
   const seen = new Set();
   const entries = [];
   for (const reflection of reflections) {
-    const line = formatReflectionLine(reflection);
+    const line = formatReflectionLine(reflection, now);
     if (!line || seen.has(line)) continue;
     seen.add(line);
     entries.push({ reflection, line });
@@ -77,9 +91,12 @@ function condenseMemoryEntries(reflections) {
   return entries;
 }
 
-/** @param {Array<{text: string, scores: {final: number|null}}>} reflections */
-function condenseMemoryContext(reflections) {
-  return condenseMemoryEntries(reflections).map((entry) => entry.line);
+/**
+ * @param {Array<{text: string, scores: {final: number|null}}>} reflections
+ * @param {number|Date} [now]
+ */
+function condenseMemoryContext(reflections, now = Date.now()) {
+  return condenseMemoryEntries(reflections, now).map((entry) => entry.line);
 }
 
 const MEMORY_CONTEXT_HEADER = [
@@ -100,9 +117,12 @@ const MEMORY_EVIDENCE_NOTE = [
 
 const EVIDENCE_LINE_PREFIX = '  - [observatie] ';
 
-/** @param {Array<{text: string, scores: {final: number|null}}>} reflections */
-function renderMemoryContext(reflections) {
-  const lines = condenseMemoryContext(reflections);
+/**
+ * @param {Array<{text: string, scores: {final: number|null}}>} reflections
+ * @param {number|Date} [now]
+ */
+function renderMemoryContext(reflections, now = Date.now()) {
+  const lines = condenseMemoryContext(reflections, now);
   if (lines.length === 0) return null;
   return [...MEMORY_CONTEXT_HEADER, '', ...lines].join('\n');
 }
@@ -115,10 +135,11 @@ function renderMemoryContext(reflections) {
  * evidence the output is byte-for-byte `renderMemoryContext`.
  * @param {Array<{id?: string, text: string, scores: {final: number|null}}>} reflections
  * @param {Map<string, string[]>|null|undefined} evidenceByFactId
+ * @param {number|Date} [now] the turn's single clock, for each item's age
  * @returns {string|null}
  */
-function renderDualRecallContext(reflections, evidenceByFactId) {
-  const entries = condenseMemoryEntries(reflections);
+function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()) {
+  const entries = condenseMemoryEntries(reflections, now);
   if (entries.length === 0) return null;
   const evidence = evidenceByFactId instanceof Map ? evidenceByFactId : null;
   const body = [];

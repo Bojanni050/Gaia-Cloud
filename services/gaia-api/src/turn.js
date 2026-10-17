@@ -54,6 +54,7 @@ const { pickOpenQuestion, renderOpenQuestionRaise, fromQuestionRow } = require('
 const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
+const { renderNowContext } = require('./nowContext');
 const { generateConversationTitle, withDeadline, TITLE_DEADLINE_MS } = require('./conversationTitle');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
 const { researchJobView } = require('./researchRoutes');
@@ -630,12 +631,17 @@ async function runTurnCore({
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
   const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs });
+  // One clock for the whole turn: the "now" block Gaia is given and the
+  // relative ages on recalled memory and earlier conversations all read the
+  // same instant, so they can never contradict each other.
+  const now = Date.now();
+  const nowBlock = renderNowContext(now);
   const systemPrompt = buildSystemPrompt(documents, messages);
-  const memoryBlock = renderDualRecallContext(reflections, dualRecall ? dualRecall.evidenceByFactId : null);
+  const memoryBlock = renderDualRecallContext(reflections, dualRecall ? dualRecall.evidenceByFactId : null, now);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
-  const conversationHistoryBlock = renderConversationHistoryContext(conversationHits);
+  const conversationHistoryBlock = renderConversationHistoryContext(conversationHits, now);
   const researchPendingBlock = renderResearchPending(researchJob);
 
   // v1.4 — the one place Gaia may bring her own unanswered question up: at
@@ -671,6 +677,9 @@ async function runTurnCore({
   const buildAssembled = (textAtts, imageAtts) => {
     const attachmentBlock = renderTextAttachmentContext(textAtts);
     const systemMessages = [{ role: 'system', content: systemPrompt }];
+    // The moment itself, right after the constitution: she must know what
+    // "today" is before she reads anything that says "yesterday".
+    if (nowBlock) systemMessages.push({ role: 'system', content: nowBlock });
     const capabilityBlock = renderCapabilityAwareness(availableCapabilities);
     if (capabilityBlock) systemMessages.push({ role: 'system', content: capabilityBlock });
     if (mentalModelBlock) systemMessages.push({ role: 'system', content: mentalModelBlock });

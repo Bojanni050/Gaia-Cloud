@@ -272,6 +272,16 @@ test('renderMemoryContext returns null when there is nothing to show', () => {
   assert.equal(renderMemoryContext(null), null);
 });
 
+test('condenseMemoryContext appends the real age when Hindsight gave an event time', () => {
+  const now = Date.parse('2026-10-17T18:42:00Z');
+  const lines = condenseMemoryContext([
+    { text: 'Bo verhuist binnenkort', occurredStart: '2026-10-14T12:00:00Z', scores: { final: 0.9 } },
+    { text: 'Twijfelgeval', occurredStart: '2026-10-14T12:00:00Z', scores: { final: 0.4 } },
+  ], now);
+  assert.equal(lines[0], '- Bo verhuist binnenkort (3 dagen geleden)');
+  assert.equal(lines[1], '- Twijfelgeval (uncertain, 3 dagen geleden)');
+});
+
 test('renderMemoryContext renders a block when there is something to show', () => {
   const block = renderMemoryContext([reflection('Bo prefers async updates', 0.9)]);
   assert.match(block, /long-term memory \(Hindsight\)/);

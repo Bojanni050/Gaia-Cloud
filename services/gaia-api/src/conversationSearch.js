@@ -168,19 +168,33 @@ function createConversationSearch({ store, maxResults = DEFAULT_LIMIT, maxConver
   return { search };
 }
 
+const { relativeAge } = require('./nowContext');
+
+/**
+ * `updatedAt` as Gaia should see it: the calendar date plus its real age.
+ * "" when there is no usable timestamp, so the caller's line is unchanged.
+ */
+function formatHitWhen(updatedAt, now) {
+  const date = updatedAt ? new Date(updatedAt) : null;
+  const absolute = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('nl-NL') : '';
+  const age = relativeAge(updatedAt, now);
+  return [absolute, age].filter(Boolean).join(' · ');
+}
+
 /**
  * Renders the search hits as a system-prompt block. Returns null when there is
  * nothing to say. Literal excerpts, clearly framed as such — never dressed up
  * as memory, and a partial fragment is stated to be partial.
  * @param {Array<object>} hits
+ * @param {number|Date} [now] the turn's single clock, for each hit's age
  * @returns {string|null}
  */
-function renderConversationHistoryContext(hits) {
+function renderConversationHistoryContext(hits, now = Date.now()) {
   const usable = (Array.isArray(hits) ? hits : []).filter((h) => h && h.snippet && String(h.snippet).trim());
   if (usable.length === 0) return null;
 
   const lines = usable.map((h) => {
-    const when = h.updatedAt ? new Date(h.updatedAt).toLocaleDateString('nl-NL') : '';
+    const when = formatHitWhen(h.updatedAt, now);
     const who = h.role === 'assistant' ? 'Gaia' : 'de persoon';
     const head = `[${h.title}${when ? ` · ${when}` : ''}] ${who}`;
     return `- ${head}: "${String(h.snippet).replace(/\s+/g, ' ').trim().slice(0, MAX_BLOCK_CHARS)}"`;
