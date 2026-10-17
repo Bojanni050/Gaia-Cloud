@@ -20,7 +20,10 @@ const {
   pickOutboxFile,
   importOutboxFile,
   renderResearchMessage,
+  renderResearchCheckin,
   saveResearchMessage,
+  readDeadlineMs,
+  readCheckinMs,
   answerJobApproval,
 } = require('../src/researchJob');
 
@@ -355,4 +358,90 @@ test('saveResearchMessage appends Gaia\'s findings to the conversation', () => {
   // A job without a conversation, or an unknown one, is not an error.
   assert.equal(saveResearchMessage({ job: { ...job, conversationId: null }, historyStore }), false);
   assert.equal(saveResearchMessage({ job: { ...job, conversationId: 'conv-nope' }, historyStore }), false);
+});
+
+// --- the cap and the check-ins -------------------------------------------------
+
+test('the deadline closes a running job with whatever Hermes has, honestly marked', async () => {
+  const { store, hermes } = setup({ runState: { status: 'running', output: 'Halverwege: dit heb ik al.' } });
+  await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  // Inside the cap nothing happens — the run keeps going.
+  assert.equal((await pollResearchJobs({ hermes, store, deadlineMs: 600000, checkinMs: 0 })).length, 0);
+  assert.equal(store.listRunning().length, 1);
+
+  const changed = await pollResearchJobs({
+    hermes,
+    store,
+    deadlineMs: 600000,
+    checkinMs: 0,
+    now: () => Date.now() + 11 * 60 * 1000,
+  });
+
+  assert.equal(changed.length, 1);
+  assert.equal(changed[0].status, 'done');
+  assert.equal(changed[0].deadlineHit, true);
+  assert.equal(changed[0].resultText, 'Halverwege: dit heb ik al.');
+  assert.equal(store.listRunning().length, 0);
+  const message = renderResearchMessage(changed[0]);
+  assert.match(message, /afgekapt/);
+  assert.match(message, /Halverwege: dit heb ik al\./);
+});
+
+test('the deadline still closes when Hermes is unreachable: what there is, is nothing', async () => {
+  const { store, hermes } = setup({ runState: { status: 'running' } });
+  await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  const down = { ...hermes, getRun: async () => { throw new Error('hermes down'); } };
+  const changed = await pollResearchJobs({
+    hermes: down,
+    store,
+    deadlineMs: 600000,
+    checkinMs: 0,
+    now: () => Date.now() + 11 * 60 * 1000,
+  });
+
+  assert.equal(changed.length, 1);
+  assert.equal(changed[0].status, 'done');
+  assert.equal(changed[0].resultText, null);
+  assert.match(renderResearchMessage(changed[0]), /geen tussenstand/);
+});
+
+test('a long-running job gets one check-in per interval, and never a pretend result', async () => {
+  const { store, hermes } = setup({ runState: { status: 'running' } });
+  await startResearchJob({ question: 'q', skillId: 'grounded-citations', conversationId: 'conv-1', hermes, store });
+
+  let clock = Date.now() + 4 * 60 * 1000;
+  const seen = [];
+  const options = { deadlineMs: 600000, checkinMs: 180000, onCheckin: (job) => seen.push(job) };
+
+  const changed = await pollResearchJobs({ ...options, hermes, store, now: () => clock });
+  assert.equal(seen.length, 1, 'the person hears that it is still going');
+  assert.equal(changed.length, 0, 'a check-in is not a status change');
+  assert.equal(store.listRunning().length, 1, 'the job is still running, not delivered');
+  assert.ok(store.listRunning()[0].lastCheckinAt, 'the check-in is remembered');
+
+  // One second later: no second message for the same interval.
+  await pollResearchJobs({ ...options, hermes, store, now: () => clock + 1000 });
+  assert.equal(seen.length, 1);
+
+  clock += 3 * 60 * 1000;
+  await pollResearchJobs({ ...options, hermes, store, now: () => clock });
+  assert.equal(seen.length, 2);
+  assert.match(renderResearchCheckin(seen[0], Date.parse(seen[0].createdAt) + 4 * 60 * 1000), /loopt nog/);
+  assert.match(renderResearchCheckin(seen[0], Date.parse(seen[0].createdAt) + 4 * 60 * 1000), /4 minuten bezig/);
+});
+
+test('the cap and the cadence are policy: env, with defaults that keep the check honest', () => {
+  assert.equal(readDeadlineMs({}), 10 * 60 * 1000);
+  assert.equal(readCheckinMs({}), 3 * 60 * 1000);
+  assert.equal(readDeadlineMs({ GAIA_RESEARCH_DEADLINE_MS: '60000' }), 60000);
+  assert.equal(readCheckinMs({ GAIA_RESEARCH_CHECKIN_MS: '45000' }), 45000);
+  // An empty value is "not set" (the .env.example convention), never a silent disable.
+  assert.equal(readDeadlineMs({ GAIA_RESEARCH_DEADLINE_MS: '' }), 10 * 60 * 1000);
+  // Only an explicit 0 turns the cap off.
+  assert.equal(readDeadlineMs({ GAIA_RESEARCH_DEADLINE_MS: '0' }), 0);
+  // Nonsense falls back rather than leaving a job unbounded.
+  assert.equal(readDeadlineMs({ GAIA_RESEARCH_DEADLINE_MS: 'nope' }), 10 * 60 * 1000);
+  assert.equal(readCheckinMs({ GAIA_RESEARCH_CHECKIN_MS: '-3' }), 3 * 60 * 1000);
 });

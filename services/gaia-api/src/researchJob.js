@@ -39,6 +39,35 @@ const TERMINAL_FAILURES = new Set(['failed', 'cancelled', 'interrupted']);
 // but no readable question comes with it does the job close as `blocked`.
 const APPROVAL_STATES = new Set(['waiting_for_approval']);
 
+// The hard cap on an investigation, and the cadence of the check-ins Gaia
+// gives the person while it runs. A grounded-citations run is an agent loop:
+// measured live 2026-10-11 it was still going after 15 minutes and 33 tool
+// calls. Ten minutes is where Gaia stops waiting for depth and takes what
+// Hermes has. The run is NOT cancelled — the Hermes API has no cancel, so it
+// is simply no longer waited on — and the job closes honestly as `done` with
+// `deadlineHit: true`, so the message can say it was cut off instead of
+// pretending the investigation finished.
+const DEFAULT_DEADLINE_MS = 10 * 60 * 1000;
+// A long investigation must not be silent. Every interval Gaia says, in the
+// conversation itself, that it is still running — a check-in, never a promise.
+const DEFAULT_CHECKIN_MS = 3 * 60 * 1000;
+
+function readDeadlineMs(env = process.env) {
+  const raw = env.GAIA_RESEARCH_DEADLINE_MS;
+  // An empty value is the .env.example convention for "not set", not a
+  // request to disable the cap — only an explicit 0 does that.
+  if (raw === undefined || String(raw).trim() === '') return DEFAULT_DEADLINE_MS;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_DEADLINE_MS;
+}
+
+function readCheckinMs(env = process.env) {
+  const raw = env.GAIA_RESEARCH_CHECKIN_MS;
+  if (raw === undefined || String(raw).trim() === '') return DEFAULT_CHECKIN_MS;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_CHECKIN_MS;
+}
+
 const MIME_BY_EXT = Object.freeze({
   '.pdf': 'application/pdf',
   '.md': 'text/markdown',
@@ -154,7 +183,14 @@ function renderResearchMessage(job) {
   if (job.status === 'done') {
     const body = job.resultText && job.resultText.trim().length > 0
       ? job.resultText.trim()
-      : 'Het onderzoek is klaar, maar er kwam geen tekst terug.';
+      : job.deadlineHit
+        ? 'Er kwam geen tussenstand terug.'
+        : 'Het onderzoek is klaar, maar er kwam geen tekst terug.';
+    if (job.deadlineHit) {
+      const cappedMinutes = Math.round((job.deadlineMs || DEFAULT_DEADLINE_MS) / 60000);
+      return `Ik heb het onderzoek na ${cappedMinutes} minuten afgekapt${skill} — dat duurde`
+        + ' te lang. Dit is wat er tot nu toe is:\n\n' + body + fileLine;
+    }
     return `Onderzoek afgerond${skill}.\n\n${body}${fileLine}`;
   }
   if (job.status === 'awaiting_approval') {
@@ -188,6 +224,41 @@ function saveResearchMessage({ job, historyStore } = {}) {
     return true;
   } catch (err) {
     console.warn(`[gaia:research] could not write the findings into the conversation: ${err && err.message}`);
+    return false;
+  }
+}
+
+/**
+ * The message Gaia adds while a job is still running. A check-in, not a
+ * promise: the person can see the investigation is alive, and nothing is
+ * claimed about a result that does not exist yet.
+ * @returns {string}
+ */
+function renderResearchCheckin(job, now = Date.now()) {
+  if (!job) return '';
+  const startedAt = Date.parse(job.createdAt || '') || now;
+  const minutes = Math.max(1, Math.round((now - startedAt) / 60000));
+  const skill = job.skillId ? ` (skill ${job.skillId})` : '';
+  return `Het onderzoek loopt nog${skill} — ${minutes} minuten bezig.`
+    + ' Ik meld me zodra het er is.';
+}
+
+/**
+ * Writes a check-in into the conversation history, the same way the findings
+ * land there, so a long run is visible where the person is actually looking.
+ * @returns {boolean} whether it was saved
+ */
+function saveResearchCheckin({ job, historyStore, now = Date.now() } = {}) {
+  if (!job || !historyStore || typeof historyStore.getConversation !== 'function') return false;
+  if (!job.conversationId) return false;
+  try {
+    const conversation = historyStore.getConversation(job.conversationId);
+    const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+    messages.push({ role: 'assistant', content: renderResearchCheckin(job, now) });
+    historyStore.saveConversation(job.conversationId, messages);
+    return true;
+  } catch (err) {
+    console.warn(`[gaia:research] could not write the check-in into the conversation: ${err && err.message}`);
     return false;
   }
 }
@@ -267,10 +338,22 @@ async function answerJobApproval({ jobId, choice, hermes, store } = {}) {
  * message). Never throws.
  *
  * @param {{ hermes: object, store: object, library?: object, outboxDir?: string,
- *   onCompleted?: (job: object) => Promise<void>|void }} input
+ *   onCompleted?: (job: object) => Promise<void>|void,
+ *   onCheckin?: (job: object) => Promise<void>|void, deadlineMs?: number,
+ *   checkinMs?: number, now?: () => number }} input
  * @returns {Promise<Array<object>>} the jobs whose status changed this cycle
  */
-async function pollResearchJobs({ hermes, store, library, outboxDir = resolveOutboxDir(), onCompleted } = {}) {
+async function pollResearchJobs({
+  hermes,
+  store,
+  library,
+  outboxDir = resolveOutboxDir(),
+  onCompleted,
+  onCheckin,
+  deadlineMs = readDeadlineMs(),
+  checkinMs = readCheckinMs(),
+  now = Date.now,
+} = {}) {
   const changed = [];
   if (!store || typeof store.listRunning !== 'function') return changed;
   if (!hermes || typeof hermes.getRun !== 'function') return changed;
@@ -285,6 +368,31 @@ async function pollResearchJobs({ hermes, store, library, outboxDir = resolveOut
   for (const job of running) {
     if (!job.runId) {
       const updated = store.update(job.id, { status: 'failed', error: 'run niet gestart' });
+      if (updated) changed.push(updated);
+      continue;
+    }
+
+    // The hard cap. At the deadline Gaia stops waiting for depth and takes
+    // what Hermes has right now — the run is not cancelled (the Hermes API has
+    // no cancel), it is simply no longer waited on. Closed as `done` so every
+    // client already knows the status, with `deadlineHit` so the message can
+    // say honestly that it was cut off.
+    const startedAt = Date.parse(job.createdAt || '') || null;
+    const age = startedAt ? now() - startedAt : 0;
+    if (deadlineMs > 0 && startedAt && age >= deadlineMs) {
+      let partial = null;
+      try {
+        partial = await hermes.getRun(job.runId);
+      } catch (_) {
+        partial = null; // "give me what you have" — unreachable Hermes has nothing
+      }
+      const updated = store.update(job.id, {
+        status: 'done',
+        resultText: (partial && partial.output) || job.resultText || null,
+        deadlineHit: true,
+        deadlineMs,
+        error: null,
+      });
       if (updated) changed.push(updated);
       continue;
     }
@@ -327,6 +435,22 @@ async function pollResearchJobs({ hermes, store, library, outboxDir = resolveOut
       });
       if (updated) changed.push(updated);
     }
+
+    // Still running (nothing above closed it): a long investigation must not be
+    // silent. Only the timestamp is persisted here, and the message goes out
+    // through onCheckin — `changed` stays the "status changed" contract its
+    // callers rely on to mark a job delivered.
+    const lastCheckin = Date.parse(job.lastCheckinAt || '') || 0;
+    if (checkinMs > 0 && age >= checkinMs && now() - lastCheckin >= checkinMs) {
+      const ticked = store.update(job.id, { lastCheckinAt: new Date(now()).toISOString() });
+      if (ticked && onCheckin) {
+        try {
+          await onCheckin(ticked);
+        } catch (err) {
+          console.warn(`[gaia:research] check-in failed (non-fatal): ${err && err.message}`);
+        }
+      }
+    }
   }
 
   if (onCompleted) {
@@ -348,10 +472,16 @@ module.exports = {
   pickOutboxFile,
   importOutboxFile,
   renderResearchMessage,
+  renderResearchCheckin,
   saveResearchMessage,
+  saveResearchCheckin,
+  readDeadlineMs,
+  readCheckinMs,
   answerJobApproval,
   normalizeApproval,
   resolveOutboxDir,
+  DEFAULT_DEADLINE_MS,
+  DEFAULT_CHECKIN_MS,
   TERMINAL_FAILURES,
   APPROVAL_STATES,
 };

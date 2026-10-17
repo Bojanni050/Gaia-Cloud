@@ -80,7 +80,7 @@ const { createDesktopBroker } = require('./desktopBroker');
 const { createDesktopRouter } = require('./desktopRoutes');
 const { generateWithFailover } = require('./generation/generationFailover');
 const { createResearchJobStore } = require('./researchJobStore');
-const { startResearchJob, pollResearchJobs, saveResearchMessage, answerJobApproval, resolveOutboxDir } = require('./researchJob');
+const { startResearchJob, pollResearchJobs, saveResearchMessage, saveResearchCheckin, answerJobApproval, resolveOutboxDir } = require('./researchJob');
 const { createResearchRouter } = require('./researchRoutes');
 const { HERMES_OUTBOX_DIR } = require('./researchReach');
 const { createHistoryRouter } = require('./historyRoutes');
@@ -642,6 +642,13 @@ function createApp(env = process.env) {
           // response: write them, then remember that we did.
           const saved = saveResearchMessage({ job, historyStore });
           if (saved) researchStore.update(job.id, { messageSaved: true });
+        },
+        onCheckin: async (job) => {
+          // A long run must not be silent: the person sees, in the
+          // conversation itself, that it is still going. Nothing is promised —
+          // the check-in only says the investigation is alive.
+          const saved = saveResearchCheckin({ job, historyStore });
+          if (saved) researchStore.update(job.id, { checkinSaved: true });
         },
       }).catch(() => { /* a poll cycle never rejects; belt and braces */ });
     }, pollMs);
