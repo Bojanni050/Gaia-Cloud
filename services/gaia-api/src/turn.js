@@ -267,6 +267,13 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   if (toolNames.includes('remember')) {
     capabilities.push({ id: 'memory' });
   }
+  // Taking a memory back — real only when the retraction tool is actually
+  // there, which is exactly the turn in which the person's "that is not
+  // correct" has somewhere to go. Same rule as `memory`: the tool's presence
+  // is what makes the claim honest.
+  if (toolNames.includes('retract_memory')) {
+    capabilities.push({ id: 'memory_retraction' });
+  }
   // Her OWN memory — Aion in the background, or the on-demand `keep` tool.
   if (aion || toolNames.includes('keep')) {
     capabilities.push({ id: 'own_memory' });

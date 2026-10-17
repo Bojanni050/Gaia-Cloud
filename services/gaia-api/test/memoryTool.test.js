@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMemoryTool, withKeptNotifier, REMEMBER_TOOL, KEEP_TOOL, SHARED_DOMAIN, OWN_DOMAIN } = require('../src/reasoning/memoryTool');
+const { createMemoryTool, withKeptNotifier, REMEMBER_TOOL, KEEP_TOOL, RETRACT_TOOL, SHARED_DOMAIN, OWN_DOMAIN } = require('../src/reasoning/memoryTool');
 
 function fakeHindsight(boomOn) {
   const calls = [];
@@ -148,6 +148,63 @@ test('search_memory is offered when a recall client is present, and only then', 
 
   const withoutSearch = createMemoryTool({ hindsight: fakeHindsight(), ownHindsight: fakeHindsight() });
   assert.deepEqual(withoutSearch.TOOLS.map((t) => t.function.name), ['remember', 'keep']);
+});
+
+test('retract_memory is offered when the banks are wired, and only then', async () => {
+  const bank = { name: 'bojan', client: { async listMemories() { return []; } } };
+  const withBanks = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
+
+  assert.deepEqual(withBanks.TOOLS.map((t) => t.function.name), ['remember', 'retract_memory']);
+  assert.equal(RETRACT_TOOL.function.name, 'retract_memory');
+  assert.deepEqual(RETRACT_TOOL.function.parameters.required, ['quote']);
+
+  const withoutBanks = createMemoryTool({ hindsight: fakeHindsight() });
+  assert.deepEqual(withoutBanks.TOOLS.map((t) => t.function.name), ['remember']);
+  assert.equal(
+    await withoutBanks.onToolCall('retract_memory', { quote: 'Yassine is een vriend' }),
+    'That could not be taken back right now.'
+  );
+});
+
+test('a retraction through the tool takes the memory back, and reports which one went', async () => {
+  const patched = [];
+  const bank = {
+    name: 'bojan',
+    client: {
+      async listMemories() { return [{ id: 'f1', text: 'Yassine is een vriend van je', state: 'valid' }]; },
+      async patchMemoryState(id, state, reason) { patched.push({ id, state, reason }); },
+    },
+  };
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
+
+  const result = await tool.onToolCall('retract_memory', { quote: '  Yassine is een vriend van je  ' });
+
+  assert.match(result, /^Taken back: "Yassine is een vriend van je"$/m);
+  assert.deepEqual(patched, [{ id: 'f1', state: 'invalidated', reason: 'the person said this is not correct' }]);
+
+  assert.equal(await tool.onToolCall('retract_memory', { quote: '   ' }), 'Nothing named to take back.');
+});
+
+test('a retraction that matches nothing is a calm sentence, not an error', async () => {
+  const bank = {
+    name: 'bojan',
+    client: {
+      async listMemories() { return [{ id: 'f1', text: 'Bo drinkt graag koffie in de ochtend', state: 'valid' }]; },
+      async patchMemoryState() { throw new Error('should not be called'); },
+    },
+  };
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
+
+  const result = await tool.onToolCall('retract_memory', { quote: 'Yassine is een vriend van je' });
+
+  assert.equal(result, 'Nothing in memory matches that closely enough to take back.');
+});
+
+test('a failed retraction never throws at the model', async () => {
+  const bank = { name: 'bojan', client: { async listMemories() { throw new Error('down'); } } };
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
+
+  assert.equal(await tool.onToolCall('retract_memory', { quote: 'iets' }), 'Nothing in memory matches that closely enough to take back.');
 });
 
 test('search_memory reads back through the recall client and renders the matches', async () => {

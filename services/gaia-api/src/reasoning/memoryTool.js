@@ -27,8 +27,15 @@
  * goes into her own memory, and a request to remember something belongs to the
  * shared bank instead). There is deliberately no user-facing write path.
  *
- * Boundary: schemas, one read and two writes. They reason about nothing, and a
- * failure never reaches the turn.
+ * A fourth verb takes something back: `retract_memory` is how the person's
+ * "that is not correct" reaches the store instead of stopping at an apology.
+ * It has no opinion of its own — memoryRetraction.js finds the memory the
+ * person meant, invalidates it, retires the derived statement it came from,
+ * and keeps their correction as theirs. The tool exists so the verdict has
+ * somewhere to go; a memory the model dislikes is not a reason to use it.
+ *
+ * Boundary: schemas, a read, two writes and one retraction. They reason about
+ * nothing, and a failure never reaches the turn.
  */
 
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -36,6 +43,8 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 // on-demand lookup and a gated one show her memory the same way — including
 // the "(uncertain)" marker for low-confidence items.
 const { condenseMemoryContext } = require('../memory');
+// The retraction path — the person's verdict carried out, never her own call.
+const { retractMemory, renderRetractionReceipt } = require('./memoryRetraction');
 
 /**
  * Lets the turn that is running hear that `remember` kept something, without the tool knowing about
@@ -121,20 +130,52 @@ const SEARCH_TOOL = Object.freeze({
   },
 });
 
+const RETRACT_TOOL = Object.freeze({
+  type: 'function',
+  function: {
+    name: 'retract_memory',
+    description: "Take back something you remembered that turned out not to be true. Use it when the person tells you that something you said from memory is wrong: give what you recalled in `quote` — a few words are enough, the statement is found for you — and put their own correction in `correction` if they gave you one. The memory is withdrawn from recall, and if it came from a statement you had confirmed, that statement is retired too, so it cannot come back. Use it ONLY when the person says it is not true, never to make a memory you dislike go away.",
+    parameters: {
+      type: 'object',
+      properties: {
+        quote: { type: 'string', description: 'The remembered statement that is not true, as you recalled it.' },
+        correction: { type: 'string', description: "What is true instead, in the person's own words. Optional — leave it out when they only said it was wrong." },
+      },
+      required: ['quote'],
+    },
+  },
+});
+
 /**
  * @param {{ hindsight?: object, ownHindsight?: object, searchHindsight?: object,
- *           now?: () => Date }} options
+ *           banks?: Array<{name: string, client: object}>, home?: {name: string, client: object},
+ *           cognition?: object|null, sync?: object|null, now?: () => Date }} options
  *   `hindsight` is the shared system-memory client (`bojan`); `ownHindsight`
  *   is her own bank (`gaia`); `searchHindsight` is the cross-bank recall client
  *   the turn's gated recall uses. When `ownHindsight` is absent, the `keep` tool
  *   is not offered; when `searchHindsight` is absent, `search_memory` is not.
+ *   `banks` is every bank a memory may be taken back FROM (each with the client
+ *   that owns it, so the right store is patched); `home` is where a correction
+ *   is kept; `cognition`/`sync` retire the derived statement a memory came
+ *   from. Without `banks` the `retract_memory` tool is not offered at all —
+ *   better no tool than one that pretends to take something back.
  */
-function createMemoryTool({ hindsight, ownHindsight, searchHindsight, now = () => new Date() } = {}) {
+function createMemoryTool({
+  hindsight,
+  ownHindsight,
+  searchHindsight,
+  banks = null,
+  home = null,
+  cognition = null,
+  sync = null,
+  now = () => new Date(),
+} = {}) {
   if (!hindsight || typeof hindsight.reflect !== 'function') {
     throw new Error('memoryTool requires a hindsight client');
   }
   const ownReady = Boolean(ownHindsight && typeof ownHindsight.reflect === 'function');
   const searchReady = Boolean(searchHindsight && typeof searchHindsight.recall === 'function');
+  const retractReady = Array.isArray(banks) && banks.length > 0;
 
   async function remember(args) {
     const text = String((args && args.text) || '').replace(/\s+/g, ' ').trim();
@@ -196,6 +237,32 @@ function createMemoryTool({ hindsight, ownHindsight, searchHindsight, now = () =
   }
 
   /**
+   * Taking a memory back is not a write to a store she owns — it is the
+   * person's verdict carried out (see memoryRetraction.js). She needs the
+   * person to have said it first; the tool exists so the verdict has somewhere
+   * to go, and the receipt names the memory so it is visible which one went.
+   */
+  async function retractMemoryFromMemory(args) {
+    const quote = String((args && args.quote) || '').replace(/\s+/g, ' ').trim();
+    if (!quote) return 'Nothing named to take back.';
+    if (!retractReady) return 'That could not be taken back right now.';
+    try {
+      const receipt = await retractMemory({
+        banks,
+        home,
+        cognition,
+        sync,
+        quote,
+        correction: args && args.correction,
+        now: now(),
+      });
+      return renderRetractionReceipt(receipt);
+    } catch (_) {
+      return 'That could not be taken back right now.';
+    }
+  }
+
+  /**
    * @param {string} name
    * @param {object} args
    * @returns {Promise<string>} the tool result handed back to the model
@@ -204,12 +271,14 @@ function createMemoryTool({ hindsight, ownHindsight, searchHindsight, now = () =
     if (name === 'remember') return remember(args);
     if (name === 'keep') return keep(args);
     if (name === 'search_memory') return searchMemory(args);
+    if (name === 'retract_memory') return retractMemoryFromMemory(args);
     return 'Unknown action.';
   }
 
   const TOOLS = [REMEMBER_TOOL];
   if (searchReady) TOOLS.push(SEARCH_TOOL);
   if (ownReady) TOOLS.push(KEEP_TOOL);
+  if (retractReady) TOOLS.push(RETRACT_TOOL);
 
   return {
     onToolCall,
@@ -217,6 +286,7 @@ function createMemoryTool({ hindsight, ownHindsight, searchHindsight, now = () =
     TOOL: REMEMBER_TOOL,
     KEEP_TOOL,
     SEARCH_TOOL,
+    RETRACT_TOOL,
   };
 }
 
@@ -226,6 +296,7 @@ module.exports = {
   REMEMBER_TOOL,
   KEEP_TOOL,
   SEARCH_TOOL,
+  RETRACT_TOOL,
   SHARED_DOMAIN,
   OWN_DOMAIN,
 };

@@ -119,6 +119,13 @@ const CAPABILITY_REGISTRY = Object.freeze({
     skills: Object.freeze([]),
   }),
 
+  memory_retraction: Object.freeze({
+    id: 'memory_retraction',
+    type: 'capability',
+    description: 'taking a memory back when the person says it is not true — the memory is withdrawn and the statement it came from is retired',
+    skills: Object.freeze([]),
+  }),
+
   own_memory: Object.freeze({
     id: 'own_memory',
     type: 'capability',

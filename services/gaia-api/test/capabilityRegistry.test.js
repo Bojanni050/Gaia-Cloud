@@ -124,6 +124,14 @@ test('memory is registered as a capability and renders in awareness with hindsig
   assert.match(block, /- own_memory: your own memory/);
 });
 
+test('memory_retraction is registered and renders when the retraction tool is there', () => {
+  const retraction = getCapabilityProfile('memory_retraction');
+  assert.ok(retraction, 'memory_retraction must be in the registry — awareness renders from it');
+  assert.equal(retraction.type, 'capability');
+  const block = renderCapabilityAwareness([{ id: 'hindsight' }, { id: 'memory_retraction' }]);
+  assert.match(block, /- memory_retraction: taking a memory back/);
+});
+
 test('a turn with Hindsight recall, a memory tool and Aion tells Gaia she genuinely has all three', async () => {
   const { performTurn } = require('../src/turn');
   let captured = null;
@@ -143,6 +151,36 @@ test('a turn with Hindsight recall, a memory tool and Aion tells Gaia she genuin
   assert.match(block.content, /- hindsight:/);
   assert.match(block.content, /- memory:/);
   assert.match(block.content, /- own_memory:/);
+});
+
+test('a turn that carries the retraction tool tells Gaia she can take a memory back', async () => {
+  const { performTurn } = require('../src/turn');
+  let captured = null;
+  const generator = {
+    toolNames: ['remember', 'retract_memory'],
+    generate: async (messages) => { captured = messages; return 'ok'; },
+  };
+  await performTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
+    generator,
+    hindsight: { recall: async () => [] },
+  });
+  const block = (captured || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
+  assert.ok(block, 'capability awareness block must be present');
+  assert.match(block.content, /- memory:/);
+  assert.match(block.content, /- memory_retraction: taking a memory back/);
+  // And without the tool, she is not told she can — the claim must stay honest.
+  let quiet = null;
+  await performTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
+    generator: { toolNames: ['remember'], generate: async (messages) => { quiet = messages; return 'ok'; } },
+    hindsight: { recall: async () => [] },
+  });
+  const quietBlock = (quiet || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
+  assert.ok(quietBlock);
+  assert.doesNotMatch(quietBlock.content, /memory_retraction/);
 });
 
 // --- §10/§18: skill + capability validation -------------------------------------

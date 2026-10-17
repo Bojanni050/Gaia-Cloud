@@ -172,15 +172,6 @@ function createApp(env = process.env) {
     hindsightApp,
     ...recallClients.filter((client) => client !== hindsightApp)
   );
-  // On-demand memory: the tools Gaia may call during a turn. `remember`
-  // writes to the shared system-memory bank (`bojan`); `keep` writes to HER
-  // own bank (`gaia`) — the explicit, in-conversation counterpart to Aion.
-  // `search_memory` reads back through the SAME cross-bank client the turn's
-  // gated recall uses, so her on-demand lookup spans every recall bank.
-  // Off with GAIA_MEMORY_TOOL=false.
-  const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
-    ? null
-    : createMemoryTool({ hindsight: hindsightApp, ownHindsight: hindsightOwn, searchHindsight: hindsight });
   // The SHALLOW live lookup — a sibling of the research job, never a
   // replacement for it. Configured provider or no tool at all: the
   // `web_search` capability is derived from the tool's presence, so she is
@@ -189,10 +180,48 @@ function createApp(env = process.env) {
   const webSearch = createWebSearchFromEnv(env);
   const webSearchTool = webSearch ? createWebSearchTool({ search: webSearch }) : null;
 
+  // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
+  // mirror — created unconditionally so the GaiaChat review surface works even
+  // when per-turn hypothesis persistence is disabled.
+  const cognition = createCognitionClient({
+    baseUrl: env.COGNITION_URL || undefined,
+    bankId: env.COGNITION_BANK_ID || undefined,
+  });
+  const cognitionSync = createCognitionSync({ hindsight: hindsightLogos, cognition });
+
+  // On-demand memory: the tools Gaia may call during a turn. `remember`
+  // writes to the shared system-memory bank (`bojan`); `keep` writes to HER
+  // own bank (`gaia`) — the explicit, in-conversation counterpart to Aion.
+  // `search_memory` reads back through the SAME cross-bank client the turn's
+  // gated recall uses, so her on-demand lookup spans every recall bank.
+  // `retract_memory` takes a memory back when the person says it is not true:
+  // it needs the banks themselves (to find the unit and patch the store that
+  // holds it) and Cognition plus its mirror (to retire the derived statement
+  // the memory came from, so it cannot be written back into recall). Built
+  // here rather than beside the other clients above because of that second
+  // dependency — a tool handed a client that does not exist yet is a crash,
+  // not a degraded tool.
+  // Off with GAIA_MEMORY_TOOL=false.
+  const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
+    ? null
+    : createMemoryTool({
+      hindsight: hindsightApp,
+      ownHindsight: hindsightOwn,
+      searchHindsight: hindsight,
+      banks: [
+        { name: hindsightBankId, client: hindsightApp },
+        { name: hindsightLogosBankId, client: hindsightLogos },
+        { name: hindsightOwnBankId, client: hindsightOwn },
+      ],
+      home: { name: hindsightBankId, client: hindsightApp },
+      cognition,
+      sync: cognitionSync,
+    });
+
   // One option bag for the generator, whatever combination of tools exists.
   // The dispatcher routes by name and falls through on the codebase's own
   // 'Unknown action.' convention (see generation/gaiaGenerator.js), so adding
-  // a third tool later stays a one-line change.
+  // another tool later stays a one-line change.
   const toolParts = [memoryTool, webSearchTool].filter(Boolean);
   const toolOptions = toolParts.length === 0 ? {} : {
     tools: toolParts.flatMap((tool) => tool.TOOLS),
@@ -204,14 +233,6 @@ function createApp(env = process.env) {
       return 'Unknown action.';
     },
   };
-  // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
-  // mirror — created unconditionally so the GaiaChat review surface works even
-  // when per-turn hypothesis persistence is disabled.
-  const cognition = createCognitionClient({
-    baseUrl: env.COGNITION_URL || undefined,
-    bankId: env.COGNITION_BANK_ID || undefined,
-  });
-  const cognitionSync = createCognitionSync({ hindsight: hindsightLogos, cognition });
   // Foundation (raw-observation source of truth): Gaia reads it for
   // archive-shaped asks and carries completed turns / observations back into
   // its stream. Undefined when FOUNDATION_URL is unset — every caller falls
