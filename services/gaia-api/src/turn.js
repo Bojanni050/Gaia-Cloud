@@ -652,6 +652,7 @@ async function runTurnCore({
         conversationId,
         policy: hypothesisRuntime.openQuestions.policy,
         now: Date.now(),
+        turnText: userText,
       });
       if (picked) {
         openQuestionBlock = renderOpenQuestionRaise(picked);

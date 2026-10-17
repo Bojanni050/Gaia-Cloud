@@ -82,18 +82,65 @@ function fromConversation(question, conversationId) {
   return Array.isArray(sources) && sources.includes(conversationSource(conversationId));
 }
 
+/** Did this question come from a conversation at all? */
+function hasProvenance(question) {
+  const sources = (question && question.sources) || [];
+  return Array.isArray(sources) && sources.some((source) => String(source || '').startsWith('conversation:'));
+}
+
+// Words that say nothing about the subject. Deliberately crude: this gate may
+// only ever let FEWER questions through, so being conservative is safe.
+const EMPTY_WORDS = new Set([
+  'de', 'het', 'een', 'en', 'of', 'maar', 'want', 'dat', 'die', 'dit', 'deze', 'is', 'was', 'zijn', 'waren',
+  'wordt', 'worden', 'kan', 'kunnen', 'moet', 'moeten', 'mag', 'wil', 'wilt', 'zal', 'zou', 'heeft', 'hebben',
+  'niet', 'geen', 'wel', 'ook', 'nog', 'als', 'dan', 'toen', 'over', 'voor', 'van', 'aan', 'bij', 'met', 'uit',
+  'er', 'het', 'je', 'jij', 'ik', 'hij', 'zij', 'wij', 'ze', 'mijn', 'jouw', 'haar', 'hem', 'wat', 'wie', 'waar',
+  'wanneer', 'hoe', 'waarom', 'the', 'and', 'that', 'this', 'is', 'are', 'was', 'with', 'for', 'from', 'you',
+  'your', 'she', 'her', 'him', 'what', 'who', 'where', 'when', 'how', 'why', 'does', 'did',
+]);
+
+/** The significant words of a text, for the topical overlap test. */
+function words(text) {
+  const found = String(text || '').toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || [];
+  return new Set(found.filter((word) => !EMPTY_WORDS.has(word)));
+}
+
+/** Do these two texts talk about the same thing, roughly? */
+function overlaps(a, b) {
+  const left = words(a);
+  if (left.size === 0) return false;
+  for (const word of words(b)) {
+    if (left.has(word)) return true;
+  }
+  return false;
+}
+
 /**
- * Pick at most one question to raise, or null. The caller's list is already
- * the relevance judgement (the questions this turn reached), so the picker
- * only prefers the one that came from this very conversation and otherwise
- * takes the first that is allowed — the caller may order by relevance.
+ * Pick at most one question to raise, or null.
+ *
+ * The gate is deliberately narrow, because the seam hands over every open
+ * question the store holds rather than a relevance-filtered list: a question
+ * from this very conversation is always allowed; a question from ANOTHER
+ * conversation only when it actually overlaps what is being talked about right
+ * now ("ook in een nieuw gesprek over hetzelfde onderwerp"); and a question
+ * with no provenance at all — anything kept before that provenance existed —
+ * is never raised here, though it stays visible and answerable in the begrip
+ * panel. Raising the wrong question from an earlier context is exactly what
+ * this restraint exists to avoid.
  */
-function pickOpenQuestion(candidates, { conversationId = null, policy, now = Date.now() } = {}) {
+function pickOpenQuestion(candidates, { conversationId = null, policy, now = Date.now(), turnText = '' } = {}) {
   const { retryDays, maxRaises } = { ...readReachPolicy(), ...(policy || {}) };
   const allowed = (Array.isArray(candidates) ? candidates : [])
     .filter((question) => canRaise(question, { retryDays, maxRaises }, now));
   if (allowed.length === 0) return null;
-  return allowed.find((question) => fromConversation(question, conversationId)) || allowed[0];
+
+  const here = allowed.find((question) => fromConversation(question, conversationId));
+  if (here) return here;
+
+  if (!turnText) return null;
+  return allowed
+    .filter((question) => hasProvenance(question))
+    .find((question) => overlaps(question.statement, turnText)) || null;
 }
 
 /**

@@ -93,15 +93,39 @@ test('gate: never twice in a row, never more than three times, never once answer
 
 // --- picking ------------------------------------------------------------------
 
-test('pick: one question at most, its own conversation first', () => {
+test('pick: one question at most, its own conversation first, and elsewhere only when it is about the same thing', () => {
   const policy = { retryDays: 7, maxRaises: 3 };
-  const elsewhere = question({ id: 'q-a', statement: 'A', sources: ['conversation:c-other'] });
+  const elsewhere = question({
+    id: 'q-a',
+    statement: 'Weet Bo al of de distributie via een label moet lopen?',
+    sources: ['conversation:c-other'],
+  });
   const here = question({ id: 'q-b', statement: 'B', sources: [conversationSource('c-1')] });
-  const picked = pickOpenQuestion([elsewhere, here], { conversationId: 'c-1', policy, now: Date.now() });
+
+  // Its own conversation wins, even when the other one happens to be about the
+  // same thing.
+  const picked = pickOpenQuestion([elsewhere, here], {
+    conversationId: 'c-1', policy, now: Date.now(), turnText: 'distributie via een label',
+  });
   assert.equal(picked.id, 'q-b');
-  // Without a conversation of its own, the first allowed one is taken — a new
-  // conversation about the same subject is explicitly allowed.
-  assert.equal(pickOpenQuestion([elsewhere], { conversationId: 'c-2', policy, now: Date.now() }).id, 'q-a');
+
+  // From another conversation it may come back only when it is about what is
+  // being talked about right now: a new conversation about the same subject,
+  // never a question out of the blue.
+  assert.equal(pickOpenQuestion([elsewhere], {
+    conversationId: 'c-2', policy, now: Date.now(), turnText: 'Ik zit te denken over de distributie naar Spotify.',
+  }).id, 'q-a');
+  assert.equal(pickOpenQuestion([elsewhere], {
+    conversationId: 'c-2', policy, now: Date.now(), turnText: 'Morgen ga ik de keuken schilderen.',
+  }), null);
+
+  // A question without provenance — anything kept before provenance existed —
+  // is never raised by this path, however close its wording. It stays visible
+  // and answerable in the begrip panel.
+  assert.equal(pickOpenQuestion([question({ statement: 'distributie via een label', sources: [] })], {
+    conversationId: 'c-2', policy, now: Date.now(), turnText: 'distributie via een label',
+  }), null);
+
   // Nothing allowed means nothing is said.
   assert.equal(pickOpenQuestion([question({ answeredAt: daysAgo(1) })], { conversationId: 'c-1', policy, now: Date.now() }), null);
   assert.equal(pickOpenQuestion([], { conversationId: 'c-1', policy, now: Date.now() }), null);
