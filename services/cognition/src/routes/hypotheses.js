@@ -120,6 +120,18 @@ router.post('/:id/reopen', asyncRoute(async (req, res) => {
   res.json(await hypotheses.reopen(bankId, id, { reason: req.body.reason }));
 }));
 
+// A human correction — the person says what is true instead. Not a lifecycle
+// move (see hypotheses.js's correct()): the record keeps (or takes) confirmed,
+// and the mirror retires the wording this replaces. Reason required.
+router.post('/:id/correct', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  const h = await hypotheses.correct(bankId, id, {
+    statement: req.body.statement,
+    reason: req.body.reason,
+  });
+  res.json(h);
+}));
+
 // The human's answer to an open question (v1.2) — stored, not a transition.
 router.post('/:id/answer', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;

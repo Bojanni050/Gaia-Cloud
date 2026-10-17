@@ -108,6 +108,7 @@ const COLUMNS = `
   sources, supersedes_id, superseded_by_id,
   counter_hypothesis, scope, question_shape, question_options, answer, answered_at,
   confirmed_document_id, rejection_reason, verwerp_bron,
+  correction_reason, corrected_at,
   tested_at, confirmed_at, rejected_at, expired_at, raised_count, raised_at, created_at, updated_at
 `;
 
@@ -366,6 +367,49 @@ async function supersede(bankId, id, { supersededById, reason } = {}) {
 }
 
 /**
+ * A human correction: the person says what is true instead of what was
+ * recorded. update() refuses a confirmed statement — its transition table has
+ * no way out of `confirmed` — and confirm() can only be entered from a state
+ * that may move to `confirmed`, so neither existing verb could carry a
+ * correction of a settled statement. This is the third deliberate human
+ * exception beside reopen() and supersede(), with one difference: it is not a
+ * lifecycle move at all. The person's own wording IS their verdict, so the
+ * corrected record keeps (or takes) `confirmed`, and confirmed_at is stamped
+ * when it was not already there.
+ *
+ * The wording is the only thing that changes: evidence, confidence, the
+ * counter-hypothesis and the id all stay, so the mirror in
+ * reasoning/cognitionSync.js keeps one identity (gaia-hyp-<id>-v<n>) and
+ * retires the text this replaces instead of leaving two versions alive.
+ *
+ * A reason is required: the person is overriding a record that was settled,
+ * and the why must be kept (correction_reason, migration 010). A rejected
+ * statement is out of reach — reopen() is the documented way out of that
+ * quarantine, and it says why too.
+ */
+async function correct(bankId, id, { statement, reason } = {}) {
+  const text = typeof statement === 'string' ? statement.trim() : '';
+  if (!text) throw new ValidationError('a statement is required to correct');
+  if (!reason || !String(reason).trim()) {
+    throw new ValidationError('a reason is required to correct a statement');
+  }
+  const current = await get(bankId, id);
+  if (current.status === 'rejected') {
+    throw new InvalidTransitionError(current.status, 'corrected');
+  }
+  // The same wording is not a correction: nothing to write, nothing to mirror.
+  if (current.statement === text) return current;
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET statement = $3, status = 'confirmed',
+       confirmed_at = COALESCE(confirmed_at, now()),
+       correction_reason = $4, corrected_at = now(), updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id, text, String(reason).trim()],
+  );
+  return rows[0];
+}
+
+/**
  * The human answer to an open question (v1.2). Answering is NOT a lifecycle
  * transition — the statement keeps its status; the answer is recorded on the
  * record, with the moment it was given, and the question is thereby dealt with
@@ -482,6 +526,6 @@ async function raise(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, expire, revive, raise, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
+  propose, list, get, update, markTesting, markCorroborated, expire, revive, raise, confirm, reject, reopen, supersede, correct, answer, applyEvidence, softDelete,
   VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES, QUESTION_SHAPES,
 };

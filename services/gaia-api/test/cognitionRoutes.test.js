@@ -260,3 +260,86 @@ test('POST answer refuses an empty answer', async () => {
     assert.match(res.body.error, /answer is required/);
   }
 });
+
+// --- correct: the person's own wording for a statement that was settled -------
+
+test('POST correct needs the person\'s wording and a reason', async () => {
+  const cognition = fakeCognition();
+  cognition.correctHypothesis = async () => { throw new Error('must not be called'); };
+
+  const withoutStatement = await request(appWith({ cognition }))
+    .post('/cognition/hypotheses/h1/correct').send({ reason: 'dat klopt niet' });
+  assert.equal(withoutStatement.status, 400);
+  assert.match(withoutStatement.body.error, /a statement is required to correct/);
+
+  const withoutReason = await request(appWith({ cognition }))
+    .post('/cognition/hypotheses/h1/correct').send({ statement: 'Yassine is een kennis' });
+  assert.equal(withoutReason.status, 400);
+  assert.match(withoutReason.body.error, /a reason is required to correct a statement/);
+});
+
+test('POST correct writes the person\'s wording and mirrors the corrected statement', async () => {
+  const cognition = fakeCognition();
+  cognition.correctHypothesis = async (id, o) => {
+    cognition.calls.push(['correct', id, o]);
+    return { id, status: 'confirmed', statement: o.statement, correction_reason: o.reason };
+  };
+  const mirrored = [];
+
+  const res = await request(appWith({ cognition, sync: { syncHypothesis: async (r) => mirrored.push(r) } }))
+    .post('/cognition/hypotheses/h1/correct')
+    .send({ statement: 'Yassine is een kennis', reason: 'dat klopt niet' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.hypothesis.status, 'confirmed');
+  assert.deepEqual(res.body.superseded, []);
+  const corrected = cognition.calls.find((c) => c[0] === 'correct');
+  assert.deepEqual(corrected[2], { statement: 'Yassine is een kennis', reason: 'dat klopt niet' });
+  // The mirror is what retires the wording this replaces, so it is not optional.
+  assert.equal(mirrored.length, 1);
+  assert.equal(mirrored[0].statement, 'Yassine is een kennis');
+});
+
+test('POST correct lifts a rejected statement back first, so the correction can land', async () => {
+  const cognition = fakeCognition();
+  cognition.getHypothesis = async (id) => {
+    cognition.calls.push(['get', id]);
+    return { id, status: 'rejected', scope: 'macro' };
+  };
+  cognition.correctHypothesis = async (id, o) => {
+    cognition.calls.push(['correct', id, o]);
+    return { id, status: 'confirmed', statement: o.statement };
+  };
+
+  const res = await request(appWith({ cognition }))
+    .post('/cognition/hypotheses/h1/correct')
+    .send({ statement: 'Yassine is een kennis', reason: 'dat was niet waar' });
+
+  assert.equal(res.status, 200);
+  const order = cognition.calls.map((c) => c[0]);
+  assert.ok(order.includes('reopen'), order.join(','));
+  assert.ok(order.indexOf('reopen') < order.indexOf('correct'), order.join(','));
+  assert.deepEqual(cognition.calls.find((c) => c[0] === 'reopen')[2], { reason: 'dat was niet waar' });
+});
+
+test('POST correct supersedes the older statements the person named', async () => {
+  const cognition = fakeCognition();
+  cognition.correctHypothesis = async (id, o) => {
+    cognition.calls.push(['correct', id, o]);
+    return { id, status: 'confirmed', statement: o.statement };
+  };
+  const mirrored = [];
+
+  const res = await request(appWith({ cognition, sync: { syncHypothesis: async (r) => mirrored.push(r) } }))
+    .post('/cognition/hypotheses/h1/correct')
+    .send({ statement: 'Yassine is een kennis', reason: 'dat klopt niet', supersedes: ['h9', 'h1'] });
+
+  assert.equal(res.status, 200);
+  // Its own id is never superseded by itself; the older one is, with a pointer.
+  assert.deepEqual(res.body.superseded, ['h9']);
+  const superseded = cognition.calls.find((c) => c[0] === 'supersede');
+  assert.equal(superseded[1], 'h9');
+  assert.equal(superseded[2].supersededById, 'h1');
+  // The corrected statement and the statement it retires are both mirrored.
+  assert.equal(mirrored.length, 2);
+});

@@ -590,3 +590,73 @@ test('answer() overwrites an earlier answer rather than refusing the correction'
   const h = await hypotheses.answer('gaia', 'h1', { answer: 'inhouden' });
   assert.equal(h.answer, 'inhouden');
 });
+
+// --- correct(): the person's own wording for an already settled statement -----
+
+test('correct() needs the wording and a reason before it reads anything', async () => {
+  const fake = makeFakePool();
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.correct('gaia', 'h1', { statement: '   ', reason: 'dat klopt niet' }),
+    /a statement is required to correct/,
+  );
+  await assert.rejects(
+    () => hypotheses.correct('gaia', 'h1', { statement: 'Yassine is een kennis', reason: '   ' }),
+    /a reason is required to correct a statement/,
+  );
+  assert.equal(fake.calls.length, 0);
+});
+
+test('correct() writes the person\'s wording and settles the record as confirmed', async () => {
+  const fake = makeFakePool();
+  const corrected = row({
+    status: 'confirmed',
+    statement: 'Yassine is een kennis',
+    correction_reason: 'dat klopt niet',
+    corrected_at: '2026-10-17T18:42:00Z',
+    confirmed_at: '2026-10-17T18:42:00Z',
+  });
+  fake.setImpl(async (sql) => (/UPDATE hypotheses/.test(sql)
+    ? { rows: [corrected] }
+    : { rows: [row({ status: 'testing' })] }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.correct('gaia', 'h1', {
+    statement: '  Yassine is een kennis  ',
+    reason: '  dat klopt niet  ',
+  });
+
+  assert.equal(h.status, 'confirmed');
+  assert.equal(h.statement, 'Yassine is een kennis');
+  assert.match(fake.calls[0].sql, /SELECT/);
+  assert.match(fake.calls[1].sql, /UPDATE hypotheses SET statement = \$3, status = 'confirmed'/);
+  assert.match(fake.calls[1].sql, /confirmed_at = COALESCE\(confirmed_at, now\(\)\)/);
+  assert.deepEqual(fake.calls[1].params, ['gaia', 'h1', 'Yassine is een kennis', 'dat klopt niet']);
+});
+
+test('correct() writes nothing when the wording already says this', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'confirmed', statement: 'Yassine is een kennis' })] }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.correct('gaia', 'h1', {
+    statement: 'Yassine is een kennis',
+    reason: 'voor de zekerheid',
+  });
+
+  assert.equal(h.statement, 'Yassine is een kennis');
+  assert.equal(fake.calls.length, 1);
+});
+
+test('correct() cannot reach a rejected statement — reopen() is that door', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'rejected' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.correct('gaia', 'h1', { statement: 'Yassine is een kennis', reason: 'dat klopt niet' }),
+    (err) => err.name === 'InvalidTransitionError',
+  );
+  assert.equal(fake.calls.length, 1);
+});

@@ -103,6 +103,13 @@ function createCognitionClient({
   const reopenHypothesis = (id, { reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/reopen`, {
     ...(reason !== undefined ? { reason } : {}),
   });
+  // The human correction: the person says what is true instead of what was
+  // recorded. Cognition keeps the record's identity and settles it as
+  // confirmed, so the mirror retires the wording this replaces.
+  const correctHypothesis = (id, { statement, reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/correct`, {
+    ...(statement !== undefined ? { statement } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+  });
   const supersedeHypothesis = (id, { supersededById, reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/supersede`, {
     superseded_by_id: supersededById,
     ...(reason !== undefined ? { reason } : {}),
@@ -148,6 +155,7 @@ function createCognitionClient({
     confirmHypothesis,
     rejectHypothesis,
     reopenHypothesis,
+    correctHypothesis,
     supersedeHypothesis,
     answerHypothesis,
     listPatterns,

@@ -17,6 +17,8 @@ const { createReviewRound } = require('./reviewRound');
  *   POST /cognition/hypotheses/:id/test        open active testing
  *   POST /cognition/hypotheses/:id/reject      { reason }  (verwerp_bron "mens")
  *   POST /cognition/hypotheses/:id/reopen      { reason }  — the human lift of a rejection
+ *   POST /cognition/hypotheses/:id/correct     { statement, reason, supersedes?: [ids] }
+ *                                              — the person's own wording for a settled statement
  *   POST /cognition/hypotheses/:id/confirm     { supersedes?: [ids], rationale?, statement? }
  *   POST /cognition/hypotheses/:id/answer      { answer }  — the human's answer to an open question
  *
@@ -25,6 +27,12 @@ const { createReviewRound } = require('./reviewRound');
  * gaia:confirmed_fact), and performs active supersession: every id the caller
  * names in `supersedes` is marked rejected with verwerp_bron 'consolidatie' and
  * a pointer to the confirmed statement.
+ *
+ * `correct` is the human's own wording where a statement is already settled —
+ * the route that closes the gap update() and confirm() leave open (a confirmed
+ * statement cannot be edited, and a hand correction in Hindsight gets
+ * re-mirrored over). The record keeps its id and its settled state, and the
+ * mirror retires the text it replaces, so the correction is durable.
  *
  * An open question is not confirmed but ANSWERED: the human supplies the fact
  * the question was missing, and the question drops off the list. Its
@@ -157,6 +165,69 @@ function createCognitionRouter({ cognition, sync, auth, reviewRound = createRevi
     const record = await cognition.reopenHypothesis(req.params.id, { reason });
     await mirror(record);
     res.json(record);
+  }));
+
+  // The human's own wording for a statement that is already settled — the
+  // person says what is true instead of what was recorded.
+  //
+  // This is the answer to a gap the other two human routes cannot close:
+  // Cognition's update() refuses a confirmed statement (its transition table
+  // has no way out of `confirmed`) and confirm() can only be entered from a
+  // state that may move to `confirmed`, so a settled statement could not be
+  // corrected at all — and a hand correction in Hindsight alone is fragile,
+  // because reasoning/hindsightHypothesisAdapter.js re-mirrors the stored
+  // statement as a fresh version on any status, confidence, statement or
+  // evidence change, taking the old wording straight back into recall.
+  //
+  // Correcting the record itself is what makes the fix durable: the same id
+  // keeps one identity in the derived store (gaia-hyp-<id>-v<n>), the new
+  // wording is retained as the next version — confirmed, so it carries
+  // gaia:confirmed_fact — and the text it replaces is invalidated. A reason is
+  // required, the same posture as reopen: the person is overriding something
+  // that was recorded as settled, and the why must be kept.
+  //
+  // A rejected statement is out of reach in Cognition (reopen() is the
+  // documented way out, and it states why), so a correction of one is carried
+  // as the two deliberate acts the person asked for: reopen, then correct.
+  router.post('/hypotheses/:id/correct', asyncRoute(async (req, res) => {
+    const id = req.params.id;
+    const statement = req.body && req.body.statement;
+    const reason = (req.body && req.body.reason) || '';
+    if (!String(statement || '').trim()) {
+      return res.status(400).json({ error: 'a statement is required to correct' });
+    }
+    if (!String(reason).trim()) {
+      return res.status(400).json({ error: 'a reason is required to correct a statement' });
+    }
+
+    const canRead = typeof cognition.getHypothesis === 'function';
+    const existing = canRead ? await cognition.getHypothesis(id).catch(() => null) : null;
+    // A rejected record has to come back into the lifecycle first, and the
+    // reason the person gave is exactly the reason reopen() insists on.
+    if (existing && existing.status === 'rejected') {
+      await cognition.reopenHypothesis(id, { reason });
+    }
+
+    const corrected = await cognition.correctHypothesis(id, { statement, reason });
+    await mirror(corrected);
+
+    const superseded = [];
+    const toSupersede = Array.isArray(req.body && req.body.supersedes) ? req.body.supersedes : [];
+    for (const oldId of toSupersede) {
+      if (!oldId || oldId === id) continue;
+      try {
+        const old = await cognition.supersedeHypothesis(oldId, {
+          supersededById: id,
+          reason: reason || 'superseded by a corrected statement',
+        });
+        await mirror(old);
+        superseded.push(oldId);
+      } catch (_) {
+        // Failing to supersede one old statement never blocks the correction.
+      }
+    }
+
+    res.json({ hypothesis: corrected, superseded });
   }));
 
   // The human's answer to an open question. Recorded on the record, with the
