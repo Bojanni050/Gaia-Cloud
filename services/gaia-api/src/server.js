@@ -51,6 +51,7 @@ const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowle
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
 const { createMemoryTool } = require('./reasoning/memoryTool');
+const { createMemoryRouter } = require('./memoryRoutes');
 const { createWebSearchTool } = require('./reasoning/webSearchTool');
 const { createWebSearchFromEnv } = require('./webSearchClient');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
@@ -202,18 +203,25 @@ function createApp(env = process.env) {
   // dependency — a tool handed a client that does not exist yet is a crash,
   // not a degraded tool.
   // Off with GAIA_MEMORY_TOOL=false.
+  //
+  // The bank list and the "home" bank (where a person's correction is kept)
+  // are named here because two callers need the same wiring — the
+  // in-conversation `retract_memory` tool and the HTTP route behind the
+  // clients' "dit klopt niet" button (memoryRoutes.js).
+  const memoryBanks = [
+    { name: hindsightBankId, client: hindsightApp },
+    { name: hindsightLogosBankId, client: hindsightLogos },
+    { name: hindsightOwnBankId, client: hindsightOwn },
+  ];
+  const memoryHome = { name: hindsightBankId, client: hindsightApp };
   const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
     ? null
     : createMemoryTool({
       hindsight: hindsightApp,
       ownHindsight: hindsightOwn,
       searchHindsight: hindsight,
-      banks: [
-        { name: hindsightBankId, client: hindsightApp },
-        { name: hindsightLogosBankId, client: hindsightLogos },
-        { name: hindsightOwnBankId, client: hindsightOwn },
-      ],
-      home: { name: hindsightBankId, client: hindsightApp },
+      banks: memoryBanks,
+      home: memoryHome,
       cognition,
       sync: cognitionSync,
     });
@@ -705,6 +713,19 @@ function createApp(env = process.env) {
   // GaiaChat review surface — the human Absolute Override (list/test/reject/
   // confirm) with active supersession. Part of the client contract.
   app.use('/cognition', createCognitionRouter({ cognition, sync: cognitionSync, auth }));
+
+  // Taking a memory back — the person's own route, for the clients' "dit klopt
+  // niet" button. Deliberately independent of GAIA_MEMORY_TOOL: that switch
+  // governs what Gaia may call herself, and the failure it exists to answer is
+  // precisely her having said something untrue from memory. Losing the ability
+  // to correct her there would be the wrong trade.
+  app.use('/memory', createMemoryRouter({
+    banks: memoryBanks,
+    home: memoryHome,
+    cognition,
+    sync: cognitionSync,
+    auth,
+  }));
 
   // Kairos — derived narrative episodes over the raw Foundation observation
   // stream, plus the realtime SSE stream. Clients reach episodes ONLY here,
