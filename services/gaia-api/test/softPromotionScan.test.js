@@ -88,14 +88,23 @@ test('isSoftPromotable: the one gate, in camelCase and snake_case, with a string
 test('fromStoreRecord: a store row becomes the shape the gate and the sink understand', () => {
   const h = fromStoreRecord({ id: 'h-1', statement: 'x', status: 'testing', confidence: '0.8500', scope: 'micro', evidence_for: ['m1'], evidence_against: ['m2'] });
   assert.deepEqual(h, {
-    id: 'h-1', statement: 'x', status: 'testing', confidence: 0.85, scope: 'micro',
-    evidenceFor: ['m1'], evidenceAgainst: ['m2'],
+    id: 'h-1', statement: 'x', kind: undefined, status: 'testing', confidence: 0.85, scope: 'micro',
+    evidenceFor: ['m1'], evidenceAgainst: ['m2'], updatedAt: null, expiredAt: null,
   });
   // Missing/odd columns degrade to empty lists, never to a crash.
   const bare = fromStoreRecord({ id: 'h-2', status: 'testing', confidence: null, scope: 'micro' });
   assert.equal(bare.confidence, null);
   assert.deepEqual(bare.evidenceFor, []);
   assert.deepEqual(bare.evidenceAgainst, []);
+  // The expiry gate's own inputs ride along: the kind, and the timestamps the
+  // lapse rule reads, in whichever spelling the row carries.
+  const lapsed = fromStoreRecord({
+    id: 'h-3', status: 'proposed', kind: 'hypothesis',
+    updated_at: '2026-10-01T00:00:00.000Z', expired_at: null,
+  });
+  assert.equal(lapsed.kind, 'hypothesis');
+  assert.equal(lapsed.updatedAt, '2026-10-01T00:00:00.000Z');
+  assert.equal(lapsed.expiredAt, null);
 });
 
 // --- the scan --------------------------------------------------------------

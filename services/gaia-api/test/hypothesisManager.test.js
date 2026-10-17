@@ -9,6 +9,8 @@ const {
   createHypothesisManager,
   HYPOTHESIS_TRANSITIONS,
   DEFAULT_POLICY,
+  DEFAULT_EXPIRY_DAYS,
+  isExpirable,
 } = require('../src/reasoning/hypothesisManager');
 
 function seeded() {
@@ -28,11 +30,70 @@ function seeded() {
 // --- lifecycle vocabulary -----------------------------------------------------
 
 test('transitions: the lifecycle map is explicit and frozen', () => {
-  assert.deepEqual(HYPOTHESIS_TRANSITIONS.proposed, ['testing', 'rejected']);
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.proposed, ['testing', 'rejected', 'expired']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.testing, ['corroborated', 'confirmed', 'rejected']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.corroborated, ['confirmed', 'rejected', 'testing']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.confirmed, ['testing']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.rejected, []); // terminal; only reopen() leaves it
+  // v1.3 — a lapse is not a judgement and not a quarantine: it may be revived.
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.expired, ['testing', 'confirmed', 'rejected']);
+});
+
+// --- v1.3 expiry: evidence-less hypotheses lapse, and can come back -----------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysAgo = (days) => new Date(Date.now() - days * DAY_MS).toISOString();
+
+/** A store row the way Cognition returns it (snake_case, a string timestamp). */
+const lapsedRow = (overrides = {}) => ({
+  id: 'hyp-lapse',
+  statement: 'Bo prefers the shorter route.',
+  status: 'proposed',
+  updated_at: daysAgo(20),
+  evidence_for: [],
+  evidence_against: [],
+  ...overrides,
+});
+
+test('expiry: an evidence-less proposal lapses after the term, and nothing else does', () => {
+  assert.equal(DEFAULT_EXPIRY_DAYS, 14);
+  assert.equal(isExpirable(lapsedRow()), true);
+  assert.equal(isExpirable(lapsedRow({ updated_at: daysAgo(1) })), false); // fresh
+  assert.equal(isExpirable(lapsedRow({ evidence_for: ['m1'] })), false); // under test
+  assert.equal(isExpirable(lapsedRow({ kind: 'open_question' })), false); // another life
+  assert.equal(isExpirable(lapsedRow({ kind: 'relationship' })), false);
+  assert.equal(isExpirable(lapsedRow({ expired_at: daysAgo(1) })), false); // already lapsed
+  assert.equal(isExpirable(lapsedRow({ status: 'testing' })), false);
+  assert.equal(isExpirable(null), false);
+  // The term is policy, not magic, and the manager's own camelCase shape works too.
+  assert.equal(isExpirable(lapsedRow({ updated_at: daysAgo(10) }), { days: 7 }), true);
+  assert.equal(isExpirable(lapsedRow({ updated_at: daysAgo(10) }), { days: 30 }), false);
+  assert.equal(isExpirable({ ...lapsedRow(), updated_at: undefined, updatedAt: daysAgo(20) }), true);
+});
+
+test('expiry: evidence that arrives later revives a lapsed hypothesis', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-lapsed', statement: 'Bo prefers the shorter route.', status: 'expired', confidence: 0.4, evidenceFor: [],
+    }],
+  });
+  const audit = m.applyUpdate({
+    hypothesisId: 'hyp-lapsed', evidenceId: 'm-new', relation: 'supports', confidenceDelta: 0.2, rationale: 'she said so twice',
+  });
+  assert.equal(audit.from, 'expired');
+  assert.equal(audit.to, 'testing');
+  const h = m.get('hyp-lapsed');
+  assert.equal(h.status, 'testing');
+  assert.equal(h.history[h.history.length - 1].rationale, 'evidence arrived after the lapse');
+});
+
+test('expiry: a lapsed record keeps its status through the boot load', () => {
+  const m = createHypothesisManager({
+    hypotheses: [{
+      id: 'hyp-lapsed', statement: 'Bo prefers the shorter route.', status: 'expired', confidence: 0.4, evidenceFor: [],
+    }],
+  });
+  assert.equal(m.get('hyp-lapsed').status, 'expired');
 });
 
 // --- create -------------------------------------------------------------------

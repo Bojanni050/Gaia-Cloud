@@ -96,6 +96,11 @@ function createCognitionSink({ cognition, sync } = {}) {
         const last = Array.isArray(next.history) ? next.history[next.history.length - 1] : null;
         const reason = (last && last.rationale) || 'reopened by human';
         record = await cognition.reopenHypothesis(cid, { reason });
+      } else if (next.status === 'testing' && before.status === 'expired') {
+        // v1.3 — a lapse is not a judgement: evidence that arrives later
+        // revives an expired statement. The store keeps `expired_at`, so the
+        // recovery stays visible instead of being erased.
+        record = await cognition.reviveHypothesis(cid);
       } else if (next.status === 'testing') record = await cognition.markTesting(cid);
       else if (next.status === 'corroborated') {
         // The store's machine tier is reached from `testing` only. The manager
@@ -114,6 +119,10 @@ function createCognitionSink({ cognition, sync } = {}) {
           if (!current || at === 'proposed') record = await cognition.markTesting(cid);
           record = await cognition.markCorroborated(cid);
         }
+      } else if (next.status === 'expired') {
+        // The lapse itself: no reason text and no rejection — `verlopen` is
+        // the machine's own reason, kept apart from a person's dismissal.
+        record = await cognition.expireHypothesis(cid);
       } else if (next.status === 'rejected') record = await cognition.rejectHypothesis(cid, { reason: next.rejectionReason });
       // 'confirmed' is intentionally not mirrored here.
     }

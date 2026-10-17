@@ -100,13 +100,17 @@ const DEFAULT_PERSISTENCE = 'ephemeral';
  * Cognition's own table (services/cognition/src/hypotheses.js).
  */
 const HYPOTHESIS_TRANSITIONS = Object.freeze({
-  proposed: Object.freeze(['testing', 'rejected']),
+  proposed: Object.freeze(['testing', 'rejected', 'expired']),
   testing: Object.freeze(['corroborated', 'confirmed', 'rejected']),
   corroborated: Object.freeze(['confirmed', 'rejected', 'testing']),
   confirmed: Object.freeze(['testing']),
   // Terminal for every automatic path. reopen() is the one deliberate,
   // human-initiated exception (mirrors the Cognition store's /reopen route).
   rejected: Object.freeze([]),
+  // v1.3 — a lapse is not a judgement, and deliberately not a quarantine:
+  // evidence that arrives later revives an expired statement, and a person may
+  // still settle it. Only a `proposed` statement can lapse at all.
+  expired: Object.freeze(['testing', 'confirmed', 'rejected']),
 });
 
 /**
@@ -176,6 +180,36 @@ function isSoftPromotable(h, policy = DEFAULT_POLICY) {
   if (!Number.isFinite(confidence) || confidence < policy.softPromoteConfidence) return false;
   const against = h.evidenceAgainst || h.evidence_against || [];
   return !Array.isArray(against) || against.length === 0;
+}
+
+/** How long an evidence-less hypothesis may sit in `proposed` before it lapses. */
+const DEFAULT_EXPIRY_DAYS = 14;
+
+/**
+ * v1.3 lapse rule — the ONE place that decides whether a statement has expired,
+ * shared by the manager and the periodic expiry pass (the same split as
+ * isSoftPromotable above): a hypothesis still sitting in `proposed`, with no
+ * supporting evidence at all, that nothing has touched for the term lapses.
+ *
+ * Deliberately narrow. A statement WITH supporting evidence is never expired by
+ * this rule — it is under test, which is the ordinary cycle — a low confidence
+ * is never a reason on its own, and only hypotheses lapse: open questions and
+ * relationships have their own lives and their own policy. Reads camelCase (the
+ * manager) and snake_case (a Cognition row) alike.
+ */
+function isExpirable(h, { days = DEFAULT_EXPIRY_DAYS, now = Date.now() } = {}) {
+  if (!h) return false;
+  const kind = h.kind || 'hypothesis';
+  if (kind !== 'hypothesis') return false;
+  if (h.status !== 'proposed') return false;
+  if (h.expiredAt || h.expired_at) return false;
+  const evidenceFor = h.evidenceFor || h.evidence_for || [];
+  if (Array.isArray(evidenceFor) ? evidenceFor.length > 0 : Boolean(evidenceFor)) return false;
+  const termDays = Number(days);
+  if (!Number.isFinite(termDays) || termDays <= 0) return false;
+  const touched = Date.parse(h.updatedAt || h.updated_at || '');
+  if (!Number.isFinite(touched)) return false;
+  return now - touched >= termDays * 24 * 60 * 60 * 1000;
 }
 
 function isValidMethod(m) {
@@ -323,7 +357,7 @@ function createHypothesisManager(options = {}) {
       remember({
         id: String(h.id),
         statement: h.statement,
-        status: ['proposed', 'testing', 'corroborated', 'confirmed', 'rejected'].includes(h.status) ? h.status : 'testing',
+        status: ['proposed', 'testing', 'corroborated', 'confirmed', 'rejected', 'expired'].includes(h.status) ? h.status : 'testing',
         method: isValidMethod(h.method) ? h.method : 'asserted',
         persistence: persistenceOf(h.persistence),
         counterHypothesis: typeof h.counterHypothesis === 'string' && h.counterHypothesis.trim() ? h.counterHypothesis.trim() : null,
@@ -696,11 +730,14 @@ function createHypothesisManager(options = {}) {
       return audits[audits.length - 1];
     }
 
-    // First real evidence moves a fresh proposal into testing.
-    if (h.status === 'proposed' && (relation === 'supports' || relation === 'weakens')) {
-      stampStatus(h, 'proposed', 'testing', h.updatedAt);
+    // First real evidence moves a fresh proposal into testing — and revives a
+    // statement that had lapsed (v1.3: a lapse is not a judgement, so evidence
+    // that arrives later puts it back under test instead of leaving it).
+    if ((h.status === 'proposed' || h.status === 'expired') && (relation === 'supports' || relation === 'weakens')) {
+      const from = h.status;
+      stampStatus(h, from, 'testing', h.updatedAt);
       h.status = 'testing';
-      h.history.push({ from: 'proposed', to: 'testing', at: h.updatedAt, rationale: 'first evidence applied' });
+      h.history.push({ from, to: 'testing', at: h.updatedAt, rationale: from === 'expired' ? 'evidence arrived after the lapse' : 'first evidence applied' });
     }
 
     // V3 soft-promotion, after the first-evidence step above so a claim can
@@ -792,12 +829,14 @@ function createHypothesisManager(options = {}) {
         target.method = (target.evidenceFor.length > 0 || target.evidenceAgainst.length > 0) ? 'derived' : 'asserted';
         // First real evidence moves a fresh proposal into testing (§5:
         // a hypothesis backed by linked evidence IS under test).
-        if (target.status === 'proposed' && (target.evidenceFor.length > 0 || target.evidenceAgainst.length > 0)) {
+        if ((target.status === 'proposed' || target.status === 'expired')
+          && (target.evidenceFor.length > 0 || target.evidenceAgainst.length > 0)) {
+          const from = target.status;
           const iso = now().toISOString();
-          stampStatus(target, 'proposed', 'testing', iso);
+          stampStatus(target, from, 'testing', iso);
           target.status = 'testing';
           target.updatedAt = iso;
-          target.history.push({ from: 'proposed', to: 'testing', at: iso, rationale: 'first evidence linked' });
+          target.history.push({ from, to: 'testing', at: iso, rationale: from === 'expired' ? 'evidence arrived after the lapse' : 'first evidence linked' });
         }
         // Persist AFTER the merge — v1 carries its provenance and state.
         persistSave(target);
@@ -897,6 +936,8 @@ module.exports = {
   DEFAULT_POLICY,
   INITIAL_STATUS,
   isSoftPromotable,
+  isExpirable,
+  DEFAULT_EXPIRY_DAYS,
   DEDUP_SIMILARITY_THRESHOLD,
   similarity,
   normalizeStatement,

@@ -82,6 +82,20 @@ router.post('/:id/corroborate', asyncRoute(async (req, res) => {
   res.json(await hypotheses.markCorroborated(bankId, id));
 }));
 
+// Machine expiry (v1.3) — a statement that never gathered evidence and was
+// never touched again lapses with reason `verlopen`. Not a rejection, and not
+// terminal: evidence that arrives later revives it through /revive.
+router.post('/:id/expire', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.expire(bankId, id));
+}));
+
+// The way back from a lapse — `expired` → `testing`.
+router.post('/:id/revive', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.revive(bankId, id));
+}));
+
 // Human Absolute Override — the only path to Confirmed.
 router.post('/:id/confirm', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;

@@ -82,6 +82,12 @@ function createCognitionClient({
     ...(rationale !== undefined ? { rationale } : {}),
   });
   const markCorroborated = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/corroborate`);
+  // v1.3 expiry — a statement that never gathered evidence and was never
+  // touched again lapses (`verlopen`). Not a rejection, and not terminal: the
+  // store allows `expired → testing`, so `reviveHypothesis` is the way back
+  // when evidence arrives later.
+  const expireHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/expire`);
+  const reviveHypothesis = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/revive`);
   const confirmHypothesis = (id, { statement } = {}) => request(
     'POST',
     `/hypotheses/${encodeURIComponent(id)}/confirm`,
@@ -133,6 +139,8 @@ function createCognitionClient({
     markTesting,
     applyEvidence,
     markCorroborated,
+    expireHypothesis,
+    reviveHypothesis,
     confirmHypothesis,
     rejectHypothesis,
     reopenHypothesis,

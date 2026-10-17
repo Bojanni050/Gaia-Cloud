@@ -45,6 +45,7 @@ const { createCognitionClient } = require('./cognitionClient');
 const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createSoftPromotionScan } = require('./reasoning/softPromotionScan');
+const { createExpiryScan } = require('./reasoning/expiryScan');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
@@ -222,6 +223,7 @@ function createApp(env = process.env) {
   // GAIA_HYPOTHESIS_PERSISTENCE=false.
   let hypothesisRuntime = null;
   let softPromotionScan = null;
+  let expiryScan = null;
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
     const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
 
@@ -269,6 +271,15 @@ function createApp(env = process.env) {
     // reasoning/softPromotionScan.js). Best-effort, never blocks a turn;
     // stopped again on shutdown below.
     softPromotionScan = createSoftPromotionScan({
+      cognition,
+      sink: cognitionSink.hypothesis,
+      env,
+    });
+
+    // The expiry pass: a hypothesis that never gathered evidence, and that
+    // nothing has touched for the term, lapses (see reasoning/expiryScan.js).
+    // Same posture as the scan above — best-effort, never blocks a turn.
+    expiryScan = createExpiryScan({
       cognition,
       sink: cognitionSink.hypothesis,
       env,
@@ -987,6 +998,8 @@ function createApp(env = process.env) {
   // Hypothesis soft-promotion scan — same posture as Kairos: best-effort,
   // never blocks startup and never affects a turn.
   if (softPromotionScan) softPromotionScan.start();
+  // The hypothesis expiry pass — same posture: best-effort, invisible to turns.
+  if (expiryScan) expiryScan.start();
 
   // Calm JSON error surface — no stack traces, no provider names.
   app.use((err, req, res, next) => {

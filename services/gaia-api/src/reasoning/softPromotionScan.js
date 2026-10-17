@@ -30,18 +30,23 @@ const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
  * Cognition row (snake_case; a Postgres `numeric` confidence arrives as a
- * string) → the shape isSoftPromotable and the sink both understand.
+ * string) → the shape the gates and the sink both understand. Shared by both
+ * passes: the soft-promotion gate reads scope/confidence/evidence, the expiry
+ * gate reads kind/updatedAt/expiredAt.
  * @param {object} row
  */
 function fromStoreRecord(row) {
   return {
     id: String(row.id),
     statement: row.statement,
+    kind: row.kind,
     status: row.status,
     confidence: row.confidence != null ? Number(row.confidence) : null,
     scope: row.scope,
     evidenceFor: Array.isArray(row.evidence_for) ? row.evidence_for : [],
     evidenceAgainst: Array.isArray(row.evidence_against) ? row.evidence_against : [],
+    updatedAt: row.updated_at || row.updatedAt || null,
+    expiredAt: row.expired_at || row.expiredAt || null,
   };
 }
 

@@ -33,7 +33,9 @@ const { pool } = require('./db/pool');
 const { NotFoundError, InvalidTransitionError, ValidationError } = require('./errors');
 
 const KINDS = ['hypothesis', 'mental_model', 'relationship', 'open_question'];
-const VERWERP_BRONNEN = ['mens', 'consolidatie'];
+// 'verlopen' (lapsed) is the machine's own reason, kept apart from 'mens' (a
+// person dismissed it) and 'consolidatie' (a newer statement superseded it).
+const VERWERP_BRONNEN = ['mens', 'consolidatie', 'verlopen'];
 const PERSISTENCES = ['ephemeral', 'durable'];
 const METHODS = ['asserted', 'derived', 'tested'];
 // V3 epistemic entrenchment. `macro` is the safe default enforced by the
@@ -44,11 +46,18 @@ const SCOPES = ['micro', 'macro'];
 const QUESTION_SHAPES = ['yes_no', 'open', 'choice'];
 
 const VALID_TRANSITIONS = {
-  proposed: ['testing', 'confirmed', 'rejected'],
+  proposed: ['testing', 'confirmed', 'rejected', 'expired'],
   testing: ['corroborated', 'confirmed', 'rejected', 'proposed'],
   corroborated: ['confirmed', 'rejected', 'testing'],
   confirmed: [],
   rejected: [],
+  // v1.3 expiry — NOT a quarantine, unlike `rejected`. A lapse is not a
+  // judgement: nothing happened, so evidence that arrives later revives the
+  // statement (expired → testing), and a person may still settle this one
+  // themselves. Only a `proposed` statement can lapse.
+  // … and `proposed`, because a person who rewrites an expired statement puts
+  // it back in the waiting room rather than editing a lapsed one in place.
+  expired: ['testing', 'confirmed', 'rejected', 'proposed'],
 };
 
 function assertTransition(from, to) {
@@ -99,7 +108,7 @@ const COLUMNS = `
   sources, supersedes_id, superseded_by_id,
   counter_hypothesis, scope, question_shape, question_options, answer, answered_at,
   confirmed_document_id, rejection_reason, verwerp_bron,
-  tested_at, confirmed_at, rejected_at, created_at, updated_at
+  tested_at, confirmed_at, rejected_at, expired_at, created_at, updated_at
 `;
 
 async function propose(bankId, {
@@ -224,6 +233,48 @@ async function markCorroborated(bankId, id) {
   assertTransition(current.status, 'corroborated');
   const { rows } = await pool.query(
     `UPDATE hypotheses SET status = 'corroborated', tested_at = COALESCE(tested_at, now()), updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id],
+  );
+  return rows[0];
+}
+
+/**
+ * v1.3 expiry: a statement that never gathered evidence and was never touched
+ * again LAPSES. Deliberately not a rejection — `rejected` means there was a
+ * substantive reason to dismiss a statement, `expired` means nothing happened
+ * at all — and deliberately not a quarantine: the transition table allows
+ * `expired → testing`, so evidence that arrives later revives it (see revive).
+ *
+ * The decision itself is not made here: the rules live in Logos (gaia-api's
+ * expiry pass), which only ever expires a `proposed` statement without
+ * supporting evidence. This service persists the lapse it is told about, with
+ * the machine's own reason (`verlopen`) and the moment it happened.
+ */
+async function expire(bankId, id) {
+  const current = await get(bankId, id);
+  assertTransition(current.status, 'expired');
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET status = 'expired', expired_at = now(), verwerp_bron = 'verlopen',
+       rejection_reason = NULL, updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id],
+  );
+  return rows[0];
+}
+
+/**
+ * The way back from a lapse: new evidence (or a person) returns an expired
+ * statement to `testing`. `expired_at` is deliberately KEPT — that it lapsed
+ * once is a fact about the statement, and clearing it would hide the recovery
+ * instead of recording it.
+ */
+async function revive(bankId, id) {
+  const current = await get(bankId, id);
+  assertTransition(current.status, 'testing');
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET status = 'testing', rejection_reason = NULL, verwerp_bron = NULL,
+       updated_at = now()
      WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
     [bankId, id],
   );
@@ -415,6 +466,6 @@ async function softDelete(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
+  propose, list, get, update, markTesting, markCorroborated, expire, revive, confirm, reject, reopen, supersede, answer, applyEvidence, softDelete,
   VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES, QUESTION_SHAPES,
 };
