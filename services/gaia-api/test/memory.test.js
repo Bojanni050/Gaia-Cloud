@@ -6,6 +6,7 @@ const { shouldRecall, shouldReflect } = require('../src/memoryPolicy');
 const { createHindsightClient } = require('../src/hindsightClient');
 const {
   condenseMemoryContext,
+  memoryKindOf,
   renderMemoryContext,
   renderDualRecallContext,
   recallRelevantContext,
@@ -280,6 +281,53 @@ test('condenseMemoryContext appends the real age when Hindsight gave an event ti
   ], now);
   assert.equal(lines[0], '- Bo verhuist binnenkort (3 dagen geleden)');
   assert.equal(lines[1], '- Twijfelgeval (uncertain, 3 dagen geleden)');
+});
+
+test('condenseMemoryContext says what KIND of thing each item is', () => {
+  const lines = condenseMemoryContext([
+    { text: 'Yassine is een vriend', tags: ['gaia:hypothesis', 'gaia:confirmed_fact'], scores: { final: 0.9 } },
+    { text: 'Er was een afscheidsritueel', tags: ['gaia:hypothesis'], scores: { final: 0.7 } },
+    { text: 'Nachtwerk en doorbraken hangen samen', tags: ['gaia:pattern'], scores: { final: 0.8 } },
+    { text: 'Wat letterlijk gezegd is', tags: ['gaia-turn'], scores: { final: 0.8 } },
+    { text: 'Wat Aion eerder dacht', tags: ['gaia:aion'], scores: { final: 0.8 } },
+    { text: 'Geen markering', scores: { final: 0.9 } },
+  ]);
+  assert.equal(lines[0], '- Yassine is een vriend (confirmed by the person)');
+  assert.equal(lines[1], '- Er was een afscheidsritueel (your own hypothesis, never confirmed)');
+  assert.equal(lines[2], '- Nachtwerk en doorbraken hangen samen (a pattern you formed)');
+  assert.equal(lines[3], '- Wat letterlijk gezegd is (a record of what was said)');
+  assert.equal(lines[4], '- Wat Aion eerder dacht (your own reflection)');
+  // A tagless item keeps its old shape: nothing invented, nothing added.
+  assert.equal(lines[5], '- Geen markering');
+});
+
+test('condenseMemoryContext composes kind, uncertainty and age, and ignores tags it does not know', () => {
+  const now = Date.parse('2026-10-17T18:42:00Z');
+  const lines = condenseMemoryContext([
+    { text: 'Twijfel', tags: ['gaia:hypothesis'], occurredStart: '2026-10-14T12:00:00Z', scores: { final: 0.4 } },
+    { text: 'Onbekende tag', tags: ['context'], scores: { final: 0.9 } },
+  ], now);
+  assert.equal(lines[0], '- Twijfel (your own hypothesis, never confirmed, uncertain, 3 dagen geleden)');
+  assert.equal(lines[1], '- Onbekende tag');
+});
+
+test('memoryKindOf: the strongest tag wins, and an unknown shape is never a kind', () => {
+  assert.equal(memoryKindOf(null), null);
+  assert.equal(memoryKindOf({}), null);
+  assert.equal(memoryKindOf({ tags: [] }), null);
+  assert.equal(memoryKindOf({ tags: ['context'] }), null);
+  assert.equal(memoryKindOf({ tags: ['GAIA:CONFIRMED_FACT'] }), 'confirmed');
+  assert.equal(memoryKindOf({ tags: ['foundation:fact'] }), 'confirmed');
+  // Promoted knowledge carries the hypothesis tag too — knowledge wins.
+  assert.equal(memoryKindOf({ tags: ['gaia:hypothesis', 'gaia:knowledge'] }), 'knowledge');
+  assert.equal(memoryKindOf({ tags: ['gaia:hypothesis', 'gaia:confirmed_fact'] }), 'confirmed');
+});
+
+test('the memory header teaches the markers and the ask-instead-of-assert rule', () => {
+  const block = renderMemoryContext([reflection('A', 0.9)]);
+  assert.match(block, /confirmed by the person/);
+  assert.match(block, /never state/);
+  assert.match(block, /ask instead of asserting/);
 });
 
 test('renderMemoryContext renders a block when there is something to show', () => {

@@ -42,6 +42,69 @@ function normalizeSummary(text) {
 }
 
 /**
+ * What KIND of thing a recalled item is, read from the tags the knowledge
+ * adapters write (cognitionSync.js, hindsightHypothesisAdapter.js,
+ * hindsightPatternAdapter.js, aion.js, turn.js). Hindsight hands these over on
+ * every recall and the renderer used to throw them away — which is how a
+ * hypothesis Gaia derived herself and a statement a human happened to confirm
+ * arrived in front of her as the same bare sentence, with nothing to tell them
+ * apart from a plain memory.
+ *
+ * Order matters: a confirmed fact also carries `gaia:hypothesis`, and promoted
+ * knowledge carries it too, so the strongest tag decides.
+ */
+const CONFIRMED_TAG = 'gaia:confirmed_fact';
+const KNOWLEDGE_TAG = 'gaia:knowledge';
+const HYPOTHESIS_TAG = 'gaia:hypothesis';
+const PATTERN_TAG = 'gaia:pattern';
+const KAIROS_TAG = 'gaia:kairos_episode';
+const AION_TAG = 'gaia:aion';
+const TURN_TAG = 'gaia-turn';
+const OBSERVATION_TAG = 'gaia-observation';
+const LEGACY_FACT_TAG = 'foundation:fact';
+
+/**
+ * Rendered inside the same parentheses as (uncertain) and the age. English,
+ * like the rest of this block.
+ */
+const KIND_MARKERS = {
+  confirmed: 'confirmed by the person',
+  knowledge: 'settled knowledge',
+  hypothesis: 'your own hypothesis, never confirmed',
+  pattern: 'a pattern you formed',
+  episode: 'an episode you noted',
+  reflection: 'your own reflection',
+  observation: 'a record of what was said',
+};
+
+function reflectionTags(reflection) {
+  const tags = reflection?.tags;
+  if (!Array.isArray(tags)) return [];
+  return tags
+    .filter((tag) => typeof tag === 'string')
+    .map((tag) => tag.trim().toLowerCase());
+}
+
+/**
+ * @param {{tags?: string[]}} [reflection]
+ * @returns {string|null} a KIND_MARKERS key, or null for an item with no mark
+ */
+function memoryKindOf(reflection) {
+  const tags = reflectionTags(reflection);
+  if (tags.length === 0) return null;
+  const has = (tag) => tags.includes(tag);
+  // A Foundation fact is a human-confirmed statement by Foundation's own rule.
+  if (has(CONFIRMED_TAG) || has(LEGACY_FACT_TAG)) return 'confirmed';
+  if (has(KNOWLEDGE_TAG)) return 'knowledge';
+  if (has(HYPOTHESIS_TAG)) return 'hypothesis';
+  if (has(PATTERN_TAG)) return 'pattern';
+  if (has(KAIROS_TAG)) return 'episode';
+  if (has(AION_TAG)) return 'reflection';
+  if (has(TURN_TAG) || has(OBSERVATION_TAG)) return 'observation';
+  return null;
+}
+
+/**
  * Reads Hindsight's own field names directly (`text`, `scores.final`) —
  * hindsightClient.js no longer renames these to `summary`/`confidence` on
  * the way in, so this is the one place that derives a renderable line
@@ -51,10 +114,12 @@ function normalizeSummary(text) {
  *
  * When Hindsight gives an event time (`occurredStart`/`occurredEnd`) the line
  * also carries its real age — an item from three days ago should not read as
- * if it were said a minute ago. A reflection without a timestamp renders
- * byte-for-byte as before, which is what keeps the no-timestamp callers and
- * their tests unchanged.
- * @param {{ text?: string, occurredStart?: string|number|Date, occurredEnd?: string|number|Date, scores?: { final?: number|null } }} reflection
+ * if it were said a minute ago. When Hindsight gives tags, the line also says
+ * what KIND of thing it is (see `memoryKindOf`) — the difference between a
+ * fact the person confirmed and a hypothesis Gaia derived herself. A
+ * reflection without a timestamp or tags renders byte-for-byte as before,
+ * which is what keeps the no-timestamp callers and their tests unchanged.
+ * @param {{ text?: string, tags?: string[], occurredStart?: string|number|Date, occurredEnd?: string|number|Date, scores?: { final?: number|null } }} reflection
  * @param {number|Date} [now] the turn's single clock
  */
 function formatReflectionLine(reflection, now = Date.now()) {
@@ -62,8 +127,10 @@ function formatReflectionLine(reflection, now = Date.now()) {
   if (!summary) return null;
   const confidence = reflection?.scores?.final;
   const isUncertain = typeof confidence === 'number' && confidence < UNCERTAIN_CONFIDENCE_THRESHOLD;
+  const kind = memoryKindOf(reflection);
   const age = relativeAge(reflection?.occurredStart || reflection?.occurredEnd, now);
   const flags = [];
+  if (kind) flags.push(KIND_MARKERS[kind]);
   if (isUncertain) flags.push('uncertain');
   if (age) flags.push(age);
   return flags.length ? `- ${summary} (${flags.join(', ')})` : `- ${summary}`;
@@ -103,8 +170,15 @@ const MEMORY_CONTEXT_HEADER = [
   'From your long-term memory (Hindsight), things you have come to understand',
   'that may be relevant to this conversation. Use only what genuinely applies;',
   'do not force it in, and do not announce that you are consulting memory.',
-  'Items marked (uncertain) are not confirmed — hold them as a possibility,',
-  'not a settled fact.',
+  'Every item says what kind of thing it is. "confirmed by the person" is',
+  'something the person confirmed themselves — that you may state as a fact.',
+  '"settled knowledge" earned its place. Everything else is your own working:',
+  '"your own hypothesis, never confirmed", "a pattern you formed", "an episode',
+  'you noted", "your own reflection", "a record of what was said" — never state',
+  'those as established fact, and never add names, dates or details an item does',
+  'not contain. (uncertain) means the same: a possibility, not a settled fact.',
+  'When an item touches the person\'s own life — people, health, safety, or',
+  'relationships — and you are not certain, ask instead of asserting.',
 ];
 
 // Added only when the terugweg actually resolved raw records — the note would
@@ -303,6 +377,8 @@ async function fetchMentalModelContext(hindsight, { now = Date.now } = {}) {
 module.exports = {
   condenseMemoryContext,
   condenseMemoryEntries,
+  memoryKindOf,
+  KIND_MARKERS,
   renderMemoryContext,
   renderDualRecallContext,
   recallRelevantContext,
