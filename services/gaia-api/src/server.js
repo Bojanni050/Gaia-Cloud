@@ -49,6 +49,8 @@ const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowle
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
 const { createMemoryTool } = require('./reasoning/memoryTool');
+const { createWebSearchTool } = require('./reasoning/webSearchTool');
+const { createWebSearchFromEnv } = require('./webSearchClient');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosModelClient');
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
@@ -177,9 +179,29 @@ function createApp(env = process.env) {
   const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
     ? null
     : createMemoryTool({ hindsight: hindsightApp, ownHindsight: hindsightOwn, searchHindsight: hindsight });
-  const memoryToolOptions = memoryTool
-    ? { tools: memoryTool.TOOLS, onToolCall: memoryTool.onToolCall }
-    : {};
+  // The SHALLOW live lookup — a sibling of the research job, never a
+  // replacement for it. Configured provider or no tool at all: the
+  // `web_search` capability is derived from the tool's presence, so she is
+  // never told she can look something up when she cannot. Off with
+  // GAIA_WEB_SEARCH_API_KEY unset.
+  const webSearch = createWebSearchFromEnv(env);
+  const webSearchTool = webSearch ? createWebSearchTool({ search: webSearch }) : null;
+
+  // One option bag for the generator, whatever combination of tools exists.
+  // The dispatcher routes by name and falls through on the codebase's own
+  // 'Unknown action.' convention (see generation/gaiaGenerator.js), so adding
+  // a third tool later stays a one-line change.
+  const toolParts = [memoryTool, webSearchTool].filter(Boolean);
+  const toolOptions = toolParts.length === 0 ? {} : {
+    tools: toolParts.flatMap((tool) => tool.TOOLS),
+    onToolCall: async (name, args) => {
+      for (const tool of toolParts) {
+        const result = await tool.onToolCall(name, args);
+        if (result !== 'Unknown action.') return result;
+      }
+      return 'Unknown action.';
+    },
+  };
   // Cognition (derived-knowledge store + lifecycle owner) and its Hindsight
   // mirror — created unconditionally so the GaiaChat review surface works even
   // when per-turn hypothesis persistence is disabled.
@@ -278,7 +300,7 @@ function createApp(env = process.env) {
   // selections exist. `llmCallLogger` is bound here (not threaded per-call
   // like Logos's background reflection) because this client is a singleton
   // with no per-turn logger in scope.
-  const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger, memoryToolOptions);
+  const nativeGenerator = createNativeGeneratorFromEnv(env, llmCallLogger, toolOptions);
   // Gaia's voice (src/speech/mimoTts.js, src/speech/mistralTts.js) —
   // undefined when GAIA_TTS_BASE_URL/GAIA_TTS_MODEL are unset, in which
   // case POST /speech answers 503 rather than attempting a call with
@@ -342,7 +364,7 @@ function createApp(env = process.env) {
           model: providerNativeConfig.model,
           authToken: providerNativeConfig.apiKey,
           logger: llmCallLogger,
-          ...memoryToolOptions,
+          ...toolOptions,
         })
       : nativeGenerator;
   }

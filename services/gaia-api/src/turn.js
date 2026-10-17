@@ -239,7 +239,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -275,6 +275,18 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   // claim it.
   if (desktop && typeof desktop.execute === 'function') {
     capabilities.push({ id: 'desktop' });
+  }
+  // The shallow live lookup — real only when the primary generator actually
+  // carries the `web_search` tool, i.e. when a search provider is configured.
+  // Same rule as `memory`: the tool's presence is what makes the claim honest.
+  if (toolNames.includes('web_search')) {
+    capabilities.push({ id: 'web_search' });
+  }
+  // The DEEP path, a different thing entirely: a research job handed to Hermes
+  // and answered later. Off unless the deployment opted in, which is exactly
+  // why it is a separate capability from the lookup above.
+  if (researchJobs && typeof researchJobs.start === 'function') {
+    capabilities.push({ id: 'research' });
   }
   return capabilities;
 }
@@ -616,7 +628,7 @@ async function runTurnCore({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs });
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderDualRecallContext(reflections, dualRecall ? dualRecall.evidenceByFactId : null);
   const mentalModelBlock = renderMentalModelContext(mentalModels);

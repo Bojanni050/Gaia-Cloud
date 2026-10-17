@@ -85,11 +85,23 @@ test('other Gaia capabilities carry their function modes as non-routing skills',
   assert.ok(hasSkill('conversation_search', 'saved-conversation-search'));
   assert.ok(hasSkill('hindsight', 'memory-retrieval'));
   assert.ok(hasSkill('hindsight', 'pattern-retrieval'));
-  assert.ok(hasSkill('web', 'web-search'));
+  assert.ok(hasSkill('web_search', 'web-search'));
   // None of these are routing targets — scope/source selection is Decision input.
-  for (const s of routingSkills('conversation_search').concat(routingSkills('hindsight')).concat(routingSkills('web'))) {
+  for (const s of routingSkills('conversation_search').concat(routingSkills('hindsight')).concat(routingSkills('web_search'))) {
     assert.fail(`no retrieval capability skill should be routing:true: ${s.id}`);
   }
+});
+
+test('research and the shallow web lookup are two distinct capabilities', () => {
+  const research = getCapabilityProfile('research');
+  const lookup = getCapabilityProfile('web_search');
+  assert.ok(research, 'research must be in the registry — awareness renders from it');
+  assert.ok(lookup, 'web_search must be in the registry — awareness renders from it');
+  assert.notEqual(research.description, lookup.description);
+  // Neither carries routing skills: researchReach's routing targets stay the
+  // Hermes skills, and the shallow lookup is a tool the turn offers.
+  assert.deepEqual(routingSkills('research'), []);
+  assert.deepEqual(routingSkills('web_search'), []);
 });
 
 test('foundation is registered as the archive counterpart of hindsight (retrieval, non-routing skill)', () => {
@@ -230,6 +242,36 @@ test('a turn claims desktop ONLY when a desktop executor is connected', async ()
 
   const connected = await capture({ desktop: { execute: async () => ({}) } });
   assert.match(connected.content, /- desktop:/);
+});
+
+test('a turn claims web_search ONLY when the tool is present, and research only when the jobs are wired', async () => {
+  const { performTurn } = require('../src/turn');
+  const documents = { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' };
+  const capture = async (extra = {}, toolNames = []) => {
+    let captured = null;
+    await performTurn({
+      messages: [{ role: 'user', content: 'hallo' }],
+      documents,
+      generator: { generate: async (messages) => { captured = messages; return 'ok'; }, toolNames },
+      ...extra,
+    });
+    return (captured || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
+  };
+
+  // No provider configured (so no tool) and no research reach: neither claim.
+  const bare = await capture();
+  assert.ok(bare && !/- web_search:/.test(bare.content), 'no provider ⇒ the lookup is never claimed');
+  assert.ok(!/- research:/.test(bare.content), 'reach off ⇒ research is never claimed');
+
+  // The tool's presence is the whole difference — the same rule `memory` uses.
+  const withTool = await capture({}, ['web_search']);
+  assert.match(withTool.content, /- web_search:/);
+  assert.ok(!/- research:/.test(withTool.content), 'research is a separate capability, still off');
+
+  // And the deep path is claimed on its own wiring, without a lookup provider.
+  const withJobs = await capture({ researchJobs: { start: async () => ({}) } });
+  assert.match(withJobs.content, /- research:/);
+  assert.ok(!/- web_search:/.test(withJobs.content));
 });
 
 // --- Boundary ------------------------------------------------------------------

@@ -74,10 +74,17 @@ const CAPABILITY_REGISTRY = Object.freeze({
     skills: Object.freeze([]),
   }),
 
-  web: Object.freeze({
-    id: 'web',
+  research: Object.freeze({
+    id: 'research',
+    type: 'capability',
+    description: 'handing a question to a deep, sourced investigation that keeps running in the background and comes back with material for you to answer from',
+    skills: Object.freeze([]),
+  }),
+
+  web_search: Object.freeze({
+    id: 'web_search',
     type: 'retrieval',
-    description: 'searching the live web for current external information',
+    description: 'looking something up on the live web for current external information — a shallow, single-step search you do inside the turn',
     skills: Object.freeze([
       Object.freeze({ id: 'web-search', category: 'research', routing: false, description: 'live web search via the registered search provider' }),
     ]),
