@@ -21,6 +21,7 @@ const {
   applyCapabilityOutcomeOverride,
   metadataForMemoryDecision,
   logMemoryWorthiness,
+  isPureAcknowledgement,
   ACTIONS,
 } = require('../src/memoryWorthiness');
 
@@ -316,4 +317,48 @@ test('applyCapabilityOutcomeOverride: a null memoryDecision (module failure) sti
   const result = applyCapabilityOutcomeOverride(null, { outcome: { verdict: 'ask_user', attempts: 1 } });
   assert.equal(result.action, 'retain');
   assert.deepEqual(result.reasons, ['notable_capability_outcome']);
+});
+
+// --- 18-10-2026: a standing fact about his own surroundings --------------
+
+/**
+ * Measured that day: three plain statements — "Ik heb twee 27 inch monitoren",
+ * "ik heb een rode trui aan" and "Ik heb 1 levende plant, de rest is nep" —
+ * all scored 0.11 and were discarded, so nothing ever reached the extractor
+ * while the extractor had no trouble with them at all (dry-run-extract). A
+ * standing statement about his own surroundings now gets a floor; what is
+ * momentary, worn or abstract still does not.
+ */
+test('a standing own fact reaches the gate, a momentary or abstract one does not', () => {
+  const monitors = evaluate('Ik heb twee 27 inch monitoren', { assistantReply: 'Genoteerd.' });
+  assert.equal(monitors.action, 'retain_low_priority');
+  assert.ok(monitors.reasons.includes('own_standing_fact'), JSON.stringify(monitors.reasons));
+  assert.equal(shouldRetainToHindsight(monitors), true);
+
+  assert.equal(evaluate('Ik heb 1 levende plant, de rest is nep', { assistantReply: 'Genoteerd.' }).action, 'retain_low_priority');
+  assert.equal(evaluate('I have two 27 inch monitors', { assistantReply: 'Noted.' }).action, 'retain_low_priority');
+  assert.equal(evaluate('Ik heb mijn monitors op een arm gezet').action, 'retain_low_priority');
+
+  // What he is wearing right now is not a fact about his wardrobe.
+  assert.equal(evaluate('ik heb een rode trui aan').action, 'discard');
+  // Nor is an abstract noun a possession.
+  assert.equal(evaluate('Ik heb een vraag').action, 'discard');
+  assert.equal(evaluate('Ik heb honger').action, 'discard');
+  assert.equal(evaluate('Ik heb een idee voor MelodiQ').action, 'discard');
+});
+
+test('a standing fact stays below a life event it does not outrank', () => {
+  const standing = evaluate('Ik heb twee 27 inch monitoren');
+  const lifeEvent = evaluate('Ik verhuis volgende maand naar Maarn');
+  assert.ok(standing.score < lifeEvent.score, standing.score + " < " + lifeEvent.score);
+  assert.equal(standing.action, 'retain_low_priority');
+  assert.equal(lifeEvent.action, 'retain');
+});
+
+test('her own confirmation reads as an acknowledgement, not as a substantive answer', () => {
+  assert.equal(isPureAcknowledgement('Genoteerd.'), true);
+  assert.equal(isPureAcknowledgement('Kept.'), true);
+  assert.equal(isPureAcknowledgement('Begrepen.'), true);
+  assert.equal(isPureAcknowledgement('Ik heb hem bewaard.'), false);
+  assert.ok(!evaluate('Ik heb twee 27 inch monitoren', { assistantReply: 'Genoteerd.' }).reasons.includes('substantive_reply'));
 });

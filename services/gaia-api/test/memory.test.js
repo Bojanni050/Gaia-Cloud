@@ -513,6 +513,36 @@ test('reflectOnTurn keeps a statement turn and drops a question-only turn', asyn
   assert.ok(!captured[1].summary.includes('Wat weet je over MelodiQ?'), captured[1].summary);
 });
 
+test('reflectOnTurn leaves her bare confirmation out of the retained turn', async () => {
+  const captured = [];
+  const hindsight = { reflect: async (opts) => { captured.push(opts); } };
+
+  // Keeping "Genoteerd." as her side of the turn makes the extractor record
+  // that she noted the information as a fact of its own ("Gaia noteert de
+  // informatie van Bojan", dry-run-extract 18-10-2026) — the chatter this
+  // turn exists to keep out.
+  reflectOnTurn(hindsight, {
+    userText: 'Ik heb twee 27 inch monitoren',
+    assistantText: 'Genoteerd.',
+    conversationId: 'c2',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(captured.length, 1);
+  assert.match(captured[0].summary, /^Bojan: Ik heb twee 27 inch monitoren$/);
+  assert.ok(!captured[0].summary.includes('Genoteerd.'), captured[0].summary);
+
+  // A real answer still travels with the turn.
+  reflectOnTurn(hindsight, {
+    userText: 'Ik heb twee 27 inch monitoren',
+    assistantText: 'Dan kun je de twee vensters naast elkaar zetten.',
+    conversationId: 'c2',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(captured.length, 2);
+  assert.ok(captured[1].summary.includes('Dan kun je de twee vensters naast elkaar zetten.'));
+});
+
 // --- mental models -----------------------------------------------------
 
 test('renderMentalModelContext returns null when there is nothing to show', () => {

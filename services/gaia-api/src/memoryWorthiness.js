@@ -125,6 +125,33 @@ const SIGNALS = Object.freeze({
   ],
   /** Weak first-person presence — situational, NOT durable by itself. */
   presenceFact: [/\bik ben\b/i, /\bik heb\b/i, /\bi am\b/i],
+  /**
+   * A standing fact about the person's own surroundings or belongings —
+   * first person with a count or article and something nameable ("ik heb twee
+   * 27 inch monitoren", "ik heb een levende plant"). This is the middle ground
+   * between presenceFact above (one weak word) and personalFact (life, work,
+   * family): worth keeping, and worth reaching the extractor at all, because a
+   * bare possession statement otherwise scores below the gate. Measured on
+   * 18-10-2026: three such statements were all discarded, so nothing was ever
+   * sent to Hindsight while the extractor had no trouble with them.
+   */
+  ownStandingFact: [
+    /\bik\s+(?:heb|bezit)\s+(?:een|één|twee|drie|vier|vijf|zes|zeven|acht|negen|tien|\d{1,3})\s+[\p{L}\p{N}]/iu,
+    /\bik\s+heb\s+(?:mijn|onze|ons)\s+\p{L}/iu,
+    /\bi\s+(?:have|own)\s+(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d{1,3})\s+[\p{L}\p{N}]/iu,
+  ],
+  /**
+   * What looks like the above but is not standing: what someone is wearing or
+   * feeling right now, and abstract nouns that are not a thing. Kept separate
+   * so ownStandingFact can stay readable ("ik heb een rode trui aan" is not a
+   * fact about his wardrobe; "ik heb een vraag" is not a fact at all).
+   */
+  momentaryPossession: [
+    /\b(?:trui|shirt|jas|vest|broek|jurk|pak|schoenen|laarzen|sokken)\b/i,
+    /\bheb\b[^.!?]{0,40}\baan\b/i,
+    /\bik\s+heb\s+(?:het\s+)?(?:druk|warm|koud|honger|dorst|haast|gelijk|zin|tijd|moeten?)\b/i,
+    /\bik\s+heb\s+(?:een|één)\s+(?:vraag|idee|gevoel|probleem|moment|afspraak|keuze|pauze|plan|tip|bericht|theorie|opmerking)\b/i,
+  ],
   /** Decisions & commitments (project decisions, appointments). */
   decision: [
     /\bbezloten\b/i, /\bbesluiten\b/i, /\bbesloten\b/i, /\bbeslist\b/i, /\bwe gaan voor\b/i, /\bkeuze gemaakt\b/i,
@@ -161,6 +188,10 @@ const ACK_VOCABULARY = new Set([
   'dankjewel', 'dankje', 'graag', 'gedaan', 'haha', 'hihi', 'hè', 'hm', 'hmm',
   'aha', 'ach', 'ai', 'wow', 'leuk', 'vet', 'zeker', 'check', 'cool', 'nice',
   'yes', 'yep', 'nope', 'thanks', 'thank', 'you', 'great', 'perfect', 'sure',
+  // Her own confirmations count too: a reply that only says "Genoteerd." must
+  // not read as a substantive answer, or the extractor ends up storing her
+  // noting the information as a fact of its own (measured 18-10-2026).
+  'genoteerd', 'begrepen', 'noted', 'kept', 'understood',
 ]);
 
 function clamp01(n) {
@@ -324,6 +355,16 @@ function evaluateMemoryWorthiness(input = {}) {
     // Weak anchor only: situational self-statements get a nudge, never a
     // durability claim ("Ik ben even koffie halen" is not a memory).
     d.personalRelevance = Math.max(d.personalRelevance, 1);
+  }
+  if (hasSignal(text, SIGNALS.ownStandingFact) && !hasSignal(text, SIGNALS.momentaryPossession)) {
+    // A standing statement about his own surroundings does belong in memory, so
+    // it gets past the gate a bare "ik heb …" cannot pass (0.11, measured
+    // 18-10-2026). High enough to retain as low priority, not to outrank a life
+    // event: 2/2/2 lands at 0.37, just over LOW_PRIORITY_SCORE.
+    d.personalRelevance = Math.max(d.personalRelevance, 2);
+    d.persistence = Math.max(d.persistence, 2);
+    d.novelty = Math.max(d.novelty, 2);
+    reasons.push('own_standing_fact');
   }
   if (hasSignal(turnText, SIGNALS.recurrence)) {
     d.persistence = Math.max(d.persistence, 3);

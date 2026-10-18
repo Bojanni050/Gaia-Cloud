@@ -8,6 +8,7 @@
  * contract.
  */
 const { shouldRecall, shouldReflect } = require('./memoryPolicy');
+const { isPureAcknowledgement } = require('./memoryWorthiness');
 const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
 const { relativeAge } = require('./nowContext');
 
@@ -395,13 +396,20 @@ function reflectOnTurn(hindsight, { conversationId, userText, assistantText, ass
   // holds — never a new fact. See spokenPart for what counts as asking.
   const spoken = spokenPart(userText);
   if (!spoken) return;
+  // A reply that is nothing but a confirmation ("Genoteerd.") is not worth
+  // handing to the extractor: it would be kept as a fact about her noting what
+  // he said. Measured 18-10-2026, where "Gaia noteert de informatie van Bojan"
+  // came out of exactly that shape.
+  const reply = isPureAcknowledgement(assistantText) ? '' : assistantText;
   const assistantIdentity = getAssistantIdentity();
   const userIdentity = getUserIdentity(
     userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}
   );
   const context = getConversationContext({ userDisplayName: userIdentity.displayName });
   // Summary uses the authoritative display names, not hardcoded "Bo"/"Gaia" literals
-  const summary = `${userIdentity.displayName}: ${spoken}\n\n${assistantIdentity.displayName}: ${assistantText}`;
+  const summary = reply
+    ? `${userIdentity.displayName}: ${spoken}\n\n${assistantIdentity.displayName}: ${reply}`
+    : `${userIdentity.displayName}: ${spoken}`;
   // Identity metadata: conversational agent is always Gaia, even when a
   // capability (Hermes, etc.) executed internally. Capability executor may
   // be recorded separately where useful, but never as the conversation agent.
