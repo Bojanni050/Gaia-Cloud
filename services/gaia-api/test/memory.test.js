@@ -79,6 +79,18 @@ test('shouldRecall stays closed without the context object or with non-memory in
   );
 });
 
+test('shouldRecall opens for the memory-question forms that carried no cue (18-10-2026)', () => {
+  // Verbatim from the Yassine conversation where the gate stayed shut for 21
+  // turns while the memory was demonstrably present: the knowing-question and
+  // the memory nouns themselves were not cues.
+  assert.equal(shouldRecall('Wat weet jij over Yassin?'), true);
+  assert.equal(shouldRecall('Oké, en wat weet je dan van Luca?'), true);
+  assert.equal(shouldRecall('Als het goed is, staat er wel wat in je geheugen.'), true);
+  assert.equal(shouldRecall('Kun je wel bij het geheugen?'), true);
+  assert.equal(shouldRecall('Herinner je je nog wat we zagen?'), true);
+  assert.equal(shouldRecall('What do you know about the migration plan?'), true);
+});
+
 test('shouldReflect keeps an exchange unless both sides are trivial', () => {
   assert.equal(shouldReflect('thanks', "you're welcome"), false);
   assert.equal(shouldReflect('why', 'no reason'), false);

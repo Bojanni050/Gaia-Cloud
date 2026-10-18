@@ -44,6 +44,19 @@ const PAST_REFERENCE_SIGNALS = [
   phrase('last time'), phrase('previously'),
   phrase('we discussed'), phrase('you said'), phrase('i told you'), phrase('i mentioned'),
   phrase('weet je nog'), phrase('je zei'), phrase('ik vertelde'), phrase('ik zei'),
+  // "Wat weet jij over X?" is the canonical memory question, yet it carried no
+  // cue at all: "weet je nog" matched, "wat weet je over" did not. On
+  // 18-10-2026 a whole conversation about Yassine (21 turns) walked with the
+  // gate shut for exactly this reason, and she answered "ik heb niets over
+  // Yassine in mijn herinnering" while eleven valid items sat in her own bank.
+  // The same hole hid "kun je wel bij het geheugen" — a question about memory
+  // itself, where "geheugen" was the only word naming it. So: the memory nouns,
+  // the knowing-question phrasings, and their English equivalents.
+  boundary('geheugen'), boundary('herinnering'), boundary('herinneringen'),
+  boundary('herinner'), boundary('memory'),
+  phrase('wat weet je'), phrase('wat weet jij'),
+  phrase('weet je wie'), phrase('weet je iets'),
+  phrase('do you know'), phrase('what do you know'),
 ];
 
 const DURABLE_CONTEXT_SIGNALS = [
