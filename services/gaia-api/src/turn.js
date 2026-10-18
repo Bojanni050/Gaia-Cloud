@@ -440,8 +440,13 @@ async function runTurnCore({
   // tekst te kijken — dat is precies waar ze uit elkaar liepen.
   const shape = readTurn(userText);
 
-  // No live interpretation: language understanding happens inside the
-  // single inference call.
+  // No live interpretation: language understanding happens inside the single
+  // inference call. IntentIQ (`logos/intentIQ.js`) can produce a decision, but
+  // nothing wires it into the turn, so this is deliberately `null` and every
+  // gate below runs on the one `shape` reading above. The `intentDecision`
+  // parameters that remain in memoryPolicy, patternAwareness and knowledgePages
+  // are there for IntentIQ itself, the eval cases and the Logos path — not for
+  // the live conversation.
   const intentDecision = null;
 
   // Archive-shaped asks ("wat staat er in foundation…") open a read over

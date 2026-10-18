@@ -77,10 +77,13 @@ function hasSignal(text, patterns) {
  * Memoryworthiness-era addition: IntentIQ may resolve a turn as anchored to
  * shared conversational memory even when its text carries no lexical
  * past-reference cue ("wat was er in juni ook alweer?" right after GAIA
- * herself mentioned juni — the referent is hers, not the user's). When the
- * IntentDecision says the answer's truth lives in memory
- * (`sourceOfTruth: 'memory'`) or explicitly marks an assistant-anchored
- * follow-up, a lookup must run; the lexical cues are then irrelevant.
+ * herself mentioned juni — the referent is hers, not the user's). That branch
+ * only fires when a caller hands in a real decision, and the live turn never
+ * does: `turn.js` sets `intentDecision = null` because IntentIQ is not wired
+ * into the turn. The callers that can reach it are `intentIQ.js` itself, the
+ * eval cases and the Logos path, and it stays as the contract for the day
+ * IntentIQ runs again. Read it as a capability, not as something the live
+ * conversation does. Whenever it does fire, the lexical cues are irrelevant.
  * `shape` (stap 4 van "de vraag één keer lezen"): when the caller already read
  * the turn once with `turnShape.readTurn`, that verdict is used as-is instead
  * of reading the same text again here. Both answer the same question — the
