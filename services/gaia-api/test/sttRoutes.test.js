@@ -32,6 +32,9 @@ function baseEnv(overrides = {}) {
     HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,
+    // Same reason as server.test.js: the decision store must not write into
+    // the checkout's data dir while the suite runs.
+    LOGOS_DECISIONS_PATH: path.join(fixtureDir, 'logos-decisions'),
     ...overrides,
   };
 }

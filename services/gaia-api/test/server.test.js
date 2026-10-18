@@ -46,6 +46,11 @@ function baseEnv(overrides = {}) {
     HERMES_BASE_URL: HERMES_BASE,
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,
+    // The decision store writes one line per turn. Without this, createApp()
+    // falls back to services/gaia-api/data/logos-decisions and every test run
+    // appends to whatever the developer has there — measured 18-10-2026:
+    // 61 lines per run. Pointed at the throwaway fixture dir instead.
+    LOGOS_DECISIONS_PATH: path.join(fixtureDir, 'logos-decisions'),
     ...overrides,
   };
 }

@@ -12,17 +12,24 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const request = require('supertest');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { createApp } = require('../src/server');
 
 // Mock environment for testing
 const testEnv = {
   PORT: '0',
-  SOUL_PATH: require('path').resolve(__dirname, '../identity/soul.md'),
+  SOUL_PATH: path.resolve(__dirname, '../identity/soul.md'),
   GAIA_API_TOKEN: 'test-token',
   HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
   HERMES_MODEL: 'hermes-agent',
-  FOUNDATION_ARTIFACT_PATH: require('path').resolve(__dirname, './fixtures/foundation-artifact.json'),
+  FOUNDATION_ARTIFACT_PATH: path.resolve(__dirname, './fixtures/foundation-artifact.json'),
   ...process.env,
+  // Last, so it wins over the developer's own environment: the decision store
+  // otherwise falls back to services/gaia-api/data/logos-decisions and every
+  // test run appends real turns' worth of lines to the checkout (18-10-2026).
+  LOGOS_DECISIONS_PATH: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-version-decisions-')), 'logos-decisions'),
 };
 
 describe('GET /api/version', () => {

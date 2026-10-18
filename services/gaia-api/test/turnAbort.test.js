@@ -294,6 +294,9 @@ const TOKEN = 'test-token';
 const NATIVE_BASE = 'http://fake-native.internal/v1';
 const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-api-abort-test-'));
 const FOUNDATION_ARTIFACT_PATH = path.join(fixtureDir, 'foundation-artifact.json');
+// The decision store would otherwise default to services/gaia-api/data/logos-decisions
+// and every run of this suite would append to the checkout (18-10-2026).
+const LOGOS_DECISIONS_PATH = path.join(fixtureDir, 'logos-decisions');
 fs.writeFileSync(FOUNDATION_ARTIFACT_PATH, JSON.stringify({ documents: DOCUMENTS }));
 
 test('over real HTTP: a turn that is allowed to finish is not aborted and is saved complete', async () => {
@@ -319,6 +322,7 @@ test('over real HTTP: a turn that is allowed to finish is not aborted and is sav
     HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,
+    LOGOS_DECISIONS_PATH,
     HISTORY_PATH: historyDir,
   });
   const server = app.listen(0);
@@ -370,6 +374,7 @@ test('over real HTTP, production-like (primary with tools): a client that leaves
     HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,
+    LOGOS_DECISIONS_PATH,
     HISTORY_PATH: historyDir,
   });
   const server = app.listen(0);
