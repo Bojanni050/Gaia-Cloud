@@ -251,13 +251,20 @@ function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()
  * the query carries no lexical past cue of its own: memory and the transcript
  * are two halves of "what do you know about this", and a lookup should reach
  * for both, not one.
+ *
+ * `shape` is the verdict of `turnShape.readTurn` for this same query (stap 4
+ * van "de vraag één keer lezen"): when the turn read the question once, the
+ * policy uses that reading instead of scanning the text a second time.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {string} query
- * @param {{ intentDecision?: object|null, pastReference?: boolean }} [options]
+ * @param {{ intentDecision?: object|null, pastReference?: boolean, shape?: object|null }} [options]
  */
 async function recallRelevantContext(hindsight, query, options = {}) {
   if (!query || !query.trim()) return [];
-  if (!options.pastReference && !shouldRecall(query, { intentDecision: options.intentDecision })) return [];
+  if (!options.pastReference
+    && !shouldRecall(query, { intentDecision: options.intentDecision, shape: options.shape })) {
+    return [];
+  }
   try {
     return await hindsight.recall(query);
   } catch (_) {
@@ -284,11 +291,11 @@ async function recallRelevantContext(hindsight, query, options = {}) {
  * @param {{ conversationId: string, userText: string, assistantText: string,
  *          assistantMessageId?: string, metadata?: Record<string,string>,
  *          userDisplayName?: string, userIdentityOptions?: object,
- *          capabilityExecutor?: string }} turn
+ *          capabilityExecutor?: string, shape?: object|null }} turn
  */
-function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor }) {
+function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
   if (!userText || !assistantText) return;
-  if (!shouldReflect(userText, assistantText)) return;
+  if (!shouldReflect(userText, assistantText, { shape })) return;
   const assistantIdentity = getAssistantIdentity();
   const userIdentity = getUserIdentity(
     userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}

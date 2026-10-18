@@ -61,6 +61,25 @@ test('readTurn states the live pattern gate for every shape', () => {
   }
 });
 
+test('stap 4: handing the shape down changes no gate answer', () => {
+  // The live turn now reads the question once and passes that verdict to every
+  // gate instead of letting each gate scan the text again. This is the guard
+  // that the shortcut is exact: same answer, one reading.
+  for (const text of CORPUS) {
+    const shape = readTurn(text);
+    assert.equal(
+      shouldRecall(text, { shape }),
+      shouldRecall(text),
+      `recall gate differs when the shape is handed down: ${JSON.stringify(text)}`
+    );
+    assert.equal(
+      shouldAttemptPatternRetrieval(text, null, shape),
+      shouldAttemptPatternRetrieval(text, null),
+      `pattern gate differs when the shape is handed down: ${JSON.stringify(text)}`
+    );
+  }
+});
+
 test('the 18-10-2026 memory questions open the gate and name their cue', () => {
   const questions = [
     'Wat weet jij over Yassin?',

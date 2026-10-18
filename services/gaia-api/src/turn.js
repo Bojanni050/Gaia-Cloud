@@ -51,7 +51,6 @@ const {
 const { shouldAttemptPatternRetrieval, renderPatternContextBlock, logPatternAwareness, evaluatePatternUsage } = require('./reasoning/patternAwareness');
 const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { pickOpenQuestion, renderOpenQuestionRaise, fromQuestionRow } = require('./reasoning/openQuestionReach');
-const { detectSignals } = require('./logos/intentSignals');
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
 const { renderNowContext } = require('./nowContext');
@@ -435,21 +434,23 @@ async function runTurnCore({
     }
     : undefined;
 
+  // Eén keer lezen (stap 4 van "de vraag één keer lezen"): readTurn leest de
+  // zin met de woordjeslijsten van alle poorten samen. Elke poort hieronder
+  // luistert naar dit ene antwoord in plaats van zelf opnieuw naar dezelfde
+  // tekst te kijken — dat is precies waar ze uit elkaar liepen.
+  const shape = readTurn(userText);
+
   // No live interpretation: language understanding happens inside the
-  // single inference call. The gate below therefore runs on lexical
-  // policy only (memoryPolicy.shouldRecall with no intent decision).
+  // single inference call.
   const intentDecision = null;
 
   // Archive-shaped asks ("wat staat er in foundation…") open a read over
   // Foundation — the raw-record counterpart to Hindsight recall. The signal
-  // is pure and lexical (intentSignals.detectSignals), so no model runs
-  // before the one inference call.
-  const archiveSignals = (() => {
-    try { return detectSignals(userText); } catch (_) { return null; }
-  })();
+  // is pure and lexical, read once above, so no model runs before the one
+  // inference call.
   const wantFoundation = Boolean(
     foundation && typeof foundation.searchResults === 'function'
-    && archiveSignals && archiveSignals.recordedKnowledge
+    && shape.looksInRecords
   );
 
   // Conversation-history read: the literal past. Opened by the signals that
@@ -460,8 +461,7 @@ async function runTurnCore({
   // remembering; the transcript holds what was said.
   const wantConversationHistory = Boolean(
     conversationSearch && typeof conversationSearch.search === 'function'
-    && archiveSignals
-    && (archiveSignals.exactHistory || archiveSignals.pastLookup || archiveSignals.rememberedKnowledge)
+    && shape.looksInArchive
   );
 
   // Research with sources is the ONE shape that reaches FOR Hermes (see
@@ -502,11 +502,11 @@ async function runTurnCore({
     hypothesisRuntime
     && typeof hypothesisRuntime.recallPatterns === 'function'
     && hindsight
-    && shouldAttemptPatternRetrieval(userText, intentDecision)
+    && shouldAttemptPatternRetrieval(userText, intentDecision, shape)
   );
   timing.start('memory_recall');
   const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob] = await Promise.all([    hindsight
-      ? recallRelevantContext(hindsight, userText, { intentDecision, pastReference: wantConversationHistory })
+      ? recallRelevantContext(hindsight, userText, { pastReference: wantConversationHistory, shape })
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
     wantPatterns
@@ -573,7 +573,7 @@ async function runTurnCore({
   try {
     logRecallMeasure({
       traceId: traceId || null,
-      gated: shouldRecall(userText, { intentDecision }),
+      gated: shouldRecall(userText, { shape }),
       hasHindsight: Boolean(hindsight),
       reflectionCount: Array.isArray(reflections) ? reflections.length : 0,
       mentalModelCount: Array.isArray(mentalModels) ? mentalModels.length : 0,
@@ -589,10 +589,11 @@ async function runTurnCore({
   // Stap 2 van het stroomlijnplan (`plan: de vraag één keer lezen`): het
   // verdict van readTurn naast de bestaande per-poort-regels, zodat stap 3 op
   // echt verkeer kan vergelijken vóór er een consument verhuist. Vorm, ja/nee
-  // en signaalnamen alleen — nooit de tekst van de gebruiker.
+  // en signaalnamen alleen — nooit de tekst van de gebruiker. Sinds stap 4 is
+  // dit dezelfde lezing die de poorten hierboven al gebruikten.
   try {
     logTurnShape(
-      { ...readTurn(userText), traceId: traceId || null, queryLength: String(userText || '').length },
+      { ...shape, traceId: traceId || null, queryLength: String(userText || '').length },
       decisionLogger
     );
   } catch (_) {
@@ -828,6 +829,9 @@ async function runTurnCore({
     eleos,
     evidence,
     intentDecision,
+    // Dezelfde lezing van de vraag als de poorten in de turn zelf gebruikten
+    // (stap 4): de reflectiepoort leest de tekst dan niet nog eens.
+    shape,
     // The turn's own clock: Logos judges recency against the moment of the
     // conversation, not against whenever the deferred phase happens to run.
     now,
@@ -891,6 +895,7 @@ async function runDeferredCognition({
   eleos,
   evidence,
   intentDecision,
+  shape,
   recalledReflections,
   executionResult,
   messages,
@@ -1133,6 +1138,7 @@ async function runDeferredCognition({
         metadata: metadataForMemoryDecision(memoryDecision),
         userDisplayName,
         capabilityExecutor: 'generation',
+        shape,
       });
     } catch (_) {
       // reflectOnTurn never lets a Hindsight failure escape; this guards

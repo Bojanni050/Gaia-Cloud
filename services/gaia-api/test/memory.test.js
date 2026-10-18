@@ -98,6 +98,22 @@ test('shouldReflect keeps an exchange unless both sides are trivial', () => {
   assert.equal(shouldReflect('why', 'Because you mentioned last week you prefer async updates.'), true);
 });
 
+test('step 4: a shape read once is what the gate listens to, not a second scan', () => {
+  // The turn reads the question once (turnShape.readTurn) and hands the same
+  // verdict to every gate. When a shape is present it decides — including when
+  // it disagrees with what the text alone would say, which is the whole point
+  // of never reading the same sentence twice.
+  assert.equal(shouldRecall('iets zonder enig signaal', { shape: { wantsRecall: true } }), true);
+  assert.equal(shouldRecall('Wat weet jij over Yassin?', { shape: { wantsRecall: false } }), false);
+  assert.equal(shouldReflect('thanks', "you're welcome", { shape: { reflectable: true } }), true);
+  assert.equal(shouldReflect('thanks', "you're welcome", { shape: { reflectable: false, empty: true } }), false);
+  // A trivial user half with a substantive answer still reflects: the shape
+  // answers for the user's half only, so the answer's half is still read.
+  assert.equal(shouldReflect('ok', 'Because you mentioned last week you prefer async updates.', {
+    shape: { reflectable: false, empty: false },
+  }), true);
+});
+
 // --- hindsightClient -------------------------------------------------------
 
 test('hindsightClient.recall posts the query, defaults to budget "mid", and maps the full result shape', async () => {

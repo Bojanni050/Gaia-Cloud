@@ -81,10 +81,16 @@ function hasSignal(text, patterns) {
  * IntentDecision says the answer's truth lives in memory
  * (`sourceOfTruth: 'memory'`) or explicitly marks an assistant-anchored
  * follow-up, a lookup must run; the lexical cues are then irrelevant.
+ * `shape` (stap 4 van "de vraag één keer lezen"): when the caller already read
+ * the turn once with `turnShape.readTurn`, that verdict is used as-is instead
+ * of reading the same text again here. Both answer the same question — the
+ * live turn now reads the question once and every gate listens to that answer.
  * @param {string} query
- * @param {{ intentDecision?: object|null }} [context]
+ * @param {{ intentDecision?: object|null, shape?: object|null }} [context]
  */
 function shouldRecall(query, context = {}) {
+  const shape = context && context.shape;
+  if (shape) return Boolean(shape.wantsRecall);
   const text = (query || '').trim();
   if (isTrivial(text, MIN_RECALL_LENGTH)) return false;
   const intent = context && context.intentDecision;
@@ -96,8 +102,19 @@ function shouldRecall(query, context = {}) {
   return hasSignal(text, PAST_REFERENCE_SIGNALS) || hasSignal(text, DURABLE_CONTEXT_SIGNALS);
 }
 
-/** @param {string} userText @param {string} assistantText */
-function shouldReflect(userText, assistantText) {
+/**
+ * Reflection gate. The optional third parameter is the same ADDITIVE context
+ * object as in shouldRecall: with a `shape` the user's half is already judged,
+ * so only the answer's half is still read here.
+ * @param {string} userText @param {string} assistantText
+ * @param {{ shape?: object|null }} [context]
+ */
+function shouldReflect(userText, assistantText, context = {}) {
+  const shape = context && context.shape;
+  if (shape) {
+    if (shape.reflectable) return true; // the user's half is already past the floor
+    if (shape.empty) return false;
+  }
   const userTrivial = isTrivial(userText, MIN_REFLECT_LENGTH);
   const assistantTrivial = isTrivial(assistantText, MIN_REFLECT_LENGTH);
   return !(userTrivial && assistantTrivial);

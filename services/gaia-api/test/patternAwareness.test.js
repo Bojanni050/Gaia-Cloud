@@ -65,6 +65,13 @@ test('gate: an unresolved turn with no topic and no entities is skipped', () => 
   assert.equal(shouldAttemptPatternRetrieval('mmjaah eigenlijk weet ik het niet echt meer', intentDecision), false);
 });
 
+test('gate: a shape read once decides, so the text is not read again', () => {
+  // Stap 4: the live turn reads the question once and hands the verdict down.
+  // `topical` is the whole answer then — even when it disagrees with the words.
+  assert.equal(shouldAttemptPatternRetrieval('Hoi Gaia', null, { topical: true }), true);
+  assert.equal(shouldAttemptPatternRetrieval('Ik wil vanavond weer aan Melodiq werken', null, { topical: false }), false);
+});
+
 test('gate: topical turns open retrieval', () => {
   assert.equal(shouldAttemptPatternRetrieval('Ik wil vanavond weer aan Melodiq werken', { intent: 'converse', status: 'accepted' }), true);
   assert.equal(shouldAttemptPatternRetrieval('helpt dit patroon bij mijn project?', null), true);

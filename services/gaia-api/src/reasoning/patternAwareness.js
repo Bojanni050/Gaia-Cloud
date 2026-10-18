@@ -120,11 +120,17 @@ function contentTokens(text) {
  * length vocabulary as memory recall (memoryPolicy.isTrivial) plus
  * IntentIQ's own classification. One scoped Hindsight call on a topical
  * turn is the entire cost when the gate opens.
+ *
+ * `shape` (stap 4 van "de vraag één keer lezen"): when the turn already read
+ * the question once (`turnShape.readTurn`), its `topical` verdict is the whole
+ * answer for the live path — the trivial floor is then not read again here.
  * @param {string} userText
  * @param {object|null|undefined} intentDecision - IntentIQ's IntentDecision
+ * @param {{ topical?: boolean }|null|undefined} [shape]
  * @returns {boolean}
  */
-function shouldAttemptPatternRetrieval(userText, intentDecision) {
+function shouldAttemptPatternRetrieval(userText, intentDecision, shape) {
+  if (shape) return Boolean(shape.topical);
   const text = String(userText || '');
   if (!text.trim()) return false;
   // Same trivial-turn floor as memory recall ("Hoi Gaia" never recalls).
