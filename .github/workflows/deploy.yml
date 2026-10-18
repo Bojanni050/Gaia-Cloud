@@ -15,6 +15,14 @@ on:
       - 'services/gaia-api/**'
       - 'services/cognition/**'
       - '.github/workflows/deploy.yml'
+  # Tests (not the deploy job below) also run for a pull request touching the
+  # same paths, so a broken change shows up before it is merged rather than
+  # after it has landed on main.
+  pull_request:
+    paths:
+      - 'services/gaia-api/**'
+      - 'services/cognition/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
 jobs:
@@ -54,6 +62,8 @@ jobs:
 
   deploy:
     needs: [test, test-cognition]
+    # Never from a pull request: that run only exists to test.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # One deploy at a time: two pushes seconds apart used to run
