@@ -424,64 +424,15 @@ async function describeImagesAsText(images, describeImage, signal) {
  * }} input
  * @returns {Promise<{ executionResult: object|null, replyText: string|null, timing: object, notConfigured: boolean, startDeferredCognition: () => Promise<void> }>}
  */
-async function runTurnCore({
-  messages,
-  documents,
-  hindsight,
-  attachments,
-  traceId,
-  conversationId,
-  generator,
-  backupGenerator,
-  nativeGenerator,
-  hermes,
-  researchJobs,
-  foundation,
-  conversationSearch,
-  hypothesisRuntime,
-  aion,
-  eleos,
-  desktop,
-  decisionStore,
-  reasonIQ = evaluateLogos,
-  onDelta,
-  onResearchJob,
-  userDisplayName,
-  signal,
-  describeImage,
+/**
+ * The recall half of a turn: which doors this turn opens (Foundation, the
+ * conversation archive, patterns, a research run) and everything they bring
+ * back, fetched together. Every read is fail-soft; nothing here can end a turn.
+ */
+async function recallForTurn({
+  userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
+  hindsight, foundation, conversationSearch, hypothesisRuntime, researchJobs,
 }) {
-  const userText = latestUserText(messages);
-  const { primary, backup } = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes });
-
-  const timing = createTurnTiming(traceId || `trace-${Date.now()}`);
-  timing.start('turn');
-
-  const decisionLogger = decisionStore
-    ? (line) => {
-      console.log(line);
-      try {
-        decisionStore.append(JSON.parse(line));
-      } catch (_) {
-        // Never let observability persistence affect a real turn.
-      }
-    }
-    : undefined;
-
-  // Eén keer lezen (stap 4 van "de vraag één keer lezen"): readTurn leest de
-  // zin met de woordjeslijsten van alle poorten samen. Elke poort hieronder
-  // luistert naar dit ene antwoord in plaats van zelf opnieuw naar dezelfde
-  // tekst te kijken — dat is precies waar ze uit elkaar liepen.
-  const shape = readTurn(userText);
-
-  // No live interpretation: language understanding happens inside the single
-  // inference call. IntentIQ (`logos/intentIQ.js`) can produce a decision, but
-  // nothing wires it into the turn, so this is deliberately `null` and every
-  // gate below runs on the one `shape` reading above. The `intentDecision`
-  // parameters that remain in memoryPolicy, patternAwareness and knowledgePages
-  // are there for IntentIQ itself, the eval cases and the Logos path — not for
-  // the live conversation.
-  const intentDecision = null;
-
   // Archive-shaped asks ("wat staat er in foundation…") open a read over
   // Foundation — the raw-record counterpart to Hindsight recall. The signal
   // is pure and lexical, read once above, so no model runs before the one
@@ -608,17 +559,22 @@ async function runTurnCore({
   }
   timing.end('evidence_recall');
 
-  // The moment the run exists, tell the transport — a client can then show
-  // that something is running in the background while this reply streams,
-  // instead of finding out on its next poll.
-  if (researchJob && typeof onResearchJob === 'function') {
-    try {
-      onResearchJob(researchJob);
-    } catch (_) {
-      // Telling the client is not worth failing a turn over.
-    }
-  }
+  return {
+    wantFoundation, wantConversationHistory, wantPatterns, reachSkill,
+    reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults,
+    conversationHits, researchJob, openQuestionRows, dualRecall,
+  };
+}
 
+/**
+ * One observability line per concern for a turn's recall: the recall measure,
+ * the shape reading and (on a research turn) the reach. Counts and booleans
+ * only, never content; none of it can take a turn down.
+ */
+function logRecallObservability({
+  userText, shape, traceId, decisionLogger, hindsight, wantPatterns, reachSkill, researchJob,
+  reflections, mentalModels, recalledPatterns, knowledgePages,
+}) {
   // Meetbasis voor Gaia-geïnitieerde recall: één regel per turn met gate
   // en counts only (nooit user-/memory-inhoud). Blijft werken zonder
   // decisionStore via console.log-default; met store is hij ook duurzaam
@@ -672,6 +628,21 @@ async function runTurnCore({
     }
   }
 
+}
+
+/**
+ * The prompt half of a turn: evidence for the background analysis, pattern
+ * usage, every context block and the message list. Both transports build the
+ * exact same prompt. `buildAssembled` is returned as well, because the vision
+ * fallback rebuilds the messages with the images turned into text.
+ */
+function buildTurnPrompt({
+  userText, messages, documents, attachments, conversationId, traceId, timing, decisionLogger,
+  primary, backup, nativeGenerator, hermes, generator, foundation, conversationSearch,
+  hindsight, aion, desktop, researchJobs, hypothesisRuntime,
+  wantFoundation, wantPatterns, reflections, mentalModels, recalledPatterns, knowledgePages,
+  foundationResults, conversationHits, researchJob, openQuestionRows, dualRecall,
+}) {
   const textAttachments = (attachments || []).filter((a) => !a.imageBytes);
   const multimodalAttachments = (attachments || []).filter((a) => a.imageBytes && a.imageMimeType);
 
@@ -796,6 +767,20 @@ async function runTurnCore({
     }));
   }
 
+  return { assembled, buildAssembled, evidence, textAttachments, multimodalAttachments, now };
+}
+
+/**
+ * The one inference call: primary with backup on a retryable pre-output
+ * failure, streamed when `onDelta` is given. If the pictures went straight to
+ * the model and it could not take them, they are described and the call is
+ * retried once as plain text. Never throws, except for an aborted turn.
+ * @returns {Promise<{ output: string|null, notConfigured: boolean }>}
+ */
+async function runGeneration({
+  assembled, buildAssembled, textAttachments, multimodalAttachments, messages,
+  primary, backup, desktop, onDelta, conversationId, traceId, signal, describeImage, timing,
+}) {
   // Direct generation with primary/backup failover. Hermes is never
   // involved unless a legacy caller adapted it as the primary above.
   let output = null;
@@ -862,6 +847,104 @@ async function runTurnCore({
     }
     output = null;
   }
+
+  return { output, notConfigured };
+}
+
+async function runTurnCore({
+  messages,
+  documents,
+  hindsight,
+  attachments,
+  traceId,
+  conversationId,
+  generator,
+  backupGenerator,
+  nativeGenerator,
+  hermes,
+  researchJobs,
+  foundation,
+  conversationSearch,
+  hypothesisRuntime,
+  aion,
+  eleos,
+  desktop,
+  decisionStore,
+  reasonIQ = evaluateLogos,
+  onDelta,
+  onResearchJob,
+  userDisplayName,
+  signal,
+  describeImage,
+}) {
+  const userText = latestUserText(messages);
+  const { primary, backup } = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes });
+
+  const timing = createTurnTiming(traceId || `trace-${Date.now()}`);
+  timing.start('turn');
+
+  const decisionLogger = decisionStore
+    ? (line) => {
+      console.log(line);
+      try {
+        decisionStore.append(JSON.parse(line));
+      } catch (_) {
+        // Never let observability persistence affect a real turn.
+      }
+    }
+    : undefined;
+
+  // Eén keer lezen (stap 4 van "de vraag één keer lezen"): readTurn leest de
+  // zin met de woordjeslijsten van alle poorten samen. Elke poort hieronder
+  // luistert naar dit ene antwoord in plaats van zelf opnieuw naar dezelfde
+  // tekst te kijken — dat is precies waar ze uit elkaar liepen.
+  const shape = readTurn(userText);
+
+  // No live interpretation: language understanding happens inside the single
+  // inference call. IntentIQ (`logos/intentIQ.js`) can produce a decision, but
+  // nothing wires it into the turn, so this is deliberately `null` and every
+  // gate below runs on the one `shape` reading above. The `intentDecision`
+  // parameters that remain in memoryPolicy, patternAwareness and knowledgePages
+  // are there for IntentIQ itself, the eval cases and the Logos path — not for
+  // the live conversation.
+  const intentDecision = null;
+
+  const recall = await recallForTurn({
+    userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
+    hindsight, foundation, conversationSearch, hypothesisRuntime, researchJobs,
+  });
+  const {
+    reflections, mentalModels, recalledPatterns, knowledgePages, researchJob,
+  } = recall;
+
+  // The moment the run exists, tell the transport — a client can then show
+  // that something is running in the background while this reply streams,
+  // instead of finding out on its next poll.
+  if (researchJob && typeof onResearchJob === 'function') {
+    try {
+      onResearchJob(researchJob);
+    } catch (_) {
+      // Telling the client is not worth failing a turn over.
+    }
+  }
+
+  logRecallObservability({
+    userText, shape, traceId, decisionLogger, hindsight,
+    wantPatterns: recall.wantPatterns, reachSkill: recall.reachSkill, researchJob,
+    reflections, mentalModels, recalledPatterns, knowledgePages,
+  });
+
+  const { assembled, buildAssembled, evidence, textAttachments, multimodalAttachments, now } = buildTurnPrompt({
+    userText, messages, documents, attachments, conversationId, traceId, timing, decisionLogger,
+    primary, backup, nativeGenerator, hermes, generator, foundation, conversationSearch,
+    hindsight, aion, desktop, researchJobs, hypothesisRuntime,
+    ...recall,
+  });
+
+  const { output, notConfigured } = await runGeneration({
+    assembled, buildAssembled, textAttachments, multimodalAttachments, messages,
+    primary, backup, desktop, onDelta, conversationId, traceId, signal, describeImage, timing,
+  });
 
   // Response Engine seam: the one judgment of what generation output
   // means as reply text. Null ⇒ the caller's transport reports the calm
