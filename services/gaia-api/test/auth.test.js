@@ -38,3 +38,21 @@ test('auth accepts a configured token', () => {
   });
   assert.ok(passed);
 });
+
+test('auth rejects a prefix, an extension and a different-case version of a valid token', () => {
+  const auth = createAuthMiddleware(parseTokens('Secret-Token-123'));
+  for (const wrong of ['Secret-Token-12', 'Secret-Token-1234', 'secret-token-123', 'S']) {
+    const res = { statusCode: 0, status(code) { this.statusCode = code; return this; }, json() {} };
+    auth(fakeReq(wrong), res, () => assert.fail(`must not pass: ${wrong}`));
+    assert.equal(res.statusCode, 401, wrong);
+  }
+});
+
+test('auth accepts the first, a middle and the last of several tokens, and a token with unusual characters', () => {
+  const auth = createAuthMiddleware(parseTokens('one, två, drie-ñ-€'));
+  for (const token of ['one', 'två', 'drie-ñ-€']) {
+    let passed = false;
+    auth(fakeReq(token), { status() { return this; }, json() { assert.fail('must not respond'); } }, () => { passed = true; });
+    assert.ok(passed, token);
+  }
+});
