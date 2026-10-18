@@ -70,8 +70,159 @@ test('findRetractionTarget skips what is already invalidated, and what does not 
 
   assert.equal(found.status, 'not_found');
   assert.deepEqual(found.candidates, []);
-  // The query is the person's own words — the bank does the searching.
-  assert.deepEqual(bank.queries, [{ q: 'Yassine is een vriend van je', limit: 25 }]);
+  // A client without recall is asked for one word, not the person's sentence:
+  // the lexical endpoint matches single words and answers a sentence with
+  // nothing at all (measured live, 18-10-2026 — see memoryRetraction.js).
+  assert.deepEqual(bank.queries, [{ q: 'yassine', limit: 25 }]);
+});
+
+/**
+ * A bank that behaves like Hindsight's `memories/list?q=`: it answers ONE word,
+ * and answers a whole sentence with nothing. The plain `fakeBank` above is more
+ * capable than the real store — it returns everything it holds whatever it is
+ * asked — and that is exactly how a broken retraction passed the whole suite
+ * until 18-10-2026.
+ */
+function wordMatcherBank(name, items) {
+  const bank = fakeBank(name, items);
+  bank.queries = [];
+  bank.wordsIn = (query) => {
+    const word = String(query || '').trim().toLowerCase();
+    if (!word || /\s/.test(word)) return [];
+    return items.filter((item) => new RegExp(`\\b${word}\\b`, 'i').test(String(item.text)));
+  };
+  bank.client.listMemories = async (options) => {
+    bank.queries.push(options);
+    if (bank.listBoom) throw new Error('down');
+    return bank.wordsIn(options.q);
+  };
+  return bank;
+}
+
+/**
+ * A bank that behaves like the real client's semantic path: `recall` takes the
+ * sentence and hands back ranked units WITHOUT their curation state, and
+ * `getMemory` is the only way to learn what a unit actually is.
+ */
+function recallBank(name, items, { getMemory = true } = {}) {
+  const bank = {
+    name,
+    items,
+    recalls: [],
+    patched: [],
+    kept: [],
+    client: {
+      async recall(query) {
+        bank.recalls.push(query);
+        if (bank.recallBoom) throw new Error('down');
+        return items.map((item) => ({ id: item.id, text: item.text, type: item.type || null }));
+      },
+      async patchMemoryState(id, state, reason) {
+        if (bank.patchBoom) throw new Error('down');
+        bank.patched.push({ id, state, reason });
+      },
+      async retainSync(payload) {
+        if (bank.keepBoom) throw new Error('down');
+        bank.kept.push(payload);
+      },
+    },
+  };
+  if (getMemory) {
+    bank.client.getMemory = async (id) => {
+      bank.lookups = (bank.lookups || 0) + 1;
+      const item = items.find((candidate) => candidate.id === id);
+      if (!item) return null;
+      return item;
+    };
+  }
+  return bank;
+}
+
+test('a recital blended out of several stored lines lands on the line it was built from', async () => {
+  // The 18-10-2026 conversation, verbatim. She recited one paragraph blended
+  // from what recall had rendered, and the line it was built from scored 0.59
+  // the OLD way (quote's words ÷ quote's words) — one hundredth under the bar —
+  // against 0.74 the other way round. That is the whole reason the score is
+  // taken in both directions now.
+  const line = 'Er waren onuitgesproken aannames en onduidelijkheden in de relatie, zoals seksuele verwachtingen en gevoelens van liefde';
+  const quote = 'Luca was je ex-partner van medio april tot begin augustus 2026. De relatie kende onuitgesproken aannames over seksuele verwachtingen en gevoelens van liefde. Je deelde je gevoelens met Luca, wat leidde tot een kantelpunt.';
+  const bank = recallBank('bojan', [validItem('f-blend', line)]);
+
+  assert.ok(matchScore(quote, line) < MIN_MATCH, 'the old direction alone would have missed it');
+  assert.ok(matchScore(line, quote) >= MIN_MATCH, 'the other direction is what catches it');
+
+  const found = await findRetractionTarget([bank], quote);
+
+  assert.equal(found.status, 'found');
+  assert.equal(found.target.id, 'f-blend');
+  // The bank's own similarity did the searching, and it was handed the whole
+  // recital — a sentence is exactly what it is good at.
+  assert.deepEqual(bank.recalls, [quote]);
+  // ... and the line was asked for by id before anything was decided, because
+  // the similarity path does not say what a unit IS.
+  assert.equal(bank.lookups, 1);
+});
+
+test('the fallback asks with a single word, since that is all a lexical store can answer', async () => {
+  const bank = wordMatcherBank('bojan', [validItem('f1', 'Luca was je ex-partner van half april tot begin augustus 2026')]);
+  const quote = 'Luca was je ex-partner van medio april tot begin augustus 2026';
+
+  // What the old code sent — the whole sentence — against a store that only
+  // matches single words. This is the 18-10-2026 dead end, reproduced.
+  assert.deepEqual(bank.wordsIn(quote), []);
+
+  const found = await findRetractionTarget([bank], quote);
+
+  assert.equal(found.status, 'found');
+  assert.equal(found.target.id, 'f1');
+  assert.deepEqual(bank.queries, [{ q: 'augustus', limit: 25 }]);
+});
+
+test('a unit that is already invalidated is never touched and never offered back', async () => {
+  const bank = recallBank('bojan', [validItem('f-old', 'Luca was je ex-partner', { state: 'invalidated' })]);
+
+  const found = await findRetractionTarget([bank], 'Luca was je ex-partner');
+
+  assert.equal(found.status, 'not_found');
+  assert.deepEqual(found.candidates, []);
+});
+
+test('a lookup that cannot be made keeps what the search gave, as before', async () => {
+  const bank = recallBank('bojan', [validItem('f1', 'Yassine is een vriend van je')], { getMemory: false });
+
+  const found = await findRetractionTarget([bank], 'Yassine is een vriend van je');
+
+  assert.equal(found.status, 'found');
+  assert.equal(found.target.id, 'f1');
+});
+
+test('nothing cleared the bar, so the nearest line is named — inside the receipt, and only to ask', async () => {
+  const bank = recallBank('bojan', [validItem('f-near', 'Yassine wandelt graag met zijn hond')]);
+
+  const found = await findRetractionTarget([bank], 'Yassine schaakt graag op zondag');
+
+  // 0.5: the two lines share two of the quote's four words — under MIN_MATCH,
+  // over NEAR_MISS, so it is named and nothing is done.
+  assert.equal(found.status, 'not_found');
+  assert.equal(found.candidates.length, 1);
+  assert.equal(found.candidates[0].id, 'f-near');
+  assert.deepEqual(bank.patched, []);
+
+  const receipt = renderRetractionReceipt(found);
+  assert.match(receipt, /Nothing in memory matches that closely enough to take back\./);
+  assert.match(receipt, /Closest in memory: "Yassine wandelt graag met zijn hond"/);
+  assert.match(receipt, /say it back in those words/);
+});
+
+test('a dead end with nothing near it stays plainly dead — no invented options', async () => {
+  const bank = recallBank('bojan', [validItem('f-other', 'Bo drinkt graag koffie in de ochtend')]);
+
+  const found = await findRetractionTarget([bank], 'Yassine is een vriend');
+
+  assert.equal(found.status, 'not_found');
+  assert.deepEqual(found.candidates, []);
+  assert.equal(renderRetractionReceipt(found), 'Nothing in memory matches that closely enough to take back.');
+  assert.equal(renderForgetReceipt(found), 'Nothing in memory matches that closely enough to forget.');
 });
 
 test('findRetractionTarget refuses to guess between two different memories that fit equally well', async () => {

@@ -29,12 +29,16 @@
  *      statement tagged `gaia:confirmed_fact` — it is theirs, they just said
  *      it, so it is the one kind of memory that may be stated as fact.
  *
- * Matching is deliberately boring: the quote is scored by word overlap against
- * what the banks hold, and anything that is not clearly the best match is
- * reported as ambiguous rather than guessed at. Retracting the wrong memory on
- * a fuzzy match would be a worse failure than not retracting at all. What the
- * guard no longer does is mistake a claim kept twice for two claims: hits that
- * are merely the same statement said another way travel together as one
+ * Matching is deliberately boring. The banks do the searching — their own
+ * similarity, exactly as `search_memory` does, because Hindsight's lexical
+ * endpoint matches single words and quietly answers a whole sentence with
+ * nothing — and what comes back is scored by word overlap in either direction:
+ * a quote that is part of a stored line and a recital blended out of several
+ * stored lines land on the same claim. Anything that is not clearly the best
+ * match is reported as ambiguous rather than guessed at: retracting the wrong
+ * memory on a fuzzy match would be a worse failure than not retracting at all.
+ * What the guard does not do is mistake a claim kept twice for two claims: hits
+ * that are merely the same statement said another way travel together as one
  * cluster, and only a hit OUTSIDE that cluster can make the match ambiguous.
  *
  * Boundary: this reasons about nothing. The caller decides that a retraction
@@ -53,8 +57,8 @@
  * could not be reached is named in the receipt.
  */
 
-// A quote must share this much of its words with a stored statement before we
-// will touch it at all.
+// A quote and a stored statement must share this much of their words — in
+// either direction, see claimScore — before we will touch it at all.
 const MIN_MATCH = 0.6;
 // ... and must beat the runner-up by this much, or we ask instead of acting.
 const AMBIGUOUS_MARGIN = 0.15;
@@ -68,6 +72,14 @@ const AMBIGUOUS_MARGIN = 0.15;
 const SAME_CLAIM = 0.6;
 const SEARCH_LIMIT = 25;
 const CANDIDATE_LIMIT = 5;
+// How many ranked hits one bank hands over for a quote. The searching is the
+// bank's own similarity, which RANKS rather than filters, so this is how deep
+// we are willing to look before the scoring above decides anything.
+const RECALL_LIMIT = 12;
+// Not close enough to touch, close enough to name when nothing cleared the bar.
+// Only ever used to ask (see nothingMatched) — never to act on.
+const NEAR_MISS = 0.45;
+const NEAR_MISS_LIMIT = 3;
 
 /** Lowercase, punctuation flattened, whitespace collapsed. */
 function normalizeText(text) {
@@ -137,11 +149,137 @@ function isSameClaim(a, b) {
 }
 
 /**
+ * How much a quote and a stored statement are the same thing — in either
+ * direction.
+ *
+ * Both directions matter, for different shapes. The person may quote only part
+ * of a longer stored line (`matchScore(quote, text)`), and — just as often —
+ * the quote is a recital BLENDED out of several stored lines at once, so a
+ * stored line is contained in the quote while sharing only a third of its own
+ * words with it. The 18-10-2026 conversation is the second shape: she recited
+ * "Luca was je ex-partner van medio april tot begin augustus 2026 … onuitgesproken
+ * aannames … gevoelens van liefde", and the line it was built from scored 0.59
+ * the old way — one hundredth under the bar — against 0.74 the other way.
+ * @param {string} quote
+ * @param {string} text
+ * @returns {number}
+ */
+function claimScore(quote, text) {
+  return Math.max(matchScore(quote, text), matchScore(text, quote));
+}
+
+/** Longest word first: the one word a single-word search can act on. */
+function longestToken(text) {
+  const list = tokens(text);
+  if (list.length === 0) return '';
+  return list.reduce((best, token) => (token.length > best.length ? token : best), '');
+}
+
+/** Best score first, then alphabetically — one order everywhere. */
+function sortHits(hits) {
+  return hits.slice().sort((a, b) => b.score - a.score || String(a.text).localeCompare(String(b.text)));
+}
+
+/**
+ * Ask one bank which statements could be the one the person pointed at.
+ *
+ * The quote arrives as a whole sentence, and Hindsight's lexical endpoint
+ * (`memories/list?q=`) matches SINGLE WORDS only: a multi-word query comes back
+ * empty however well it fits. Measured against the live bank on 18-10-2026 —
+ * `q=Luca` answered with 171 units, `q=Luca was je ex-partner` answered with
+ * none. That is how ten retractions in one conversation could each report
+ * "nothing matches" while the statement sat there untouched the whole time.
+ *
+ * So the searching is left to the bank's own similarity (recall — the same one
+ * `search_memory` uses); only a client without it falls back to the lexical
+ * endpoint, and then with a single word, so the fallback asks something that
+ * endpoint can actually answer.
+ * @param {object} client
+ * @param {string} quote
+ * @param {number} limit
+ * @returns {Promise<Array<object>>}
+ */
+async function searchBank(client, quote, limit) {
+  if (typeof client.recall === 'function') {
+    const found = await client.recall(quote);
+    return Array.isArray(found) ? found.slice(0, RECALL_LIMIT) : [];
+  }
+  if (typeof client.listMemories === 'function') {
+    const word = longestToken(quote);
+    if (!word) return [];
+    return await client.listMemories({ q: word, limit });
+  }
+  return [];
+}
+
+/**
+ * The stored unit as the bank itself knows it — its state, its type, its
+ * sources.
+ *
+ * Similarity returns what was MATCHED, not what can be curated, so a survivor
+ * is looked up by id before anything is done to it: a unit that is already
+ * invalidated is not a memory anybody is reciting, and an observation needs its
+ * source facts to be taken back through. A lookup that fails, or a client that
+ * cannot do one, keeps what the search gave us — same as before.
+ * @param {object} client
+ * @param {object} hit
+ * @returns {Promise<object|null>} null when the unit is already invalidated
+ */
+async function hydrate(client, hit) {
+  if (typeof client.getMemory !== 'function') return hit;
+  let unit = null;
+  try {
+    unit = await client.getMemory(hit.id);
+  } catch (_) {
+    unit = null;
+  }
+  if (!unit || !unit.text) return hit; // cannot confirm it: keep what we were given
+  if (unit.state && unit.state !== 'valid') return null; // already taken back by someone
+  return {
+    ...hit,
+    text: String(unit.text),
+    type: unit.type || hit.type,
+    metadata: unit.metadata || hit.metadata,
+    tags: Array.isArray(unit.tags) && unit.tags.length > 0 ? unit.tags : hit.tags,
+    sourceMemoryIds: Array.isArray(unit.sourceMemoryIds) && unit.sourceMemoryIds.length > 0
+      ? unit.sourceMemoryIds
+      : hit.sourceMemoryIds,
+  };
+}
+
+/**
+ * The nearest lines when nothing cleared the bar.
+ *
+ * A dead end is what made the failure so quiet: "nothing matches" answered ten
+ * attempts in a row (18-10-2026) while the person kept paraphrasing, and nothing
+ * about the answer could help them converge. Naming what was closest turns the
+ * dead end into one question. These lines are only ever ASKED about — nothing is
+ * touched — and they are checked for validity first, so a line that was already
+ * taken back is never offered back.
+ * @param {Array<object>} banks
+ * @param {Array<object>} near
+ * @returns {Promise<Array<object>>}
+ */
+async function closestLines(banks, near) {
+  const byName = new Map(
+    (Array.isArray(banks) ? banks : []).filter((bank) => bank && bank.name).map((bank) => [bank.name, bank]),
+  );
+  const out = [];
+  for (const hit of sortHits(near)) {
+    if (hit.score < NEAR_MISS || out.length >= NEAR_MISS_LIMIT) break;
+    const bank = byName.get(hit.bank);
+    const confirmed = bank ? await hydrate(bank.client, hit) : hit;
+    if (confirmed) out.push(publicCandidate(confirmed));
+  }
+  return out;
+}
+
+/**
  * Find every stored memory a quote points at.
  *
- * Every bank is searched the same way (`listMemories` with the quote as the
- * query) so the same statement is never matched in two banks by accident and
- * the winner's bank travels with it — the caller needs to know WHERE to patch.
+ * Every bank is searched the same way (see `searchBank`) so the same statement
+ * is never matched in two banks by accident and the winner's bank travels with
+ * it — the caller needs to know WHERE to patch.
  *
  * The result carries a `cluster`: the best hit plus every OTHER hit that is the
  * same claim said a different way (see `isSameClaim`). The ambiguity guard looks
@@ -158,21 +296,29 @@ async function findRetractionTarget(banks, quote, { limit = SEARCH_LIMIT } = {})
   if (!wanted || !Array.isArray(banks)) return { status: 'not_found', candidates: [] };
 
   const hits = [];
+  const near = [];
   for (const bank of banks) {
-    if (!bank || !bank.client || typeof bank.client.listMemories !== 'function') continue;
+    if (!bank || !bank.client) continue;
     let items = [];
     try {
-      items = await bank.client.listMemories({ q: wanted, limit });
+      items = await searchBank(bank.client, wanted, limit);
     } catch (_) {
       continue; // one bank being down drops its slice, never the search
     }
     for (const item of Array.isArray(items) ? items : []) {
       if (!item || item.id == null || !item.text) continue;
       // A unit that is already invalidated is not a memory anyone is reciting.
+      // (The same check happens again after a lookup, for the units that had to
+      // be asked for by id — this one keeps the ones that came back whole.)
       if (item.state && item.state !== 'valid') continue;
-      const score = matchScore(wanted, item.text);
-      if (score < MIN_MATCH) continue;
-      hits.push({
+      const score = claimScore(wanted, item.text);
+      if (score < MIN_MATCH) {
+        // Not close enough to touch — kept only so a dead end can still name
+        // what was nearest and the person's own words can converge.
+        near.push({ bank: bank.name, id: String(item.id), text: String(item.text), score });
+        continue;
+      }
+      const hit = {
         bank: bank.name,
         id: String(item.id),
         text: String(item.text),
@@ -184,26 +330,33 @@ async function findRetractionTarget(banks, quote, { limit = SEARCH_LIMIT } = {})
         type: item.type || null,
         sourceMemoryIds: Array.isArray(item.sourceMemoryIds) ? item.sourceMemoryIds : [],
         score,
-      });
+      };
+      // Only what cleared the bar is looked up, and a unit that turns out to be
+      // invalidated already drops out here — which is why the ranking happens
+      // after this rather than before.
+      const confirmed = await hydrate(bank.client, hit);
+      if (confirmed) hits.push(confirmed);
     }
   }
 
-  hits.sort((a, b) => b.score - a.score || String(a.text).localeCompare(String(b.text)));
-  if (hits.length === 0) return { status: 'not_found', candidates: [] };
-  const best = hits[0];
+  const ranked = sortHits(hits);
+  if (ranked.length === 0) {
+    return { status: 'not_found', candidates: await closestLines(banks, near) };
+  }
+  const best = ranked[0];
   // The claim the person pointed at, not just the one copy of it that scored
   // highest: every hit that is the same statement said another way comes along.
-  const cluster = hits.filter((hit) => isSameClaim(hit, best));
-  const others = hits.filter((hit) => !isSameClaim(hit, best));
+  const cluster = ranked.filter((hit) => isSameClaim(hit, best));
+  const others = ranked.filter((hit) => !isSameClaim(hit, best));
   const runnerUp = others[0];
   if (runnerUp && best.score - runnerUp.score < AMBIGUOUS_MARGIN) {
-    return { status: 'ambiguous', candidates: hits.slice(0, CANDIDATE_LIMIT).map(publicCandidate) };
+    return { status: 'ambiguous', candidates: ranked.slice(0, CANDIDATE_LIMIT).map(publicCandidate) };
   }
   return {
     status: 'found',
     target: best,
     cluster,
-    candidates: hits.slice(0, CANDIDATE_LIMIT).map(publicCandidate),
+    candidates: ranked.slice(0, CANDIDATE_LIMIT).map(publicCandidate),
   };
 }
 
@@ -465,6 +618,25 @@ function copiesLine(more, verb, stuck) {
 }
 
 /**
+ * The "nothing cleared the bar" line, shared by both receipts.
+ *
+ * Plain when there is nothing to offer. When the bank did offer something near,
+ * it is named: quote-back is how this tool is meant to be used and a paraphrase
+ * is the normal case, so the answer should help the person land on the line
+ * instead of telling them the thing they can see is not there.
+ * @param {object} receipt
+ * @param {string} verb 'take back' or 'forget'
+ * @returns {string}
+ */
+function nothingMatched(receipt, verb) {
+  const plain = `Nothing in memory matches that closely enough to ${verb}.`;
+  const near = Array.isArray(receipt && receipt.candidates) ? receipt.candidates : [];
+  if (near.length === 0) return plain;
+  const names = near.map((candidate) => `"${candidate.text}"`).join(' / ');
+  return `${plain} Closest in memory: ${names} — if it is one of those, say it back in those words.`;
+}
+
+/**
  * What the model reads back. English, like the other tool results, and it names
  * the memory that was taken back so the person can see which one it was.
  * @param {object} receipt
@@ -472,7 +644,7 @@ function copiesLine(more, verb, stuck) {
  */
 function renderRetractionReceipt(receipt) {
   if (!receipt || receipt.status === 'not_found') {
-    return 'Nothing in memory matches that closely enough to take back.';
+    return nothingMatched(receipt, 'take back');
   }
   if (receipt.status === 'ambiguous') {
     const options = (receipt.candidates || []).map((candidate) => `"${candidate.text}"`).join(' / ');
@@ -498,7 +670,7 @@ function renderRetractionReceipt(receipt) {
  */
 function renderForgetReceipt(receipt) {
   if (!receipt || receipt.status === 'not_found') {
-    return 'Nothing in memory matches that closely enough to forget.';
+    return nothingMatched(receipt, 'forget');
   }
   if (receipt.status === 'ambiguous') {
     const options = (receipt.candidates || []).map((candidate) => `"${candidate.text}"`).join(' / ');
