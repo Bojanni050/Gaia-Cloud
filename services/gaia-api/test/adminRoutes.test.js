@@ -11,7 +11,7 @@ const { createProviderStore } = require('../src/providerStore');
 const { createDecisionStore } = require('../src/logos/decisionStore');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
-function startTestServer({ withDecisionStore = true, withProviderStore = false, ttsLog = null } = {}) {
+function startTestServer({ withDecisionStore = true, withProviderStore = false, ttsLog = null, env = process.env } = {}) {
   const decisionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'admin-routes-decisions-'));
   const decisionStore = withDecisionStore ? createDecisionStore({ decisionsDir }) : undefined;
   const auth = createAuthMiddleware(parseTokens('test-token'));
@@ -50,7 +50,7 @@ function startTestServer({ withDecisionStore = true, withProviderStore = false, 
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, probeChatFn, ttsLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, createOpenRouterClientFn, retrieveModelsFn, listTtsVoicesFn, probeChatFn, ttsLog, env }));
 
   const server = app.listen(0);
   const port = server.address().port;
@@ -1168,5 +1168,45 @@ test('GET /admin/api/stt/models requires a listening provider first', async () =
     assert.equal(res.status, 400);
   } finally {
     await ctx.close();
+  }
+});
+
+test('the config tells the page a key comes from the server environment', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    server.providerStore.saveProviderConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai' });
+    const res = await fetch(`${server.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    const cfg = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(cfg.provider, 'deepinfra');
+    assert.equal(cfg.hasApiKey, false);
+    assert.equal(cfg.apiKeyFromEnv, 'DEEPINFRA_API_KEY');
+  } finally {
+    await server.close();
+  }
+});
+
+test('a key saved on the page is reported as saved, not as coming from the environment', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    server.providerStore.saveProviderConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', apiKey: 'sk-saved' });
+    const res = await fetch(`${server.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    const cfg = await res.json();
+    assert.equal(cfg.hasApiKey, true);
+    assert.equal(cfg.apiKeyFromEnv, null);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the model list is fetched with the environment key when the page has none', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    server.providerStore.saveProviderConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai' });
+    const res = await fetch(`${server.baseUrl}/admin/api/provider/models`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    assert.equal(server.getLastRetrieveArgs().apiKey, 'sk-from-env');
+  } finally {
+    await server.close();
   }
 });

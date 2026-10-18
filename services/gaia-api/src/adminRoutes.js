@@ -48,6 +48,7 @@ const { BUILT_IN_VOICES } = require('./speech/mimoTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
+const { keyEnvNameFor, providerKeyFromEnv } = require('./providerKeys');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos'];
 
@@ -71,7 +72,7 @@ function createAdminRouter({
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
   listTtsVoicesFn = listMistralVoices,
-  probeChatFn = probeChatCompletion,
+  probeChatFn = probeChatCompletion, env = process.env,
 }) {
   const router = express.Router();
 
@@ -103,7 +104,7 @@ function createAdminRouter({
 
   function mainProviderConfigured() {
     const main = providerStore ? providerStore.getConfig() : null;
-    return Boolean(main && main.apiKey);
+    return Boolean(main && (main.apiKey || providerKeyFromEnv(main.provider, env)));
   }
 
   router.get('/api/logos/decisions', auth, (req, res) => {
@@ -128,7 +129,9 @@ function createAdminRouter({
         const c = resolveRoleConfig(role, providerStore);
         resolved[role] = c ? { provider: c.provider || '', model: c.model || '', baseUrl: c.baseUrl || '' } : null;
       }
-      return { ...masked, resolved };
+      const envName = masked.hasApiKey ? null : keyEnvNameFor(masked.provider);
+    const apiKeyFromEnv = envName && providerKeyFromEnv(masked.provider, env) ? envName : null;
+    return { ...masked, apiKeyFromEnv, resolved };
     }
 
     router.get('/api/provider/config', auth, (req, res) => {
@@ -163,7 +166,7 @@ function createAdminRouter({
         const catalog = await retrieveModelsFn({
           provider: config.provider,
           baseUrl: config.baseUrl,
-          apiKey: config.apiKey || '',
+          apiKey: config.apiKey || providerKeyFromEnv(config.provider, env),
         });
         providerStore.saveCatalog(catalog, new Date().toISOString());
         res.json({ catalog, catalogRetrievedAt: new Date().toISOString() });

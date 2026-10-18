@@ -1073,7 +1073,11 @@
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       genDropdown.setProviderId(cfg.provider);
-      keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      keyHintEl.textContent = cfg.hasApiKey
+        ? ('Key saved: ' + cfg.maskedApiKey)
+        : (cfg.apiKeyFromEnv
+          ? ('No key saved here — using ' + cfg.apiKeyFromEnv + ' from the server environment.')
+          : 'No key saved yet.');
       catalog = cfg.catalog || [];
       genDropdown.setModels(catalog);
       const savedModel = cfg.roles && cfg.roles.generation && cfg.roles.generation.model;
@@ -1106,7 +1110,11 @@
       currentConfig = cfg;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       genDropdown.setProviderId(cfg.provider);
-      keyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+      keyHintEl.textContent = cfg.hasApiKey
+        ? ('Key saved: ' + cfg.maskedApiKey)
+        : (cfg.apiKeyFromEnv
+          ? ('No key saved here — using ' + cfg.apiKeyFromEnv + ' from the server environment.')
+          : 'No key saved yet.');
       apiKeyEl.value = '';
       setStatus(providerStatusEl, 'Provider saved.', true);
     } catch (err) {
