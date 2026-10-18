@@ -63,6 +63,7 @@ const { evaluate: evaluateLogos, decideLogosDepth, explainLogosDepth } = require
 const { logLogosGate } = require('./logos/logosLog');
 const { shouldRecall } = require('./memoryPolicy');
 const { logRecallMeasure } = require('./recallLog');
+const { readTurn, logTurnShape } = require('./turnShape');
 const crypto = require('crypto');
 const {
   formatReply, createStreamEmitter, resolveReplyText, deliverReply, toCalmError,
@@ -581,6 +582,19 @@ async function runTurnCore({
       queryLength: String(userText || '').length,
       wantPatterns,
     }, decisionLogger);
+  } catch (_) {
+    // Observability must never take down a turn.
+  }
+
+  // Stap 2 van het stroomlijnplan (`plan: de vraag één keer lezen`): het
+  // verdict van readTurn naast de bestaande per-poort-regels, zodat stap 3 op
+  // echt verkeer kan vergelijken vóór er een consument verhuist. Vorm, ja/nee
+  // en signaalnamen alleen — nooit de tekst van de gebruiker.
+  try {
+    logTurnShape(
+      { ...readTurn(userText), traceId: traceId || null, queryLength: String(userText || '').length },
+      decisionLogger
+    );
   } catch (_) {
     // Observability must never take down a turn.
   }
