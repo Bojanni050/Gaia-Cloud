@@ -3129,6 +3129,31 @@ test('v1.0 background analysis: a turn that produced no reply makes no reasoning
   assert.equal(reasoningCalls, 0, 'nothing to reflect on, so no model call is spent');
 });
 
+test('deferred cognition: Aion and Eleos do not wait for the background reasoning call', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = [];
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    reasonIQ: async () => { started.push('reasoning'); await gate; return v1ReasoningResult(); },
+    hypothesisRuntime: runtime,
+    aion: { noteTurn: async () => { started.push('aion'); return { written: false }; } },
+    eleos: { noteTurn: async () => { started.push('eleos'); return { skipped: true }; } },
+  });
+  await flushBackground();
+  assert.ok(started.includes('reasoning'), 'the reasoning call is in flight');
+  assert.ok(started.includes('aion') && started.includes('eleos'),
+    'Aion and Eleos ran while the reasoning call was still pending');
+  release();
+  await flushBackground();
+});
+
 test('v1.0 background analysis: an observation can carry its relationship to a tracked hypothesis — no relationship store', async () => {
   const runtime = cognitionRuntimeFor();
   const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };

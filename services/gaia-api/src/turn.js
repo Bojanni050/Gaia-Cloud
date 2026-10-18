@@ -74,10 +74,6 @@ const { createTurnTiming, trackFirstToken } = require('./timing');
 const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
 
 /**
- * Validates the incoming message history. Returns null when valid, or a
- * human-readable problem string (surfaced as a 400 to the client).
- */
-/**
  * Combines the tools a live turn carries into one payload for the generator.
  * Each part is `{ tools, onToolCall }` and owns its own verbs; a call is handed
  * to the parts in order and the first one that does not answer
@@ -109,6 +105,10 @@ function combineTurnTools(...parts) {
   };
 }
 
+/**
+ * Validates the incoming message history. Returns null when valid, or a
+ * human-readable problem string (surfaced as a 400 to the client).
+ */
 function validateMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return 'messages must be a non-empty array';
@@ -1048,24 +1048,32 @@ async function runDeferredCognition({
   timing,
   now = Date.now(),
 }) {
+  // Steps 1, 7b and 7c do not depend on the reasoning chain (3-6), and it does
+  // not depend on them, so they are started as soon as their input exists and
+  // awaited together at the end. The chain stays sequential, and so does the
+  // Hindsight reflection (7): it waits for the hypothesis preparation.
+  const sideTasks = [];
+
   // 1. Foundation: the completed turn as a raw observation (Foundation owns
-  //    the status — everything enters as `observation`). Fire-and-forget
-  //    inside the deferred phase; a missing client is silently skipped.
+  //    the status — everything enters as `observation`). A missing client is
+  //    silently skipped.
   if (foundation && typeof foundation.submitObservation === 'function' && replyText) {
-    try {
-      await foundation.submitObservation({
-        content: userText ? `${userText}\n\n${replyText}` : replyText,
-        source: 'gaia',
-        turns: [
-          ...(userText ? [{ role: 'user', text: userText }] : []),
-          { role: 'assistant', text: replyText },
-        ],
-        tags: ['gaia-turn'],
-        occurredAt: new Date().toISOString(),
-      });
-    } catch (_) {
-      // Foundation must never break the deferred phase.
-    }
+    sideTasks.push((async () => {
+      try {
+        await foundation.submitObservation({
+          content: userText ? `${userText}\n\n${replyText}` : replyText,
+          source: 'gaia',
+          turns: [
+            ...(userText ? [{ role: 'user', text: userText }] : []),
+            { role: 'assistant', text: replyText },
+          ],
+          tags: ['gaia-turn'],
+          occurredAt: new Date().toISOString(),
+        });
+      } catch (_) {
+        // Foundation must never break the deferred phase.
+      }
+    })());
   }
 
   // 2. Memoryworthiness 0.1: cheap deterministic judgment of whether this
@@ -1093,6 +1101,46 @@ async function runDeferredCognition({
   // HypothesisManager policy, and Memoryworthiness may not judge
   // hypothesis matters.
   const patternGateOpen = !memoryDecision || shouldRetainToHindsight(memoryDecision);
+
+  // 7b. Aion — Gaia's own bank, at her own discretion. UNGATED by
+  //     design: the Memoryworthiness gate above governs the `bojan` bank,
+  //     not hers. The scheduler decides WHEN it runs (every few turns, and
+  //     when the session ends); this only records the turn.
+  if (aion && replyText) {
+    sideTasks.push((async () => {
+      timing.start('deferred.self_memory');
+      try {
+        const outcome = await aion.noteTurn({
+          conversationId,
+          messages,
+          logger: decisionLogger,
+        });
+        timing.end('deferred.self_memory', { written: outcome && outcome.written });
+      } catch (err) {
+        timing.fail('deferred.self_memory', (err && err.constructor && err.constructor.name) || 'Error');
+      }
+    })());
+  }
+
+  // 7c. Eleos — the check-in faculty. It gates on the turn's own words (a
+  //     free lexical check), and only on a real signal asks its model whether
+  //     there is a moment worth coming back to, recording it as an open loop
+  //     for the runtime to deliver later. Never reaches the user now.
+  if (eleos && replyText) {
+    sideTasks.push((async () => {
+      timing.start('deferred.eleos');
+      try {
+        const outcome = await eleos.noteTurn({
+          conversationId,
+          messages,
+          logger: decisionLogger,
+        });
+        timing.end('deferred.eleos', { outcome: outcome && (outcome.created || outcome.updated || outcome.cancelled || outcome.skipped) });
+      } catch (err) {
+        timing.fail('deferred.eleos', (err && err.constructor && err.constructor.name) || 'Error');
+      }
+    })());
+  }
 
   // 3a. Hypothesis lifecycle preparation.
   let existingHypotheses = [];
@@ -1275,41 +1323,7 @@ async function runDeferredCognition({
     }
   }
 
-  // 7b. Aion — Gaia's own bank, at her own discretion. UNGATED by
-  //     design: the Memoryworthiness gate above governs the `bojan` bank,
-  //     not hers. The scheduler decides WHEN it runs (every few turns, and
-  //     when the session ends); this only records the turn.
-  if (aion && replyText) {
-    timing.start('deferred.self_memory');
-    try {
-      const outcome = await aion.noteTurn({
-        conversationId,
-        messages,
-        logger: decisionLogger,
-      });
-      timing.end('deferred.self_memory', { written: outcome && outcome.written });
-    } catch (err) {
-      timing.fail('deferred.self_memory', (err && err.constructor && err.constructor.name) || 'Error');
-    }
-  }
-
-  // 7c. Eleos — the check-in faculty. It gates on the turn's own words (a
-  //     free lexical check), and only on a real signal asks its model whether
-  //     there is a moment worth coming back to, recording it as an open loop
-  //     for the runtime to deliver later. Never reaches the user now.
-  if (eleos && replyText) {
-    timing.start('deferred.eleos');
-    try {
-      const outcome = await eleos.noteTurn({
-        conversationId,
-        messages,
-        logger: decisionLogger,
-      });
-      timing.end('deferred.eleos', { outcome: outcome && (outcome.created || outcome.updated || outcome.cancelled || outcome.skipped) });
-    } catch (err) {
-      timing.fail('deferred.eleos', (err && err.constructor && err.constructor.name) || 'Error');
-    }
-  }
+  await Promise.all(sideTasks);
 
   // 8. DecisionIQ review — post-turn only, observability only.
   try {
