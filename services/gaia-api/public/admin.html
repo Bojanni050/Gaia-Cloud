@@ -784,6 +784,22 @@
     return 'No key saved yet.';
   }
 
+  // A card that borrows the Main Provider cannot name a variable of its own —
+  // it inherits what the Main Provider card knows. The original sentence is
+  // remembered once (data-base-text) so repeated renders never double it.
+  function borrowedKeySentence(mainCfg) {
+    if (!mainCfg) return '';
+    if (mainCfg.apiKeyFromEnv) return ' Its key comes from ' + mainCfg.apiKeyFromEnv + ' in the server environment.';
+    if (mainCfg.hasApiKey) return ' Its key is saved on that card.';
+    return ' That card has no key yet.';
+  }
+
+  function applyBorrowedHint(el, useMainProvider, mainCfg) {
+    if (!el) return;
+    if (!el.dataset.baseText) el.dataset.baseText = el.textContent;
+    el.textContent = useMainProvider ? (el.dataset.baseText + borrowedKeySentence(mainCfg)) : el.dataset.baseText;
+  }
+
   function providerLabelFor(providerId) {
     const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral', opencode: 'OpenCode', deepinfra: 'DeepInfra' };
     if (!providerId) return '';
@@ -1097,6 +1113,11 @@
       applyLogosRoles(cfg);
       applyRoleProviders(cfg);
       applyRoleBadges(cfg);
+      // The voice cards may have rendered before the Main Provider key was
+      // known, so say it again now that it is.
+      applyBorrowedHint($('ttsMainHint'), Boolean(currentConfig.tts && currentConfig.tts.useMainProvider), cfg);
+      applyBorrowedHint($('ttsEnMainHint'), Boolean(currentConfig.ttsEn && currentConfig.ttsEn.useMainProvider), cfg);
+      applyBorrowedHint($('sttMainHint'), Boolean(currentConfig.stt && currentConfig.stt.useMainProvider), cfg);
     } catch (_) { /* ignore on initial load */ }
   }
 
@@ -1214,6 +1235,7 @@
         if (cfg.model) ttsModelEl.value = cfg.model;
         ttsVoiceEl.value = cfg.voiceId || '';
         ttsKeyHintEl.textContent = keyHintText(cfg);
+        applyBorrowedHint($(id + 'MainHint'), Boolean(cfg.useMainProvider), currentConfig);
         if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
           setStatus(ttsStatusEl, 'Main Provider has no API key saved yet.', false);
         }
@@ -1245,6 +1267,7 @@
         if (!res.ok) throw new Error(await res.text());
         const cfg = await res.json();
         ttsKeyHintEl.textContent = keyHintText(cfg);
+        applyBorrowedHint($(id + 'MainHint'), Boolean(cfg.useMainProvider), currentConfig);
         ttsApiKeyEl.value = '';
         setStatus(ttsStatusEl, 'Voice saved.', true);
         setBadge(ttsBadgeEl, Boolean(cfg.model));
@@ -1434,6 +1457,7 @@
   function applySttConfig(cfg) {
     currentStt = cfg;
     sttKeyHintEl.textContent = keyHintText(cfg);
+    applyBorrowedHint($('sttMainHint'), Boolean(cfg.useMainProvider), currentConfig);
     setBadge(sttBadgeEl, sttIsConfigured(cfg));
     if (currentConfig) updateCapabilities(currentConfig.roles || {}, currentConfig.tts || {});
   }
@@ -1996,6 +2020,7 @@
       block.providerEl.value = usingMain ? USE_MAIN_PROVIDER : (rp.provider || 'custom');
       block.fieldsEl.style.display = usingMain ? 'none' : '';
       block.mainHintEl.style.display = usingMain ? '' : 'none';
+      applyBorrowedHint(block.mainHintEl, usingMain, currentConfig);
       $(prefix + 'BaseUrl').value = rp.baseUrl || '';
       $(prefix + 'ApiKey').value = '';
       $(prefix + 'Model').value = rp.model || '';
