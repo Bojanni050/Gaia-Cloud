@@ -313,3 +313,8 @@ test('setTitle caps a long name the same way a derived title is capped', () => {
   assert.ok(title.length < 200);
   assert.ok(title.endsWith('…'));
 });
+
+test('any number of SSE clients can listen for changes without a listener warning', () => {
+  const store = tempStore();
+  assert.equal(store.events.getMaxListeners(), 0);
+});

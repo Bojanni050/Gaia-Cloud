@@ -73,13 +73,21 @@ function createHistoryRouter({ store, auth, search } = {}) {
     });
     res.write(':ok\n\n');
 
-    const onChanged = () => res.write('event: changed\ndata: {}\n\n');
+    // A write to a client that has just gone must not throw out of a store
+    // event or a timer: the close handler below does the cleaning up.
+    const write = (chunk) => {
+      try {
+        if (!res.writableEnded) res.write(chunk);
+      } catch (_) { /* client vanished */ }
+    };
+
+    const onChanged = () => write('event: changed\ndata: {}\n\n');
     store.events.on('changed', onChanged);
 
     // Keeps the connection alive through any idle-timing proxy between
     // here and the client, and lets the client detect a dead connection
     // instead of hanging silently forever.
-    const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 20000);
+    const heartbeat = setInterval(() => write(':heartbeat\n\n'), 20000);
 
     req.on('close', () => {
       clearInterval(heartbeat);

@@ -96,6 +96,7 @@ function createConversationStore(options = {}) {
   // No payload on the event — listeners just re-read via listConversations()
   // — so this stays correct even if two writes race.
   const events = new EventEmitter();
+  events.setMaxListeners(0); // one listener per connected SSE client
 
   // In-memory copy of every conversation's meta.json, so listing (and the
   // search built on it) doesn't re-read and re-parse each file per call. Built

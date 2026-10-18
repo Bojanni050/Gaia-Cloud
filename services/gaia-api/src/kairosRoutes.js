@@ -47,7 +47,11 @@ function createKairosRouter({ cognition, foundation, auth }) {
       } catch (_) { /* client vanished; the close handler cleans up */ }
     });
 
-    const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), HEARTBEAT_MS);
+    const heartbeat = setInterval(() => {
+      try {
+        if (!res.writableEnded) res.write(':heartbeat\n\n');
+      } catch (_) { /* client vanished; the close handler cleans up */ }
+    }, HEARTBEAT_MS);
 
     req.on('close', () => {
       clearInterval(heartbeat);
