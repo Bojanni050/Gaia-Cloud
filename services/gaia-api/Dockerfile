@@ -17,8 +17,11 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY package.json ./package.json
-RUN npm install --omit=dev
+# The lockfile is copied and installed with `npm ci`, so production gets exactly
+# the versions the CI tests ran against instead of whatever the ranges resolve
+# to on build day.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 # Generate build metadata at build time
 COPY scripts ./scripts

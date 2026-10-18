@@ -1,0 +1,10 @@
+# Build context is this directory (docker-compose.yml). The Dockerfile copies
+# only package files, scripts/, src/, public/, identity/soul.md and the two
+# generated json files — keep everything else (modules, runtime data, secrets)
+# out of the context sent to the Docker daemon.
+node_modules
+data
+.env
+.env.*
+test
+eval
