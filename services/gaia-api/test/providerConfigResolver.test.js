@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveRoleConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities } = require('../src/providerConfigResolver');
+const { keyEnvNameFor, providerKeyFromEnv } = require('../src/providerKeys');
 
 function createMockStore(config) {
   return { getConfig: () => config };
@@ -367,4 +368,70 @@ test('resolveTtsConfig: language=en uses ttsEn when set, everything else the def
 test('resolveTtsConfig: language=en falls back to the default voice without an English voice', () => {
   const store = createMockStore({ tts: { provider: 'mistral', baseUrl: 'https://m/v1', apiKey: 'a', model: 'voxtral' } });
   assert.equal(resolveTtsConfig(store, {}, 'en').provider, 'mistral');
+});
+
+// --- env-provided provider keys (18-10-2026) ---
+
+test('resolveRoleConfig: a provider key from the environment fills the gap when the page has none', () => {
+  const store = createMockStore({
+    provider: 'deepinfra',
+    baseUrl: 'https://api.deepinfra.com/v1/openai',
+    roles: { generation: { mode: 'catalog', model: 'meta-llama/Llama-3.3-70B-Instruct' } },
+  });
+  const config = resolveRoleConfig('generation', store, { DEEPINFRA_API_KEY: 'sk-deep-secret' });
+  assert.equal(config.provider, 'deepinfra');
+  assert.equal(config.baseUrl, 'https://api.deepinfra.com/v1/openai');
+  assert.equal(config.model, 'meta-llama/Llama-3.3-70B-Instruct');
+  assert.equal(config.apiKey, 'sk-deep-secret');
+});
+
+test('resolveRoleConfig: without a stored or env key the role still falls back to the env provider', () => {
+  const store = createMockStore({
+    provider: 'deepinfra',
+    baseUrl: 'https://api.deepinfra.com/v1/openai',
+    roles: { generation: { mode: 'catalog', model: 'meta-llama/Llama-3.3-70B-Instruct' } },
+  });
+  const env = {
+    GAIA_NATIVE_BASE_URL: 'https://api.mistral.ai/v1',
+    GAIA_NATIVE_MODEL: 'magistral-small-latest',
+    GAIA_NATIVE_AUTH_TOKEN: 'tok',
+  };
+  const config = resolveRoleConfig('generation', store, env);
+  assert.equal(config.provider, 'env');
+  assert.equal(config.baseUrl, 'https://api.mistral.ai/v1');
+});
+
+test('resolveRoleConfig: a key saved on the page wins over the environment', () => {
+  const store = createMockStore({
+    provider: 'deepinfra',
+    baseUrl: 'https://api.deepinfra.com/v1/openai',
+    apiKey: 'sk-from-page',
+    roles: { generation: { mode: 'catalog', model: 'm' } },
+  });
+  const config = resolveRoleConfig('generation', store, { DEEPINFRA_API_KEY: 'sk-from-env' });
+  assert.equal(config.apiKey, 'sk-from-page');
+});
+
+test('resolveRoleConfig: a role with its own provider takes that provider key from the environment', () => {
+  const store = createMockStore({
+    provider: 'deepinfra',
+    baseUrl: 'https://api.deepinfra.com/v1/openai',
+    apiKey: 'sk-main',
+    roles: { reasoning: { mode: 'manual', model: 'anthropic/claude' } },
+    roleProviders: {
+      reasoning: { provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'x/y', useMainProvider: false },
+    },
+  });
+  const config = resolveRoleConfig('reasoning', store, { OPENROUTER_API_KEY: 'sk-or' });
+  assert.equal(config.provider, 'openrouter');
+  assert.equal(config.apiKey, 'sk-or');
+});
+
+test('providerKeys: names follow the provider id and the value is trimmed', () => {
+  assert.equal(keyEnvNameFor('DeepInfra'), 'DEEPINFRA_API_KEY');
+  assert.equal(keyEnvNameFor(''), '');
+  assert.equal(keyEnvNameFor('Some New Co'), 'SOME_NEW_CO_API_KEY');
+  assert.equal(providerKeyFromEnv('deepinfra', { DEEPINFRA_API_KEY: '  sk-x  ' }), 'sk-x');
+  assert.equal(providerKeyFromEnv('deepinfra', {}), '');
+  assert.equal(providerKeyFromEnv('', { _API_KEY: 'x' }), '');
 });

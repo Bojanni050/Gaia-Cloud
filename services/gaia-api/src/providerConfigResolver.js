@@ -1,4 +1,5 @@
 'use strict';
+const { providerKeyFromEnv } = require('./providerKeys');
 
 /**
  * Resolves model configurations for each role (Generation, Reasoning,
@@ -28,12 +29,13 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
       provider: roleProvider.provider || 'custom',
       baseUrl: roleProvider.baseUrl,
       model: roleProvider.model,
-      apiKey: roleProvider.apiKey || '',
+      apiKey: roleProvider.apiKey || providerKeyFromEnv(roleProvider.provider, env),
     };
   }
 
   // If the provider store has a configured provider with an apiKey, use it
-  if (stored && stored.apiKey && stored.provider) {
+  const mainKey = stored ? stored.apiKey || providerKeyFromEnv(stored.provider, env) : '';
+  if (stored && mainKey && stored.provider) {
     const roles = stored.roles || {};
     const selection = roles[role];
     if (selection && selection.model) {
@@ -41,7 +43,7 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
         provider: stored.provider,
         baseUrl: stored.baseUrl || '',
         model: selection.model,
-        apiKey: stored.apiKey,
+        apiKey: mainKey,
       };
     }
   }
@@ -71,12 +73,13 @@ function resolveTtsConfig(providerStore, env = process.env, language) {
   // `tts` is the default (Dutch) voice; an English reply uses `ttsEn` when that is
   // configured, and otherwise the default voice — so one voice keeps working as before.
   const fromStored = (tts) => {
-    if (tts && tts.useMainProvider && tts.model && stored.apiKey) {
+    const mainKey = stored ? stored.apiKey || providerKeyFromEnv(stored.provider, env) : '';
+    if (tts && tts.useMainProvider && tts.model && mainKey) {
       return {
         provider: stored.provider || 'openrouter',
         baseUrl: stored.baseUrl || '',
         model: tts.model,
-        apiKey: stored.apiKey,
+        apiKey: mainKey,
         voiceId: tts.voiceId || '',
       };
     }
@@ -85,7 +88,7 @@ function resolveTtsConfig(providerStore, env = process.env, language) {
         provider: tts.provider,
         baseUrl: tts.baseUrl || '',
         model: tts.model,
-        apiKey: tts.apiKey || '',
+        apiKey: tts.apiKey || providerKeyFromEnv(tts.provider, env),
         voiceId: tts.voiceId || '',
       };
     }
@@ -123,12 +126,14 @@ function resolveTtsConfig(providerStore, env = process.env, language) {
 function resolveSttConfig(providerStore, env = process.env) {
   const stored = providerStore ? providerStore.getConfig() : null;
 
-  if (stored && stored.stt && stored.stt.useMainProvider && stored.stt.model && stored.apiKey) {
+  const mainKey = stored ? stored.apiKey || providerKeyFromEnv(stored.provider, env) : '';
+
+  if (stored && stored.stt && stored.stt.useMainProvider && stored.stt.model && mainKey) {
     return {
       provider: stored.provider || 'openrouter',
       baseUrl: stored.baseUrl || '',
       model: stored.stt.model,
-      apiKey: stored.apiKey,
+      apiKey: mainKey,
     };
   }
 
@@ -137,7 +142,7 @@ function resolveSttConfig(providerStore, env = process.env) {
       provider: stored.stt.provider,
       baseUrl: stored.stt.baseUrl || '',
       model: stored.stt.model,
-      apiKey: stored.stt.apiKey || '',
+      apiKey: stored.stt.apiKey || providerKeyFromEnv(stored.stt.provider, env),
     };
   }
 
@@ -248,7 +253,7 @@ function resolveBackupConfig(providerStore, env = process.env) {
       provider: backup.provider || 'backup',
       baseUrl: backup.baseUrl,
       model: backup.model,
-      apiKey: backup.apiKey || '',
+      apiKey: backup.apiKey || providerKeyFromEnv(backup.provider, env),
     };
   }
   if (env.GAIA_BACKUP_BASE_URL && env.GAIA_BACKUP_MODEL) {
