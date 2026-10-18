@@ -362,3 +362,36 @@ test('her own confirmation reads as an acknowledgement, not as a substantive ans
   assert.equal(isPureAcknowledgement('Ik heb hem bewaard.'), false);
   assert.ok(!evaluate('Ik heb twee 27 inch monitoren', { assistantReply: 'Genoteerd.' }).reasons.includes('substantive_reply'));
 });
+
+// --- 18-10-2026: the person asked, so the gate is not the one deciding ----
+
+test('every way a person asks — not only the imperative — is an explicit request', () => {
+  // `\bonthoud\b` never matched 'onthouden', so 'Kun je dit onthouden: …' scored
+  // 0.05 and was discarded while 'Onthoud dat …' was kept (measured 18-10-2026).
+  for (const text of [
+    'Onthoud dat ik twee monitoren heb.',
+    'Kun je dit voor me onthouden: Luca woont in Utrecht?',
+    'Wil je dit opslaan? Ik drink koffie zonder suiker.',
+    'Kun je onthouden dat mijn zus Ines heet?',
+    'Houd bij dat ik op woensdag altijd vrij ben.',
+    'Opslaan graag: ik parkeer altijd op P3.',
+    'Remember that I take my coffee black.',
+  ]) {
+    const d = evaluate(text);
+    assert.equal(d.action, 'retain', text);
+    assert.ok(d.reasons.includes('explicit_memory_request'), text);
+  }
+});
+
+test('an explicit request is an override no later rule can undo', () => {
+  // Ephemeral 'koffie' used to demote this to a temporary-context discard
+  // (0.05) even though he had just asked her to keep it.
+  const d = evaluate('Wil je dit opslaan? Ik drink koffie zonder suiker.');
+  assert.equal(d.action, 'retain');
+  assert.ok(d.score >= 0.75, String(d.score));
+});
+
+test('her promise alone is not a request — it has to come from the person', () => {
+  const d = evaluate('Wat eten we vanavond?', { assistantReply: 'Ik zal dat onthouden.' });
+  assert.equal(d.action, 'discard');
+});

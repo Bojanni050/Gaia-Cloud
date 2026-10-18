@@ -264,3 +264,10 @@ test('search_memory is a calm no-op when no lookup path is wired', async () => {
   const tool = createMemoryTool({ hindsight: fakeHindsight() });
   assert.equal(await tool.onToolCall('search_memory', { query: 'anything' }), 'That could not be looked up right now.');
 });
+
+test('her own memory is not subject to the memoryworthiness gate', () => {
+  // A deliberate `remember`/`keep` is a decision, not a turn to judge: the
+  // gate governs the shared bank, never the agreement to store something.
+  const source = require('node:fs').readFileSync(require.resolve('../src/reasoning/memoryTool.js'), 'utf8');
+  assert.ok(!source.includes('memoryWorthiness'), 'memoryTool must not consult the gate');
+});

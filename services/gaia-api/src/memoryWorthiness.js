@@ -77,8 +77,17 @@ const LOW_PRIORITY_SCORE = 0.35;
 const SIGNALS = Object.freeze({
   /** §7 — explicit memory requests are always strong. */
   strongRequest: [
-    /\bonthoud\b/i, /\bbewaar\b/i, /\bvergeet niet\b/i, /\bnoteren?\b.*\bvoor\b/i,
-    /\bremember (that|this)\b/i, /\bkeep in mind\b/i, /\bdon'?t forget\b/i,
+    // The inflections matter: `\bonthoud\b` never matched "onthouden", so
+    // "kun je dit voor me onthouden: …" scored 0.05 and was discarded while
+    // "onthoud dat …" was kept (measured 18-10-2026). Every way a person asks
+    // belongs here, not only the imperative.
+    /\bonthoud(t|en)?\b/i, /\bbewaar(t|d|en)?\b/i, /\bvergeet niet\b/i,
+    /\bniet vergeten\b/i, /\bopslaan\b/i, /\bonslaat?\b/i, /\bop te slaan\b/i,
+    /\bhoud(t)? (dit|dat|deze|het) (bij|vast)\b/i, /\bhoud bij\b/i,
+    /\bschrijf (dit|dat|het|deze) op\b/i, /\bnoteer\b/i, /\bnoteren?\b.*\bvoor\b/i,
+    /\bremember (that|this|it)\b/i, /\bkeep (in mind|this|that|it)\b/i,
+    /\bdon'?t forget\b/i, /\bsave (this|that|it)\b/i, /\bstore (this|that)\b/i,
+    /\bnote (this|that) down\b/i,
     /\bvanaf nu\b/i, /\bvanaf nou\b/i, /\bvoortaan\b/i, /\bfrom now on\b/i,
     /\bik wil dat je\b/i, /\bik wil graag dat je\b/i, /\bi want you to\b/i,
     /\bvergeet (mijn )?(de )?(vorige|oude)\b/i,
@@ -483,6 +492,16 @@ function evaluateMemoryWorthiness(input = {}) {
     score = clamp01(score / 3);
     score = Math.min(score, LOW_PRIORITY_SCORE + 0.05);
     reasons.push('temporary_context');
+  }
+
+  // Rule B is an override, not a nudge (Bo, 18-10-2026: "ze heeft met me
+  // afgesproken iets op te slaan, dan moet ze dat ook kunnen doen"). When the
+  // person asked her to keep something — in whatever wording — the verdict is
+  // retain, whatever the score says. Every rule above already exempts an
+  // explicit request (`explicitRecallRequest < 2` guards); this is the
+  // guarantee that none of them can take the agreement back.
+  if (d.explicitRecallRequest >= 2) {
+    return finish('retain', Math.max(score, 0.75), reasons, d);
   }
 
   const action = score >= RETAIN_SCORE ? 'retain'
