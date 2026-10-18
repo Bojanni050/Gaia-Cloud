@@ -1102,39 +1102,26 @@ async function runDeferredCognition({
       const observations = Array.isArray(reasoningResult.observations) ? reasoningResult.observations : [];
       const openQuestions = Array.isArray(reasoningResult.openQuestions) ? reasoningResult.openQuestions : [];
       const relationships = Array.isArray(reasoningResult.relationships) ? reasoningResult.relationships : [];
-      if (typeof retainObservation === 'function' && observations.length > 0) {
-        timing.start('deferred.cognition_observations');
-        try {
-          for (const o of observations) {
-            await retainObservation(o);
+      // The three kinds, and the items inside each, are independent writes to
+      // Cognition/Foundation, so they go out together. One failed item is
+      // logged and never stops the others.
+      const retainAll = async (retain, items, label, timingKey, countKey) => {
+        if (typeof retain !== 'function' || items.length === 0) return;
+        timing.start(timingKey);
+        const settled = await Promise.allSettled(items.map((item) => retain(item)));
+        for (const result of settled) {
+          if (result.status === 'rejected') {
+            const message = result.reason && result.reason.message ? result.reason.message : result.reason;
+            console.warn(`[gaia:cognition] ${label} retention failed (non-fatal): ${message}`);
           }
-        } catch (err) {
-          console.warn(`[gaia:cognition] observation retention failed (non-fatal): ${err.message}`);
         }
-        timing.end('deferred.cognition_observations', { observationCount: observations.length });
-      }
-      if (typeof retainOpenQuestion === 'function' && openQuestions.length > 0) {
-        timing.start('deferred.cognition_open_questions');
-        try {
-          for (const q of openQuestions) {
-            await retainOpenQuestion(q);
-          }
-        } catch (err) {
-          console.warn(`[gaia:cognition] open question retention failed (non-fatal): ${err.message}`);
-        }
-        timing.end('deferred.cognition_open_questions', { openQuestionCount: openQuestions.length });
-      }
-      if (typeof retainRelationship === 'function' && relationships.length > 0) {
-        timing.start('deferred.cognition_relationships');
-        try {
-          for (const r of relationships) {
-            await retainRelationship(r);
-          }
-        } catch (err) {
-          console.warn(`[gaia:cognition] relationship retention failed (non-fatal): ${err.message}`);
-        }
-        timing.end('deferred.cognition_relationships', { relationshipCount: relationships.length });
-      }
+        timing.end(timingKey, { [countKey]: items.length });
+      };
+      await Promise.all([
+        retainAll(retainObservation, observations, 'observation', 'deferred.cognition_observations', 'observationCount'),
+        retainAll(retainOpenQuestion, openQuestions, 'open question', 'deferred.cognition_open_questions', 'openQuestionCount'),
+        retainAll(retainRelationship, relationships, 'relationship', 'deferred.cognition_relationships', 'relationshipCount'),
+      ]);
     }
   }
 

@@ -97,6 +97,34 @@ function createConversationStore(options = {}) {
   // — so this stays correct even if two writes race.
   const events = new EventEmitter();
 
+  // In-memory copy of every conversation's meta.json, so listing (and the
+  // search built on it) doesn't re-read and re-parse each file per call. Built
+  // lazily on first use and kept current by this store's own writes; it is the
+  // only writer of historyDir.
+  let metaIndex = null;
+
+  function loadMetaIndex() {
+    if (metaIndex) return metaIndex;
+    const index = new Map();
+    if (fs.existsSync(historyDir)) {
+      for (const entry of fs.readdirSync(historyDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        try {
+          index.set(entry.name, JSON.parse(fs.readFileSync(metaPath(entry.name), 'utf-8')));
+        } catch (_) {
+          // A directory without a readable meta.json isn't a valid entry
+          // (e.g. an interrupted write) — skip it, don't fail the listing.
+        }
+      }
+    }
+    metaIndex = index;
+    return metaIndex;
+  }
+
+  function remember(id, meta) {
+    if (metaIndex) metaIndex.set(id, meta);
+  }
+
   function convDir(id) {
     return path.join(historyDir, id);
   }
@@ -180,22 +208,14 @@ function createConversationStore(options = {}) {
     });
     fs.writeFileSync(messagesPath(id), JSON.stringify(plain, null, 2), 'utf-8');
     fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');
+    remember(id, meta);
     events.emit('changed');
   }
 
   /** @returns {Array<{id, title, titleSource, createdAt, updatedAt, messageCount}>} newest first */
   function listConversations() {
-    if (!fs.existsSync(historyDir)) return [];
-    const entries = fs.readdirSync(historyDir, { withFileTypes: true }).filter((e) => e.isDirectory());
-    const conversations = [];
-    for (const entry of entries) {
-      try {
-        conversations.push(JSON.parse(fs.readFileSync(metaPath(entry.name), 'utf-8')));
-      } catch (_) {
-        // A directory without a readable meta.json isn't a valid entry
-        // (e.g. an interrupted write) — skip it, don't fail the listing.
-      }
-    }
+    // Copies, so a caller can't mutate the cached metas.
+    const conversations = [...loadMetaIndex().values()].map((meta) => ({ ...meta }));
     conversations.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     return conversations;
   }
@@ -262,6 +282,7 @@ function createConversationStore(options = {}) {
     meta.titleSource = 'chosen';
     meta.updatedAt = new Date().toISOString();
     fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');
+    remember(id, meta);
     events.emit('changed');
     return clean;
   }
@@ -271,6 +292,7 @@ function createConversationStore(options = {}) {
     if (!isValidId(id)) throw new InvalidConversationIdError(id);
     if (!fs.existsSync(convDir(id))) throw new ConversationNotFoundError(id);
     fs.rmSync(convDir(id), { recursive: true, force: true });
+    if (metaIndex) metaIndex.delete(id);
     events.emit('changed');
   }
 
