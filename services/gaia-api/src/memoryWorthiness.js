@@ -108,8 +108,26 @@ const SIGNALS = Object.freeze({
   personalFact: [
     /\bik woon\b/i, /\bik werk\b/i, /\bik studeer\b/i,
     /\bmijn (naam|partner|vriend(in)?|vrouw|man|dochter|zoon|gezin|familie|baan|werkgever|studie|project|studio|werk|bedrijf|team|opleiding|hond|kat)\b/i,
+    // The relations people actually mention were missing: "mijn zus heet
+    // Ines" and "mijn nieuwe buurvrouw heet Fatima" scored 0.05 while "mijn
+    // hond heet Rex" was kept, because `hond` happened to be on the list
+    // (measured 18-10-2026). Family and neighbours belong here.
+    /\b(?:mijn|ons|onze) (zus|broer|moeder|vader|ouders|oma|opa|nicht|neef|schoonzus|zwager|schoonouders|buurvrouw|buurman|buur|collega|huisgenoot|oppas|kind|kleinkind)\b/i,
     /\bsinds (vandaag|gisteren|deze week|vorige week|een maand|januari|maart|mei|juni|augustus|september)\b/i,
     /\bi live\b/i, /\bi work\b/i, /\bmy (name|wife|husband|son|daughter|family|job)\b/i,
+  ],
+  /**
+   * A possessive declaration with a concrete predicate — "mijn fiets staat in
+   * de schuur", "mijn favoriete programmeertaal is TypeScript", "mijn nieuwe
+   * buurvrouw heet Fatima". Shape-based on purpose: with only the noun list
+   * above, every fact needed a line of its own, so a zus, a buurvrouw or a
+   * fiets was silently lost while a hond was kept (measured 18-10-2026). The
+   * lookahead keeps abstract nouns out: "mijn vraag is of je tijd hebt" is the
+   * turn's shape, not knowledge.
+   */
+  personalFactShape: [
+    /\b(?:mijn|ons|onze)\s+(?!\s*(?:vraag|idee|gevoel|probleem|moment|keuze|pauze|plan|tip|bericht|theorie|opmerking|zorg|mening|gedachte|verwachting|bedoeling|twijfel|kwestie|issue|antwoord|reden|oorzaak|mogelijkheid|kans)\p{L}*\b)[\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,3}\s+(?:is|zijn|heet|heten|woont|staat|ligt|zit|hangt|komt uit|werkt|studeert|kost|begint|eindigt|blijft|wordt)\b/iu,
+    /\bmy\s+(?!\s*(?:question|idea|feeling|problem|plan)\p{L}*\b)[\p{L}'-]+(?:\s+[\p{L}'-]+){0,3}\s+(?:is|are|named|lives|works|studies|costs)\b/i,
   ],
   /**
    * Recurring commitments & routines ("elke dinsdag", "vaste studio") —
@@ -126,8 +144,11 @@ const SIGNALS = Object.freeze({
    * (§18 false-discard matters).
    */
   lifeEvent: [
-    /\bverhuis\b/i, /\bverhuizen\b/i, /\bnieuwe baan\b/i, /\bandere baan\b/i,
-    /\bontslag\b/i, /\btrouwen\b/i, /\bgaat trouwen\b/i, /\bsamenwonen\b/i,
+    // The inflections matter here too: `\bverhuis\b` never matched "verhuisd"
+    // or "verhuizen", so "Mijn vader is vorige week verhuisd" fell to 0.11 and
+    // was discarded (measured 18-10-2026).
+    /\bverhuis\w*\b/i, /\bnieuwe baan\b/i, /\bandere baan\b/i,
+    /\bonslag\w*\b/i, /\btrouw\w*\b/i, /\bsamenwon\w*\b/i,
     /\bkind (gekr|krijg)/i, /\beerste werkdag\b/i, /\bi moved\b/i, /\bnew job\b/i,
     // Planned absences — durable availability knowledge (weeks of context).
     /\bvakantie\b/i, /\bverlof\b/i, /\b(week|weken|dagen|maand)(en)? vrij\b/i,
@@ -352,6 +373,15 @@ function evaluateMemoryWorthiness(input = {}) {
     d.persistence = Math.max(d.persistence, 2);
     d.novelty = Math.max(d.novelty, 2);
     reasons.push('personal_fact');
+  }
+  if (hasSignal(text, SIGNALS.personalFactShape)) {
+    // A possessive declaration about something the list above does not name.
+    // A floor, not a claim of importance: 2/2/2 lands at 0.37, enough to reach
+    // the extractor, while the facts we know matter keep their 0.62 floor.
+    d.personalRelevance = Math.max(d.personalRelevance, 2);
+    d.persistence = Math.max(d.persistence, 2);
+    d.novelty = Math.max(d.novelty, 2);
+    reasons.push('personal_fact_shape');
   }
   if (hasSignal(turnText, SIGNALS.lifeEvent)) {
     d.personalRelevance = Math.max(d.personalRelevance, 3);

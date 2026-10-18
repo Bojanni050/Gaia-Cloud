@@ -22,6 +22,7 @@ const {
   metadataForMemoryDecision,
   logMemoryWorthiness,
   isPureAcknowledgement,
+  LOW_PRIORITY_SCORE,
   ACTIONS,
 } = require('../src/memoryWorthiness');
 
@@ -394,4 +395,56 @@ test('an explicit request is an override no later rule can undo', () => {
 test('her promise alone is not a request — it has to come from the person', () => {
   const d = evaluate('Wat eten we vanavond?', { assistantReply: 'Ik zal dat onthouden.' });
   assert.equal(d.action, 'discard');
+});
+
+// --- 18-10-2026: een gewoon persoonlijk feit zonder verzoek ----------------
+//
+// Gemeten: "Mijn zus heet Ines" en "Mijn fiets staat in de schuur" gaven
+// discard 0,05 omdat SIGNALS.personalFact een zelfstandig-naamwoordlijst was
+// (hond stond erin, zus en fiets niet). Een feit over een persoon of ding in
+// zijn leven hoort door de poort, ook zonder dat hij erom vraagt.
+
+test('a fact about a person in his life carries, without him asking', () => {
+  for (const text of [
+    'Mijn zus heet Ines',
+    'Mijn buurvrouw Fatima woont naast me',
+    'Mijn hond heet Rex',
+    'Mijn fiets staat in de schuur',
+  ]) {
+    const r = evaluate(text);
+    assert.notEqual(r.action, 'discard', text);
+    assert.ok(r.score >= LOW_PRIORITY_SCORE, text + ' → ' + r.score);
+  }
+});
+
+test('a personal fact in his own words reaches the gate, without claiming to be important', () => {
+  // "mijn nieuwe buurvrouw" valt naast de naamwoordlijst (die eist "mijn
+  // buurvrouw" aaneengesloten) op de vormregel: geen 0,62-claim, wel door.
+  const buurvrouw = evaluate('Mijn nieuwe buurvrouw heet Fatima');
+  assert.equal(buurvrouw.action, 'retain_low_priority');
+  assert.ok(buurvrouw.reasons.includes('personal_fact_shape'), buurvrouw.reasons.join(','));
+
+  const taal = evaluate('Mijn favoriete programmeertaal is TypeScript');
+  assert.notEqual(taal.action, 'discard');
+  assert.ok(taal.score >= LOW_PRIORITY_SCORE, String(taal.score));
+});
+
+test('an abstract "mijn …" is not a fact about a thing in his life', () => {
+  for (const text of [
+    'Mijn vraag is of je me kunt helpen.',
+    'Mijn idee is om de poort te verbreden.',
+    'Mijn gevoel zegt dat dit goed is.',
+  ]) {
+    assert.equal(evaluate(text).action, 'discard', text);
+  }
+});
+
+test('an ordinary conjugation of a life event still carries', () => {
+  const r = evaluate('Mijn vader is vorige week verhuisd');
+  assert.equal(r.action, 'retain');
+  assert.ok(r.reasons.includes('life_event'), r.reasons.join(','));
+});
+
+test('a momentary possession still stays out of memory', () => {
+  assert.equal(evaluate('Ik heb een rode trui aan').action, 'discard');
 });
