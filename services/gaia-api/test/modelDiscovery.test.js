@@ -7,10 +7,12 @@ const {
   retrieveEdenAiModels,
   retrieveOpenAiCompatibleModels,
   retrieveMistralModels,
+  retrieveDeepInfraModels,
   retrieveOpenRouterModelEndpoints,
   normalizeEdenAiModel,
   normalizeOpenAiModel,
   normalizeMistralModel,
+  normalizeDeepInfraModel,
 } = require('../src/modelDiscovery');
 
 // --- normalizeEdenAiModel ---
@@ -457,4 +459,106 @@ test('retrieveOpenRouterModelEndpoints: throws "model not found" on 404', async 
     () => retrieveOpenRouterModelEndpoints({ modelId: 'a/b', fetchImpl, timeoutMs: 5000 }),
     { message: 'model not found' }
   );
+});
+
+// --- normalizeDeepInfraModel / retrieveDeepInfraModels ---
+
+// Shapes taken verbatim from the live list on 2026-10-18: everything that
+// matters sits in `metadata`, and the top level only carries id/object/
+// created/owned_by/root/parent — which is why the generic OpenAI-compatible
+// normalizer showed nothing for DeepInfra.
+const DEEPINFRA_CHAT = {
+  id: 'Qwen/Qwen3.5-9B',
+  object: 'model',
+  created: 0,
+  owned_by: 'deepinfra',
+  root: 'Qwen/Qwen3.5-9B',
+  parent: null,
+  metadata: {
+    description: 'Qwen3.5-9B is a high-performance model from the Qwen3.5 series.',
+    context_length: 262144,
+    max_tokens: 262144,
+    pricing: { input_tokens: 0.1, output_tokens: 0.15 },
+    discount: null,
+    tags: ['chat', 'vlm', 'vision', 'reasoning_effort', 'reasoning'],
+  },
+};
+
+test('normalizeDeepInfraModel: reads price, context length, tags and description from metadata', () => {
+  const result = normalizeDeepInfraModel(DEEPINFRA_CHAT);
+  assert.equal(result.id, 'Qwen/Qwen3.5-9B');
+  assert.equal(result.name, 'Qwen/Qwen3.5-9B');
+  assert.deepEqual(result.capabilities, ['vision', 'reasoning']);
+  assert.equal(result.contextLength, 262144);
+  // dollars per 1M tokens in, USD-per-token out: 0.10 and 0.15 per million.
+  assert.equal(result.pricing.prompt, '0.0000001');
+  assert.equal(result.pricing.completion, '0.00000015');
+  assert.equal(result.description, 'Qwen3.5-9B is a high-performance model from the Qwen3.5 series.');
+});
+
+test('normalizeDeepInfraModel: a non-text model reports no per-token price instead of a wrong one', () => {
+  const image = normalizeDeepInfraModel({ id: 'Bria/Bria-3.2', metadata: { pricing: { per_image_unit: 0.04 }, tags: ['image-gen'], context_length: null, max_tokens: null } });
+  assert.deepEqual(image.capabilities, []);
+  assert.equal(image.contextLength, null);
+  assert.deepEqual(image.pricing, { prompt: null, completion: null });
+  const speech = normalizeDeepInfraModel({ id: 'sesame/csm-1b', metadata: { pricing: { input_characters: 7 }, tags: ['tts'] } });
+  assert.deepEqual(speech.capabilities, ['audio']);
+  assert.deepEqual(speech.pricing, { prompt: null, completion: null });
+});
+
+test('normalizeDeepInfraModel: video and reasoning tags map onto the labels the page renders', () => {
+  const video = normalizeDeepInfraModel({ id: 'x/video', metadata: { tags: ['video-gen'] } });
+  assert.deepEqual(video.capabilities, ['video']);
+  const plain = normalizeDeepInfraModel({ id: 'x/embed', metadata: { tags: ['embed', 'prompt_cache'] } });
+  assert.deepEqual(plain.capabilities, []);
+});
+
+test('normalizeDeepInfraModel: a free model is zero, not unknown, and missing metadata is survivable', () => {
+  const free = normalizeDeepInfraModel({ id: 'x/free', metadata: { pricing: { input_tokens: 0, output_tokens: 0 } } });
+  assert.deepEqual(free.pricing, { prompt: '0', completion: '0' });
+  const bare = normalizeDeepInfraModel({ id: 'x/bare' });
+  assert.deepEqual(bare, { id: 'x/bare', name: 'x/bare', capabilities: [], contextLength: null, pricing: { prompt: null, completion: null }, description: null });
+  assert.equal(normalizeDeepInfraModel({}).id, '');
+});
+
+test('retrieveDeepInfraModels: fetches, normalizes and sorts, with no key needed', async () => {
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => {
+    capturedUrl = url;
+    capturedHeaders = init.headers;
+    return { ok: true, json: async () => ({ object: 'list', data: [DEEPINFRA_CHAT, { id: 'Bria/Bria-3.2', metadata: { tags: ['image-gen'] } }, { metadata: {} }] }) };
+  };
+  const models = await retrieveDeepInfraModels({ baseUrl: 'https://api.deepinfra.com/v1/openai', apiKey: '', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.deepinfra.com/v1/openai/models');
+  assert.equal(capturedHeaders.Authorization, undefined);
+  assert.deepEqual(models.map((m) => m.id), ['Bria/Bria-3.2', 'Qwen/Qwen3.5-9B']);
+});
+
+test('retrieveDeepInfraModels: defaults to DeepInfra, sends the key when there is one, and reports a 401', async () => {
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => {
+    capturedUrl = url;
+    capturedHeaders = init.headers;
+    return { ok: true, json: async () => ({ data: [] }) };
+  };
+  await retrieveDeepInfraModels({ apiKey: 'deep-key', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.deepinfra.com/v1/openai/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer deep-key');
+  await assert.rejects(
+    () => retrieveDeepInfraModels({ apiKey: 'bad', fetchImpl: async () => ({ ok: false, status: 401 }), timeoutMs: 5000 }),
+    /authentication failed/
+  );
+  await assert.rejects(
+    () => retrieveDeepInfraModels({ fetchImpl: async () => { throw new Error('offline'); }, timeoutMs: 5000 }),
+    /deepinfra unreachable/
+  );
+});
+
+test('retrieveModels: routes to the DeepInfra adapter for deepinfra provider', async () => {
+  let capturedUrl;
+  const fetchImpl = async (url) => { capturedUrl = url; return { ok: true, json: async () => ({ data: [DEEPINFRA_CHAT] }) }; };
+  const models = await retrieveModels({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.deepinfra.com/v1/openai/models');
+  assert.equal(models[0].contextLength, 262144);
+  assert.equal(models[0].pricing.prompt, '0.0000001');
 });

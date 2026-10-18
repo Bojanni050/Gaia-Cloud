@@ -18,6 +18,11 @@
  *                        input_modalities/supports_* shape other providers use,
  *                        so it gets its own normalizer. See
  *                        https://docs.mistral.ai/getting-started/platform-overview
+ *   - DeepInfra:        GET {baseUrl}/models (default
+ *                        https://api.deepinfra.com/v1/openai). OpenAI-shaped
+ *                        at the top, with price, context length, tags and
+ *                        description nested in `metadata` — so it gets its
+ *                        own normalizer. Public list; no key required.
  *
  * The provider string determines which adapter is used. Unknown providers
  * fall back to the OpenAI-compatible pattern, which covers OpenRouter,
@@ -68,6 +73,10 @@ async function retrieveModels({ provider, baseUrl, apiKey, fetchImpl, timeoutMs 
 
   if (normalizedProvider === 'mistral') {
     return retrieveMistralModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
+  }
+
+  if (normalizedProvider === 'deepinfra') {
+    return retrieveDeepInfraModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
   }
 
   if (normalizedProvider === 'fishaudio') {
@@ -373,6 +382,116 @@ async function retrieveOpenRouterModelEndpoints({ modelId, baseUrl, fetchImpl, t
     });
 }
 
+
+const DEEPINFRA_DEFAULT_BASE_URL = 'https://api.deepinfra.com/v1/openai';
+
+/**
+ * DeepInfra model discovery — GET {baseUrl}/models, default
+ * https://api.deepinfra.com/v1/openai/models.
+ *
+ * The list is public: no key is required, and a bogus Bearer is refused
+ * with 401. Every entry is OpenAI-shaped at the top (`id, object, created,
+ * owned_by, root, parent`) with everything worth showing nested in
+ * `metadata`: `description`, `context_length`, `max_tokens`, `pricing`,
+ * `discount` and `tags`. That is exactly why the generic OpenAI-compatible
+ * normalizer showed nothing for DeepInfra — it reads `context_length`,
+ * `pricing.prompt/completion`, `capabilities`, `architecture` and
+ * `supported_parameters`, and none of those exist at that level here.
+ *
+ * Pricing units depend on the model kind and are not per token:
+ *   - text models:  { input_tokens, output_tokens } — dollars per 1M tokens
+ *                   (Llama-3.3-70B-Turbo 0.10/0.32, DeepSeek-V3 0.32/0.89,
+ *                   matching DeepInfra's public price list on 2026-10-18)
+ *   - image models: { per_image_unit } — dollars per image
+ *   - speech:       { input_characters } — dollars per 1M characters
+ * Only the per-token pair can be expressed in the internal USD-per-token
+ * form the admin page formats; anything else is reported as not available
+ * rather than turned into a wrong number.
+ *
+ * Tags map onto the capability vocabulary the page renders: vision|vlm ->
+ * vision, reasoning|reasoning_effort -> reasoning, tts|stt -> audio,
+ * video-gen -> video. `chat` describes the norm rather than a capability,
+ * and `embed`, `image-gen` and `prompt_cache` have no equivalent.
+ * See https://deepinfra.com/docs and https://api.deepinfra.com/openapi.json
+ */
+async function retrieveDeepInfraModels({ baseUrl, apiKey, fetchImpl, timeoutMs }) {
+  const fetchFn = fetchImpl || fetch;
+  const url = `${String(baseUrl || DEEPINFRA_DEFAULT_BASE_URL).replace(/\/+$/, '')}/models`;
+  const headers = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  let response;
+  try {
+    response = await fetchFn(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    throw new Error('deepinfra unreachable');
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('authentication failed');
+    throw new Error('provider responded with an error');
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new Error('provider returned an unreadable response');
+  }
+
+  const models = Array.isArray(data?.data) ? data.data : [];
+  return models
+    .map((m) => normalizeDeepInfraModel(m))
+    .filter((m) => Boolean(m.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** DeepInfra tags -> the capability ids the admin page knows how to label. */
+function deepInfraCapabilitiesFromTags(tags) {
+  const caps = [];
+  const has = (tag) => tags.includes(tag);
+  if (has('vision') || has('vlm')) caps.push('vision');
+  if (has('reasoning') || has('reasoning_effort')) caps.push('reasoning');
+  if (has('tts') || has('stt')) caps.push('audio');
+  if (has('video-gen')) caps.push('video');
+  return caps;
+}
+
+/**
+ * Dollars per 1M tokens -> the USD-per-token string the page formats.
+ * Written as a plain decimal (0.0000001) rather than exponent notation, which
+ * is the shape the other providers report and the shape the page documents.
+ */
+function perTokenFromPerMillion(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const perToken = n / 1e6;
+  if (perToken === 0) return '0';
+  const fixed = perToken.toFixed(15).replace(/0+$/, '').replace(/\.$/, '');
+  return fixed === '0' ? '0' : fixed;
+}
+
+function normalizeDeepInfraModel(m) {
+  const meta = (m && m.metadata) || {};
+  const tags = Array.isArray(meta.tags) ? meta.tags.map((t) => String(t).toLowerCase()) : [];
+  const pricing = meta.pricing || {};
+  const id = m && m.id ? String(m.id) : '';
+  const context = [meta.context_length, meta.max_tokens].find((v) => typeof v === 'number' && v > 0) || null;
+  const description = typeof meta.description === 'string' && meta.description.trim() ? meta.description.trim() : null;
+  return {
+    id,
+    name: id,
+    capabilities: deepInfraCapabilitiesFromTags(tags),
+    contextLength: context,
+    pricing: {
+      prompt: perTokenFromPerMillion(pricing.input_tokens),
+      completion: perTokenFromPerMillion(pricing.output_tokens),
+    },
+    description,
+  };
+}
+
 module.exports = {
   retrieveModels,
   retrieveEdenAiModels,
@@ -382,4 +501,6 @@ module.exports = {
   normalizeEdenAiModel,
   normalizeOpenAiModel,
   normalizeMistralModel,
+  retrieveDeepInfraModels,
+  normalizeDeepInfraModel,
 };
