@@ -61,6 +61,33 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   }
 
   /**
+   * The one way a Hindsight call is made: JSON body, per-call timeout, and a
+   * uniform failure shape. A failing call throws `hindsight <label> unreachable:
+   * <reason>` / `hindsight <label> responded <status>`, or, with `soft`, answers
+   * null for callers that treat "not available" and "failed" the same way.
+   * `timeout: null` sends no abort signal (the async retain).
+   */
+  async function send(url, { method = 'GET', body, timeout = timeoutMs, label, soft = false } = {}) {
+    let response;
+    try {
+      response = await request(url, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        ...(timeout !== null ? { signal: AbortSignal.timeout(timeout) } : {}),
+      });
+    } catch (error) {
+      if (soft) return null;
+      throw new Error(`hindsight ${label} unreachable: ${error.message}`);
+    }
+    if (!response.ok) {
+      if (soft) return null;
+      throw new Error(`hindsight ${label} responded ${response.status}`);
+    }
+    return response;
+  }
+
+  /**
    * `budget` defaults to Hindsight's own default (`'mid'`, 300 candidates)
    * rather than an artificially narrowed one — it scales every retrieval
    * strategy Hindsight runs (semantic over-fetch, BM25 limit, graph-
@@ -100,20 +127,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (Array.isArray(options.types)) body.types = options.types;
     if (Array.isArray(options.tags)) body.tags = options.tags;
     if (options.tagsMatch) body.tags_match = options.tagsMatch;
-    let response;
-    try {
-      response = await request(bankUrl('/memories/recall'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight recall unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight recall responded ${response.status}`);
-    }
+    const response = await send(bankUrl('/memories/recall'), { method: 'POST', body, label: 'recall' });
     const data = await response.json();
     return (data.results || []).map((r) => ({
       id: r.id,
@@ -158,19 +172,9 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
       tags: domain ? [domain] : undefined,
     };
 
-    let response;
-    try {
-      response = await request(bankUrl('/memories'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ async: true, items: [item] }),
-      });
-    } catch (error) {
-      throw new Error(`hindsight retain unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight retain responded ${response.status}`);
-    }
+    await send(bankUrl('/memories'), {
+      method: 'POST', body: { async: true, items: [item] }, timeout: null, label: 'retain',
+    });
   }
 
   /**
@@ -184,17 +188,8 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * @returns {Promise<{ id: string, name: string, content: string, isStale: boolean, lastRefreshedAt: string|null }|null>}
    */
   async function getMentalModel(mentalModelId) {
-    let response;
-    try {
-      response = await request(bankUrl(`/mental-models/${mentalModelId}`), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (_) {
-      return null;
-    }
-    if (!response.ok) return null;
+    const response = await send(bankUrl(`/mental-models/${mentalModelId}`), { soft: true });
+    if (!response) return null;
     const data = await response.json();
     // A freshly created (or currently refreshing) mental model reports this
     // exact placeholder string as its content before the async generation
@@ -218,30 +213,22 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * @param {{ content: string, context?: string|null, metadata?: Record<string,string>, tags?: string[], documentId?: string }} item
    */
   async function retainSync(item) {
-    let response;
-    try {
-      response = await request(bankUrl('/memories'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          async: false,
-          items: [{
-            content: item.content,
-            context: item.context || null,
-            timestamp: 'unset',
-            document_id: item.documentId || undefined,
-            metadata: item.metadata || undefined,
-            tags: item.tags || undefined,
-          }],
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-    } catch (error) {
-      throw new Error(`hindsight retain unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight retain responded ${response.status}`);
-    }
+    const response = await send(bankUrl('/memories'), {
+      method: 'POST',
+      body: {
+        async: false,
+        items: [{
+          content: item.content,
+          context: item.context || null,
+          timestamp: 'unset',
+          document_id: item.documentId || undefined,
+          metadata: item.metadata || undefined,
+          tags: item.tags || undefined,
+        }],
+      },
+      timeout: 30000,
+      label: 'retain',
+    });
     return response.json().catch(() => ({}));
   }
 
@@ -263,19 +250,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (state) params.set('state', state);
     if (limit) params.set('limit', String(limit));
     const qs = params.toString();
-    let response;
-    try {
-      response = await request(bankUrl(`/memories/list${qs ? `?${qs}` : ''}`), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight memories/list unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight memories/list responded ${response.status}`);
-    }
+    const response = await send(bankUrl(`/memories/list${qs ? `?${qs}` : ''}`), { label: 'memories/list' });
     const data = await response.json();
     return (data.items || []).map((u) => ({
       id: u.id,
@@ -296,17 +271,8 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
 
   /** GET /memories/{id} — one unit incl. metadata/tags/curation state; null on any failure. */
   async function getMemory(id) {
-    let response;
-    try {
-      response = await request(bankUrl(`/memories/${encodeURIComponent(id)}`), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (_) {
-      return null;
-    }
-    if (!response.ok) return null;
+    const response = await send(bankUrl(`/memories/${encodeURIComponent(id)}`), { soft: true });
+    if (!response) return null;
     const u = await response.json().catch(() => null);
     if (!u) return null;
     return {
@@ -334,20 +300,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function patchMemoryState(id, state, reason) {
     const body = { state };
     if (reason) body.reason = reason;
-    let response;
-    try {
-      response = await request(bankUrl(`/memories/${encodeURIComponent(id)}`), {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight memory patch unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight memory patch responded ${response.status}`);
-    }
+    await send(bankUrl(`/memories/${encodeURIComponent(id)}`), { method: 'PATCH', body, label: 'memory patch' });
     return true;
   }
 
@@ -369,20 +322,9 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * @returns {Promise<{ id: string, kind: string, name: string, parentId: string|null }>}
    */
   async function createKnowledgeFolder({ name, parentId } = {}) {
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl('/folders'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ name, parent_id: parentId ?? null }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge folder create unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge folder create responded ${response.status}`);
-    }
+    const response = await send(knowledgeBaseUrl('/folders'), {
+      method: 'POST', body: { name, parent_id: parentId ?? null }, label: 'knowledge folder create',
+    });
     const data = await response.json();
     return { id: data.id, kind: data.kind, name: data.name, parentId: data.parent_id ?? null };
   }
@@ -409,20 +351,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (typeof refreshAfterConsolidation === 'boolean') {
       body.trigger = { refresh_after_consolidation: refreshAfterConsolidation };
     }
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl('/pages'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge page create unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge page create responded ${response.status}`);
-    }
+    const response = await send(knowledgeBaseUrl('/pages'), { method: 'POST', body, label: 'knowledge page create' });
     const data = await response.json();
     return { pageId: data.page_id, mentalModelId: data.mental_model_id, operationId: data.operation_id ?? null };
   }
@@ -439,17 +368,8 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    *   tags: string[], timestamp: string|null, body: string|null, markdown: string }|null>}
    */
   async function getKnowledgePage(pageId) {
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl(`/pages/${encodeURIComponent(pageId)}`), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (_) {
-      return null;
-    }
-    if (!response.ok) return null;
+    const response = await send(knowledgeBaseUrl(`/pages/${encodeURIComponent(pageId)}`), { soft: true });
+    if (!response) return null;
     const data = await response.json().catch(() => null);
     if (!data) return null;
     if (!data.body || data.body === 'Generating content...') return null;
@@ -478,19 +398,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   async function searchKnowledgeBase(query, { limit } = {}) {
     const params = new URLSearchParams({ q: query });
     if (limit) params.set('limit', String(limit));
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl(`/search?${params.toString()}`), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge search unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge search responded ${response.status}`);
-    }
+    const response = await send(knowledgeBaseUrl(`/search?${params.toString()}`), { label: 'knowledge search' });
     const data = await response.json();
     return (data.results || []).map((r) => ({
       id: r.id,
@@ -511,19 +419,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    *   mentalModelId, managed, description, tags, timestamp, isStale, children }`
    */
   async function getKnowledgeTree() {
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl('/tree'), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge tree unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge tree responded ${response.status}`);
-    }
+    const response = await send(knowledgeBaseUrl('/tree'), { label: 'knowledge tree' });
     const data = await response.json();
     const mapNode = (n) => ({
       id: n.id,
@@ -557,20 +453,9 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
     if (typeof options.sourceQuery === 'string') body.source_query = options.sourceQuery;
     if (Array.isArray(options.tags)) body.tags = options.tags;
     if (typeof options.maxTokens === 'number') body.max_tokens = options.maxTokens;
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge node update unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge node update responded ${response.status}`);
-    }
+    await send(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
+      method: 'PATCH', body, label: 'knowledge node update',
+    });
     return true;
   }
 
@@ -581,19 +466,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * @param {string} nodeId
    */
   async function deleteKnowledgeNode(nodeId) {
-    let response;
-    try {
-      response = await request(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), {
-        method: 'DELETE',
-        headers,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      throw new Error(`hindsight knowledge node delete unreachable: ${error.message}`);
-    }
-    if (!response.ok) {
-      throw new Error(`hindsight knowledge node delete responded ${response.status}`);
-    }
+    await send(knowledgeBaseUrl(`/nodes/${encodeURIComponent(nodeId)}`), { method: 'DELETE', label: 'knowledge node delete' });
     return true;
   }
 
