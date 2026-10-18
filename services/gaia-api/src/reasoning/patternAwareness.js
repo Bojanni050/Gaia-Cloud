@@ -128,7 +128,7 @@ function contentTokens(text) {
  * @param {object|null|undefined} intentDecision - IntentIQ's IntentDecision.
  *   The live turn always passes `null` (`turn.js`: IntentIQ is not wired in),
  *   so the live path takes the `shape` verdict or the trivial floor; the
- *   branch that reads this is for `intentIQ.js`, the eval and the Logos path.
+ *   branch that reads this is for the eval and the Logos path.
  * @param {{ topical?: boolean }|null|undefined} [shape]
  * @returns {boolean}
  */
@@ -141,8 +141,8 @@ function shouldAttemptPatternRetrieval(userText, intentDecision, shape) {
 
   // The live turn always lands here — IntentIQ is not wired in, so
   // `intentDecision` is null — and the trivial floor above is all we have. The
-  // branch below reads a real decision, which only `intentIQ.js`, the eval and
-  // the Logos path can hand in.
+  // branch below reads a real decision, which only the eval and the Logos path
+  // can hand in.
   if (!intentDecision) return true; // no IntentIQ ran — the text check is all we have
 
   const intent = intentDecision.intent;

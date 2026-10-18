@@ -2,7 +2,7 @@
 
 /**
  * Durable persistence for the Logos decision log lines that
- * intentLog.js/logosLog.js already produce (structured JSON, one line per
+ * logosLog.js already produces (structured JSON, one line per
  * decision). Those write to console.log by default, which only survives as
  * long as `docker logs`' own retention — fine for live tailing, not for
  * looking back at "why did Gaia classify this the way it did" after the

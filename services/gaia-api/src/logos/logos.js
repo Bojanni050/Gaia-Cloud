@@ -196,7 +196,7 @@ function baseResult(overrides = {}, evidence = []) {
 // Intents that plausibly need supporting material to actually conclude
 // anything — a request to explain, transform, decide, or act on
 // something is only as good as what it has to work with. Kept small and
-// legible, same posture as intentIQ.js's own signal sets: a heuristic,
+// legible, same posture as the signal sets in intentSignals.js: a heuristic,
 // not a claim to have reasoned about the specific turn.
 const EVIDENCE_DEPENDENT_INTENTS = new Set(['inform.explain', 'create.transform', 'decide.support', 'act.perform']);
 

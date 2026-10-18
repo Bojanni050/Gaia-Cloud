@@ -2,7 +2,7 @@
 
 /**
  * Structured, server-side-only logging for Logos decisions. Same
- * discipline as intentLog.js: a dev/eval observability surface, never
+ * discipline as llmCallLog.js: a dev/eval observability surface, never
  * returned to a client. Deliberately does not log hidden chain-of-thought
  * — only the structured result itself, which already carries
  * rationale in `reasoning`/`explanation` fields where relevant.

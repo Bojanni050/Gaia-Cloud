@@ -2,14 +2,13 @@
 
 /**
  * Structured, server-side-only logging for every actual LLM HTTP call Gaia
- * makes — IntentIQ's semantic classifier, Logos's background reflection
- * model, and Gaia's own native generator. Distinct from intentLog.js/
- * logosLog.js, which log the *outcome* of a decision (a classification, a
+ * makes — Logos's background reflection model and Gaia's own native
+ * generator. Distinct from logosLog.js, which logs the *outcome* of a decision (a classification, a
  * reasoning result) — a decision can be reached without ever calling a
  * model (heuristic-only, shallow reflection), so "a decision was logged"
  * doesn't tell you "a model was actually called". This does.
  *
- * Same discipline as intentLog.js: never crosses the API's response
+ * Same discipline as logosLog.js: never crosses the API's response
  * boundary, sink is injectable (defaults to console.log) so callers can
  * also persist to decisionStore.js under kind 'llm.call' — that's what
  * makes it show up in /admin's decision log alongside Logos records.

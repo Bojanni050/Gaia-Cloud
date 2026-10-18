@@ -8,8 +8,6 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
-    "eval:intent": "node eval/run.js",
-    "eval:intent-eval": "node eval/evaluationRunner.js",
     "eval:logos": "node eval/run-logos.js",
     "eval:hypothesis": "node eval/run-hypothesis.js",
     "eval:pattern": "node eval/run-pattern.js",

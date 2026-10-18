@@ -161,27 +161,6 @@ normal sense — see `adminRoutes.js`):
 - **Fail closed.** Without `GAIA_API_TOKEN` every authenticated route
   returns 503; wrong tokens get 401.
 
-## Logos.IntentIQ (v0.1)
-
-`src/logos/intentIQ.js` — Gaia's first real IntentIQ, living in Gaia Cloud
-per architecture.md rather than as a client-side heuristic. It answers
-exactly one question, "what is the user trying to achieve?", against the
-approved Intent Taxonomy v0.1 (`src/logos/intentTaxonomy.js`), and returns
-a structured `IntentDecision` (`schemaVersion: "intentiq.v1"`). It never
-calls Hermes, chooses a model/provider, executes a capability, or writes
-memory — see `test/intentIQ.test.js`'s boundary tests, which assert this
-directly rather than just documenting it.
-
-As of V3 it is **offline/eval-only** — the live turn runs no IntentIQ
-pre-flight (`turn.js` sets `intentDecision = null`; language understanding
-happens inside the single inference call, and Logos reflects after
-delivery). The classifier, its heuristic telemetry (`src/logos/intentLog.js`)
-and the evaluation harness remain for measured offline work; the former
-admin config surface (`/admin/api/intentiq/*`, `intentModelStore`) has been
-removed.
-
-Run the synthetic evaluation set: `npm run eval:intent` (see `eval/README.md`).
-
 ## Logos (V3 unified faculty)
 
 `src/logos/logos.js` — Gaia's cognitive faculty: "what is the user trying

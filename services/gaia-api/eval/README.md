@@ -1,92 +1,8 @@
-# Logos evaluation harnesses
+# Evaluation harnesses
 
-Three IntentIQ harnesses and one Logos harness live here. They don't
-share cases or scoring: each answers a different question
+The Logos, hypothesis, pattern and memoryworthiness harnesses live here. They
+don't share cases or scoring: each answers a different question
 (architecture.md §4.2) and is evaluated separately.
-
-# IntentIQ evaluation harness
-
-Runs `eval/cases.js` — a **synthetic design/evaluation set**, not real user
-data — against the current `src/logos/intentIQ.js` classifier and reports
-coherence, not just accuracy.
-
-```bash
-npm run eval:intent
-```
-
-## What this checks
-
-- **accuracy** — status/intent matched what a case expected (or one of its
-  `acceptableAlternatives`).
-- **unknown rate / ambiguous rate** — how often IntentIQ declines to force
-  a classification. Neither rate is a bug by itself; a taxonomy this new
-  should produce real unknowns and real ambiguity on the harder cases.
-- **confidence distribution** — min/max/avg confidence across accepted
-  cases. Confidence is capped at 0.95 in the classifier itself (never
-  reported as certainty); this stat is here to catch a classifier that's
-  systematically over- or under-confident, not to chase a single number.
-- **confusion** — for each case's expected outcome, which actual outcomes
-  it produced. Read this before the accuracy number — it shows *which*
-  intents get confused with which, not just how often something was wrong.
-- **mismatches** — the literal list of cases that didn't match, with why.
-
-## What this is not
-
-Not a training set, not a benchmark to optimize against by adding more
-keyword patterns until every case passes, and not evidence about real
-Gaia users — see `eval/cases.js`'s own header comment. Its job is to keep
-the taxonomy and the classifier honest against each other as both evolve.
-
-## Updating
-
-- Add cases as real usage surfaces gaps — mark anything still invented
-  clearly, the way the existing set does.
-- If a mismatch reveals the *taxonomy* is wrong (not just the classifier),
-  that is a taxonomy change, and belongs back in the design report's
-  review process — not a quiet edit to `expectedIntent` here to make the
-  harness pass.
-
----
-
-# IntentIQ 2.3 evaluation runner + feedback analyzer
-
-The 2.3 layer makes the runtime feedback seam (`src/logos/intentFeedback.js`)
-and the decision logs systematically analyzable:
-
-```bash
-npm run eval:intent-eval            # heuristic-only (semantic metrics N/A)
-npm run eval:intent-eval -- --mock  # with the deterministic fixture semantic model
-```
-
-- `eval/intent-eval.json` — 96 synthetic cases across every intent family,
-  plus follow-up, ambiguous, source-of-truth, reference-resolution, bare
-  interrogative ("why?" with/without context), personhood, explanation-frame
-  and documented heuristic-conflict ("trap") cases whose expectations state
-  the TRUE intent, so a heuristic-only mismatch is itself the finding.
-  Grown from the measured 2.3 findings: every new rule carries positive,
-  negative, contextual and follow-up coverage.
-- `eval/evaluationRunner.js` — loads the dataset, runs the full cascade
-  (`interpret()` over `classify()`), and reports: accuracy, an
-  expected-x-predicted confusion matrix, confidence calibration bands,
-  over/underconfidence findings, semantic-call efficiency
-  (`semanticValueRate`, with confirmations-that-reduced-uncertainty counted
-  separately), heuristic/semantic conflict statistics, and
-  reference-resolution statistics. Always prints the calibration config it
-  ran under and ends with recommendations that are strings for humans —
-  nothing is ever applied automatically.
-- `src/logos/intentFeedbackAnalyzer.js` — the pure analysis core. Consumes
-  'intentiq.feedback' + 'intentiq.decision' records (joined on
-  correlationId), produces statistics only. No I/O except loadRecords(),
-  no decisions, no self-tuning: the calibration loop is
-  feedback → offline analysis → human-reviewed change → evaluation →
-  release, deliberately with no online shortcut.
-
-The `--mock` model is a fixture (like logosModelStub.js for Logos):
-its numbers say "the pipeline behaves sanely", never "the semantic model is
-good". Point `runEvaluation(dataset, { model })` at a real configured
-model to measure the actual tier.
-
----
 
 # Logos evaluation harness
 
@@ -137,5 +53,5 @@ configured `REASONIQ_MODEL_*` model — see that file's own header comment.
 ## What this is not
 
 Not a benchmark for the stub, not evidence Logos reasons well, and not
-real user data. Its job — same as the IntentIQ harness — is to keep the
+real user data. Its job — same as the Logos harness — is to keep the
 pipeline honest about its own contract (never a training target).

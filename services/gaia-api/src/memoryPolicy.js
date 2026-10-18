@@ -84,9 +84,9 @@ function hasSignal(text, patterns) {
  * herself mentioned juni — the referent is hers, not the user's). That branch
  * only fires when a caller hands in a real decision, and the live turn never
  * does: `turn.js` sets `intentDecision = null` because IntentIQ is not wired
- * into the turn. The callers that can reach it are `intentIQ.js` itself, the
- * eval cases and the Logos path, and it stays as the contract for the day
- * IntentIQ runs again. Read it as a capability, not as something the live
+ * into the turn. The only callers that can reach it are the eval cases and the
+ * Logos path (the IntentIQ classifier itself has been removed), and it stays
+ * as the contract for the day an intent decision is supplied again. Read it as a capability, not as something the live
  * conversation does. Whenever it does fire, the lexical cues are irrelevant.
  * `shape` (stap 4 van "de vraag één keer lezen"): when the caller already read
  * the turn once with `turnShape.readTurn`, that verdict is used as-is instead
