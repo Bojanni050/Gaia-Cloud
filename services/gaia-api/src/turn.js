@@ -340,6 +340,30 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
 }
 
 /**
+ * Observability must never take a turn down: runs `fn` and swallows anything it
+ * throws.
+ */
+function safely(fn) {
+  try {
+    fn();
+  } catch (_) {
+    // Deliberately silent: a log line is never worth a failed turn.
+  }
+}
+
+/**
+ * Emits one structured log line, to the decision logger when the turn has one
+ * (which also persists it) and to the console otherwise. Never throws.
+ */
+function logEvent(decisionLogger, payload) {
+  safely(() => {
+    const line = JSON.stringify(payload);
+    if (decisionLogger) decisionLogger(line);
+    else console.log(line);
+  });
+}
+
+/**
  * DecisionIQ as post-turn reflection (v3.0 Logos, third dimension): judges
  * AFTER delivery whether this turn could have used a specialized
  * capability. Observability only — never reroutes or rewrites the turn.
@@ -351,13 +375,11 @@ function reflectDecisionIQ({ userText, decisionLogger }) {
     if (/\b(analyseer|analyze|analyse|race condition|architectuur|architecture|refactor|debug)\b/i.test(text)) signals.push('analysis');
     if (/\b(onthoud|remember|weet je nog|vorige|eerder)\b/i.test(text)) signals.push('memory');
     if (/https?:\/\//.test(text)) signals.push('external_reference');
-    const line = JSON.stringify({
+    logEvent(decisionLogger, {
       kind: 'decision.review',
       couldHaveUsedCapability: signals.length > 0 ? signals : null,
       note: 'post-turn reflection only — the delivered reply stands',
     });
-    if (decisionLogger) decisionLogger(line);
-    else console.log(line);
   } catch (_) {
     // Observability must never take down a turn.
   }
@@ -470,18 +492,12 @@ async function recallForTurn({
     : null;
   const reachSkill = detectedSkill && conversationId ? detectedSkill : null;
   if (detectedSkill && !reachSkill) {
-    try {
-      const line = JSON.stringify({
-        kind: 'research.skipped',
-        traceId: traceId || null,
-        skill: detectedSkill,
-        reason: 'no-conversation',
-      });
-      if (decisionLogger) decisionLogger(line);
-      else console.log(line);
-    } catch (_) {
-      // Observability must never take down a turn.
-    }
+    logEvent(decisionLogger, {
+      kind: 'research.skipped',
+      traceId: traceId || null,
+      skill: detectedSkill,
+      reason: 'no-conversation',
+    });
   }
 
   // Gated recall — Hindsight only on explicit requests or content
@@ -579,53 +595,39 @@ function logRecallObservability({
   // en counts only (nooit user-/memory-inhoud). Blijft werken zonder
   // decisionStore via console.log-default; met store is hij ook duurzaam
   // voor `GET /admin/api/logos/decisions`.
-  try {
-    logRecallMeasure({
-      traceId: traceId || null,
-      gated: shouldRecall(userText, { shape }),
-      hasHindsight: Boolean(hindsight),
-      reflectionCount: Array.isArray(reflections) ? reflections.length : 0,
-      mentalModelCount: Array.isArray(mentalModels) ? mentalModels.length : 0,
-      patternCount: Array.isArray(recalledPatterns) ? recalledPatterns.length : 0,
-      knowledgePageCount: Array.isArray(knowledgePages) ? knowledgePages.length : 0,
-      queryLength: String(userText || '').length,
-      wantPatterns,
-    }, decisionLogger);
-  } catch (_) {
-    // Observability must never take down a turn.
-  }
+  safely(() => logRecallMeasure({
+    traceId: traceId || null,
+    gated: shouldRecall(userText, { shape }),
+    hasHindsight: Boolean(hindsight),
+    reflectionCount: Array.isArray(reflections) ? reflections.length : 0,
+    mentalModelCount: Array.isArray(mentalModels) ? mentalModels.length : 0,
+    patternCount: Array.isArray(recalledPatterns) ? recalledPatterns.length : 0,
+    knowledgePageCount: Array.isArray(knowledgePages) ? knowledgePages.length : 0,
+    queryLength: String(userText || '').length,
+    wantPatterns,
+  }, decisionLogger));
 
   // Stap 2 van het stroomlijnplan (`plan: de vraag één keer lezen`): het
   // verdict van readTurn naast de bestaande per-poort-regels, zodat stap 3 op
   // echt verkeer kan vergelijken vóór er een consument verhuist. Vorm, ja/nee
   // en signaalnamen alleen — nooit de tekst van de gebruiker. Sinds stap 4 is
   // dit dezelfde lezing die de poorten hierboven al gebruikten.
-  try {
-    logTurnShape(
-      { ...shape, traceId: traceId || null, queryLength: String(userText || '').length },
-      decisionLogger
-    );
-  } catch (_) {
-    // Observability must never take down a turn.
-  }
+  safely(() => logTurnShape(
+    { ...shape, traceId: traceId || null, queryLength: String(userText || '').length },
+    decisionLogger
+  ));
 
   // Reach observability: one line per research turn — which skill Gaia reached
   // for, which job carries it, and whether the run actually got submitted.
   // Ids and booleans only, never content.
   if (reachSkill) {
-    try {
-      const line = JSON.stringify({
-        kind: 'research.job',
-        traceId: traceId || null,
-        skill: reachSkill,
-        jobId: researchJob ? researchJob.id : null,
-        submitted: Boolean(researchJob && researchJob.runId),
-      });
-      if (decisionLogger) decisionLogger(line);
-      else console.log(line);
-    } catch (_) {
-      // Observability must never take down a turn.
-    }
+    logEvent(decisionLogger, {
+      kind: 'research.job',
+      traceId: traceId || null,
+      skill: reachSkill,
+      jobId: researchJob ? researchJob.id : null,
+      submitted: Boolean(researchJob && researchJob.runId),
+    });
   }
 
 }
@@ -752,7 +754,7 @@ function buildTurnPrompt({
 
   const lastUserMsg = assembled.find((m) => m.role === 'user');
   if (lastUserMsg) {
-    console.log(JSON.stringify({
+    logEvent(undefined, {
       kind: 'vision.trace',
       traceId,
       stage: 'assembly',
@@ -764,7 +766,7 @@ function buildTurnPrompt({
         ? lastUserMsg.content.some((c) => c.type === 'image_url')
         : false,
       imageMimeType: multimodalAttachments.length > 0 ? multimodalAttachments[0].imageMimeType : null,
-    }));
+    });
   }
 
   return { assembled, buildAssembled, evidence, textAttachments, multimodalAttachments, now };
@@ -826,15 +828,13 @@ async function runGeneration({
         && !isNotConfiguredError(err);
       if (!mayFallBack) throw err;
       const described = await describeImagesAsText(multimodalAttachments, describeImage, signal);
-      try {
-        console.log(JSON.stringify({
-          kind: 'vision.fallback',
-          traceId: traceId || null,
-          reason: err && err.name ? err.name : 'error',
-          images: multimodalAttachments.length,
-          described: described.filter((d) => d.content).length,
-        }));
-      } catch (_) { /* never break a turn */ }
+      logEvent(undefined, {
+        kind: 'vision.fallback',
+        traceId: traceId || null,
+        reason: err && err.name ? err.name : 'error',
+        images: multimodalAttachments.length,
+        described: described.filter((d) => d.content).length,
+      });
       output = await generate(buildAssembled([...textAttachments, ...described], []));
     }
     timing.end('generation');
@@ -1384,13 +1384,11 @@ function abortError() {
  * sees exactly what was said, no more. Never throws.
  */
 function recordInterruptedTurn({ historyStore, conversationId, messages, partial, traceId }) {
-  try {
-    console.log(JSON.stringify({
-      kind: 'turn.interrupted',
-      traceId: traceId || null,
-      partialChars: partial ? partial.length : 0,
-    }));
-  } catch (_) { /* never break anything */ }
+  logEvent(undefined, {
+    kind: 'turn.interrupted',
+    traceId: traceId || null,
+    partialChars: partial ? partial.length : 0,
+  });
   if (!historyStore || !conversationId) return;
   try {
     const saved = partial && partial.trim().length > 0
@@ -1496,14 +1494,12 @@ async function performStreamingTurn({
   void timing;
 
   if (timeToFirstTokenMs !== null) {
-    try {
-      console.log(JSON.stringify({
-        kind: 'gaia.timing',
-        traceId,
-        stage: 'generation.first_token',
-        timeToFirstTokenMs,
-      }));
-    } catch (_) { /* never break a turn */ }
+    logEvent(undefined, {
+      kind: 'gaia.timing',
+      traceId,
+      stage: 'generation.first_token',
+      timeToFirstTokenMs,
+    });
   }
 
   // Nothing usable was said: calm failure. Unconfigured generation with
