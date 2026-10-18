@@ -38,6 +38,7 @@
 
 const {
   isTrivial, MEMORY_POLICY, PAST_REFERENCE_SIGNALS, DURABLE_CONTEXT_SIGNALS,
+  HER_VIEW_SIGNALS,
 } = require('./memoryPolicy');
 const { detectSignals, detectSkillTasks } = require('./logos/intentSignals');
 
@@ -95,6 +96,10 @@ function readTurn(text) {
   );
   const looksInRecords = Boolean(signals && signals.recordedKnowledge);
 
+  // The one turn where her own bank joins the recall: he asks about her view
+  // or her state (see HER_VIEW_SIGNALS in memoryPolicy).
+  const asksAboutHer = hasSignal(trimmed, HER_VIEW_SIGNALS);
+
   // patternAwareness' live verdict: no trivial turn triggers pattern analysis.
   const topical = !trivial;
 
@@ -108,6 +113,7 @@ function readTurn(text) {
   const matched = [];
   if (pastReference) matched.push('pastReference');
   if (durableTopic) matched.push('durableTopic');
+  if (asksAboutHer) matched.push('asksAboutHer');
   if (signals) {
     if (signals.exactHistory) matched.push('exactHistory');
     if (signals.pastLookup) matched.push('pastLookup');
@@ -122,6 +128,7 @@ function readTurn(text) {
     reflectable,
     pastReference,
     durableTopic,
+    asksAboutHer,
     wantsRecall,
     looksInArchive,
     looksInRecords,
@@ -150,6 +157,7 @@ function logTurnShape(entry, sink = (line) => console.log(line)) {
     reflectable: Boolean(entry.reflectable),
     pastReference: Boolean(entry.pastReference),
     durableTopic: Boolean(entry.durableTopic),
+    asksAboutHer: Boolean(entry.asksAboutHer),
     wantsRecall: Boolean(entry.wantsRecall),
     looksInArchive: Boolean(entry.looksInArchive),
     looksInRecords: Boolean(entry.looksInRecords),

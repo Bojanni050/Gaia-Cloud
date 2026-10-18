@@ -175,6 +175,17 @@ function createApp(env = process.env) {
     hindsightApp,
     ...recallClients.filter((client) => client !== hindsightApp)
   );
+  // Her own bank (Aion's notes, what she chose to keep) is introspection, not
+  // knowledge about Bo: measured 18-10-2026 it took three of every nine recall
+  // lines, with the highest scores, and those were the noisiest ones. It joins
+  // only a turn that asks about her ("wat vind jij", "wat houdt je bezig"), so
+  // the same client without her bank travels alongside. `search_memory` keeps
+  // the full set: when she looks something up herself, her own bank is memory too.
+  const recallOthers = recallClients.filter((client) => client !== hindsightApp);
+  const passiveOthers = recallOthers.filter((client) => client !== hindsightOwn);
+  const hindsightPassive = passiveOthers.length === recallOthers.length
+    ? hindsight
+    : createCrossBankRecallClient(hindsightApp, ...passiveOthers);
   // The SHALLOW live lookup — a sibling of the research job, never a
   // replacement for it. Configured provider or no tool at all: the
   // `web_search` capability is derived from the tool's presence, so she is
@@ -805,6 +816,7 @@ function createApp(env = process.env) {
         messages,
         documents,
         hindsight,
+        hindsightPassive,
         hypothesisRuntime,
         foundation,
         conversationSearch,
@@ -863,6 +875,7 @@ function createApp(env = process.env) {
       messages,
       documents,
       hindsight,
+      hindsightPassive,
       hypothesisRuntime,
       foundation,
       conversationSearch,

@@ -104,6 +104,30 @@ function hasSignal(text, patterns) {
  * @param {string} query
  * @param {{ intentDecision?: object|null, shape?: object|null }} [context]
  */
+/**
+ * Asking for HER own view or state — "wat vind jij", "wat houdt je bezig",
+ * "hoe gaat het met je". This is the one kind of turn where her own bank
+ * (Aion's notes and what she chose to keep) belongs in the recall: measured
+ * 18-10-2026, with three banks taking turns her bank claimed three of every
+ * nine lines, they carried the highest scores, and they were the noisiest of
+ * the nine ("Gebruiker voelt zich trots op haar vermogen…", a kairos episode
+ * about opening the start menu) while the facts about Bo sat lower and lost
+ * their place. A plain opinion question about the world ("wat vind je van dit
+ * plan") does match, and that is intended: he is asking her.
+ */
+const HER_VIEW_SIGNALS = [
+  phrase('wat vind je'), phrase('wat vind jij'), phrase('hoe vind je'),
+  phrase('wat denk je'), phrase('wat denk jij'), phrase('wat zou jij'),
+  phrase('hoe zie jij'), phrase('hoe kijk jij'),
+  phrase('jouw mening'), phrase('jouw gevoel'), phrase('jouw gedachte'),
+  phrase('hoe voelt dat voor jou'), phrase('hoe voelt dit voor jou'), phrase('wat doet dat met je'),
+  phrase('wat houdt je bezig'), phrase('waar denk je aan'), phrase('wat voel je'),
+  phrase('hoe gaat het met je'), phrase('hoe is het met je'),
+  phrase('wat heb je zelf onthouden'), phrase('wat heb jij onthouden'), phrase('wat weet je zelf'),
+  phrase('what do you think'), phrase('how do you feel'), phrase('your opinion'),
+  phrase('your view'), phrase('how do you see'),
+];
+
 function shouldRecall(query, context = {}) {
   const shape = context && context.shape;
   if (shape) return Boolean(shape.wantsRecall);
@@ -154,4 +178,5 @@ module.exports = {
   FILLER_PATTERNS,
   PAST_REFERENCE_SIGNALS,
   DURABLE_CONTEXT_SIGNALS,
+  HER_VIEW_SIGNALS,
 };

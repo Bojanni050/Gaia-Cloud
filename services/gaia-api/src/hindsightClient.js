@@ -507,6 +507,25 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
  */
 const CROSS_BANK_QUOTA = 3;
 
+// The line budget belongs to the block it caps (`memory.js` MEMORY_MAX_LINES,
+// nine by default). The merge only needs to know how to divide it between the
+// banks that answered, so it reads the same variable instead of growing a
+// second wiring parameter: three banks keep claiming three lines each, two
+// banks claim five and four. Without that, dropping a bank would hand its
+// share to the globally highest-scoring leftovers — measured 18-10-2026, and
+// those leftovers are the same kind of noise.
+const DEFAULT_LINE_BUDGET = 9;
+
+function resolveLineBudget(env = process.env) {
+  const configured = Number(env.MEMORY_MAX_LINES);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_LINE_BUDGET;
+}
+
+function quotaForBankCount(count, lineBudget = resolveLineBudget()) {
+  if (!Number.isFinite(count) || count <= 0) return CROSS_BANK_QUOTA;
+  return Math.max(1, Math.ceil(lineBudget / count));
+}
+
 /** A unit's relevance, with a missing or unreadable score sorting last. */
 function unitScore(unit) {
   const value = unit?.scores?.final;
@@ -564,12 +583,16 @@ function createCrossBankRecallClient(primary, ...others) {
   return {
     ...primary,
     async recall(query, options = {}) {
+      const { quota, ...bankOptions } = options;
       const slices = await Promise.all(
-        banks.map((client) => client.recall(query, options).catch(() => []))
+        banks.map((client) => client.recall(query, bankOptions).catch(() => []))
       );
-      return mergeBankSlices(slices);
+      const perBank = Number.isFinite(quota) && quota > 0
+        ? quota
+        : quotaForBankCount(slices.filter((slice) => Array.isArray(slice) && slice.length > 0).length);
+      return mergeBankSlices(slices, perBank);
     },
   };
 }
 
-module.exports = { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, CROSS_BANK_QUOTA };
+module.exports = { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, CROSS_BANK_QUOTA, quotaForBankCount, resolveLineBudget };

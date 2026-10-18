@@ -196,3 +196,32 @@ test('the recall floor used by readTurn is the policy floor', () => {
   assert.equal(readTurn(eleven).trivial, true);
   assert.equal(readTurn(twelve).trivial, false);
 });
+
+// --- 18-10-2026: her own bank joins only when he asks about her ----------
+
+test('a turn that asks about her is the one where her own bank may join', () => {
+  for (const text of [
+    'wat vind jij van het plan om de recall-poort te verbreden?',
+    'wat houdt je bezig?',
+    'hoe gaat het met je?',
+    'wat heb je zelf onthouden over Luca?',
+    'what do you think about that?',
+  ]) {
+    const shape = readTurn(text);
+    assert.equal(shape.asksAboutHer, true, text);
+    assert.ok(shape.matched.includes('asksAboutHer'), text);
+  }
+
+  for (const text of ['wat is mijn favoriete programmeertaal?', 'Wat weet jij over Yassin?', 'weet je nog?', 'de configuratie van de deployment klopt niet']) {
+    assert.equal(readTurn(text).asksAboutHer, false, text);
+  }
+});
+
+test('the turn.shape line carries asksAboutHer without the words themselves', () => {
+  const lines = [];
+  const record = logTurnShape({ ...readTurn('wat vind jij ervan?'), traceId: 't1', queryLength: 17 }, (line) => lines.push(line));
+  assert.equal(record.asksAboutHer, true);
+  assert.equal(lines.length, 1);
+  assert.deepEqual(JSON.parse(lines[0]), record);
+  assert.ok(!lines[0].includes('vind'), lines[0]);
+});

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createHindsightClient, createCrossBankRecallClient, mergeBankSlices } = require('../src/hindsightClient');
+const { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, quotaForBankCount, CROSS_BANK_QUOTA } = require('../src/hindsightClient');
 
 function fakeClient(name, results) {
   const calls = [];
@@ -120,4 +120,40 @@ test('the composed client hits both bank URLs through real clients', async () =>
     'http://hs.test/v1/default/banks/gaia-logos/memories/recall',
     'http://hs.test/v1/default/banks/gaia/memories/recall',
   ]);
+});
+
+// --- 18-10-2026: her own bank leaves the recall, so the quota has to divide ---
+
+test('the quota divides the line budget over the banks that answered', () => {
+  // Three banks and nine lines: unchanged from before. Two banks: five and
+  // four, so the freed lines do not go to the globally best leftovers.
+  assert.equal(quotaForBankCount(3), 3);
+  assert.equal(quotaForBankCount(2), 5);
+  assert.equal(quotaForBankCount(1), 9);
+  assert.equal(quotaForBankCount(0), CROSS_BANK_QUOTA);
+  assert.equal(quotaForBankCount(2, 6), 3);
+});
+
+test('a recall over two banks takes five lines from one and three from the other', async () => {
+  const app = fakeClient('app', [unit('a1', 0.9), unit('a2', 0.88), unit('a3', 0.86), unit('a4', 0.84), unit('a5', 0.82), unit('a6', 0.8)]);
+  const logos = fakeClient('logos', [unit('l1', 0.5), unit('l2', 0.48), unit('l3', 0.46)]);
+  const client = createCrossBankRecallClient(app, logos);
+
+  const merged = await client.recall('wat weet je over Yassine?');
+  assert.deepEqual(merged.map((u) => u.id), ['a1', 'l1', 'a2', 'l2', 'a3', 'l3', 'a4', 'a5', 'a6']);
+
+  // A caller may ask for a different division: one line each, then the rest.
+  const forced = await client.recall('x', { quota: 1 });
+  assert.deepEqual(forced.slice(0, 3).map((u) => u.id), ['a1', 'l1', 'a2']);
+});
+
+test('the quota is not forwarded to the banks themselves', async () => {
+  const app = fakeClient('app', [unit('a1', 0.9)]);
+  const seen = [];
+  const spy = { ...app, recall: async (query, options) => { seen.push(options); return [unit('a1', 0.9)]; } };
+  const client = createCrossBankRecallClient(spy);
+  await client.recall('iets', { quota: 2, budget: 'mid' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].quota, undefined);
+  assert.equal(seen[0].budget, 'mid');
 });
