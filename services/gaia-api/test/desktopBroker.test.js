@@ -215,7 +215,7 @@ test('streamed turn: desktop frames reach the client and the tool result reaches
   assert.match(toolResult, /contents$/);
 });
 
-test('streamed turn WITHOUT the client declaring desktop: no capability, no tool', async () => {
+test('streamed turn WITHOUT the client declaring desktop: no capability, no desktop tool', async () => {
   const { performStreamingTurn } = require('../src/turn');
   const broker = createDesktopBroker({ logger: () => {} });
   const res = { writableEnded: false, writeHead() {}, status() { return this; }, json() {}, write() {}, end() { this.writableEnded = true; } };
@@ -232,7 +232,10 @@ test('streamed turn WITHOUT the client declaring desktop: no capability, no tool
     documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
     res, generator, desktopBroker: broker, desktopClient: false,
   });
-  assert.equal(seen.tools, undefined);
+  // Reading back the conversation is always offered (18-10-2026); acting on the
+  // machine is not, because this client never said it could.
+  const names = (seen.tools || []).map((tool) => tool.function.name);
+  assert.deepEqual(names, ['read_back']);
   assert.equal(seen.claimed, false);
 });
 

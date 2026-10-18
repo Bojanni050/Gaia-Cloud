@@ -53,6 +53,7 @@ const { renderCapabilityAwareness } = require('./capabilityAwareness');
 const { pickOpenQuestion, renderOpenQuestionRaise, fromQuestionRow } = require('./reasoning/openQuestionReach');
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
+const { createConversationTool } = require('./reasoning/conversationTool');
 const { renderNowContext } = require('./nowContext');
 const { generateConversationTitle, withDeadline, TITLE_DEADLINE_MS } = require('./conversationTitle');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
@@ -76,6 +77,38 @@ const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
  * Validates the incoming message history. Returns null when valid, or a
  * human-readable problem string (surfaced as a 400 to the client).
  */
+/**
+ * Combines the tools a live turn carries into one payload for the generator.
+ * Each part is `{ tools, onToolCall }` and owns its own verbs; a call is handed
+ * to the parts in order and the first one that does not answer
+ * 'Unknown action.' wins — the same contract the server uses to dispatch
+ * between the memory tool and the web tool. Returns null when nothing is
+ * offered, so the generator is left exactly as it was.
+ *
+ * Parts that are absent, or that lack a dispatcher, are skipped: a tool may
+ * only be offered to the model when something can actually run it.
+ */
+function combineTurnTools(...parts) {
+  const tools = [];
+  const dispatchers = [];
+  for (const part of parts) {
+    if (!part || !Array.isArray(part.tools) || typeof part.onToolCall !== 'function') continue;
+    tools.push(...part.tools);
+    dispatchers.push(part.onToolCall);
+  }
+  if (tools.length === 0) return null;
+  return {
+    tools,
+    onToolCall: async (name, args) => {
+      for (const dispatch of dispatchers) {
+        const result = await dispatch(name, args);
+        if (result !== 'Unknown action.') return result;
+      }
+      return 'Unknown action.';
+    },
+  };
+}
+
 function validateMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return 'messages must be a non-empty array';
@@ -771,15 +804,21 @@ async function runTurnCore({
       onDelta(chunk, isReasoning);
     }
     : undefined;
+  // What a live turn may do besides answering: act on the person's machine
+  // (desktop, and only when that client declared it can) and read back the
+  // conversation it is in (read_back — the thread is already in the prompt, but
+  // a quote beats a guess). Both ride the streaming path only.
+  const conversationTool = createConversationTool({ messages });
+  const turnTools = combineTurnTools(
+    desktop && Array.isArray(desktop.tools) ? { tools: desktop.tools, onToolCall: desktop.onToolCall } : null,
+    { tools: conversationTool.TOOLS, onToolCall: conversationTool.onToolCall },
+  );
   const generate = (messagesForModel) => (trackedDelta
     ? streamWithFailover(messagesForModel, {
       primary, backup, onDelta: trackedDelta,
       ...(conversationId ? { sessionId: conversationId } : {}),
       ...(signal ? { signal } : {}),
-      // The desktop tool exists only for a streamed turn with a connected executor.
-      ...(desktop && Array.isArray(desktop.tools) && typeof desktop.onToolCall === 'function'
-        ? { tools: desktop.tools, onToolCall: desktop.onToolCall }
-        : {}),
+      ...(turnTools ? { tools: turnTools.tools, onToolCall: turnTools.onToolCall } : {}),
     })
     : generateWithFailover(messagesForModel, { primary, backup, ...(conversationId ? { sessionId: conversationId } : {}) }));
   try {
