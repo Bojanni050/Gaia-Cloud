@@ -27,7 +27,7 @@
  *       baseUrl: "...",
  *       apiKey: "...",
  *       model: "...",
- *       voiceId: "...", // saved voice for providers with preset/custom voices (Mistral); ignored by MiMo
+ *       voiceId: "...", // saved voice: a library voice (Mistral), a built-in MiMo voice, …
  *     },
  *     ttsEn: { ...same shape as tts },  // optional English voice; `tts` is the default (Dutch) voice
  *     updatedAt: ISO timestamp,

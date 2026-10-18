@@ -80,6 +80,55 @@ function fakeResponse(isStream, content) {
   return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
 }
 
+/** The PCM the fake MiMo stream carries, as two chunks a client can hear start. */
+const TTS_STREAM_CHUNKS = [Buffer.from('pcm-one'), Buffer.from('pcm-two')];
+
+/**
+ * A fake MiMo *streaming* answer for the TTS endpoint: the same SSE framing
+ * as sseBody(), but with base64 PCM in choices[0].delta.audio.data (what
+ * mimoTts.js's stream() reads) and a real ReadableStream body, like undici's
+ * fetch hands to production code.
+ *
+ * `afterFirstChunk`, when given, is awaited between the two chunks: how a
+ * test proves the route writes each chunk out as it arrives instead of
+ * buffering the whole reply first.
+ */
+function ttsSseBody(afterFirstChunk) {
+  const frames = TTS_STREAM_CHUNKS.map((pcm) => `data: ${JSON.stringify({
+    choices: [{ delta: { audio: { data: pcm.toString('base64') } } }],
+  })}\n\n`).concat('data: [DONE]\n\n');
+  let index = 0;
+  return new ReadableStream({
+    async pull(controller) {
+      if (index === 1 && afterFirstChunk) await afterFirstChunk();
+      if (index >= frames.length) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(new TextEncoder().encode(frames[index++]));
+    },
+  });
+}
+
+/** Fails with `message` if `promise` has not settled within `ms`. */
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Polls until `check()` is true — for asserting something a route does out of band. */
+async function waitFor(check, message, ms = 2000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+
 /**
  * Routes fetch by URL prefix to a fake native / hermes responder — reading
  * the request body's own `stream` flag to answer with the JSON shape
@@ -88,7 +137,7 @@ function fakeResponse(isStream, content) {
  * loudly on anything else (e.g. an accidental real network call to
  * Hindsight) so a wiring mistake can't hide behind a silently-caught error.
  */
-function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false, onWebSearch } = {}) {
+function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false, ttsAfterFirstChunk, onWebSearch } = {}) {
   return async (url, options = {}) => {
     const href = String(url);
     const requestBody = options.body ? JSON.parse(options.body) : {};
@@ -106,9 +155,14 @@ function mockFetch({ onNative, onHermes, onTts, ttsShouldFail = false, onWebSear
       return fakeResponse(requestBody.stream, 'Hermes reply');
     }
     if (href.startsWith(TTS_BASE)) {
-      if (onTts) onTts(href, requestBody);
+      if (onTts) onTts(href, requestBody, options);
       if (ttsShouldFail) {
         throw new Error('ECONNREFUSED api.xiaomimimo.com:443 (secret-tts-key)');
+      }
+      // POST /speech/stream asks for the streaming contract; POST /speech
+      // never does, so one mock serves both.
+      if (requestBody.stream) {
+        return { ok: true, body: ttsSseBody(ttsAfterFirstChunk) };
       }
       return {
         ok: true,
@@ -591,6 +645,228 @@ test('POST /speech logs not-configured attempts instead of failing silently', as
         assert.equal(entries.length, 1);
         assert.equal(entries[0].outcome, 'not-configured');
         assert.equal(entries[0].status, 503);
+      });
+    }
+  );
+});
+
+// --- POST /speech/stream (the same voice, one chunk at a time) --------------
+//
+// The streaming sibling of POST /speech: a client asks for the same text and
+// hears it start before the reply is finished. Everything it shares with the
+// buffered route (auth, validation, the operator log, the calm errors) is
+// exercised here through the same real-HTTP path.
+
+/** The request every /speech/stream test makes. */
+function streamRequest(port, body, extra = {}) {
+  return {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify(body),
+    ...extra,
+  };
+}
+
+test('POST /speech/stream writes each PCM chunk out as it arrives — real streaming, not one buffered clip', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let seenBody;
+
+  await withMockedFetch(
+    mockFetch({ onTts: (href, body) => { seenBody = body; }, ttsAfterFirstChunk: () => gate }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({
+        GAIA_TTS_BASE_URL: TTS_BASE,
+        GAIA_TTS_MODEL: 'mimo-v2.5-tts',
+        GAIA_TTS_VOICE_ID: 'Chloe',
+      }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'Ja. Het voelt goed om er te zijn.' }));
+
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('content-type'), 'audio/L16');
+        assert.equal(res.headers.get('x-gaia-sample-rate'), '24000');
+        assert.equal(res.headers.get('x-gaia-channels'), '1');
+        assert.equal(res.headers.get('cache-control'), 'no-store');
+
+        const reader = res.body.getReader();
+        // The whole point of this route: the first bytes reach the client
+        // while the provider is still synthesizing the rest. If the route
+        // buffered the reply, this read would never settle.
+        const first = await withTimeout(
+          reader.read(),
+          5000,
+          'no PCM arrived before the provider finished — the route buffered the reply'
+        );
+        assert.deepEqual(Buffer.from(first.value), TTS_STREAM_CHUNKS[0]);
+
+        // A built-in voice is what makes this request stream at all: no
+        // voice-design message, pcm16 (the only splittable format).
+        assert.equal(seenBody.stream, true);
+        assert.equal(seenBody.model, 'mimo-v2.5-tts');
+        assert.deepEqual(seenBody.audio, { format: 'pcm16', voice: 'Chloe' });
+        assert.deepEqual(seenBody.messages, [{ role: 'assistant', content: 'Ja. Het voelt goed om er te zijn.' }]);
+
+        release();
+        let rest = Buffer.alloc(0);
+        for (;;) {
+          const part = await reader.read();
+          if (part.done) break;
+          rest = Buffer.concat([rest, Buffer.from(part.value)]);
+        }
+        assert.deepEqual(rest, TTS_STREAM_CHUNKS[1]);
+      });
+    }
+  );
+});
+
+test('POST /speech/stream requires auth, same boundary as POST /speech', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'hi' }),
+      });
+      assert.equal(res.status, 401);
+    });
+  });
+});
+
+test('POST /speech/stream rejects empty text with a 400, never calling the TTS endpoint', async () => {
+  let ttsCalls = 0;
+  await withMockedFetch(mockFetch({ onTts: () => { ttsCalls += 1; } }), async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: '   ' }));
+      assert.equal(res.status, 400);
+      assert.equal(ttsCalls, 0);
+    });
+  });
+});
+
+test('POST /speech/stream answers 503 and logs the attempt when no voice is configured', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
+      assert.equal(res.status, 503);
+      assert.equal((await res.json()).error, 'speech is not configured');
+
+      const logRes = await originalFetch(`http://127.0.0.1:${port}/admin/api/tts/log`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const entries = (await logRes.json()).entries;
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].outcome, 'not-configured');
+      assert.equal(entries[0].status, 503);
+    });
+  });
+});
+
+test('POST /speech/stream maps a provider failure to a calm 502 while nothing has been written yet', async () => {
+  await withMockedFetch(
+    mockFetch({ ttsShouldFail: true }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
+        const body = await res.json();
+
+        // Headers are only committed by the first write, so a failure before
+        // any audio still gets the same clean JSON answer as POST /speech.
+        assert.equal(res.status, 502);
+        assert.match(res.headers.get('content-type'), /application\/json/);
+        assert.equal(body.error, 'gaia could not speak right now');
+        const bodyText = JSON.stringify(body);
+        assert.ok(!bodyText.includes('xiaomimimo'));
+        assert.ok(!bodyText.includes('secret-tts-key'));
+        assert.ok(!bodyText.toLowerCase().includes('econnrefused'));
+      });
+    }
+  );
+});
+
+test('POST /speech/stream answers with the whole clip for a provider that cannot stream', async () => {
+  await withMockedFetch(
+    mockMistralTtsFetch(),
+    async (originalFetch) => {
+      const storePath = writeTtsProviderConfig({
+        provider: 'mistral',
+        baseUrl: TTS_BASE,
+        apiKey: 'mistral-key',
+        model: 'voxtral-mini-tts-2603',
+        voiceId: 'gaia-voice-1',
+      });
+      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      await withServer(app, async (port) => {
+        const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
+        const buf = Buffer.from(await res.arrayBuffer());
+
+        // Same route, same request, one write — a client never has to know
+        // which voice is behind it.
+        assert.equal(res.status, 200);
+        assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+        assert.equal(buf.toString(), 'ID3-fake-mp3-bytes');
+      });
+    }
+  );
+});
+
+test('POST /speech/stream records the attempt, the first byte and the size in the voice-activity log', async () => {
+  await withMockedFetch(mockFetch(), async (originalFetch) => {
+    const app = createApp(baseEnv({
+      GAIA_TTS_BASE_URL: TTS_BASE,
+      GAIA_TTS_MODEL: 'mimo-v2.5-tts',
+      GAIA_TTS_VOICE_ID: 'Chloe',
+    }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'Yes. It feels good to be here.', language: 'en' }));
+      await res.arrayBuffer();
+
+      const logRes = await originalFetch(`http://127.0.0.1:${port}/admin/api/tts/log`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const entries = (await logRes.json()).entries;
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].outcome, 'ok');
+      assert.equal(entries[0].status, 200);
+      assert.equal(entries[0].provider, 'env');
+      assert.equal(entries[0].model, 'mimo-v2.5-tts');
+      assert.equal(entries[0].voiceId, 'Chloe');
+      assert.match(entries[0].preview, /It feels good/);
+      assert.equal(typeof entries[0].firstChunkMs, 'number');
+      // Both PCM chunks, counted as they went out.
+      assert.equal(entries[0].bytes, TTS_STREAM_CHUNKS[0].length + TTS_STREAM_CHUNKS[1].length);
+    });
+  });
+});
+
+test('POST /speech/stream hangs the provider request up when the listener goes away', async () => {
+  let seenSignal = null;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+
+  await withMockedFetch(
+    mockFetch({ onTts: (href, body, options) => { seenSignal = options.signal; }, ttsAfterFirstChunk: () => gate }),
+    async (originalFetch) => {
+      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+      await withServer(app, async (port) => {
+        const client = new AbortController();
+        const res = await originalFetch(
+          `http://127.0.0.1:${port}/speech/stream`,
+          streamRequest(port, { text: 'yes' }, { signal: client.signal })
+        );
+        const reader = res.body.getReader();
+        await withTimeout(reader.read(), 5000, 'no PCM arrived before the provider finished');
+
+        // The listener is gone mid-reply: Gaia must not keep paying for the
+        // rest of a sentence nobody will hear.
+        client.abort();
+        await waitFor(() => seenSignal && seenSignal.aborted, 'the provider request was never hung up');
+        release();
+        await reader.cancel().catch(() => {});
       });
     }
   );

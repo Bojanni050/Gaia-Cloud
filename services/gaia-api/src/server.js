@@ -60,7 +60,8 @@ const { createKairosRouter } = require('./kairosRoutes');
 const { createKairosRuntime } = require('./kairos/runtime');
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
-const { createFromEnv: createTtsFromEnv } = require('./speech/mimoTts');
+const mimoTts = require('./speech/mimoTts');
+const { createFromEnv: createTtsFromEnv } = mimoTts;
 const { performTurn, performStreamingTurn } = require('./turn');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
@@ -533,10 +534,14 @@ function createApp(env = process.env) {
       };
     }
     return {
-      tts: require('./speech/mimoTts').createMimoTts({
+      tts: mimoTts.createMimoTts({
         baseUrl: providerTtsConfig.baseUrl,
         model: providerTtsConfig.model,
         authToken: providerTtsConfig.apiKey,
+        // A configured voice id is a *built-in* voice (mimo-v2.5-tts), which
+        // is also what makes POST /speech/stream real-time; empty keeps the
+        // designed voice, described by GAIA_TTS_VOICE_DESCRIPTION.
+        voiceId: providerTtsConfig.voiceId,
       }),
       config: providerTtsConfig,
     };
@@ -554,7 +559,7 @@ function createApp(env = process.env) {
     if (provider === 'mistral') return require('./speech/mistralTts').LANGUAGES;
     if (provider === 'elevenlabs') return require('./speech/elevenLabsTts').LANGUAGES;
     if (provider === 'fishaudio') return require('./speech/fishAudioTts').LANGUAGES;
-    if (provider === 'xiaomi' || provider === 'env') return require('./speech/mimoTts').LANGUAGES;
+    if (provider === 'xiaomi' || provider === 'env') return mimoTts.LANGUAGES;
     return ['en'];
   }
 
@@ -988,19 +993,26 @@ function createApp(env = process.env) {
     }
   );
 
-  app.post('/speech', auth, async (req, res) => {
-    const text = req.body && req.body.text;
+  /**
+   * What POST /speech and POST /speech/stream both do before a single byte
+   * of audio exists: validate the request, resolve the voice that will
+   * speak it, and describe the attempt for the operator log
+   * (GET /admin/api/tts/log) — what was attempted, with what, and how it
+   * ended. Clients never see that log — they keep the calm wording the
+   * routes answer with — but "she doesn't speak" without it is
+   * undebuggable.
+   *
+   * @returns {{ error: { status: number, message: string } } | { text: string, language: string|undefined, effectiveTts: object, logBase: object }}
+   */
+  function prepareSpeech(body) {
+    const text = body && body.text;
     if (typeof text !== 'string' || text.trim() === '') {
-      return res.status(400).json({ error: 'text must be a non-empty string' });
+      return { error: { status: 400, message: 'text must be a non-empty string' } };
     }
     // The client detects the reply's language (this route judges no text); 'en' uses the English
     // voice when one is configured, anything else — or no language — the default (Dutch) voice.
-    const language = req.body.language === 'en' || req.body.language === 'nl' ? req.body.language : undefined;
+    const language = body.language === 'en' || body.language === 'nl' ? body.language : undefined;
     const { tts: effectiveTts, config: ttsConfig } = getEffectiveTts(language);
-    // Operator diagnostics (GET /admin/api/tts/log): what the voice
-    // attempted, with what, and how it ended. Clients never see this —
-    // they keep the calm wording below — but "she doesn't speak" without
-    // it is undebuggable.
     const logBase = {
       provider: ttsConfig ? ttsConfig.provider : null,
       model: ttsConfig ? ttsConfig.model : null,
@@ -1011,29 +1023,131 @@ function createApp(env = process.env) {
     };
     if (!effectiveTts) {
       ttsLog.record({ ...logBase, outcome: 'not-configured', error: 'speech is not configured', status: 503, durationMs: 0 });
-      return res.status(503).json({ error: 'speech is not configured' });
+      return { error: { status: 503, message: 'speech is not configured' } };
     }
+    return { text, language, effectiveTts, logBase };
+  }
+
+  /** Milliseconds since `start`, rounded to 0.01 ms like the other timing logs. */
+  function elapsedMs(start) {
+    return Math.round((Number(process.hrtime.bigint() - start) / 1e6) * 100) / 100;
+  }
+
+  app.post('/speech', auth, async (req, res) => {
+    const prepared = prepareSpeech(req.body);
+    if (prepared.error) return res.status(prepared.error.status).json({ error: prepared.error.message });
+    const { text, effectiveTts, logBase } = prepared;
     const ttsStart = process.hrtime.bigint();
     try {
       const ttsTraceId = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const { audio, mimeType } = await effectiveTts.synthesize(text);
-      const ttsDurationMs = Number(process.hrtime.bigint() - ttsStart) / 1e6;
+      const ttsDurationMs = elapsedMs(ttsStart);
       try {
         console.log(JSON.stringify({
           kind: 'gaia.timing',
           traceId: ttsTraceId,
           stage: 'tts.done',
-          durationMs: Math.round(ttsDurationMs * 100) / 100,
+          durationMs: ttsDurationMs,
         }));
       } catch (_) { /* never break a turn */ }
-      ttsLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs: Math.round(ttsDurationMs * 100) / 100 });
+      ttsLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs: ttsDurationMs });
       res.status(200).type(mimeType).send(audio);
     } catch (_) {
       // Calm, generic — same posture as responseEngine.js's toCalmError:
       // never forward the underlying error, provider name, or endpoint.
-      const ttsDurationMs = Number(process.hrtime.bigint() - ttsStart) / 1e6;
-      ttsLog.record({ ...logBase, outcome: 'error', error: 'gaia could not speak right now', status: 502, durationMs: Math.round(ttsDurationMs * 100) / 100 });
+      ttsLog.record({ ...logBase, outcome: 'error', error: 'gaia could not speak right now', status: 502, durationMs: elapsedMs(ttsStart) });
       res.status(502).json({ error: 'gaia could not speak right now' });
+    }
+  });
+
+  // The same voice, one chunk at a time: raw PCM16LE written as it is
+  // synthesized (X-Gaia-Sample-Rate / X-Gaia-Channels describe it), so a
+  // client can start speaking while the rest of the reply is still being
+  // made — the only reason this exists next to POST /speech.
+  //
+  // A provider that cannot stream (ElevenLabs, Mistral, Fish Audio) answers
+  // here too, with the whole clip in one write and its own content type:
+  // same request body, same auth, one sound, just no earlier first byte. A
+  // client can therefore always ask this route, whatever voice is behind it.
+  app.post('/speech/stream', auth, async (req, res) => {
+    const prepared = prepareSpeech(req.body);
+    if (prepared.error) return res.status(prepared.error.status).json({ error: prepared.error.message });
+    const { text, effectiveTts, logBase } = prepared;
+    const ttsStart = process.hrtime.bigint();
+
+    if (typeof effectiveTts.stream !== 'function') {
+      try {
+        const { audio, mimeType } = await effectiveTts.synthesize(text);
+        ttsLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs: elapsedMs(ttsStart) });
+        return res.status(200).type(mimeType).send(audio);
+      } catch (_) {
+        ttsLog.record({ ...logBase, outcome: 'error', error: 'gaia could not speak right now', status: 502, durationMs: elapsedMs(ttsStart) });
+        return res.status(502).json({ error: 'gaia could not speak right now' });
+      }
+    }
+
+    // The provider request is hung up as soon as the listener is gone: a
+    // client that stopped mid-reply must not keep paying for the rest of it.
+    const abort = new AbortController();
+    const hangUp = () => abort.abort();
+    res.on('close', hangUp);
+
+    let firstChunkMs = null;
+    let bytes = 0;
+    try {
+      for await (const chunk of effectiveTts.stream(text, { signal: abort.signal })) {
+        if (res.destroyed || res.writableEnded) break;
+        if (firstChunkMs === null) {
+          // Headers are only committed by the first write, so a failure
+          // before this point still has a clean JSON answer available.
+          firstChunkMs = elapsedMs(ttsStart);
+          res.status(200);
+          res.set('Content-Type', mimoTts.mimeTypeFor(mimoTts.STREAM_FORMAT));
+          res.set('X-Gaia-Sample-Rate', String(mimoTts.STREAM_SAMPLE_RATE));
+          res.set('X-Gaia-Channels', String(mimoTts.STREAM_CHANNELS));
+          res.set('Cache-Control', 'no-store');
+        }
+        bytes += chunk.length;
+        // Backpressure is not a concern at 24 kHz mono PCM16 (48 KB/s, far
+        // below any socket buffer), and the loop stops as soon as the
+        // response is gone — a client that hung up ends the stream here.
+        res.write(chunk);
+      }
+      const durationMs = elapsedMs(ttsStart);
+      if (firstChunkMs === null) {
+        // Nothing was produced and nothing was written: the calm JSON error
+        // is still what the client gets.
+        ttsLog.record({ ...logBase, outcome: 'error', error: 'gaia could not speak right now', status: 502, durationMs });
+        return res.status(502).json({ error: 'gaia could not speak right now' });
+      }
+      res.end();
+      ttsLog.record({ ...logBase, outcome: 'ok', error: null, status: 200, durationMs, firstChunkMs, bytes });
+      try {
+        console.log(JSON.stringify({
+          kind: 'gaia.timing',
+          traceId: `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          stage: 'tts.stream.done',
+          durationMs,
+          firstChunkMs,
+          bytes,
+        }));
+      } catch (_) { /* never break a turn */ }
+    } catch (_) {
+      const durationMs = elapsedMs(ttsStart);
+      ttsLog.record({
+        ...logBase,
+        outcome: 'error',
+        error: 'gaia could not speak right now',
+        status: firstChunkMs === null ? 502 : 200,
+        durationMs,
+        ...(firstChunkMs === null ? {} : { firstChunkMs, bytes }),
+      });
+      if (firstChunkMs === null) return res.status(502).json({ error: 'gaia could not speak right now' });
+      // Mid-reply: what was already spoken cannot be unsaid, and the client
+      // already has a 200 — the only honest ending left is a cut stream.
+      res.destroy();
+    } finally {
+      res.off('close', hangUp);
     }
   });
 

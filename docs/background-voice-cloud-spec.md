@@ -17,9 +17,9 @@ cognition.
 
 ## Current state **[verified]**
 
-- Speech routes are `GET /speech/info` and `POST /speech` only (`services/gaia-api/src/server.js`, ~609–668). Both are TTS (`src/speech/mimoTts.js`, `src/speech/mistralTts.js`).
+- Speech routes are `GET /speech/info`, `POST /speech` (one complete clip) and `POST /speech/stream` (the same voice as raw PCM16LE, one chunk at a time, for a provider that can stream — MiMo with a built-in voice; other providers fall back to a single buffered clip) in `services/gaia-api/src/server.js`. All are TTS (`src/speech/mimoTts.js`, `src/speech/mistralTts.js`).
 - No speech-to-text route exists.
-- `server.js` has no client-disconnect handling (`on('close')`, `AbortController`, `aborted` do not occur in it). Whether the rest of the service handles aborts is **[unverified]**.
+- `server.js` handles a client disconnect only in `POST /speech/stream` (`res.on('close')` → `AbortController`, which also hangs up the provider request). Other routes still do not.
 - Speech modules are tested to have no dependency on Hermes, IntentIQ/ReasonIQ, the Decision Engine, the Orchestrator or the Response Engine (`test/mimoTts.test.js`, `test/mistralTts.test.js`). The new STT module must keep that property.
 
 ## C1. `POST /speech/transcribe`

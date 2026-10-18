@@ -498,9 +498,9 @@
       </div>
 
       <label for="ttsVoice">Voice ID</label>
-      <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
+      <input id="ttsVoice" type="text" list="ttsVoiceList" placeholder="e.g. Chloe (MiMo built-in) or a saved voice id from GET /v1/audio/voices" autocomplete="off">
       <datalist id="ttsVoiceList"></datalist>
-      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
+      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). MiMo: pick a built-in voice (e.g. Chloe, Mia, 冰糖) to speak with mimo-v2.5-tts, which is also what streams a reply as it is synthesized; empty = a voice designed from GAIA_TTS_VOICE_DESCRIPTION. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="ttsLoadVoicesBtn" class="secondary">Get voices</button>
       </div>
@@ -563,7 +563,7 @@
       <label for="ttsEnVoice">Voice ID</label>
       <input id="ttsEnVoice" type="text" list="ttsEnVoiceList" placeholder="e.g. a saved voice id from GET /v1/audio/voices" autocomplete="off">
       <datalist id="ttsEnVoiceList"></datalist>
-      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). Ignored by MiMo. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
+      <p class="hint">Mistral Voxtral: empty = default voice. ElevenLabs: empty = Gaia’s default voice (e.g. eleven_multilingual_v2 / eleven_flash_v2_5 as model). MiMo: pick a built-in voice (e.g. Chloe, Mia, 冰糖) to speak with mimo-v2.5-tts, which is also what streams a reply as it is synthesized; empty = a voice designed from GAIA_TTS_VOICE_DESCRIPTION. Reflects what is in the form — no need to save first (a typed key is used as-is, a saved key only for the same provider).</p>
       <div class="role-actions-row" style="justify-content:flex-start;">
         <button id="ttsEnLoadVoicesBtn" class="secondary">Get voices</button>
       </div>

@@ -702,17 +702,37 @@ test('GET /admin/api/tts/voices requires a TTS provider first', async () => {
   }
 });
 
-test('GET /admin/api/tts/voices refuses non-Mistral providers — MiMo has no voice library', async () => {
+test('GET /admin/api/tts/voices lists MiMo’s built-in voices locally, never calling the provider', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {
     await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', model: 'mimo-tts' }),
+      body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-tts' }),
+    });
+    // A provider that cannot be asked would turn this into a 502 — the list
+    // must come from the module itself.
+    ctx.setTtsVoicesError(new Error('the provider was asked for a MiMo voice'));
+    const res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const ids = (await res.json()).voices.map((v) => v.id);
+    assert.ok(ids.includes('mimo_default'), `expected mimo_default among ${ids.join(', ')}`);
+    assert.ok(ids.includes('Chloe'), `expected Chloe among ${ids.join(', ')}`);
+    assert.ok(ids.includes('冰糖'), `expected 冰糖 among ${ids.join(', ')}`);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/tts/voices refuses a provider with neither a voice library nor built-in voices', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/tts/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'tts-1' }),
     });
     const res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, { headers: authHeaders() });
     assert.equal(res.status, 400);
-    const body = await res.json();
-    assert.match(body.error, /only available for Mistral/);
+    assert.match((await res.json()).error, /only available for Mistral/);
   } finally {
     await ctx.close();
   }
@@ -1094,9 +1114,18 @@ test('POST /admin/api/tts/voices lists with the form provider and refuses provid
     assert.equal(res.status, 200);
     assert.equal((await res.json()).voices[0].id, 'v1');
 
+    // MiMo is answered from the module's own built-in list, not the network.
+    ctx.setTtsVoicesError(new Error('the provider was asked for a MiMo voice'));
     res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, {
       method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ provider: 'xiaomi', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'k' }),
+    });
+    assert.equal(res.status, 200);
+    assert.ok((await res.json()).voices.some((v) => v.id === 'mimo_default'));
+
+    res = await fetch(`${ctx.baseUrl}/admin/api/tts/voices`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'k' }),
     });
     assert.equal(res.status, 400);
   } finally {

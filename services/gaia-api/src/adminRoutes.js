@@ -44,6 +44,7 @@ const { retrieveModels, retrieveOpenRouterModelEndpoints } = require('./modelDis
 const { listVoices: listMistralVoices } = require('./speech/mistralTts');
 const { listVoices: listElevenLabsVoices } = require('./speech/elevenLabsTts');
 const { listVoices: listFishAudioVoices } = require('./speech/fishAudioTts');
+const { BUILT_IN_VOICES } = require('./speech/mimoTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
@@ -421,9 +422,16 @@ function createAdminRouter({
         if (!effective) {
           return res.status(400).json({ error: useMainProvider ? 'configure the main provider first' : 'configure a TTS provider first' });
         }
-        // Only Mistral exposes a voice library (GET /v1/audio/voices) —
-        // MiMo designs its voice from a prompt instead, so there is nothing
-        // to list for any other provider.
+        // MiMo has no voice library to fetch — its built-in voices ship with
+        // the model, so they are listed locally. A voice id is what turns on
+        // the built-in-voice mode (mimo-v2.5-tts, the one that streams);
+        // empty keeps the designed voice of mimo-v2.5-tts-voicedesign.
+        if (effective.provider === 'xiaomi') {
+          return res.json({ voices: BUILT_IN_VOICES });
+        }
+        // Of the rest, only Mistral exposes a voice library (GET
+        // /v1/audio/voices) — the others design or clone their voice, so
+        // there is nothing to list.
         if (!['mistral', 'elevenlabs', 'fishaudio'].includes(effective.provider)) {
           return res.status(400).json({ error: 'voice listing is only available for Mistral Voxtral, ElevenLabs and Fish Audio' });
         }
