@@ -1245,56 +1245,19 @@ async function runDeferredCognition({
  * never called as a generator — only handed a research run it does in the
  * background (src/researchJob.js).
  */
-async function performTurn({
-  messages,
-  documents,
-  hindsight,
-  attachments,
-  traceId,
-  conversationId,
-  generator,
-  backupGenerator,
-  nativeGenerator,
-  hermes,
-  researchJobs,
-  foundation,
-  conversationSearch,
-  hypothesisRuntime,
-  aion,
-  eleos,
-  desktop,
-  decisionStore,
-  reasonIQ,
-  userDisplayName,
-  describeImage,
-}) {
+async function performTurn({ messages, documents, ...turn }) {
   const problem = validateMessages(messages);
   if (problem) {
     return { status: 400, body: { error: problem } };
   }
 
+  // `turn` is everything runTurnCore takes besides the two required inputs
+  // (generators, stores, runtimes, attachments, ids, ...): it is passed through
+  // as is, so a new capability is added in runTurnCore and its caller only.
   const { replyText, timing, notConfigured, researchJob, startDeferredCognition } = await runTurnCore({
     messages,
     documents,
-    hindsight,
-    attachments,
-    traceId,
-    conversationId,
-    generator,
-    backupGenerator,
-    nativeGenerator,
-    hermes,
-    researchJobs,
-    foundation,
-    conversationSearch,
-    hypothesisRuntime,
-    aion,
-    eleos,
-    desktop,
-    decisionStore,
-    ...(reasonIQ ? { reasonIQ } : {}),
-    userDisplayName,
-    ...(describeImage ? { describeImage } : {}),
+    ...turn,
   });
   void timing;
 
@@ -1305,11 +1268,8 @@ async function performTurn({
 
   const researchExtras = researchJob ? { research: researchJobView(researchJob) } : {};
 
-  if (typeof replyText !== 'string' || replyText.length === 0) {
-    if (notConfigured) {
-      return { status: 503, body: { error: toCalmError() } };
-    }
-    return formatReply(replyText, researchExtras);
+  if ((typeof replyText !== 'string' || replyText.length === 0) && notConfigured) {
+    return { status: 503, body: { error: toCalmError() } };
   }
 
   return formatReply(replyText, researchExtras);
@@ -1355,32 +1315,17 @@ function recordInterruptedTurn({ historyStore, conversationId, messages, partial
 async function performStreamingTurn({
   messages,
   documents,
-  hindsight,
   res,
   conversationId,
-  generator,
-  backupGenerator,
-  nativeGenerator,
-  hermes,
-  researchJobs,
-  foundation,
-  conversationSearch,
-  attachments,
   traceId,
-  reasonIQ,
-  hypothesisRuntime,
-  aion,
-  eleos,
+  signal,
+  historyStore,
   desktopBroker,
   desktopClient,
   desktopRoots,
   desktopPlaces,
   desktopIndex,
-  historyStore,
-  decisionStore,
-  userDisplayName,
-  signal,
-  describeImage,
+  ...turn
 }) {
   const problem = validateMessages(messages);
   if (problem) {
@@ -1429,28 +1374,13 @@ async function performStreamingTurn({
       () => runTurnCore({
         messages,
         documents,
-        hindsight,
-        attachments,
-        traceId,
         conversationId,
-        generator,
-        backupGenerator,
-        nativeGenerator,
-        hermes,
-        researchJobs,
-        foundation,
-        conversationSearch,
-        hypothesisRuntime,
-        aion,
-        eleos,
+        traceId,
         desktop,
-        decisionStore,
-        ...(reasonIQ ? { reasonIQ } : {}),
         onDelta,
         onResearchJob: (job) => emitter.research(researchJobView(job)),
-        userDisplayName,
-        ...(signal ? { signal } : {}),
-        ...(describeImage ? { describeImage } : {}),
+        signal,
+        ...turn,
       })
     );
   } catch (_) {
@@ -1517,7 +1447,7 @@ async function performStreamingTurn({
     typeof historyStore.getTitle === 'function' &&
     historyStore.getTitle(conversationId) === null
   ) {
-    const titleGenerator = resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, hermes }).primary;
+    const titleGenerator = resolveLiveGenerators(turn).primary;
     pendingTitle = generateConversationTitle({ generator: titleGenerator, messages, replyText });
     title = await withDeadline(pendingTitle, TITLE_DEADLINE_MS);
     if (title) emitter.title({ text: title });
