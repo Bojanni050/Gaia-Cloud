@@ -453,7 +453,7 @@ async function describeImagesAsText(images, describeImage, signal) {
  */
 async function recallForTurn({
   userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
-  hindsight, recallHindsight, foundation, conversationSearch, hypothesisRuntime, researchJobs,
+  hindsight, recallHindsight, recallHindsightSelf, foundation, conversationSearch, hypothesisRuntime, researchJobs,
 }) {
   // Archive-shaped asks ("wat staat er in foundation…") open a read over
   // Foundation — the raw-record counterpart to Hindsight recall. The signal
@@ -512,10 +512,15 @@ async function recallForTurn({
   timing.start('memory_recall');
   const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, openQuestionRows] = await Promise.all([
     hindsight
-      // Her own bank (Aion notes, what she chose to keep) only joins when the
-      // turn asks about her (shape.asksAboutHer); otherwise the client without
-      // it is used, so introspection stops crowding out the facts about Bo.
-      ? recallRelevantContext(shape.asksAboutHer ? hindsight : (recallHindsight || hindsight), userText, { pastReference: wantConversationHistory, shape })
+      // Bo's own bank fills the nine lines (his rule, 18-10-2026). Her own bank
+      // joins only when the turn asks about her; the derived bank takes no lines
+      // of its own. Both fall back to the full client when a caller does not
+      // supply the narrower one (tests, older wiring).
+      ? recallRelevantContext(
+        shape.asksAboutHer ? (recallHindsightSelf || hindsight) : (recallHindsight || hindsight),
+        userText,
+        { pastReference: wantConversationHistory, shape }
+      )
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
     wantPatterns
@@ -859,6 +864,7 @@ async function runTurnCore({
   documents,
   hindsight,
   hindsightPassive,
+  hindsightSelf,
   attachments,
   traceId,
   conversationId,
@@ -915,6 +921,7 @@ async function runTurnCore({
 
   const recall = await recallForTurn({
     recallHindsight: hindsightPassive,
+    recallHindsightSelf: hindsightSelf,
     userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
     hindsight, foundation, conversationSearch, hypothesisRuntime, researchJobs,
   });
