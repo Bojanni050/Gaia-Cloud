@@ -118,3 +118,42 @@ test('a plain turn leaves Hindsight closed', async () => {
 
   assert.equal(recalls.length, 0);
 });
+
+test('a synchronous transcript search (the shape the live server wires) cannot take the process down', async () => {
+  // createConversationSearch() answers an array, not a promise. turn.js used to
+  // call .catch() straight on it, so the first turn that opened the archive door
+  // in production threw "search(...).catch is not a function" and killed the
+  // process (18-10-2026). This test pins the synchronous shape.
+  const calls = [];
+  const client = {
+    search: (query, options) => {
+      calls.push({ query, options });
+      return [{
+        conversationId: 'old-1',
+        title: 'VPS en Tailscale',
+        updatedAt: '2026-10-01T10:00:00Z',
+        role: 'user',
+        snippet: 'weet je nog: we zetten de vps om naar tailscale',
+        score: 1,
+        matchedTerms: ['vps', 'tailscale'],
+      }];
+    },
+  };
+  const { generator, captured } = capturingGenerator();
+
+  const result = await performTurn({
+    messages: [{ role: 'user', content: 'weet je nog?' }],
+    documents,
+    conversationId: 'current-1',
+    conversationSearch: client,
+    generator,
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 1, 'the short cue opens the archive door and the array answer is handled');
+  assert.equal(calls[0].options.excludeConversationId, 'current-1');
+  assert.ok(
+    captured.messages.some((m) => m.role === 'system' && /we zetten de vps om naar tailscale/.test(m.content)),
+    'the literal fragments still reach the prompt',
+  );
+});

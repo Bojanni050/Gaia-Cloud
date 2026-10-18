@@ -529,11 +529,18 @@ async function runTurnCore({
         return [];
       })
       : Promise.resolve([]),
+    // The live search (conversationSearch.createConversationSearch) is synchronous
+    // and answers an array; a client may be async. Wrapping the call in a promise
+    // chain handles both, and keeps a synchronous throw from escaping Promise.all.
+    // (It did escape once: a turn that opened the archive door, 18-10-2026, took
+    // the whole process down with "search(...).catch is not a function".)
     wantConversationHistory
-      ? conversationSearch.search(userText, { excludeConversationId: conversationId, limit: 5 }).catch((err) => {
-        console.warn(`[gaia:conversations] search failed (non-fatal): ${err.message}`);
-        return [];
-      })
+      ? Promise.resolve()
+        .then(() => conversationSearch.search(userText, { excludeConversationId: conversationId, limit: 5 }))
+        .catch((err) => {
+          console.warn(`[gaia:conversations] search failed (non-fatal): ${err.message}`);
+          return [];
+        })
       : Promise.resolve([]),
     reachSkill
       ? Promise.resolve()
