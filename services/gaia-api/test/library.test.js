@@ -263,3 +263,29 @@ test('isTextMime: json/text files with generic, empty or parameterised mime type
   assert.equal(isTextMime('application/pdf', 'x.pdf', Buffer.from('%PDF')), false);
   assert.equal(isTextMime('image/png', 'x.png', Buffer.from('abc')), false);
 });
+
+test('listFiles follows saves and deletes without re-reading the directory', () => {
+  const store = tempStore();
+  assert.deepEqual(store.listFiles(), [], 'index built on an empty library');
+  const a = store.saveFile(Buffer.from('a'), { filename: 'a.txt', mimeType: 'text/plain' });
+  const b = store.saveFile(Buffer.from('b'), { filename: 'b.txt', mimeType: 'text/plain' });
+  assert.deepEqual(store.listFiles().map((f) => f.id).sort(), [a.id, b.id].sort());
+  store.deleteFile(a.id);
+  assert.deepEqual(store.listFiles().map((f) => f.id), [b.id]);
+});
+
+test('listFiles hands out copies, so a caller cannot change the cached metadata', () => {
+  const store = tempStore();
+  const saved = store.saveFile(Buffer.from('a'), { filename: 'a.txt', mimeType: 'text/plain' });
+  store.listFiles()[0].filename = 'tampered';
+  saved.filename = 'tampered too';
+  assert.equal(store.listFiles()[0].filename, 'a.txt');
+});
+
+test('a new store over an existing directory lists what is already there', () => {
+  const libraryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gaia-library-'));
+  const first = createLibraryStore({ libraryDir });
+  const saved = first.saveFile(Buffer.from('a'), { filename: 'a.txt', mimeType: 'text/plain' });
+  const second = createLibraryStore({ libraryDir });
+  assert.deepEqual(second.listFiles().map((f) => f.id), [saved.id]);
+});

@@ -25,21 +25,13 @@
  * and every consumption decision stays downstream (in the turn).
  */
 
+const { adoptDocumentFacts } = require('./hindsightFacts');
+
 const PATTERN_TAG = 'gaia:pattern';
 const PATTERN_CONTEXT = 'gaia pattern';
 const UPDATED_BY = 'gaia-logos';
 // Patterns are long-term constructs by definition (0.4 brief §15).
 const PATTERN_PERSISTENCE = 'durable';
-
-async function adoptDocumentFacts(client, documentId, attempts = 3) {
-  let last = [];
-  for (let i = 0; i < attempts; i += 1) {
-    last = await client.listMemories({ documentId, type: 'world' });
-    if (last.length > 0) return last;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return last;
-}
 
 function metadataFor(pattern, version) {
   return {
@@ -116,8 +108,9 @@ function createHindsightPatternAdapter(options = {}) {
   }
 
   async function updateImpl(next) {
-    let t = tracked.get(next.id);
-    if (!t) t = tracked.get(next.id) = { version: 0, activeFactId: null };
+    // A pattern this process has not seen yet (an update before boot sync, or
+    // without a prior save) starts at version 0 instead of failing.
+    const t = tracked.get(next.id) || { version: 0, activeFactId: null };
     const version = t.version + 1;
     const { documentId, factId } = await retainVersion(next, version);
     if (t.activeFactId) {

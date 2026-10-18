@@ -32,6 +32,7 @@
  * owns state; this file only speaks to Hindsight via the injected client.
  */
 
+const { adoptDocumentFacts } = require('./hindsightFacts');
 const HYPOTHESIS_TAG = 'gaia:hypothesis';
 const CONFIRMED_TAG = 'gaia:confirmed_fact';
 const PATTERN_TAG = 'gaia:pattern';
@@ -41,16 +42,6 @@ const PATTERN_CONTEXT = 'gaia pattern';
 const KAIROS_CONTEXT = 'gaia kairos episode';
 const LEGACY_FACT_TAG = 'foundation:fact';
 const UPDATED_BY = 'gaia-logos';
-
-async function adoptDocumentFacts(client, documentId, attempts = 3) {
-  let last = [];
-  for (let i = 0; i < attempts; i += 1) {
-    last = await client.listMemories({ documentId, type: 'world' });
-    if (last.length > 0) return last;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return last;
-}
 
 function hypothesisMetadata(record, version) {
   return {

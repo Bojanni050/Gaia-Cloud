@@ -63,6 +63,7 @@ const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/ga
 const mimoTts = require('./speech/mimoTts');
 const { createFromEnv: createTtsFromEnv } = mimoTts;
 const { performTurn, performStreamingTurn } = require('./turn');
+const { skipWhileRunning } = require('./skipWhileRunning');
 const { loadSoul } = require('./soul');
 const { loadFoundationDocuments } = require('./foundation');
 const { createAdminRouter } = require('./adminRoutes');
@@ -690,8 +691,9 @@ function createApp(env = process.env) {
 
   if (researchJobs) {
     const pollMs = Number(env.GAIA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_RESEARCH_POLL_MS) : 20000;
-    const timer = setInterval(() => {
-      pollResearchJobs({
+    // A slow Hermes must not let two polls overlap: each walks the running
+    // jobs, and a second walk could save the same finished findings twice.
+    const pollOnce = skipWhileRunning(() => pollResearchJobs({
         hermes,
         store: researchStore,
         library: libraryStore,
@@ -709,7 +711,9 @@ function createApp(env = process.env) {
           const saved = saveResearchCheckin({ job, historyStore });
           if (saved) researchStore.update(job.id, { checkinSaved: true });
         },
-      }).catch(() => { /* a poll cycle never rejects; belt and braces */ });
+      }));
+    const timer = setInterval(() => {
+      pollOnce().catch(() => { /* a poll cycle never rejects; belt and braces */ });
     }, pollMs);
     // Never hold the process open just for the poller.
     if (typeof timer.unref === 'function') timer.unref();

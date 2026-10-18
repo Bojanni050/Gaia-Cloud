@@ -155,3 +155,11 @@ test('pattern recall: dedupes per pattern id and degrades missing scores to 0', 
 });
 
 async function drain() { for (let i = 0; i < 10; i += 1) await new Promise((r) => setImmediate(r)); }
+
+test('update of a pattern this process has not tracked yet writes version 1 instead of failing', async () => {
+  const { client, facts } = makeFake();
+  const adapter = createHindsightPatternAdapter({ client });
+  await adapter.sink.update('pattern-new', { ...PATTERN(), id: 'pattern-new' });
+  const stored = [...facts.values()].filter((f) => f.document_id === 'gaia-ptn-pattern-new-v1');
+  assert.equal(stored.length, 1, 'the first version was retained');
+});

@@ -40,6 +40,7 @@
  * hypothesis; they can only ever show up as EVIDENCE (by native id).
  */
 
+const { adoptDocumentFacts } = require('./hindsightFacts');
 const HYPOTHESIS_TAG = 'gaia:hypothesis';
 const KNOWLEDGE_TAG = 'gaia:knowledge';
 const HYPOTHESIS_CONTEXT = 'gaia hypothesis';
@@ -51,16 +52,6 @@ const UPDATED_BY = 'gaia-logos';
  * document. Sync retain completes extraction before responding, so the
  * units are queryable immediately; the tiny retry covers scheduling jitter.
  */
-async function adoptDocumentFacts(client, documentId, attempts = 3) {
-  let last = [];
-  for (let i = 0; i < attempts; i += 1) {
-    last = await client.listMemories({ documentId, type: 'world' });
-    if (last.length > 0) return last;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
-  return last;
-}
-
 function metadataFor(hyp, version) {
   return {
     gaia_hypothesis_id: String(hyp.id),

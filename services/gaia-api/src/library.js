@@ -51,6 +51,30 @@ class LibraryFileNotFoundError extends Error {
 function createLibraryStore(options = {}) {
   const libraryDir = options.libraryDir || resolveLibraryDir();
 
+  // In-memory copy of every file's meta.json, so listing doesn't re-read and
+  // re-parse each one per call. Built lazily on first use and kept current by
+  // saveFile/deleteFile; this store is the only writer of libraryDir.
+  let metaIndex = null;
+
+  function loadMetaIndex() {
+    if (metaIndex) return metaIndex;
+    const index = new Map();
+    if (fs.existsSync(libraryDir)) {
+      for (const entry of fs.readdirSync(libraryDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        try {
+          index.set(entry.name, JSON.parse(fs.readFileSync(metaPath(entry.name), 'utf-8')));
+        } catch (_) {
+          // A directory without a readable meta.json is not a valid library
+          // entry (e.g. an interrupted write) — skip it rather than fail the
+          // whole listing.
+        }
+      }
+    }
+    metaIndex = index;
+    return metaIndex;
+  }
+
   function fileDir(id) {
     return path.join(libraryDir, id);
   }
@@ -78,24 +102,14 @@ function createLibraryStore(options = {}) {
       uploadedAt: new Date().toISOString(),
     };
     fs.writeFileSync(metaPath(id), JSON.stringify(meta, null, 2), 'utf-8');
-    return meta;
+    if (metaIndex) metaIndex.set(id, meta);
+    return { ...meta };
   }
 
   /** @returns {Array<{id, filename, mimeType, size, uploadedAt}>} newest first */
   function listFiles() {
-    if (!fs.existsSync(libraryDir)) return [];
-    const entries = fs.readdirSync(libraryDir, { withFileTypes: true }).filter((e) => e.isDirectory());
-    const files = [];
-    for (const entry of entries) {
-      try {
-        const meta = JSON.parse(fs.readFileSync(metaPath(entry.name), 'utf-8'));
-        files.push(meta);
-      } catch (_) {
-        // A directory without a readable meta.json is not a valid library
-        // entry (e.g. an interrupted write) — skip it rather than fail the
-        // whole listing.
-      }
-    }
+    // Copies, so a caller can't mutate the cached metas.
+    const files = [...loadMetaIndex().values()].map((meta) => ({ ...meta }));
     files.sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1));
     return files;
   }
@@ -112,6 +126,7 @@ function createLibraryStore(options = {}) {
   function deleteFile(id) {
     if (!fs.existsSync(fileDir(id))) throw new LibraryFileNotFoundError(id);
     fs.rmSync(fileDir(id), { recursive: true, force: true });
+    if (metaIndex) metaIndex.delete(id);
   }
 
   return { saveFile, listFiles, getFile, deleteFile, libraryDir };
