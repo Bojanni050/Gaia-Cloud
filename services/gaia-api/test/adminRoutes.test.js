@@ -1210,3 +1210,67 @@ test('the model list is fetched with the environment key when the page has none'
     await server.close();
   }
 });
+
+test('a role card with its own provider names the environment variable it would read', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { OPENROUTER_API_KEY: 'sk-or-env' } });
+  try {
+    server.providerStore.saveRoleProvider('reasoning', {
+      provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', model: 'deepseek/deepseek-v4.1-flash', useMainProvider: false,
+    });
+    const res = await fetch(`${server.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    const cfg = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(cfg.roleProviders.reasoning.hasApiKey, false);
+    assert.equal(cfg.roleProviders.reasoning.apiKeyFromEnv, 'OPENROUTER_API_KEY');
+    assert.equal(cfg.roleProviders.reasoning.usesSharedKey, false);
+  } finally {
+    await server.close();
+  }
+});
+
+test('a role card that borrows the shared provider says so, and names the variable when the key is the environment one', async () => {
+  const withStored = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    withStored.providerStore.saveProviderConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', apiKey: 'sk-saved' });
+    const cfg = await (await fetch(`${withStored.baseUrl}/admin/api/provider/config`, { headers: authHeaders() })).json();
+    assert.equal(cfg.roleProviders.generation.useMainProvider, true);
+    assert.equal(cfg.roleProviders.generation.usesSharedKey, true);
+    assert.equal(cfg.roleProviders.generation.apiKeyFromEnv, null);
+  } finally {
+    await withStored.close();
+  }
+  const fromEnv = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    fromEnv.providerStore.saveProviderConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai' });
+    const cfg = await (await fetch(`${fromEnv.baseUrl}/admin/api/provider/config`, { headers: authHeaders() })).json();
+    assert.equal(cfg.roleProviders.generation.usesSharedKey, false);
+    assert.equal(cfg.roleProviders.generation.apiKeyFromEnv, 'DEEPINFRA_API_KEY');
+  } finally {
+    await fromEnv.close();
+  }
+});
+
+test('the voice cards read the environment as well', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { ELEVENLABS_API_KEY: 'sk-el', MISTRAL_API_KEY: 'sk-mistral' } });
+  try {
+    server.providerStore.saveTtsConfig({ provider: 'elevenlabs', model: 'eleven_multilingual_v2', useMainProvider: false }, 'tts');
+    server.providerStore.saveSttConfig({ provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', model: 'voxtral-mini-latest', useMainProvider: false });
+    const cfg = await (await fetch(`${server.baseUrl}/admin/api/provider/config`, { headers: authHeaders() })).json();
+    assert.equal(cfg.tts.apiKeyFromEnv, 'ELEVENLABS_API_KEY');
+    assert.equal(cfg.stt.apiKeyFromEnv, 'MISTRAL_API_KEY');
+    assert.equal(cfg.ttsEn.apiKeyFromEnv, null);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the backup card reads the environment as well', async () => {
+  const server = await startTestServer({ withProviderStore: true, env: { DEEPINFRA_API_KEY: 'sk-from-env' } });
+  try {
+    server.providerStore.saveBackupConfig({ provider: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' });
+    const cfg = await (await fetch(`${server.baseUrl}/admin/api/provider/config`, { headers: authHeaders() })).json();
+    assert.equal(cfg.generationBackup.apiKeyFromEnv, 'DEEPINFRA_API_KEY');
+  } finally {
+    await server.close();
+  }
+});

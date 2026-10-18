@@ -773,6 +773,17 @@
     return caps.map((c) => '<span class="tag ' + escapeHtml(c) + '">' + escapeHtml(CAP_LABELS[c] || c) + '</span>').join('');
   }
 
+  // A card can get its key in three ways: saved on this page, read from the
+  // server environment, or borrowed from the shared Main Provider. Say which,
+  // because every card can now have a key that never appears in its own field.
+  function keyHintText(entry) {
+    if (!entry) return 'No key saved yet.';
+    if (entry.hasApiKey) return 'Key saved: ' + entry.maskedApiKey;
+    if (entry.apiKeyFromEnv) return 'No key saved here — using ' + entry.apiKeyFromEnv + ' from the server environment.';
+    if (entry.usesSharedKey) return 'No key saved here — using the shared Main Provider key.';
+    return 'No key saved yet.';
+  }
+
   function providerLabelFor(providerId) {
     const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral', opencode: 'OpenCode', deepinfra: 'DeepInfra' };
     if (!providerId) return '';
@@ -1073,11 +1084,7 @@
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       genDropdown.setProviderId(cfg.provider);
-      keyHintEl.textContent = cfg.hasApiKey
-        ? ('Key saved: ' + cfg.maskedApiKey)
-        : (cfg.apiKeyFromEnv
-          ? ('No key saved here — using ' + cfg.apiKeyFromEnv + ' from the server environment.')
-          : 'No key saved yet.');
+      keyHintEl.textContent = keyHintText(cfg);
       catalog = cfg.catalog || [];
       genDropdown.setModels(catalog);
       const savedModel = cfg.roles && cfg.roles.generation && cfg.roles.generation.model;
@@ -1110,11 +1117,7 @@
       currentConfig = cfg;
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       genDropdown.setProviderId(cfg.provider);
-      keyHintEl.textContent = cfg.hasApiKey
-        ? ('Key saved: ' + cfg.maskedApiKey)
-        : (cfg.apiKeyFromEnv
-          ? ('No key saved here — using ' + cfg.apiKeyFromEnv + ' from the server environment.')
-          : 'No key saved yet.');
+      keyHintEl.textContent = keyHintText(cfg);
       apiKeyEl.value = '';
       setStatus(providerStatusEl, 'Provider saved.', true);
     } catch (err) {
@@ -1210,7 +1213,7 @@
         if (cfg.baseUrl) ttsBaseUrlEl.value = cfg.baseUrl;
         if (cfg.model) ttsModelEl.value = cfg.model;
         ttsVoiceEl.value = cfg.voiceId || '';
-        ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+        ttsKeyHintEl.textContent = keyHintText(cfg);
         if (cfg.useMainProvider && !cfg.mainProviderConfigured) {
           setStatus(ttsStatusEl, 'Main Provider has no API key saved yet.', false);
         }
@@ -1241,7 +1244,7 @@
         });
         if (!res.ok) throw new Error(await res.text());
         const cfg = await res.json();
-        ttsKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+        ttsKeyHintEl.textContent = keyHintText(cfg);
         ttsApiKeyEl.value = '';
         setStatus(ttsStatusEl, 'Voice saved.', true);
         setBadge(ttsBadgeEl, Boolean(cfg.model));
@@ -1430,7 +1433,7 @@
 
   function applySttConfig(cfg) {
     currentStt = cfg;
-    sttKeyHintEl.textContent = cfg.hasApiKey ? ('Key saved: ' + cfg.maskedApiKey) : 'No key saved yet.';
+    sttKeyHintEl.textContent = keyHintText(cfg);
     setBadge(sttBadgeEl, sttIsConfigured(cfg));
     if (currentConfig) updateCapabilities(currentConfig.roles || {}, currentConfig.tts || {});
   }
@@ -1996,7 +1999,7 @@
       $(prefix + 'BaseUrl').value = rp.baseUrl || '';
       $(prefix + 'ApiKey').value = '';
       $(prefix + 'Model').value = rp.model || '';
-      $(prefix + 'KeyHint').textContent = rp.hasApiKey ? ('Key saved: ' + rp.maskedApiKey) : 'No key saved yet.';
+      $(prefix + 'KeyHint').textContent = keyHintText(rp);
       if (!usingMain && rp.baseUrl && rp.model && !block.loaded) {
         block.loaded = true;
         block.fetchModels(true);

@@ -130,8 +130,35 @@ function createAdminRouter({
         resolved[role] = c ? { provider: c.provider || '', model: c.model || '', baseUrl: c.baseUrl || '' } : null;
       }
       const envName = masked.hasApiKey ? null : keyEnvNameFor(masked.provider);
-    const apiKeyFromEnv = envName && providerKeyFromEnv(masked.provider, env) ? envName : null;
-    return { ...masked, apiKeyFromEnv, resolved };
+      const apiKeyFromEnv = envName && providerKeyFromEnv(masked.provider, env) ? envName : null;
+      // Every card can take its key from the environment, not only the main
+      // one. A card with its own provider names the variable it would read;
+      // a card that borrows the shared provider inherits what the main card
+      // already knows (the same precedence providerConfigResolver uses).
+      const envKeyFor = (provider, hasStoredKey) => {
+        if (hasStoredKey) return null;
+        const name = keyEnvNameFor(provider);
+        return name && providerKeyFromEnv(provider, env) ? name : null;
+      };
+      for (const role of VALID_ROLES) {
+        const rp = masked.roleProviders && masked.roleProviders[role];
+        if (!rp) continue;
+        const borrowsMain = rp.useMainProvider !== false;
+        rp.apiKeyFromEnv = borrowsMain ? apiKeyFromEnv : envKeyFor(rp.provider, rp.hasApiKey);
+        rp.usesSharedKey = borrowsMain && Boolean(masked.hasApiKey);
+      }
+      for (const slot of ['tts', 'ttsEn', 'stt']) {
+        const card = masked[slot];
+        if (!card) continue;
+        const borrowsMain = card.useMainProvider === true && Boolean(card.model);
+        card.apiKeyFromEnv = borrowsMain ? apiKeyFromEnv : envKeyFor(card.provider, card.hasApiKey);
+        card.usesSharedKey = borrowsMain && Boolean(masked.hasApiKey);
+      }
+      if (masked.generationBackup) {
+        const backup = masked.generationBackup;
+        backup.apiKeyFromEnv = envKeyFor(backup.provider, backup.hasApiKey);
+      }
+      return { ...masked, apiKeyFromEnv, resolved };
     }
 
     router.get('/api/provider/config', auth, (req, res) => {
