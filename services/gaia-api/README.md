@@ -100,11 +100,14 @@ pattern recall) using the same modules, with no server or network. For turns
 that already ran, the durable per-turn record is `GET /admin/api/logos/decisions`
 (the `recall.measure` line carries the gate and per-source counts).
 
-The gate itself has only two knobs, and both are floors rather than decisions:
-`MEMORY_MIN_RECALL_LENGTH` and `MEMORY_MIN_REFLECT_LENGTH` (default 12 each).
-Below the first, a turn counts as trivial and no passive read opens; below the
-second, question and answer are both too thin to write back to memory. What the
-gate looks at is one reading of the turn (`turnShape.readTurn`), assembled once
+The gates have two length floors, and neither of them decides recall any more:
+a lexical cue opens the passive read at any length — `MEMORY_MIN_RECALL_LENGTH`
+(default 12) now only sets the pattern-retrieval floor and the `trivial` flag in
+the `turn.shape` line, because a floor of twelve swallowed exactly the shortest
+memory questions ("weet je nog?" normalises to eleven characters, "geheugen?" to
+eight). `MEMORY_MIN_REFLECT_LENGTH` (default 12) is the floor for writing a turn
+back: below it, question and answer are both too thin to remember. What the
+gates look at is one reading of the turn (`turnShape.readTurn`), assembled once
 per turn from the vocabularies that used to be read separately by each gate;
 `turn.js` hands that single answer to every consumer and records it as the
 `turn.shape` line — booleans, signal names and a length, never your text.

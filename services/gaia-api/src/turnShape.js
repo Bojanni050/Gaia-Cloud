@@ -52,7 +52,7 @@ function hasSignal(text, patterns) {
  * @param {string|null|undefined} text the latest user turn
  * @returns {{
  *   empty: boolean,          nothing (or only whitespace) was said
- *   trivial: boolean,        at the recall/pattern floor: filler or very short
+ *   trivial: boolean,        at the pattern floor: filler or very short
  *   reflectable: boolean,    at the reflection floor — drives shouldReflect's user half
  *   pastReference: boolean,  a lexical past-reference cue fired
  *   durableTopic: boolean,   a durable-topic cue fired
@@ -76,7 +76,11 @@ function readTurn(text) {
   const durableTopic = hasSignal(trimmed, DURABLE_CONTEXT_SIGNALS);
 
   // The live recall gate: shouldRecall(query, { intentDecision: null }).
-  const wantsRecall = !trivial && (pastReference || durableTopic);
+  // No length floor: a cue decides at any length, because the floor used to
+  // swallow exactly the shortest memory questions ("weet je nog?" is eleven
+  // characters, "geheugen?" eight). `trivial` below still feeds the pattern
+  // gate, which keeps its floor.
+  const wantsRecall = pastReference || durableTopic;
 
   // The archive/transcript vocabulary (intentSignals). Never lets a vocabulary
   // failure take down a turn — same posture as turn.js' own guards.

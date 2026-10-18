@@ -29,6 +29,9 @@ const CORPUS = [
   'Herinner je je nog wat we zagen?',
   'What do you know about the migration plan?',
   'wat was er in juni ook alweer?',
+  'weet je nog?',
+  'geheugen?',
+  'herinner je?',
   'weet je nog dat we dat besloten hadden?',
   'je zei eerder dat de server opnieuw startte',
   'ik vertelde je vorige week over dat besluit',
@@ -94,6 +97,20 @@ test('the 18-10-2026 memory questions open the gate and name their cue', () => {
     assert.equal(shape.wantsRecall, true, `gate shut for: ${JSON.stringify(text)}`);
     assert.equal(shape.trivial, false, `read as trivial: ${JSON.stringify(text)}`);
     assert.ok(shape.matched.includes('pastReference'), `cue not named for: ${JSON.stringify(text)}`);
+  }
+});
+
+test('a cue decides at any length: the shortest memory questions are no longer noise', () => {
+  // normalize() strips the trailing punctuation before any length test, so
+  // "weet je nog?" is eleven characters and "geheugen?" eight — both under the
+  // old floor of twelve, while the word that names memory sat in the sentence.
+  // The recall gate now has no length floor; the pattern gate keeps its own,
+  // which is why `trivial` and `wantsRecall` can differ here.
+  for (const text of ['weet je nog?', 'geheugen?', 'herinner je?']) {
+    const shape = readTurn(text);
+    assert.equal(shape.trivial, true, `not at the pattern floor: ${JSON.stringify(text)}`);
+    assert.equal(shape.wantsRecall, true, `gate shut for: ${JSON.stringify(text)}`);
+    assert.equal(shape.topical, false, `pattern gate open: ${JSON.stringify(text)}`);
   }
 });
 

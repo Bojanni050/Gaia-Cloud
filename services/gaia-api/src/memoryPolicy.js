@@ -7,6 +7,10 @@
  * (architecture.md §6's "memory policies are explicit contracts", the
  * asymmetry between recall defaulting to skip and reflection defaulting
  * to keep, and why this stays heuristic rather than an LLM judgment).
+ *
+ * Since 18-10-2026 the recall gate has no length floor any more (a cue decides
+ * at any length — see shouldRecall), so this port now differs from gaia-web in
+ * that one respect.
  */
 
 const MIN_RECALL_LENGTH = Number(process.env.MEMORY_MIN_RECALL_LENGTH) || 12;
@@ -88,6 +92,15 @@ function hasSignal(text, patterns) {
  * the turn once with `turnShape.readTurn`, that verdict is used as-is instead
  * of reading the same text again here. Both answer the same question — the
  * live turn now reads the question once and every gate listens to that answer.
+ *
+ * A cue decides, at any length (18-10-2026). The old length floor swallowed
+ * exactly the shortest memory questions: `normalize` strips the punctuation, so
+ * "weet je nog?" is eleven characters and "geheugen?" is eight — both under the
+ * floor of twelve, while the word that names memory sat right there in the
+ * sentence. Only an empty turn or a bare acknowledgement is excluded on its own
+ * now. `MEMORY_MIN_RECALL_LENGTH` still sets the pattern-retrieval floor in
+ * `patternAwareness` and the `trivial` flag in `turnShape`, but it no longer
+ * decides this gate.
  * @param {string} query
  * @param {{ intentDecision?: object|null, shape?: object|null }} [context]
  */
@@ -95,7 +108,8 @@ function shouldRecall(query, context = {}) {
   const shape = context && context.shape;
   if (shape) return Boolean(shape.wantsRecall);
   const text = (query || '').trim();
-  if (isTrivial(text, MIN_RECALL_LENGTH)) return false;
+  const normalized = normalize(text);
+  if (!normalized || FILLER_PATTERNS.has(normalized)) return false;
   const intent = context && context.intentDecision;
   if (intent) {
     if (intent.sourceOfTruth === 'memory') return true;

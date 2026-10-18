@@ -91,6 +91,23 @@ test('shouldRecall opens for the memory-question forms that carried no cue (18-1
   assert.equal(shouldRecall('What do you know about the migration plan?'), true);
 });
 
+test('a cue decides at any length: the short memory questions open the gate too', () => {
+  // normalize() strips the punctuation first, so "weet je nog?" is eleven
+  // characters and "geheugen?" eight — both were swallowed by the old floor of
+  // twelve, which is why these questions went unanswered. There is no length
+  // floor on the recall gate any more; only what carries no cue stays shut.
+  assert.equal(shouldRecall('weet je nog?'), true);
+  assert.equal(shouldRecall('geheugen?'), true);
+  assert.equal(shouldRecall('herinner je?'), true);
+  assert.equal(shouldRecall('memory?'), true);
+  assert.equal(shouldRecall(''), false);
+  assert.equal(shouldRecall('   '), false);
+  assert.equal(shouldRecall('ok'), false);
+  assert.equal(shouldRecall('thanks!'), false);
+  assert.equal(shouldRecall('why'), false);
+  assert.equal(shouldRecall('wat was er in juni ook alweer?'), false); // no cue: still closed
+});
+
 test('shouldReflect keeps an exchange unless both sides are trivial', () => {
   assert.equal(shouldReflect('thanks', "you're welcome"), false);
   assert.equal(shouldReflect('why', 'no reason'), false);

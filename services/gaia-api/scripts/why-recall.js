@@ -42,8 +42,8 @@ function explain(text) {
 
   const lines = [];
   lines.push(`message : ${JSON.stringify(text)}`);
-  lines.push(`length  : ${(text || '').trim().length} (min to be non-trivial: ${MEMORY_POLICY.minRecallLength})`);
-  lines.push(`trivial : ${trivial ? 'YES — recall is skipped before any signal is read' : 'no'}`);
+  lines.push(`length  : ${(text || '').trim().length} (pattern floor: ${MEMORY_POLICY.minRecallLength})`);
+  lines.push(`trivial : ${trivial ? 'YES — at the pattern floor (the recall gate has no length floor since 18-10-2026)' : 'no'}`);
   lines.push('');
   lines.push('gates the live turn would open:');
   lines.push(`  Hindsight recall          : ${gated ? 'OPEN' : 'closed'}`);
