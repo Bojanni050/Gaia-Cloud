@@ -239,6 +239,87 @@ test('generate() retries without tools when the provider rejects them (4xx)', as
   assert.equal(bodies[1].tools, undefined);
 });
 
+// Tool usage used to be invisible: after the 18-10-2026 Yassine conversation
+// there was no way to tell whether Gaia had reached for `search_memory` and
+// found nothing, or never called it. These two tests pin the record that fixes
+// that (see src/toolLog.js).
+test('generate() logs one tool.call record per tool call, with round and conversation id', async () => {
+  const lines = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    const answered = body.messages.some((message) => message.role === 'tool');
+    return answered
+      ? { ok: true, json: async () => ({ choices: [{ message: { content: 'Noted.' } }] }) }
+      : { ok: true, json: async () => ({ choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'search_memory', arguments: '{"query":"yassine"}' } }] } }] }) };
+  };
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    logger: (line) => lines.push(line),
+    tools: REMEMBER_TOOL,
+    onToolCall: async () => 'Nothing in memory about that.',
+  });
+
+  const result = await generator.generate([{ role: 'user', content: 'wat weet je over Yassine?' }], { sessionId: 'conv-9' });
+
+  assert.equal(result, 'Noted.');
+  const records = lines.map((line) => JSON.parse(line)).filter((record) => record.kind === 'tool.call');
+  assert.equal(records.length, 1);
+  assert.equal(records[0].tool, 'search_memory');
+  assert.equal(records[0].round, 1);
+  assert.equal(records[0].conversationId, 'conv-9');
+  assert.equal(records[0].outcome, 'empty');
+  assert.equal(records[0].ok, true);
+  assert.equal(records[0].resultChars, 'Nothing in memory about that.'.length);
+  assert.ok(!lines.join('').includes('yassine'), 'the search phrase never reaches the log');
+});
+
+test('generate() records a tool round that failed instead of throwing', async () => {
+  const lines = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    const answered = body.messages.some((message) => message.role === 'tool');
+    return answered
+      ? { ok: true, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) }
+      : { ok: true, json: async () => ({ choices: [{ message: { content: '', tool_calls: [{ id: 'c1', function: { name: 'search_memory', arguments: '{}' } }] } }] }) };
+  };
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    logger: (line) => lines.push(line),
+    tools: REMEMBER_TOOL,
+    onToolCall: async () => { throw new Error('memory down'); },
+  });
+
+  await generator.generate([{ role: 'user', content: 'x' }]);
+
+  const records = lines.map((line) => JSON.parse(line)).filter((record) => record.kind === 'tool.call');
+  assert.equal(records.length, 1);
+  assert.equal(records[0].ok, false);
+  assert.equal(records[0].outcome, 'failed');
+});
+
+test('generate() records that a turn was retried without tools at all', async () => {
+  const lines = [];
+  const bodies = [];
+  const fetchImpl = async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    if (bodies.length === 1) return { ok: false, status: 400, text: async () => 'tools not supported' };
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'hi' } }] }) };
+  };
+  const generator = createGaiaGenerator({
+    baseUrl: 'http://test', model: 'test', fetchImpl,
+    logger: (line) => lines.push(line),
+    tools: REMEMBER_TOOL, onToolCall: async () => 'x',
+  });
+
+  await generator.generate([{ role: 'user', content: 'hi' }], { sessionId: 'conv-7' });
+
+  const records = lines.map((line) => JSON.parse(line)).filter((record) => record.kind === 'tool.unavailable');
+  assert.equal(records.length, 1);
+  assert.equal(records[0].reason, 'tools_rejected');
+  assert.equal(records[0].status, 400);
+  assert.equal(records[0].conversationId, 'conv-7');
+});
+
 test('generate() stops after maxToolRounds and returns the last text', async () => {
   let n = 0;
   const fetchImpl = async () => ({

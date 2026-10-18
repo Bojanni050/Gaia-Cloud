@@ -85,6 +85,14 @@ All three are off with `GAIA_MEMORY_TOOL=false`; without a generation model that
 supports tools the turn falls back to plain generation. `search_memory` is only
 offered when a recall client is wired.
 
+Whether she actually reached for a tool is observable: every tool call the
+generation model makes emits one `tool.call` line (`src/toolLog.js`) into the
+same decision log — the tool name, the round, the conversation, the latency and
+an outcome of `answered`/`empty`/`failed`, plus the result's *length*. Never the
+result text, never the query. A turn that was retried without tools because the
+provider rejected them records `tool.unavailable` instead, so a missing
+`tool.call` line can be told apart from a tool that was never offered.
+
 To explain after the fact why a given turn did or did not reach memory, run
 `npm run why:recall -- "wat zei je vorige week over het project?"` — it replays
 the turn's lexical gates (Hindsight recall, transcript search, Foundation read,

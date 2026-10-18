@@ -35,6 +35,7 @@
  */
 
 const { logLlmCall } = require('../logos/llmCallLog');
+const { logToolCall, logToolUnavailable } = require('../toolLog');
 const { identityHeadersFor } = require('../providerHeaders');
 
 const DEFAULT_TIMEOUT_MS = 60000;
@@ -319,8 +320,13 @@ function createGaiaGenerator(options = {}) {
     return { content: fullText, toolCalls: toolCalls.filter(Boolean).map((c) => normalizeToolCall({ id: c.id, function: { name: c.name, arguments: c.arguments } })) };
   }
 
-  /** Execute the tool calls of one round and append the assistant + tool messages. */
-  async function appendToolRound(messages, assistantContent, calls, dispatch = onToolCall) {
+  /**
+   * Execute the tool calls of one round and append the assistant + tool
+   * messages. `round` (1-based) and `conversationId` are for the `tool.call`
+   * record only — they never reach the wire (see ../toolLog.js for why that
+   * record exists at all).
+   */
+  async function appendToolRound(messages, assistantContent, calls, dispatch = onToolCall, round = null, conversationId = null) {
     const assistantMessage = {
       role: 'assistant',
       content: assistantContent || null,
@@ -333,11 +339,24 @@ function createGaiaGenerator(options = {}) {
     const toolMessages = [];
     for (const call of calls) {
       let resultText = 'Unknown action.';
+      let ok = true;
+      const startedAt = Date.now();
       try {
         resultText = String((await dispatch(call.name, parseToolArguments(call.arguments))) || 'Done.');
       } catch (error) {
+        ok = false;
         resultText = 'That could not be done.';
         console.warn(`[gaia:native] tool ${call.name} failed: ${error.message}`);
+      }
+      if (typeof logger === 'function') {
+        logToolCall({
+          tool: call.name,
+          resultText,
+          round,
+          conversationId,
+          ok,
+          latencyMs: Date.now() - startedAt,
+        }, logger);
       }
       toolMessages.push({ role: 'tool', tool_call_id: call.id, content: resultText });
     }
@@ -395,6 +414,9 @@ function createGaiaGenerator(options = {}) {
           fallbackUsed = true;
           withTools = false;
           console.warn(`[gaia:native] tools rejected (HTTP ${error.status}); retrying without tools`);
+          if (typeof logger === 'function') {
+            logToolUnavailable({ status: error.status, conversationId: mode.sessionId || null }, logger);
+          }
           continue;
         }
         throw error;
@@ -416,7 +438,7 @@ function createGaiaGenerator(options = {}) {
         throw new GenerationError('native generator exhausted tool rounds', { retryable: false, code: 'tool_rounds' });
       }
       toolRounds += 1;
-      current = await appendToolRound(current, result.content, calls, dispatch);
+      current = await appendToolRound(current, result.content, calls, dispatch, toolRounds, mode.sessionId || null);
     }
   }
 
