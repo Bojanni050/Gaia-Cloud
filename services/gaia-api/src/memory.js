@@ -271,6 +271,11 @@ function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()
  * are two halves of "what do you know about this", and a lookup should reach
  * for both, not one.
  *
+ * `shape.asksAboutHer` — he asks for her own view or state ("wat vind jij",
+ * "wat houdt je bezig") — opens the gate the same way: that is the one turn
+ * where her own bank is read, and reading nothing at all would make the cue
+ * empty.
+ *
  * `shape` is the verdict of `turnShape.readTurn` for this same query (stap 4
  * van "de vraag één keer lezen"): when the turn read the question once, the
  * policy uses that reading instead of scanning the text a second time.
@@ -280,7 +285,14 @@ function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()
  */
 async function recallRelevantContext(hindsight, query, options = {}) {
   if (!query || !query.trim()) return [];
+  // A turn that asks about her opens the gate by itself: he wants her view, and
+  // her own memories are part of what she answers from. Without this the
+  // asksAboutHer branch in turn.js could never reach a line at all, because the
+  // gate drops the query before the bank choice is made (measured 18-10-2026:
+  // "wat houdt je bezig?" gave reflectionCount 0 and she answered "Bo niet.").
+  const asksAboutHer = Boolean(options.shape && options.shape.asksAboutHer);
   if (!options.pastReference
+    && !asksAboutHer
     && !shouldRecall(query, { intentDecision: options.intentDecision, shape: options.shape })) {
     return [];
   }

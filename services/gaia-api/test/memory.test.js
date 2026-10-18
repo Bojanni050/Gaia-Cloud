@@ -430,6 +430,24 @@ test('recallRelevantContext skips the call for a policy-trivial query and never 
   assert.deepEqual(await recallRelevantContext(failing, 'remember what I said about the project'), []);
 });
 
+test('a turn that asks about her opens the recall gate, so her own bank can answer', async () => {
+  // "wat houdt je bezig?" carries no past cue of its own, so the policy skips
+  // the lookup and her bank is never asked (measured 18-10-2026: the turn
+  // logged reflectionCount 0 and she answered "Bo niet."). The turn shape is
+  // the second key: a question about her opens the gate the same way a past
+  // reference does.
+  let calls = 0;
+  const hindsight = { recall: async () => { calls += 1; return [{ reflection: 'x', line: 'y' }]; } };
+  assert.deepEqual(await recallRelevantContext(hindsight, 'wat houdt je bezig?'), []);
+  assert.equal(calls, 0);
+
+  const answer = await recallRelevantContext(hindsight, 'wat houdt je bezig?', {
+    shape: { asksAboutHer: true },
+  });
+  assert.equal(calls, 1);
+  assert.equal(answer.length, 1);
+});
+
 test('reflectOnTurn skips trivial exchanges and never throws even if Hindsight rejects', async () => {
   let calls = 0;
   const hindsight = { reflect: async () => { calls += 1; throw new Error('unreachable'); } };
