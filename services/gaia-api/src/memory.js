@@ -290,6 +290,71 @@ async function recallRelevantContext(hindsight, query, options = {}) {
   }
 }
 
+const QUESTION_OPENERS = new Set([
+  // Dutch interrogatives and inverted verb openers
+  'wat', 'wie', 'waar', 'waarvan', 'waarom', 'wanneer', 'hoe', 'hoeveel', 'welke', 'welk',
+  'is', 'zijn', 'was', 'waren', 'ben', 'heb', 'hebt', 'heeft', 'hebben', 'had', 'hadden',
+  'kun', 'kan', 'kunt', 'kunnen', 'kon', 'wil', 'wilt', 'willen', 'zou', 'zouden',
+  'zal', 'zult', 'mag', 'mogen', 'moet', 'moeten', 'doe', 'doet', 'doen', 'weet', 'vind', 'denk',
+  // English
+  'what', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'which', 'whichever',
+  'do', 'does', 'did', 'am', 'can', 'could', 'will', 'would', 'shall', 'should', 'may', 'might',
+]);
+
+// Openers that carry no content of their own: a greeting, an acknowledgement or
+// a discourse marker in front of the actual question ("Oké, en wat weet je dan
+// van Luca?"). A single word followed by a comma is skipped too, which is how a
+// name in front of a question is handled ("Yassine, wat weet je van hem?").
+const QUESTION_NOISE = /^(ok(é|ay)?|okay|hey|hoi|hallo|hello|hi|nou|ja|nee|zeg|eens|even|dus|en|maar|and|but|so|well|yes|no)(?![\p{L}\p{N}])[,.!?\s]*/giu;
+const QUESTION_ADDRESS = /^\p{L}{2,20},\s*/u;
+
+function questionLead(sentence) {
+  let rest = sentence;
+  for (let i = 0; i < 5; i += 1) {
+    const before = rest;
+    rest = rest.replace(QUESTION_NOISE, '').replace(QUESTION_ADDRESS, '');
+    if (rest === before) break;
+  }
+  return (rest.toLowerCase().match(/[a-zà-ÿ]+/) || [''])[0];
+}
+
+function isPureQuestion(sentence) {
+  if (!sentence.endsWith('?')) return false;
+  return QUESTION_OPENERS.has(questionLead(sentence));
+}
+
+/**
+ * What the person actually said, with their questions left out.
+ *
+ * Hindsight extracts facts from the text we retain, and it reads a question as
+ * content: on 18-10-2026 a measured quarter of the store turned out to be
+ * records of the exchange itself ("user asked about X", "Gaia has no knowledge
+ * of Y"), and those phrasings outrank the real facts because they repeat the
+ * question's own words. The seed is that the person's question was handed over
+ * as if the person had stated it.
+ *
+ * So a sentence that only asks is not retained as something the person said,
+ * while a sentence that states something always is. A turn that mixes the two
+ * keeps its stating part, and a sentence that corrects and asks at once stays
+ * whole ("Dat klopt niet, wat weet je over Luca?" does not open with a question
+ * word, so it is kept). A turn that is nothing but questions leaves nothing on
+ * the person's side, and the retained summary then carries only the answer.
+ *
+ * The list of question openers is deliberately short and behavioural — it
+ * decides what NOT to hand over, so a miss keeps the text (the safe side) and
+ * the extractor still sees everything the person stated.
+ * @param {string} text
+ * @returns {string} the stating sentences, joined, or '' when there are none
+ */
+function spokenPart(text) {
+  if (!text) return '';
+  const sentences = String(text).match(/[^.!?]+[.!?]*/g) || [];
+  return sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !isPureQuestion(sentence))
+    .join(' ');
+}
+
 /**
  * Fire-and-forget reflection, policy-gated. Callers must not await this
  * for turn completion — matches gaia-web's reflectOnTurn contract exactly.
@@ -300,6 +365,16 @@ async function recallRelevantContext(hindsight, query, options = {}) {
  * additively over the existing provenance metadata. The retain/discard
  * GATE itself lives at the call site (turn.js); this function stays the
  * transport.
+ *
+ * Only what the person said is retained on their side of the summary: their
+ * questions are left out (see spokenPart) so the extractor is not handed
+ * "Bo asked about X" as if Bo had stated it, and a turn that is nothing but a
+ * question is not retained at all. Reason, measured on 18-10-2026 with a
+ * dry-run extract: her answer to "what do you know about X" is itself a
+ * restatement of what is already stored, so retaining that exchange is how
+ * "Gaia knows nothing about Yassine" became a stored fact that then outranked
+ * the real ones. A turn in which the person states anything is still retained,
+ * question attached or not.
  *
  * Identity: the persisted conversation is Gaia ↔ User (Bojan for dev,
  * dynamically derived for multi-user). Hermes is a capability, never the
@@ -314,13 +389,19 @@ async function recallRelevantContext(hindsight, query, options = {}) {
 function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText, { shape })) return;
+  // Nothing stated on the person's side means nothing to remember: a turn that
+  // only asks would otherwise store her answer to that question, and an answer
+  // to "what do you know about X" is a restatement of what memory already
+  // holds — never a new fact. See spokenPart for what counts as asking.
+  const spoken = spokenPart(userText);
+  if (!spoken) return;
   const assistantIdentity = getAssistantIdentity();
   const userIdentity = getUserIdentity(
     userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}
   );
   const context = getConversationContext({ userDisplayName: userIdentity.displayName });
   // Summary uses the authoritative display names, not hardcoded "Bo"/"Gaia" literals
-  const summary = `${userIdentity.displayName}: ${userText}\n\n${assistantIdentity.displayName}: ${assistantText}`;
+  const summary = `${userIdentity.displayName}: ${spoken}\n\n${assistantIdentity.displayName}: ${assistantText}`;
   // Identity metadata: conversational agent is always Gaia, even when a
   // capability (Hermes, etc.) executed internally. Capability executor may
   // be recorded separately where useful, but never as the conversation agent.
@@ -408,6 +489,7 @@ module.exports = {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
+  spokenPart,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,

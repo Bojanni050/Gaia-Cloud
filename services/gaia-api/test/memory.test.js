@@ -11,6 +11,7 @@ const {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
+  spokenPart,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,
@@ -445,6 +446,71 @@ test('reflectOnTurn skips trivial exchanges and never throws even if Hindsight r
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
+});
+
+test('spokenPart keeps what the person said and leaves their questions out', () => {
+  // A question is not something the person said — it is what the extractor
+  // turned into "user asked about X" records (measured 18-10-2026).
+  assert.equal(spokenPart('Wat weet jij over Yassin?'), '');
+  assert.equal(spokenPart('Kun je wel bij het geheugen?'), '');
+  assert.equal(spokenPart('Yassine, wat weet je van hem?'), '');
+  assert.equal(spokenPart('Oké, en wat weet je dan van Luca?'), '');
+  assert.equal(spokenPart(''), '');
+  assert.equal(spokenPart(null), '');
+  // A statement always stays, and a sentence that corrects and asks at once
+  // stays whole.
+  assert.equal(
+    spokenPart('Nee, hij heeft mij gisteren bezocht en dat was gezellig.'),
+    'Nee, hij heeft mij gisteren bezocht en dat was gezellig.'
+  );
+  assert.equal(
+    spokenPart('Dat klopt niet, wat weet je over Luca?'),
+    'Dat klopt niet, wat weet je over Luca?'
+  );
+  // A mixed turn keeps its stating part and drops the asking part.
+  assert.equal(spokenPart('Hoe werkt het? Vertel eens.'), 'Vertel eens.');
+  assert.equal(
+    spokenPart('Wat weet je over MelodiQ? Ik heb gisteren de player gerepareerd.'),
+    'Ik heb gisteren de player gerepareerd.'
+  );
+});
+
+test('reflectOnTurn keeps a statement turn and drops a question-only turn', async () => {
+  const captured = [];
+  const hindsight = { reflect: async (opts) => { captured.push(opts); } };
+
+  // A turn that only asks states nothing of its own: her answer to a memory
+  // question is a restatement of what is already stored, and retaining that
+  // exchange is how "Gaia knows nothing about Yassine" became a stored fact
+  // (dry-run-extract, 18-10-2026).
+  reflectOnTurn(hindsight, {
+    userText: 'Wat weet jij over Yassin?',
+    assistantText: 'Yassine is een vriend van Bo die een opleiding volgt.',
+    conversationId: 'c1',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(captured.length, 0);
+
+  reflectOnTurn(hindsight, {
+    userText: 'Hij heeft mij gisteren bezocht en dat was gezellig.',
+    assistantText: 'Wat fijn.',
+    conversationId: 'c1',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(captured.length, 1);
+  assert.match(captured[0].summary, /^Bojan: Hij heeft mij gisteren bezocht/);
+
+  // A question attached to something the person states keeps the statement,
+  // and the question itself is not handed over as if it were said.
+  reflectOnTurn(hindsight, {
+    userText: 'Wat weet je over MelodiQ? Ik heb gisteren de player gerepareerd.',
+    assistantText: 'Mooi.',
+    conversationId: 'c1',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(captured.length, 2);
+  assert.match(captured[1].summary, /^Bojan: Ik heb gisteren de player gerepareerd\./);
+  assert.ok(!captured[1].summary.includes('Wat weet je over MelodiQ?'), captured[1].summary);
 });
 
 // --- mental models -----------------------------------------------------

@@ -115,7 +115,7 @@ test('No Hindsight conversational record contains Hermes Agent as assistant iden
   };
   reflectOnTurn(fakeHindsight, {
     conversationId: 'c1',
-    userText: 'Kun je dit voor me regelen?',
+    userText: 'Regel dit even voor me.',
     assistantText: 'Natuurlijk, ik regel het.',
     metadata: {},
   });
@@ -129,7 +129,7 @@ test('Calling Hermes does not change conversation identity (capability_executor 
   };
   reflectOnTurn(fakeHindsight, {
     conversationId: 'c1',
-    userText: 'Kun je dit voor me regelen?',
+    userText: 'Regel dit even voor me.',
     assistantText: 'Gedaan via Hermes.',
     metadata: {},
     capabilityExecutor: 'hermes',
