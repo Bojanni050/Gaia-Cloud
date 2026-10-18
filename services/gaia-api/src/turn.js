@@ -543,7 +543,8 @@ async function runTurnCore({
     && shouldAttemptPatternRetrieval(userText, intentDecision, shape)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob] = await Promise.all([    hindsight
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, openQuestionRows] = await Promise.all([
+    hindsight
       ? recallRelevantContext(hindsight, userText, { pastReference: wantConversationHistory, shape })
       : Promise.resolve([]),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
@@ -578,6 +579,13 @@ async function runTurnCore({
     reachSkill
       ? Promise.resolve()
         .then(() => researchJobs.start({ question: userText, skillId: reachSkill, conversationId }))
+        .catch(() => null)
+      : Promise.resolve(null),
+    // Independent of the rest, so it rides the same wait instead of adding its
+    // own; a failure simply means she raises nothing extra (see below).
+    hypothesisRuntime && hypothesisRuntime.openQuestions
+      ? Promise.resolve()
+        .then(() => hypothesisRuntime.openQuestions.list())
         .catch(() => null)
       : Promise.resolve(null),
   ]);
@@ -724,13 +732,12 @@ async function runTurnCore({
   // (server.js), and it never blocks the turn: a failure simply means she says
   // nothing extra.
   let openQuestionBlock = null;
-  if (hypothesisRuntime && hypothesisRuntime.openQuestions) {
+  if (hypothesisRuntime && hypothesisRuntime.openQuestions && openQuestionRows) {
     try {
-      const rows = await hypothesisRuntime.openQuestions.list();
-      const picked = pickOpenQuestion((Array.isArray(rows) ? rows : []).map(fromQuestionRow), {
+      const picked = pickOpenQuestion(openQuestionRows.map(fromQuestionRow), {
         conversationId,
         policy: hypothesisRuntime.openQuestions.policy,
-        now: Date.now(),
+        now,
         turnText: userText,
       });
       if (picked) {
@@ -1089,7 +1096,8 @@ async function runDeferredCognition({
     );
   } catch (_) { /* observability never breaks the deferred phase */ }
   let reasoningResult = null;
-  if (reasoningDepth === 'deep') {
+  // A turn that produced no reply has nothing to reflect on: no model call.
+  if (reasoningDepth === 'deep' && replyText) {
     timing.start('reasoning_background');
     try {
       reasoningResult = await reasonIQ(backgroundReasoningInput, { logger: decisionLogger });
@@ -1533,9 +1541,12 @@ async function performStreamingTurn({
       // arrives here, after the transcript exists, and only ever fills a title
       // that is still derived (setTitle refuses to rename a chosen one).
       if (!title && pendingTitle) {
-        void pendingTitle.then((late) => {
-          if (late) historyStore.setTitle(conversationId, late);
-        });
+        void pendingTitle
+          .then((late) => {
+            if (late) historyStore.setTitle(conversationId, late);
+          })
+          // setTitle writes a file; a failure here must not become an unhandled rejection.
+          .catch(() => {});
       }
     } catch (_) {
       // Never break a turn that already completed successfully.

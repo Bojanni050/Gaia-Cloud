@@ -3112,6 +3112,23 @@ test('v1.0 background analysis: retention failure is non-fatal — the conversat
   assert.equal(runtime.manager.list().length, 1, 'hypothesis application still ran');
 });
 
+test('v1.0 background analysis: a turn that produced no reply makes no reasoning model call', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async () => { throw new Error('provider down'); } };
+  let reasoningCalls = 0;
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    reasonIQ: async () => { reasoningCalls += 1; return v1ReasoningResult(); },
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  assert.equal(reasoningCalls, 0, 'nothing to reflect on, so no model call is spent');
+});
+
 test('v1.0 background analysis: an observation can carry its relationship to a tracked hypothesis — no relationship store', async () => {
   const runtime = cognitionRuntimeFor();
   const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
