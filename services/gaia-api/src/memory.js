@@ -11,7 +11,24 @@ const { shouldRecall, shouldReflect } = require('./memoryPolicy');
 const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
 const { relativeAge } = require('./nowContext');
 
-const MAX_MEMORY_LINES = 6;
+/**
+ * How many memory lines may reach the prompt in one turn.
+ *
+ * It was 6 until 18-10-2026. Three banks feed this block (the shared bank, her
+ * own bank and the derived `gaia-logos`) and, since the same day, each of them
+ * claims up to 3 of those lines in the merge (`CROSS_BANK_QUOTA` in
+ * hindsightClient.js), so 9 is the size that lets every bank speak. The old 6
+ * silently meant "two lines each", and worse: the flat score sort that came
+ * with it let one bank take all six.
+ *
+ * This is not a budget decision. A rendered line is 100–200 characters, so 9
+ * lines is roughly 1.5 kB — against the seven standing mental models, which are
+ * already sent on every turn and run to about 50 kB together. Six was caution,
+ * not a limit anyone measured.
+ *
+ * `MEMORY_MAX_LINES` overrides it (see .env.example).
+ */
+const MAX_MEMORY_LINES = Number(process.env.MEMORY_MAX_LINES) || 9;
 const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.55;
 
 /**
@@ -138,8 +155,9 @@ function formatReflectionLine(reflection, now = Date.now()) {
 
 /**
  * The selection step shared by both renderers: the same dedupe and the same
- * 6-line cap, but each surviving line keeps the reflection it came from, so a
- * caller can attach that item's Foundation evidence beneath it.
+ * line cap (`MEMORY_MAX_LINES`, 9 by default), but each surviving line keeps
+ * the reflection it came from, so a caller can attach that item's Foundation
+ * evidence beneath it.
  * @param {Array<{id?: string, text: string, scores: {final: number|null}}>} reflections
  * @param {number|Date} [now]
  * @returns {Array<{reflection: object, line: string}>}

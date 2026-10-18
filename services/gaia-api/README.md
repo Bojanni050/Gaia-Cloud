@@ -112,6 +112,16 @@ per turn from the vocabularies that used to be read separately by each gate;
 `turn.js` hands that single answer to every consumer and records it as the
 `turn.shape` line — booleans, signal names and a length, never your text.
 
+Nine memory lines reach the prompt (`MEMORY_MAX_LINES`, default 9), and the three
+banks take turns in the merge rather than being sorted against each other. That
+second part matters more than the number: the banks' relevance scores are not on
+the same scale, and for "wat weet je over Yassine?" the bank holding the real
+statements scored 0.695 at best while another reached 1.086, so a flat sort handed
+all six lines of the day to chatter and not one of them mentioned Yassine. Each
+bank now claims up to three lines (`CROSS_BANK_QUOTA` in `src/hindsightClient.js`)
+before another bank's second line may follow — the price is three lines of noise
+when a bank genuinely has nothing to offer for that question.
+
 Also part of the client contract, a **file library** (`library.js`,
 `libraryRoutes.js`) — storage and browsing only in this phase, nothing
 here feeds Logos, Hermes, or Hindsight yet:

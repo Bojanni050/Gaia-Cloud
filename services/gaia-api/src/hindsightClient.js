@@ -616,17 +616,72 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
 }
 
 /**
+ * How many lines one bank may claim from the merged list before the banks take
+ * turns instead.
+ *
+ * The scores of the three banks are NOT on the same scale, which a flat sort
+ * hides. Measured live on 18-10-2026 with the question "Wat weet je over
+ * Yassine?": bank `bojan` returned 0.695 at best (average 0.535) while `gaia`
+ * reached 1.086 (average 0.874) and `gaia-logos` 1.024 — so the true statements
+ * about Yassine lost to unrelated chatter, and with only six lines fitting in
+ * the prompt not one of them arrived. For most questions the scales do line up
+ * ("weet je nog?" and "Wie is Pieter?" all sat around 1.07–1.10), which is why
+ * this went unnoticed for so long.
+ *
+ * With a quota each bank speaks before any bank repeats: best of each, then
+ * second best of each, and so on. Whatever is left over follows in the old
+ * global score order, so nothing is lost and a single-bank caller is unchanged.
+ */
+const CROSS_BANK_QUOTA = 3;
+
+/** A unit's relevance, with a missing or unreadable score sorting last. */
+function unitScore(unit) {
+  const value = unit?.scores?.final;
+  return typeof value === 'number' && Number.isFinite(value) ? value : -Infinity;
+}
+
+/**
+ * Merge per-bank result slices that each bank already ranked best-first.
+ * @param {Array<Array<object>>} slices one slice per bank, in bank order
+ * @param {number} [quota] lines one bank may claim before the next bank speaks
+ */
+function mergeBankSlices(slices, quota = CROSS_BANK_QUOTA) {
+  const ranked = (Array.isArray(slices) ? slices : []).map((slice) =>
+    Array.isArray(slice) ? slice.slice().sort((a, b) => unitScore(b) - unitScore(a)) : []
+  );
+  const merged = [];
+  const taken = ranked.map(() => 0);
+  const rounds = Number.isFinite(quota) && quota > 0 ? Math.floor(quota) : 0;
+  for (let round = 0; round < rounds; round += 1) {
+    for (let bank = 0; bank < ranked.length; bank += 1) {
+      // A unit without a readable score has no claim to a reserved place: it
+      // waits in the tail, which is sorted, so it lands last as before.
+      if (ranked[bank].length > taken[bank] && Number.isFinite(unitScore(ranked[bank][taken[bank]]))) {
+        merged.push(ranked[bank][taken[bank]]);
+        taken[bank] += 1;
+      }
+    }
+  }
+  const rest = [];
+  for (let bank = 0; bank < ranked.length; bank += 1) {
+    for (let i = taken[bank]; i < ranked[bank].length; i += 1) rest.push(ranked[bank][i]);
+  }
+  rest.sort((a, b) => unitScore(b) - unitScore(a));
+  return merged.concat(rest);
+}
+
+/**
  * Compose a client whose `recall` spans several Hindsight banks while every
  * other method stays on the primary bank.
  *
  * Gaia's own memory lives in her app bank (`gaia`); the derived knowledge
  * Logos forms and Cognition owns — hypotheses, patterns, Kairos episodes —
  * lives in its own bank (`gaia-logos`). A derived statement must be as
- * surfaceable in a turn as a raw memory, so recall fans out to every bank
- * and merges the results by descending relevance score (`scores.final`,
- * nulls last). Reads stay best-effort per bank: one bank being slow or
- * unreachable drops its slice rather than failing the whole recall, exactly
- * like the single-bank path.
+ * surfaceable in a turn as a raw memory, so recall fans out to every bank and
+ * the slices are merged with a per-bank quota (see `CROSS_BANK_QUOTA`), because
+ * the banks' scores cannot be compared with each other. Reads stay best-effort
+ * per bank: one bank being slow or unreachable drops its slice rather than
+ * failing the whole recall, exactly like the single-bank path.
  *
  * @param {ReturnType<typeof createHindsightClient>} primary
  * @param {...ReturnType<typeof createHindsightClient>} others
@@ -639,11 +694,9 @@ function createCrossBankRecallClient(primary, ...others) {
       const slices = await Promise.all(
         banks.map((client) => client.recall(query, options).catch(() => []))
       );
-      return slices
-        .flat()
-        .sort((a, b) => (b?.scores?.final ?? -Infinity) - (a?.scores?.final ?? -Infinity));
+      return mergeBankSlices(slices);
     },
   };
 }
 
-module.exports = { createHindsightClient, createCrossBankRecallClient };
+module.exports = { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, CROSS_BANK_QUOTA };

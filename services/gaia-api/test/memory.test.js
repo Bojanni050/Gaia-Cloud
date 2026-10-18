@@ -300,17 +300,33 @@ function reflection(text, final) {
   return { text, scores: { final } };
 }
 
-test('condenseMemoryContext tags low-confidence lines uncertain, caps at 6, dedupes', () => {
+test('condenseMemoryContext tags low-confidence lines uncertain, caps at 9, dedupes', () => {
   const reflections = [
     reflection('A', 0.9),
     reflection('B', 0.4),
     reflection('A', 0.9), // duplicate
-    ...Array.from({ length: 6 }, (_, i) => reflection(`extra-${i}`, 0.9)),
+    ...Array.from({ length: 12 }, (_, i) => reflection(`extra-${i}`, 0.9)),
   ];
   const lines = condenseMemoryContext(reflections);
-  assert.equal(lines.length, 6);
+  assert.equal(lines.length, 9);
   assert.equal(lines[0], '- A');
   assert.equal(lines[1], '- B (uncertain)');
+});
+
+test('MEMORY_MAX_LINES overrides the line cap', () => {
+  const previous = process.env.MEMORY_MAX_LINES;
+  const modulePath = require.resolve('../src/memory');
+  process.env.MEMORY_MAX_LINES = '2';
+  delete require.cache[modulePath];
+  try {
+    const fresh = require('../src/memory');
+    const many = Array.from({ length: 5 }, (_, i) => reflection(`x-${i}`, 0.9));
+    assert.equal(fresh.condenseMemoryContext(many).length, 2);
+  } finally {
+    if (previous === undefined) delete process.env.MEMORY_MAX_LINES;
+    else process.env.MEMORY_MAX_LINES = previous;
+    delete require.cache[modulePath];
+  }
 });
 
 test('renderMemoryContext returns null when there is nothing to show', () => {
