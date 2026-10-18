@@ -34,8 +34,15 @@
  * and keeps their correction as theirs. The tool exists so the verdict has
  * somewhere to go; a memory the model dislikes is not a reason to use it.
  *
- * Boundary: schemas, a read, two writes and one retraction. They reason about
- * nothing, and a failure never reaches the turn.
+ * A fifth verb is `forget_memory` — the same withdrawal for the other thing a
+ * person says: "I do not want you to have that". It passes no judgement on
+ * truth and keeps nothing in the memory's place, because a memory can be true
+ * and still not belong in recall. Without it, "forget this" had no verb at all
+ * and the only route out of the store was to call the person's own history a
+ * lie.
+ *
+ * Boundary: schemas, a read, two writes, one retraction and one forgetting.
+ * They reason about nothing, and a failure never reaches the turn.
  */
 
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -44,7 +51,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 // the "(uncertain)" marker for low-confidence items.
 const { condenseMemoryContext } = require('../memory');
 // The retraction path — the person's verdict carried out, never her own call.
-const { retractMemory, renderRetractionReceipt } = require('./memoryRetraction');
+const { retractMemory, forgetMemory, renderRetractionReceipt, renderForgetReceipt } = require('./memoryRetraction');
 
 /**
  * Lets the turn that is running hear that `remember` kept something, without the tool knowing about
@@ -134,12 +141,27 @@ const RETRACT_TOOL = Object.freeze({
   type: 'function',
   function: {
     name: 'retract_memory',
-    description: "Take back something you remembered that turned out not to be true. Use it when the person tells you that something you said from memory is wrong: give what you recalled in `quote` — a few words are enough, the statement is found for you — and put their own correction in `correction` if they gave you one. The memory is withdrawn from recall, and if it came from a statement you had confirmed, that statement is retired too, so it cannot come back. Use it ONLY when the person says it is not true, never to make a memory you dislike go away.",
+    description: "Take back something you remembered that turned out not to be true. Use it when the person tells you that something you said from memory is wrong: give what you recalled in `quote` — a few words are enough, the statement is found for you — and put their own correction in `correction` if they gave you one. Every copy of that statement is withdrawn from recall, and if it came from something you had confirmed, that statement is retired too, so it cannot come back. Use it ONLY when the person says it is not true, never to make a memory you dislike go away.",
     parameters: {
       type: 'object',
       properties: {
         quote: { type: 'string', description: 'The remembered statement that is not true, as you recalled it.' },
         correction: { type: 'string', description: "What is true instead, in the person's own words. Optional — leave it out when they only said it was wrong." },
+      },
+      required: ['quote'],
+    },
+  },
+});
+
+const FORGET_TOOL = Object.freeze({
+  type: 'function',
+  function: {
+    name: 'forget_memory',
+    description: "Forget something: take it out of your memory because the person asked you to, whether or not it was ever true. Use it when they say a memory should not be there — \"forget that\", \"that should not be in your memory\", \"I do not want you to remember this\". Nothing is kept in its place, so do not use it when they tell you something is WRONG and give you what is true instead — that is `retract_memory`. Every copy of the memory is withdrawn from recall and the statement behind it is retired, so it cannot come back. Use it ONLY because the person asked, never to make a memory you dislike go away.",
+    parameters: {
+      type: 'object',
+      properties: {
+        quote: { type: 'string', description: 'The memory to forget, quoted closely enough to find it — a few words are enough.' },
       },
       required: ['quote'],
     },
@@ -157,8 +179,9 @@ const RETRACT_TOOL = Object.freeze({
  *   `banks` is every bank a memory may be taken back FROM (each with the client
  *   that owns it, so the right store is patched); `home` is where a correction
  *   is kept; `cognition`/`sync` retire the derived statement a memory came
- *   from. Without `banks` the `retract_memory` tool is not offered at all —
- *   better no tool than one that pretends to take something back.
+ *   from. Without `banks` neither `retract_memory` nor `forget_memory` is
+ *   offered at all — better no tool than one that pretends to take something
+ *   back.
  */
 function createMemoryTool({
   hindsight,
@@ -263,6 +286,25 @@ function createMemoryTool({
   }
 
   /**
+   * Forgetting is the second thing a person can ask of memory — "I do not want
+   * you to have that" — and unlike a retraction it says nothing about truth. It
+   * shares the withdrawal machinery (and the receipt shape) with retraction;
+   * what it does not do is keep a correction, because nothing was offered as the
+   * true version.
+   */
+  async function forgetMemoryFromMemory(args) {
+    const quote = String((args && args.quote) || '').replace(/\s+/g, ' ').trim();
+    if (!quote) return 'Nothing named to forget.';
+    if (!retractReady) return 'That could not be forgotten right now.';
+    try {
+      const receipt = await forgetMemory({ banks, cognition, sync, quote, now: now() });
+      return renderForgetReceipt(receipt);
+    } catch (_) {
+      return 'That could not be forgotten right now.';
+    }
+  }
+
+  /**
    * @param {string} name
    * @param {object} args
    * @returns {Promise<string>} the tool result handed back to the model
@@ -272,13 +314,14 @@ function createMemoryTool({
     if (name === 'keep') return keep(args);
     if (name === 'search_memory') return searchMemory(args);
     if (name === 'retract_memory') return retractMemoryFromMemory(args);
+    if (name === 'forget_memory') return forgetMemoryFromMemory(args);
     return 'Unknown action.';
   }
 
   const TOOLS = [REMEMBER_TOOL];
   if (searchReady) TOOLS.push(SEARCH_TOOL);
   if (ownReady) TOOLS.push(KEEP_TOOL);
-  if (retractReady) TOOLS.push(RETRACT_TOOL);
+  if (retractReady) TOOLS.push(RETRACT_TOOL, FORGET_TOOL);
 
   return {
     onToolCall,
@@ -287,6 +330,7 @@ function createMemoryTool({
     KEEP_TOOL,
     SEARCH_TOOL,
     RETRACT_TOOL,
+    FORGET_TOOL,
   };
 }
 
@@ -297,6 +341,7 @@ module.exports = {
   KEEP_TOOL,
   SEARCH_TOOL,
   RETRACT_TOOL,
+  FORGET_TOOL,
   SHARED_DOMAIN,
   OWN_DOMAIN,
 };

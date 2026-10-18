@@ -126,6 +126,16 @@ const CAPABILITY_REGISTRY = Object.freeze({
     skills: Object.freeze([]),
   }),
 
+  // The other half of taking something back: no verdict on whether it was ever
+  // true. A memory can be perfectly accurate and still not belong in recall,
+  // because the person no longer wants it there.
+  memory_forgetting: Object.freeze({
+    id: 'memory_forgetting',
+    type: 'capability',
+    description: 'forgetting something when the person asks you to — taken out of recall without judging whether it was true',
+    skills: Object.freeze([]),
+  }),
+
   own_memory: Object.freeze({
     id: 'own_memory',
     type: 'capability',

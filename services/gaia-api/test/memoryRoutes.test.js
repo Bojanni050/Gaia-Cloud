@@ -102,10 +102,10 @@ test('POST /memory/retract retires the derived statement too when the memory cam
 
 test('POST /memory/retract asks which one when more than one memory fits, and touches nothing', async () => {
   const first = fakeBank('bojan', [{ id: 'f1', text: 'Yassine is een vriend van je', state: 'valid' }]);
-  const second = fakeBank('gaia-logos', [{ id: 'f2', text: 'Yassine is een vriend van je', state: 'valid' }]);
+  const second = fakeBank('gaia-logos', [{ id: 'f2', text: 'Yassine schaakt graag op zondag', state: 'valid' }]);
   const res = await request(appWith({ banks: [first, second] }))
     .post('/memory/retract')
-    .send({ quote: 'Yassine is een vriend van je' });
+    .send({ quote: 'Yassine' });
 
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'ambiguous');
@@ -113,6 +113,22 @@ test('POST /memory/retract asks which one when more than one memory fits, and to
   assert.match(res.body.message, /^More than one memory matches/);
   assert.deepEqual(first.calls.patched, []);
   assert.deepEqual(second.calls.patched, []);
+});
+
+test('POST /memory/retract takes back every copy of the claim, in every bank that holds it', async () => {
+  const first = fakeBank('bojan', [{ id: 'f1', text: 'Yassine is een vriend van je', state: 'valid' }]);
+  const second = fakeBank('gaia-logos', [{ id: 'f2', text: 'Yassine is een vriend van je', state: 'valid' }]);
+  const res = await request(appWith({ banks: [first, second], home: first }))
+    .post('/memory/retract')
+    .send({ quote: 'Yassine is een vriend van je' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'retracted');
+  assert.equal(res.body.retracted.id, 'f1');
+  assert.deepEqual(res.body.alsoRetracted.map((c) => c.id), ['f2']);
+  assert.deepEqual(first.calls.patched.map((p) => p.id), ['f1']);
+  assert.deepEqual(second.calls.patched.map((p) => p.id), ['f2']);
+  assert.match(res.body.message, /The same thing was kept in 1 more place — taken back too/);
 });
 
 test('POST /memory/retract says plainly when nothing matches', async () => {
@@ -148,4 +164,48 @@ test('the route is behind the bearer guard when one is given', async () => {
   const app = appWith({ banks: [bank], auth: guard });
   assert.equal((await request(app).post('/memory/retract').send({ quote: 'iets' })).status, 401);
   assert.equal((await request(app).post('/memory/retract').set('Authorization', 'Bearer good').send({ quote: 'iets' })).status, 200);
+});
+
+test('POST /memory/forget takes the memory out without judging it, and keeps nothing', async () => {
+  const bank = fakeBank('bojan', [{ id: 'f1', text: 'Bo deed op 4 juli 2026 een afscheidsritueel met Luca', state: 'valid' }]);
+  const res = await request(appWith({ banks: [bank], home: bank }))
+    .post('/memory/forget')
+    .send({ quote: 'Bo deed op 4 juli 2026 een afscheidsritueel met Luca' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'forgotten');
+  assert.match(res.body.message, /^Forgotten: "Bo deed op 4 juli 2026 een afscheidsritueel met Luca"$/m);
+  assert.equal(res.body.message.includes('Kept instead'), false);
+  assert.deepEqual(bank.calls.patched, [{
+    id: 'f1',
+    state: 'invalidated',
+    reason: 'the person asked for this to be forgotten',
+  }]);
+  assert.deepEqual(bank.calls.kept, []);
+});
+
+test('POST /memory/forget without a quote is a bad request, and 503 when no bank is wired', async () => {
+  const bank = fakeBank('bojan', []);
+  const missing = await request(appWith({ banks: [bank] })).post('/memory/forget').send({ quote: '  ' });
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.error, 'quote is required');
+  assert.deepEqual(bank.calls.patched, []);
+
+  const unwired = await request(appWith({ banks: [] })).post('/memory/forget').send({ quote: 'iets' });
+  assert.equal(unwired.status, 503);
+  assert.equal(unwired.body.error, 'memory forgetting is not available');
+});
+
+test('POST /memory/forget asks which one when more than one memory fits, and touches nothing', async () => {
+  const first = fakeBank('bojan', [{ id: 'f1', text: 'Yassine is een vriend van je', state: 'valid' }]);
+  const second = fakeBank('gaia-logos', [{ id: 'f2', text: 'Yassine schaakt graag op zondag', state: 'valid' }]);
+  const res = await request(appWith({ banks: [first, second] }))
+    .post('/memory/forget')
+    .send({ quote: 'Yassine' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, 'ambiguous');
+  assert.match(res.body.message, /^More than one memory matches — say which one to forget:/);
+  assert.deepEqual(first.calls.patched, []);
+  assert.deepEqual(second.calls.patched, []);
 });

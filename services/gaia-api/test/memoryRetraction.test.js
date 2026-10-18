@@ -5,9 +5,13 @@ const assert = require('node:assert/strict');
 const {
   findRetractionTarget,
   retractMemory,
+  forgetMemory,
   renderRetractionReceipt,
+  renderForgetReceipt,
   matchScore,
+  isSameClaim,
   MIN_MATCH,
+  SAME_CLAIM,
 } = require('../src/reasoning/memoryRetraction');
 
 /**
@@ -70,15 +74,40 @@ test('findRetractionTarget skips what is already invalidated, and what does not 
   assert.deepEqual(bank.queries, [{ q: 'Yassine is een vriend van je', limit: 25 }]);
 });
 
-test('findRetractionTarget refuses to guess between two equally good matches', async () => {
+test('findRetractionTarget refuses to guess between two different memories that fit equally well', async () => {
+  const first = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je')]);
+  const second = fakeBank('gaia-logos', [validItem('f2', 'Yassine schaakt graag op zondag')]);
+
+  const found = await findRetractionTarget([first, second], 'Yassine');
+
+  assert.equal(found.status, 'ambiguous');
+  assert.equal(found.candidates.length, 2);
+  assert.deepEqual(found.candidates.map((c) => c.bank), ['bojan', 'gaia-logos']);
+});
+
+test('findRetractionTarget treats the same claim kept twice as one claim, not an ambiguous match', async () => {
+  // The failure this guards: a statement mirrored into another bank (or the
+  // near-duplicate the reasoning layer wrote beside it) scored within the
+  // ambiguity margin of itself, so every retraction of a claim that lived in
+  // more than one place came back as a question instead of an action.
   const first = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je')]);
   const second = fakeBank('gaia-logos', [validItem('f2', 'Yassine is een vriend van je')]);
 
   const found = await findRetractionTarget([first, second], 'Yassine is een vriend van je');
 
-  assert.equal(found.status, 'ambiguous');
-  assert.equal(found.candidates.length, 2);
-  assert.deepEqual(found.candidates.map((c) => c.bank), ['bojan', 'gaia-logos']);
+  assert.equal(found.status, 'found');
+  assert.equal(found.target.id, 'f1');
+  assert.deepEqual(found.cluster.map((hit) => hit.id).sort(), ['f1', 'f2']);
+});
+
+test('isSameClaim lines up both ways, so a short line inside a different statement is not swallowed', () => {
+  const a = { text: 'Yassine is een vriend van je' };
+  const b = { text: 'Yassine is een vriend van je' };
+  const c = { text: 'Yassine schaakt graag op zondag' };
+  assert.equal(isSameClaim(a, b), true);
+  assert.equal(isSameClaim(a, c), false);
+  assert.equal(isSameClaim(a, a), true);
+  assert.equal(isSameClaim(a, { text: '' }), false);
 });
 
 test('findRetractionTarget carries the winning bank, so the caller knows where to patch', async () => {
@@ -110,7 +139,7 @@ test('retractMemory invalidates the memory in the bank that holds it, and says w
   const receipt = await retractMemory({ banks: [shared], home: shared, quote: 'Yassine is een vriend van je' });
 
   assert.equal(receipt.status, 'retracted');
-  assert.deepEqual(receipt.retracted, { bank: 'bojan', id: 'f1', text: 'Yassine is een vriend van je', invalidated: true });
+  assert.deepEqual(receipt.retracted, { bank: 'bojan', id: 'f1', text: 'Yassine is een vriend van je', invalidated: true, via: ['f1'] });
   assert.deepEqual(shared.patched, [{
     id: 'f1',
     state: 'invalidated',
@@ -266,9 +295,9 @@ test('nothing found and nothing named are calm, and nothing is touched', async (
 
 test('an ambiguous match patches nothing at all — a wrong retraction is worse than none', async () => {
   const first = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je')]);
-  const second = fakeBank('gaia-logos', [validItem('f2', 'Yassine is een vriend van je')]);
+  const second = fakeBank('gaia-logos', [validItem('f2', 'Yassine schaakt graag op zondag')]);
 
-  const receipt = await retractMemory({ banks: [first, second], quote: 'Yassine is een vriend van je' });
+  const receipt = await retractMemory({ banks: [first, second], quote: 'Yassine' });
 
   assert.equal(receipt.status, 'ambiguous');
   assert.deepEqual(first.patched, []);
@@ -278,7 +307,190 @@ test('an ambiguous match patches nothing at all — a wrong retraction is worse 
   assert.match(text, /"Yassine is een vriend van je"/);
 });
 
+test('a claim kept in three places goes in full — the copies are what would be recited back', async () => {
+  // The real shape of the failure: one statement, mirrored into the sharing
+  // banks and written again beside its own source. Taking back the best-scoring
+  // copy and leaving two behind is what made a retraction fail to stick.
+  const metadata = { gaia_hypothesis_id: 'a9eeb399' };
+  const shared = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je', { metadata })]);
+  const logos = fakeBank('gaia-logos', [validItem('f2', 'Yassine is een vriend van je', { metadata })]);
+  const own = fakeBank('gaia', [validItem('f3', 'Yassine is een vriend van je')]);
+  const rejected = [];
+  const cognition = {
+    async rejectHypothesis(id, options) {
+      rejected.push({ id, options });
+      return { id, status: 'rejected' };
+    },
+  };
+
+  const receipt = await retractMemory({
+    banks: [shared, logos, own],
+    home: shared,
+    cognition,
+    quote: 'Yassine is een vriend van je',
+  });
+
+  assert.equal(receipt.status, 'retracted');
+  assert.deepEqual(shared.patched.map((p) => p.id), ['f1']);
+  assert.deepEqual(logos.patched.map((p) => p.id), ['f2']);
+  assert.deepEqual(own.patched.map((p) => p.id), ['f3']);
+  // ... all with the same reason, so the audit trail reads as one decision.
+  assert.equal(logos.patched[0].reason, 'the person said this is not correct');
+  // The one source statement behind the mirror is retired once, not three times.
+  assert.deepEqual(rejected.map((r) => r.id), ['a9eeb399']);
+  assert.deepEqual(receipt.alsoRetracted.map((copy) => copy.id), ['f2', 'f3']);
+  assert.deepEqual(receipt.sources.map((s) => s.id), ['a9eeb399']);
+  const text = renderRetractionReceipt(receipt);
+  assert.match(text, /^Taken back: "Yassine is een vriend van je"$/m);
+  assert.match(text, /The same thing was kept in 2 more places — taken back too:/);
+  assert.match(text, /The statement it came from is rejected too, so it cannot come back\./);
+  assert.equal(text.includes('The other statements behind it are rejected too.'), false);
+});
+
+test('a copy that could not be updated is named, so the person is not told it is gone', async () => {
+  const shared = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je')]);
+  const logos = fakeBank('gaia-logos', [validItem('f2', 'Yassine is een vriend van je')]);
+  logos.patchBoom = true;
+
+  const receipt = await retractMemory({ banks: [shared, logos], quote: 'Yassine is een vriend van je' });
+
+  assert.equal(receipt.alsoRetracted[0].invalidated, false);
+  assert.match(renderRetractionReceipt(receipt), /one of them could not be updated, so it may still surface/);
+});
+
+test('several statements behind one claim are reported together', async () => {
+  const shared = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je', {
+    metadata: { gaia_hypothesis_id: 'h-one' },
+  })]);
+  const logos = fakeBank('gaia-logos', [validItem('f2', 'Yassine is een vriend van je', {
+    metadata: { gaia_hypothesis_id: 'h-two' },
+  })]);
+  const rejected = [];
+  const cognition = { async rejectHypothesis(id) { rejected.push(id); return { id, status: 'rejected' }; } };
+
+  const receipt = await retractMemory({ banks: [shared, logos], cognition, quote: 'Yassine is een vriend van je' });
+
+  assert.deepEqual(rejected, ['h-one', 'h-two']);
+  assert.deepEqual(receipt.sources.map((s) => s.id), ['h-one', 'h-two']);
+  assert.match(renderRetractionReceipt(receipt), /The other statements behind it are rejected too\./);
+});
+
 test('renderRetractionReceipt never crashes on a shape it did not expect', () => {
   assert.equal(renderRetractionReceipt(null), 'Nothing in memory matches that closely enough to take back.');
   assert.equal(typeof renderRetractionReceipt({ status: 'retracted', retracted: {} }), 'string');
+});
+
+test('a claim stored as a derived observation is taken back through its sources — Hindsight will not curate the observation itself', async () => {
+  // Live shape, from the store: Gaia recited a statement that Hindsight had
+  // typed as an `observation`. PATCH on it answers 400 ("only world/experience
+  // facts can be curated. Observations are derived and regenerate from their
+  // sources"), so the old single-PATCH retraction reported a failure and the
+  // statement stayed in recall. The source fact is what actually removes it.
+  const shared = fakeBank('bojan', [validItem('obs1', 'Bo en Luca deden nachten op Grindr', {
+    type: 'observation',
+    sourceMemoryIds: ['exp1'],
+  })]);
+
+  const receipt = await retractMemory({ banks: [shared], home: shared, quote: 'Bo en Luca deden nachten op Grindr' });
+
+  assert.deepEqual(shared.patched, [{
+    id: 'exp1',
+    state: 'invalidated',
+    reason: 'the person said this is not correct',
+  }]);
+  assert.equal(receipt.retracted.invalidated, true);
+  assert.deepEqual(receipt.retracted.via, ['exp1']);
+  assert.match(renderRetractionReceipt(receipt), /^Taken back: "Bo en Luca deden nachten op Grindr"/m);
+});
+
+test('an observation whose source cannot be reached says so instead of claiming it is gone', async () => {
+  const shared = fakeBank('bojan', [validItem('obs1', 'Bo en Luca deden nachten op Grindr', {
+    type: 'observation',
+    sourceMemoryIds: ['exp1'],
+  })]);
+  shared.patchBoom = true;
+
+  const receipt = await retractMemory({ banks: [shared], quote: 'Bo en Luca deden nachten op Grindr' });
+
+  assert.equal(receipt.retracted.invalidated, false);
+  assert.match(renderRetractionReceipt(receipt), /could not be updated, so it may still surface/);
+});
+
+test('forgetMemory takes the claim out without judging it and keeps nothing in its place', async () => {
+  const shared = fakeBank('bojan', [validItem('f1', 'Bo deed op 4 juli 2026 een afscheidsritueel met Luca')]);
+
+  const receipt = await forgetMemory({ banks: [shared], quote: 'Bo deed op 4 juli 2026 een afscheidsritueel met Luca' });
+
+  assert.equal(receipt.status, 'forgotten');
+  assert.deepEqual(shared.patched, [{
+    id: 'f1',
+    state: 'invalidated',
+    reason: 'the person asked for this to be forgotten',
+  }]);
+  // Nothing is written: no correction, no "true instead" — the person did not
+  // say the memory was false, only that it should not be there.
+  assert.deepEqual(shared.kept, []);
+  assert.equal(receipt.kept, undefined);
+  assert.deepEqual(receipt.forgotten, {
+    bank: 'bojan',
+    id: 'f1',
+    text: 'Bo deed op 4 juli 2026 een afscheidsritueel met Luca',
+    invalidated: true,
+    via: ['f1'],
+  });
+  const text = renderForgetReceipt(receipt);
+  assert.match(text, /^Forgotten: "Bo deed op 4 juli 2026 een afscheidsritueel met Luca"$/m);
+  assert.equal(text.includes('Kept instead'), false);
+});
+
+test('forgetMemory sweeps every copy and retires the statement behind it', async () => {
+  const metadata = { gaia_hypothesis_id: 'h-one' };
+  const shared = fakeBank('bojan', [validItem('f1', 'Bo deed een afscheidsritueel met Luca', { metadata })]);
+  const logos = fakeBank('gaia-logos', [validItem('f2', 'Bo deed een afscheidsritueel met Luca', { metadata })]);
+  const rejected = [];
+  const cognition = { async rejectHypothesis(id, options) { rejected.push({ id, options }); return { id, status: 'rejected' }; } };
+
+  const receipt = await forgetMemory({ banks: [shared, logos], cognition, quote: 'Bo deed een afscheidsritueel met Luca' });
+
+  assert.deepEqual(shared.patched.map((p) => p.id), ['f1']);
+  assert.deepEqual(logos.patched.map((p) => p.id), ['f2']);
+  assert.equal(shared.patched[0].reason, 'the person asked for this to be forgotten');
+  assert.deepEqual(rejected, [{ id: 'h-one', options: { reason: 'the person asked for this to be forgotten', verwerpBron: 'mens' } }]);
+  assert.deepEqual(receipt.alsoForgotten.map((copy) => copy.id), ['f2']);
+  const text = renderForgetReceipt(receipt);
+  assert.match(text, /The same thing was kept in 1 more place — forgotten too:/);
+  assert.match(text, /The statement it came from is rejected too, so it cannot come back\./);
+});
+
+test('forgetMemory goes through a derived observation the same way', async () => {
+  const shared = fakeBank('bojan', [validItem('obs1', 'Bo deed een afscheidsritueel met Luca', {
+    type: 'observation',
+    sourceMemoryIds: ['exp1'],
+  })]);
+
+  const receipt = await forgetMemory({ banks: [shared], quote: 'Bo deed een afscheidsritueel met Luca' });
+
+  assert.deepEqual(shared.patched.map((p) => p.id), ['exp1']);
+  assert.deepEqual(receipt.forgotten.via, ['exp1']);
+  assert.equal(renderForgetReceipt(receipt).startsWith('Forgotten:'), true);
+});
+
+test('forgetMemory finds nothing, asks which one, and touches nothing while unsure', async () => {
+  const shared = fakeBank('bojan', [validItem('f1', 'Bo drinkt graag koffie in de ochtend')]);
+  const notFound = await forgetMemory({ banks: [shared], quote: 'iets over Yassine' });
+  assert.equal(notFound.status, 'not_found');
+  assert.equal(renderForgetReceipt(notFound), 'Nothing in memory matches that closely enough to forget.');
+  assert.deepEqual(shared.patched, []);
+
+  const first = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je')]);
+  const second = fakeBank('gaia-logos', [validItem('f2', 'Yassine schaakt graag op zondag')]);
+  const ambiguous = await forgetMemory({ banks: [first, second], quote: 'Yassine' });
+  assert.equal(ambiguous.status, 'ambiguous');
+  assert.deepEqual(first.patched, []);
+  assert.deepEqual(second.patched, []);
+  assert.match(renderForgetReceipt(ambiguous), /More than one memory matches — say which one to forget:/);
+
+  assert.equal(renderForgetReceipt(null), 'Nothing in memory matches that closely enough to forget.');
+  assert.equal(typeof renderForgetReceipt({ status: 'forgotten', forgotten: {} }), 'string');
+  assert.equal((await forgetMemory()).status, 'not_found');
 });

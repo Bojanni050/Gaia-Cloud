@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMemoryTool, withKeptNotifier, REMEMBER_TOOL, KEEP_TOOL, RETRACT_TOOL, SHARED_DOMAIN, OWN_DOMAIN } = require('../src/reasoning/memoryTool');
+const { createMemoryTool, withKeptNotifier, REMEMBER_TOOL, KEEP_TOOL, RETRACT_TOOL, FORGET_TOOL, SHARED_DOMAIN, OWN_DOMAIN } = require('../src/reasoning/memoryTool');
 
 function fakeHindsight(boomOn) {
   const calls = [];
@@ -154,7 +154,7 @@ test('retract_memory is offered when the banks are wired, and only then', async 
   const bank = { name: 'bojan', client: { async listMemories() { return []; } } };
   const withBanks = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
 
-  assert.deepEqual(withBanks.TOOLS.map((t) => t.function.name), ['remember', 'retract_memory']);
+  assert.deepEqual(withBanks.TOOLS.map((t) => t.function.name), ['remember', 'retract_memory', 'forget_memory']);
   assert.equal(RETRACT_TOOL.function.name, 'retract_memory');
   assert.deepEqual(RETRACT_TOOL.function.parameters.required, ['quote']);
 
@@ -164,6 +164,35 @@ test('retract_memory is offered when the banks are wired, and only then', async 
     await withoutBanks.onToolCall('retract_memory', { quote: 'Yassine is een vriend' }),
     'That could not be taken back right now.'
   );
+  assert.equal(
+    await withoutBanks.onToolCall('forget_memory', { quote: 'Yassine is een vriend' }),
+    'That could not be forgotten right now.'
+  );
+});
+
+test('forget_memory is the second half: the person asked, so it goes, and nothing is kept', async () => {
+  const patched = [];
+  const kept = [];
+  const bank = {
+    name: 'bojan',
+    client: {
+      async listMemories() { return [{ id: 'f1', text: 'Bo deed een afscheidsritueel met Luca', state: 'valid' }]; },
+      async patchMemoryState(id, state, reason) { patched.push({ id, state, reason }); },
+      async retainSync(payload) { kept.push(payload); },
+    },
+  };
+  const tool = createMemoryTool({ hindsight: fakeHindsight(), banks: [bank], home: bank });
+
+  const result = await tool.onToolCall('forget_memory', { quote: 'Bo deed een afscheidsritueel met Luca' });
+
+  assert.match(result, /^Forgotten: "Bo deed een afscheidsritueel met Luca"$/m);
+  assert.equal(result.includes('Kept instead'), false);
+  assert.deepEqual(patched, [{ id: 'f1', state: 'invalidated', reason: 'the person asked for this to be forgotten' }]);
+  assert.deepEqual(kept, []);
+
+  assert.equal(await tool.onToolCall('forget_memory', { quote: '   ' }), 'Nothing named to forget.');
+  assert.equal(FORGET_TOOL.function.name, 'forget_memory');
+  assert.deepEqual(FORGET_TOOL.function.parameters.required, ['quote']);
 });
 
 test('a retraction through the tool takes the memory back, and reports which one went', async () => {

@@ -274,6 +274,12 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   if (toolNames.includes('retract_memory')) {
     capabilities.push({ id: 'memory_retraction' });
   }
+  // Forgetting is a different verb from retracting: the person asked for it to
+  // go, and whether it was ever true is not the question. Same honesty rule —
+  // she may only claim it in a turn that actually carries the tool.
+  if (toolNames.includes('forget_memory')) {
+    capabilities.push({ id: 'memory_forgetting' });
+  }
   // Her OWN memory — Aion in the background, or the on-demand `keep` tool.
   if (aion || toolNames.includes('keep')) {
     capabilities.push({ id: 'own_memory' });

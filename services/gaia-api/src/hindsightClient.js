@@ -253,7 +253,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * retrieval goes through recall()).
    * @returns {Promise<Array<{ id:string, text:string, type:string|null, state:string|null,
    *   context:string|null, metadata:Record<string,string>|null, tags:string[],
-   *   documentId:string|null }>>}
+   *   documentId:string|null, sourceMemoryIds:string[] }>>}
    */
   async function listMemories({ type, q, documentId, state, limit = 100 } = {}) {
     const params = new URLSearchParams();
@@ -286,6 +286,11 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
       metadata: u.metadata || null,
       tags: u.tags || [],
       documentId: u.document_id || null,
+      // An `observation` is derived and cannot be curated directly (Hindsight
+      // answers 400: "only world/experience facts can be curated"); it is taken
+      // back through the facts it was derived from, so callers that curate need
+      // to know both what it is and what it came from.
+      sourceMemoryIds: Array.isArray(u.source_memory_ids) ? u.source_memory_ids : [],
     }));
   }
 
@@ -313,6 +318,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
       metadata: u.metadata || null,
       tags: u.tags || [],
       documentId: u.document_id || null,
+      sourceMemoryIds: Array.isArray(u.source_memory_ids) ? u.source_memory_ids : [],
     };
   }
 

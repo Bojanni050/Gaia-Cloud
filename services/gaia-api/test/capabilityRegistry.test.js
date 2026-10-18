@@ -132,6 +132,14 @@ test('memory_retraction is registered and renders when the retraction tool is th
   assert.match(block, /- memory_retraction: taking a memory back/);
 });
 
+test('memory_forgetting is registered and renders when the forget tool is there', () => {
+  const forgetting = getCapabilityProfile('memory_forgetting');
+  assert.ok(forgetting, 'memory_forgetting must be in the registry — awareness renders from it');
+  assert.equal(forgetting.type, 'capability');
+  const block = renderCapabilityAwareness([{ id: 'hindsight' }, { id: 'memory_forgetting' }]);
+  assert.match(block, /- memory_forgetting: forgetting something when the person asks you to/);
+});
+
 test('a turn with Hindsight recall, a memory tool and Aion tells Gaia she genuinely has all three', async () => {
   const { performTurn } = require('../src/turn');
   let captured = null;
@@ -157,7 +165,7 @@ test('a turn that carries the retraction tool tells Gaia she can take a memory b
   const { performTurn } = require('../src/turn');
   let captured = null;
   const generator = {
-    toolNames: ['remember', 'retract_memory'],
+    toolNames: ['remember', 'retract_memory', 'forget_memory'],
     generate: async (messages) => { captured = messages; return 'ok'; },
   };
   await performTurn({
@@ -170,6 +178,7 @@ test('a turn that carries the retraction tool tells Gaia she can take a memory b
   assert.ok(block, 'capability awareness block must be present');
   assert.match(block.content, /- memory:/);
   assert.match(block.content, /- memory_retraction: taking a memory back/);
+  assert.match(block.content, /- memory_forgetting: forgetting something when the person asks you to/);
   // And without the tool, she is not told she can — the claim must stay honest.
   let quiet = null;
   await performTurn({
@@ -181,6 +190,7 @@ test('a turn that carries the retraction tool tells Gaia she can take a memory b
   const quietBlock = (quiet || []).find((m) => m.role === 'system' && /Capabilities you genuinely have THIS turn/.test(m.content));
   assert.ok(quietBlock);
   assert.doesNotMatch(quietBlock.content, /memory_retraction/);
+  assert.doesNotMatch(quietBlock.content, /memory_forgetting/);
 });
 
 // --- §10/§18: skill + capability validation -------------------------------------
