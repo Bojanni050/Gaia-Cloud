@@ -448,3 +448,27 @@ test('an ordinary conjugation of a life event still carries', () => {
 test('a momentary possession still stays out of memory', () => {
   assert.equal(evaluate('Ik heb een rode trui aan').action, 'discard');
 });
+
+// --- 20-10-2026: een gewoonte is een voorkeur, geen moment ---------------
+
+test('a standing habit is a preference, not a momentary context', () => {
+  const r = evaluate('Ik drink koffie zonder suiker');
+  assert.equal(r.action, 'retain', `${r.action} ${r.score}`);
+  assert.ok(r.reasons.includes('standing_habit'), r.reasons.join(','));
+});
+
+test('a habit about food or smoking counts the same way', () => {
+  for (const text of ['Ik eet geen vlees', 'Ik rook niet', 'Ik neem altijd koffie zwart']) {
+    const r = evaluate(text);
+    assert.equal(r.action, 'retain', `${text} -> ${r.action} ${r.score}`);
+    assert.ok(r.reasons.includes('standing_habit'), text);
+  }
+});
+
+test('the moment itself stays out, and a plan is not a habit', () => {
+  for (const text of ['Ik ga even koffie halen', 'Ik zet even koffie', 'Ik heb net koffie gezet']) {
+    assert.equal(evaluate(text).action, 'discard', text);
+  }
+  const plan = evaluate('Ik eet vanavond met mijn zus');
+  assert.ok(!plan.reasons.includes('standing_habit'), plan.reasons.join(','));
+});

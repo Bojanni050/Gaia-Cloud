@@ -98,6 +98,18 @@ const SIGNALS = Object.freeze({
     /\bhou (ervan|van)\b/i, /\bhoud (ervan|van)\b/i, /\bik vind .{0,30} (beter|leuker|mooier|prettiger)\b/i,
     /\bi prefer\b/i, /\bi like\b/i, /\bi love\b/i,
   ],
+  /**
+   * Standing habits — the way someone lives, not what they are doing now.
+   * A present-tense habit verb plus a qualifier that describes a standing
+   * state. The qualifier is what makes it durable: "ik drink koffie zonder
+   * suiker", "ik eet geen vlees", "ik rook niet". `met` is deliberately
+   * absent — "ik eet met mijn zus" is a plan, and a plan has its own
+   * signals.
+   */
+  standingHabit: [
+    /\bik (?:drink|eet|neem|gebruik|rook|ontbijt|sport|train|draag|rijd|fiets|speel|bespeel)\b[^.!?]{0,40}\b(?:zonder|geen|niet|altijd|nooit|meestal|graag|het liefst|dagelijks|wekelijks|elke (?:dag|ochtend|avond|week|maand)|'s (?:ochtends|avonds))\b/i,
+    /\bi (?:drink|eat|take|use|smoke)\b[^.!?]{0,40}\b(?:without|no|never|always|every day|mostly)\b/i,
+  ],
   /** Corrections / contradictions of what Gaia may believe (§8 priority). */
   correction: [
     /\bklopt niet\b/i, /\bniet meer\b/i, /\beigenlijk\b/i, /\bdat is fout\b/i,
@@ -368,6 +380,13 @@ function evaluateMemoryWorthiness(input = {}) {
     d.novelty = Math.max(d.novelty, 1);
     reasons.push('explicit_preference');
   }
+  if (hasSignal(text, SIGNALS.standingHabit)) {
+    // Same durability as a preference, phrased as a routine.
+    d.personalRelevance = Math.max(d.personalRelevance, 2);
+    d.futureUtility = Math.max(d.futureUtility, 2);
+    d.persistence = Math.max(d.persistence, 2);
+    reasons.push('standing_habit');
+  }
   if (hasSignal(text, SIGNALS.personalFact)) {
     d.personalRelevance = Math.max(d.personalRelevance, 3);
     d.persistence = Math.max(d.persistence, 2);
@@ -498,7 +517,12 @@ function evaluateMemoryWorthiness(input = {}) {
     reasons.push('durable_plan_or_routine');
   }
   // Rule D — a NEW preference is durable knowledge; a REPEATED one is not (§5).
-  if (hasSignal(text, SIGNALS.preference) && d.explicitRecallRequest < 2 && d.correctionValue < 2) {
+  // A standing habit is the same durable stance, only phrased as a routine
+  // ("ik drink koffie zonder suiker"), so it gets the same floor.
+  if (
+    (hasSignal(text, SIGNALS.preference) || hasSignal(text, SIGNALS.standingHabit))
+    && d.explicitRecallRequest < 2 && d.correctionValue < 2
+  ) {
     if (isDuplicate) { score = Math.min(score, LOW_PRIORITY_SCORE + 0.05); }
     else score = Math.max(score, RETAIN_SCORE);
   }
