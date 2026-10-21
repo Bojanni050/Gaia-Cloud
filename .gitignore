@@ -111,3 +111,4 @@ src-tauri/WixTools/
 # source and the FreeFileSync database stay local.
 docs/Project Gaia/Project Gaia - Main Document.docx
 docs/Project Gaia/sync.ffs_db
+gaia_token.txt
