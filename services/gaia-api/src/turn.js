@@ -1266,6 +1266,9 @@ async function runDeferredCognition({
       // ids Logos cited still mean something (see reasoning/cognitionSink.js).
       hypothesisRuntime.manager.applyReasoningResult(reasoningResult, {
         evidence: Array.isArray(evidence) ? evidence : [],
+        // The turn's own clock, carried into every snapshot: a later pass can
+        // then tell "seen again" from "seen twice in the same breath".
+        observedAt: new Date(now).toISOString(),
       });
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
@@ -1299,10 +1302,17 @@ async function runDeferredCognition({
       // The three kinds, and the items inside each, are independent writes to
       // Cognition/Foundation, so they go out together. One failed item is
       // logged and never stops the others.
+      const turnContext = {
+        evidence: Array.isArray(evidence) ? evidence : [],
+        // The turn's own clock: an observation's moment is when it was seen,
+        // not when this deferred phase happens to run.
+        observedAt: new Date(now).toISOString(),
+        conversationId,
+      };
       const retainAll = async (retain, items, label, timingKey, countKey) => {
         if (typeof retain !== 'function' || items.length === 0) return;
         timing.start(timingKey);
-        const settled = await Promise.allSettled(items.map((item) => retain(item)));
+        const settled = await Promise.allSettled(items.map((item) => retain(item, turnContext)));
         for (const result of settled) {
           if (result.status === 'rejected') {
             const message = result.reason && result.reason.message ? result.reason.message : result.reason;

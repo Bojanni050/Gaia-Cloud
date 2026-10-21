@@ -75,6 +75,29 @@ test('saveHypothesis sends no snapshot at all when the turn resolved none', asyn
   assert.equal('evidence_items' in cognition.calls[0][1], false);
 });
 
+test('saveHypothesis keeps the store-side identity and the moment, not just the quote', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.save(
+    { id: 'hyp-1', statement: 'x', evidenceFor: ['hindsight-1'] },
+    {
+      evidence: [{ id: 'hindsight-1', source: 'hindsight', sourceRef: 'fact-88', content: 'They asked for short answers.' }],
+      observedAt: '2026-10-21T22:10:00.000Z',
+    },
+  );
+
+  // The local id locates the quote, sourceRef says what it is about over time,
+  // observedAt says when it was seen — a later pass needs all three.
+  assert.deepEqual(cognition.calls[0][1].evidence_items, [{
+    id: 'hindsight-1',
+    source: 'hindsight',
+    sourceRef: 'fact-88',
+    observedAt: '2026-10-21T22:10:00.000Z',
+    content: 'They asked for short answers.',
+  }]);
+});
+
 test('saveHypothesis carries the counter-hypothesis and scope into Cognition', async () => {
   const cognition = fakeCognition();
   const sink = createCognitionSink({ cognition, sync: null });

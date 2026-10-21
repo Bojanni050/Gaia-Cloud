@@ -761,15 +761,15 @@ function createHypothesisManager(options = {}) {
    * updates. This is the ONLY way reasoning output enters state — there is
    * no path where the model mutates a hypothesis directly.
    * @param {object} reasoningResult a validated ReasoningResult (0.3 adds hypothesisUpdates)
-   * @param {{ evidence?: Array<{id: string, source?: string, content?: string}> }} [context]
+   * @param {{ evidence?: Array<{id: string, source?: string, sourceRef?: string, content?: string}>, observedAt?: string }} [context]
    *   the turn's assembled evidence. Nothing else in the system still knows
    *   what an id like `hindsight-1` pointed at, so it is handed to the sink
    *   here, once, on its way to being stored beside the citation.
    * @returns {{ applied: object[] }} audit records
    */
-  function applyReasoningResult(reasoningResult, { evidence } = {}) {
+  function applyReasoningResult(reasoningResult, context = {}) {
     const applied = [];
-    const sinkContext = { evidence };
+    const sinkContext = context;
     const resultHyps = Array.isArray(reasoningResult && reasoningResult.hypotheses) ? reasoningResult.hypotheses : [];
     const idFor = new Map(); // result-hypothesis -> managed id
 

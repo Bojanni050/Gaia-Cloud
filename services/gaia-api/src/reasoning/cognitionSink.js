@@ -24,47 +24,12 @@
  * Pure mapping. No reasoning.
  */
 
+const { indexEvidence, snapshotsFor } = require('./evidenceSnapshots');
 function createCognitionSink({ cognition, sync } = {}) {
   if (!cognition) throw new Error('cognitionSink requires a cognition client');
 
   const hypIdMap = new Map();     // manager hyp id -> cognition id
   const patternIdMap = new Map(); // manager pattern id -> cognition id
-
-  /**
-   * The turn's assembled evidence (reasoning/evidenceAssembler.js) as a lookup
-   * by its local id. This is the only place those ids still mean something:
-   * after the turn, `hindsight-1` is just a label. Passing it on with the id is
-   * what lets a stored citation carry the sentence behind it.
-   */
-  function indexEvidence(items) {
-    const index = new Map();
-    for (const item of Array.isArray(items) ? items : []) {
-      if (!item || item.id == null) continue;
-      const content = typeof item.content === 'string' ? item.content.trim() : '';
-      if (!content) continue;
-      index.set(String(item.id), {
-        id: String(item.id),
-        source: item.source || null,
-        content,
-      });
-    }
-    return index;
-  }
-
-  /** Snapshots for exactly the ids a record cites — nothing more is kept. */
-  function snapshotsFor(index, ids) {
-    if (!index || index.size === 0) return [];
-    const snapshots = [];
-    const seen = new Set();
-    for (const id of Array.isArray(ids) ? ids : []) {
-      const key = String(id);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const item = index.get(key);
-      if (item) snapshots.push(item);
-    }
-    return snapshots;
-  }
 
   async function mirrorHypothesis(record) {
     if (!sync || !record) return;
@@ -77,11 +42,11 @@ function createCognitionSink({ cognition, sync } = {}) {
 
   // --- hypotheses ---------------------------------------------------------
 
-  async function saveHypothesis(next, { evidence } = {}) {
+  async function saveHypothesis(next, { evidence, observedAt } = {}) {
     // The evidence the record cites, captured while the turn still holds it.
     // Omitted entirely when nothing resolved, so a record that arrived without
     // a snapshot is not rewritten to an empty one.
-    const snapshots = snapshotsFor(indexEvidence(evidence), [...(next.evidenceFor || []), ...(next.evidenceAgainst || [])]);
+    const snapshots = snapshotsFor(indexEvidence(evidence, observedAt), [...(next.evidenceFor || []), ...(next.evidenceAgainst || [])]);
     const record = await cognition.proposeHypothesis({
       statement: next.statement,
       confidence: next.confidence,
@@ -100,7 +65,7 @@ function createCognitionSink({ cognition, sync } = {}) {
     return record;
   }
 
-  async function updateHypothesis(id, next, prev, { evidence } = {}) {
+  async function updateHypothesis(id, next, prev, { evidence, observedAt } = {}) {
     const cid = hypIdMap.get(String(id)) || String(id);
     const before = prev || {};
     let record = null;
@@ -120,7 +85,7 @@ function createCognitionSink({ cognition, sync } = {}) {
 
     const prevFor = new Set(before.evidenceFor || []);
     const prevAgainst = new Set(before.evidenceAgainst || []);
-    const evidenceIndex = indexEvidence(evidence);
+    const evidenceIndex = indexEvidence(evidence, observedAt);
     for (const evidenceId of next.evidenceFor || []) {
       if (prevFor.has(evidenceId)) continue;
       record = await cognition.applyEvidence(cid, {

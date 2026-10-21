@@ -20,6 +20,7 @@
  */
 
 const { normalizeOpenQuestion } = require('../logos/logosValidate');
+const { indexEvidence, snapshotsFor } = require('./evidenceSnapshots');
 
 function renderRelationship(relationship) {
   const from = `${relationship.fromKind}:${relationship.fromId != null ? relationship.fromId : relationship.fromStatement}`;
@@ -46,8 +47,20 @@ function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
     return record;
   }
 
-  /** A concrete derived observation → Foundation's observation stream. */
-  async function retainObservation(observation) {
+  /**
+   * A concrete derived observation → Foundation's observation stream, and a
+   * second, evidence-linked copy into Cognition as the working set a formation
+   * pass can aggregate.
+   *
+   * The two are not the same record twice: Foundation keeps the raw moment
+   * (unlinked, `gaia-observation`), while Cognition keeps it with the assembled
+   * evidence it stood on. Only the linked form can answer "is this the same
+   * ground as last week?", because only it carries sourceRef and the moment.
+   *
+   * @param {object} observation `{ statement, evidence: [{ id, source }] }`
+   * @param {{ evidence?: Array<object>, conversationId?: string, observedAt?: string }} [turn]
+   */
+  async function retainObservation(observation, { evidence, conversationId, observedAt } = {}) {
     const statement = String((observation && observation.statement) || '').trim();
     if (!statement) throw new Error('observation statement is required');
     if (foundation && typeof foundation.submitObservation === 'function') {
@@ -57,8 +70,26 @@ function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
         tags: ['gaia-observation'],
       });
     }
-    // Never a Hindsight write: an observation is a raw record in Foundation.
-    return { submitted: Boolean(foundation) };
+    // Provenance: only the ids the model actually named, resolved against the
+    // evidence the turn really offered — an invented id has nothing to resolve.
+    const cited = (Array.isArray(observation && observation.evidence) ? observation.evidence : [])
+      .map((item) => (item && item.id != null ? String(item.id) : null))
+      .filter(Boolean);
+    const index = indexEvidence(evidence, observedAt);
+    const snapshots = snapshotsFor(index, cited);
+    try {
+      await cognition.createObservation({
+        statement,
+        ...(snapshots.length > 0 ? { evidence_items: snapshots } : {}),
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+        ...(observedAt ? { observed_at: observedAt } : {}),
+      });
+    } catch (err) {
+      // The raw record is already safe with Foundation; the linked working set
+      // is best-effort, like every other write in this phase.
+      console.warn(`[gaia:observations] linked copy failed (non-fatal): ${err && err.message}`);
+    }
+    return { submitted: Boolean(foundation), linked: snapshots.length };
   }
 
   /**

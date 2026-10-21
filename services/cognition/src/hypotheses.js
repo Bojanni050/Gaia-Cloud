@@ -30,6 +30,7 @@
  * Logos's sync job mirrors Cognition into the derived knowledge store.
  */
 const { pool } = require('./db/pool');
+const { sanitizeEvidenceItems, mergeEvidenceItems } = require('./evidenceItems');
 const { NotFoundError, InvalidTransitionError, ValidationError } = require('./errors');
 
 const KINDS = ['hypothesis', 'mental_model', 'relationship', 'open_question'];
@@ -100,41 +101,6 @@ function assertQuestionShape(shape) {
   if (shape !== undefined && shape !== null && !QUESTION_SHAPES.includes(shape)) {
     throw new ValidationError(`unknown question_shape: ${shape}`);
   }
-}
-
-/**
- * The snapshot of one cited evidence item: which id it is, where it came from,
- * and what it said. `id` is the only thing that ties it back to
- * evidence_for / evidence_against — the relation stays in those two lists, so
- * it is stored once and never duplicated here.
- *
- * Entries without an id or without text are dropped: a citation nobody can
- * read is exactly the situation this column exists to end.
- */
-function sanitizeEvidenceItems(items) {
-  const seen = new Set();
-  const clean = [];
-  for (const item of Array.isArray(items) ? items : []) {
-    if (!item || typeof item !== 'object') continue;
-    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : null;
-    const content = typeof item.content === 'string' ? item.content.trim() : '';
-    if (!id || !content || seen.has(id)) continue;
-    seen.add(id);
-    clean.push({
-      id,
-      source: typeof item.source === 'string' && item.source.trim() ? item.source.trim() : null,
-      content,
-    });
-  }
-  return clean;
-}
-
-/** Merge snapshots by id — a later capture of the same id never duplicates it. */
-function mergeEvidenceItems(existing, incoming) {
-  const byId = new Map();
-  for (const item of sanitizeEvidenceItems(existing)) byId.set(item.id, item);
-  for (const item of sanitizeEvidenceItems(incoming)) byId.set(item.id, item);
-  return [...byId.values()];
 }
 
 const COLUMNS = `

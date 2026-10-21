@@ -122,6 +122,23 @@ function createCognitionClient({
     ...(answer !== undefined ? { answer } : {}),
   });
 
+  // --- Observations (raw derived material, awaiting aggregation) ---
+  // No lifecycle: an observation is a record of a moment, kept with the
+  // assembled evidence it stood on so a later pass can group by what it was
+  // about instead of by how the sentence was worded.
+  const listObservations = (query = {}) => {
+    const params = new URLSearchParams();
+    if (query.consumed) params.set('consumed', 'true');
+    if (query.limit) params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params}` : '';
+    return request('GET', `/observations${suffix}`).then((r) => (r && r.observations) || []);
+  };
+  const createObservation = (record) => request('POST', '/observations', record);
+  const markObservationsConsumed = ({ ids, hypothesisId } = {}) => request('POST', '/observations/consumed', {
+    ids,
+    ...(hypothesisId ? { hypothesis_id: hypothesisId } : {}),
+  });
+
   // --- Patterns ---
   const listPatterns = () => request('GET', '/patterns').then((r) => (r && r.patterns) || []);
   const getPattern = (id) => request('GET', `/patterns/${encodeURIComponent(id)}`);
@@ -160,6 +177,9 @@ function createCognitionClient({
     correctHypothesis,
     supersedeHypothesis,
     answerHypothesis,
+    listObservations,
+    createObservation,
+    markObservationsConsumed,
     listPatterns,
     getPattern,
     createPattern,
