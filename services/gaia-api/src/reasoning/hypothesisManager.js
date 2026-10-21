@@ -332,15 +332,15 @@ function createHypothesisManager(options = {}) {
     }
   }
 
-  function persistSave(hyp) {
+  function persistSave(hyp, context) {
     try {
-      if (typeof sink.save === 'function') settleSinkCall(sink.save({ ...hyp }));
+      if (typeof sink.save === 'function') settleSinkCall(sink.save({ ...hyp }, context));
     } catch (_) { /* persistence must never break reasoning-state upkeep */ }
   }
 
-  function persistUpdate(prev, hyp) {
+  function persistUpdate(prev, hyp, context) {
     try {
-      if (typeof sink.update === 'function') settleSinkCall(sink.update(hyp.id, { ...hyp }, prev ? { ...prev } : null));
+      if (typeof sink.update === 'function') settleSinkCall(sink.update(hyp.id, { ...hyp }, prev ? { ...prev } : null, context));
     } catch (_) { /* same posture */ }
   }
 
@@ -672,7 +672,7 @@ function createHypothesisManager(options = {}) {
    * contradiction on a confirmed hypothesis automatically demotes it to
    * testing (§9) — never silently left confirmed.
    */
-  function applyUpdate(update = {}) {
+  function applyUpdate(update = {}, context) {
     const h = update.hypothesisId ? byId.get(update.hypothesisId) : null;
     if (!h) return makeAudit({ accepted: false, reason: `unknown hypothesis: ${update.hypothesisId}` });
     const relation = update.relation;
@@ -720,7 +720,7 @@ function createHypothesisManager(options = {}) {
       stampStatus(h, settled, 'testing', h.updatedAt);
       h.status = 'testing';
       h.history.push({ from: settled, to: 'testing', at: h.updatedAt, rationale: 'contradicting evidence arrived' });
-      persistUpdate(prev, h);
+      persistUpdate(prev, h, context);
       audits.push(makeAudit({
         hypothesisId: h.id, from: settled, to: 'testing',
         relation, evidenceId: update.evidenceId || null,
@@ -745,7 +745,7 @@ function createHypothesisManager(options = {}) {
     // through its own transition(); when it fired, the trailing persist below
     // would only repeat the same diff.
     const promoted = softPromote(h);
-    if (!promoted) persistUpdate(prev, h);
+    if (!promoted) persistUpdate(prev, h, context);
     audits.push(makeAudit({
       hypothesisId: h.id, from: prev.status, to: h.status,
       relation, evidenceId: update.evidenceId || null,
@@ -761,10 +761,15 @@ function createHypothesisManager(options = {}) {
    * updates. This is the ONLY way reasoning output enters state — there is
    * no path where the model mutates a hypothesis directly.
    * @param {object} reasoningResult a validated ReasoningResult (0.3 adds hypothesisUpdates)
+   * @param {{ evidence?: Array<{id: string, source?: string, content?: string}> }} [context]
+   *   the turn's assembled evidence. Nothing else in the system still knows
+   *   what an id like `hindsight-1` pointed at, so it is handed to the sink
+   *   here, once, on its way to being stored beside the citation.
    * @returns {{ applied: object[] }} audit records
    */
-  function applyReasoningResult(reasoningResult) {
+  function applyReasoningResult(reasoningResult, { evidence } = {}) {
     const applied = [];
+    const sinkContext = { evidence };
     const resultHyps = Array.isArray(reasoningResult && reasoningResult.hypotheses) ? reasoningResult.hypotheses : [];
     const idFor = new Map(); // result-hypothesis -> managed id
 
@@ -839,7 +844,7 @@ function createHypothesisManager(options = {}) {
           target.history.push({ from, to: 'testing', at: iso, rationale: from === 'expired' ? 'evidence arrived after the lapse' : 'first evidence linked' });
         }
         // Persist AFTER the merge — v1 carries its provenance and state.
-        persistSave(target);
+        persistSave(target, sinkContext);
         // V3 soft-promotion: a fresh micro claim that arrived at the
         // threshold with linked evidence may reach the machine tier in this
         // same turn (the sink walks the store testing → corroborated).
@@ -849,7 +854,7 @@ function createHypothesisManager(options = {}) {
         || JSON.stringify(prevSnapshot.evidenceAgainst) !== JSON.stringify(target.evidenceAgainst))) {
         // An EXISTING hypothesis gained links/confidence without an explicit
         // update row — still a persisted-state change.
-        persistUpdate(prevSnapshot, target);
+        persistUpdate(prevSnapshot, target, sinkContext);
         // The same confidence may have crossed the micro threshold without an
         // explicit evidence verdict; the promotion is a state change of its own.
         softPromote(target);
@@ -862,7 +867,7 @@ function createHypothesisManager(options = {}) {
       : [];
     for (const u of updates) {
       const managedId = u.hypothesisId;
-      applied.push(applyUpdate({ ...u, hypothesisId: managedId }));
+      applied.push(applyUpdate({ ...u, hypothesisId: managedId }, sinkContext));
     }
     return { applied };
   }

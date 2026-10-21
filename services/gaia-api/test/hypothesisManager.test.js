@@ -512,6 +512,35 @@ test('fresh proposals with linked evidence enter testing on creation of applyRea
   assert.equal(h.status, 'testing');
 });
 
+test('applyReasoningResult hands the turn\'s evidence to the sink, so a citation keeps its words', () => {
+  const saved = [];
+  const m = createHypothesisManager({
+    sink: { save: (hyp, context) => { saved.push({ hyp, context }); } },
+  });
+
+  m.applyReasoningResult(
+    { hypotheses: [{ statement: 'Brand new but already evidenced.', confidence: 0.6, evidenceFor: ['upload-1'] }], hypothesisUpdates: [] },
+    { evidence: [{ id: 'upload-1', source: 'upload', content: 'A document they handed over.' }] },
+  );
+
+  assert.equal(saved.length, 1);
+  assert.deepEqual(saved[0].context.evidence, [
+    { id: 'upload-1', source: 'upload', content: 'A document they handed over.' },
+  ]);
+});
+
+test('applyReasoningResult without a turn still saves — the snapshot is optional', () => {
+  const saved = [];
+  const m = createHypothesisManager({
+    sink: { save: (hyp, context) => { saved.push({ hyp, context }); } },
+  });
+
+  m.applyReasoningResult({ hypotheses: [{ statement: 'No evidence in hand.', confidence: 0.5 }], hypothesisUpdates: [] });
+
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].context.evidence, undefined);
+});
+
 // === Stash-concept adoption: method / rejectionReason / timeline / promotion ===
 
 const { HYPOTHESIS_METHODS } = require('../src/reasoning/hypothesisManager');

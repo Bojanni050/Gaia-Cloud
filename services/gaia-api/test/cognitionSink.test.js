@@ -40,6 +40,41 @@ test('saveHypothesis proposes into Cognition with the manager fields and mirrors
   assert.equal(synced.length, 1);
 });
 
+test('saveHypothesis keeps the words behind the citations, and only those', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.save(
+    {
+      id: 'hyp-1', statement: 'x', confidence: 0.6,
+      evidenceFor: ['hindsight-1'], evidenceAgainst: ['turn-2'], persistence: 'durable', method: 'derived',
+    },
+    {
+      evidence: [
+        { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' },
+        { id: 'turn-2', source: 'conversation', content: 'They pasted a wall of text.' },
+        { id: 'upload-9', source: 'upload', content: 'not cited by this record' },
+      ],
+    },
+  );
+
+  assert.deepEqual(cognition.calls[0][1].evidence_items, [
+    { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' },
+    { id: 'turn-2', source: 'conversation', content: 'They pasted a wall of text.' },
+  ]);
+});
+
+test('saveHypothesis sends no snapshot at all when the turn resolved none', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  // A promotion/expiry scan re-saves a record it did not derive: it has no
+  // evidence in hand, and must not rewrite what the record already kept.
+  await sink.hypothesis.save({ id: 'hyp-1', statement: 'x', evidenceFor: ['hindsight-1'] });
+
+  assert.equal('evidence_items' in cognition.calls[0][1], false);
+});
+
 test('saveHypothesis carries the counter-hypothesis and scope into Cognition', async () => {
   const cognition = fakeCognition();
   const sink = createCognitionSink({ cognition, sync: null });
@@ -83,6 +118,24 @@ test('updateHypothesis sends evidence verdicts and the lifecycle verb, never con
   const contradictCall = cognition.calls.find((c) => c[0] === 'evidence' && c[2].relation === 'contradicts');
   assert.equal(supportCall[2].evidenceId, 'm1');
   assert.equal(contradictCall[2].evidenceId, 'm2');
+});
+
+test('updateHypothesis hands each new citation the words that came with it', async () => {
+  const cognition = fakeCognition();
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.update('c9', {
+    id: 'c9', status: 'testing', evidenceFor: [], evidenceAgainst: ['turn-2'], confidence: 0.4,
+  }, {
+    id: 'c9', status: 'testing', evidenceFor: [], evidenceAgainst: [], confidence: 0.5,
+  }, {
+    evidence: [{ id: 'turn-2', source: 'conversation', content: 'They said the opposite yesterday.' }],
+  });
+
+  const contradictCall = cognition.calls.find((c) => c[0] === 'evidence' && c[2].relation === 'contradicts');
+  assert.deepEqual(contradictCall[2].evidenceItem, {
+    id: 'turn-2', source: 'conversation', content: 'They said the opposite yesterday.',
+  });
 });
 
 test('updateHypothesis patches a statement change and a persistence change', async () => {

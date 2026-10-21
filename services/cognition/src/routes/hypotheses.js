@@ -16,6 +16,7 @@ router.post('/', asyncRoute(async (req, res) => {
     evidenceMemoryIds: req.body.evidence_memory_ids,
     evidenceFor: req.body.evidence_for,
     evidenceAgainst: req.body.evidence_against,
+    evidenceItems: req.body.evidence_items,
     persistence: req.body.persistence,
     method: req.body.method,
     sources: req.body.sources,
@@ -49,6 +50,7 @@ router.patch('/:id', asyncRoute(async (req, res) => {
     evidenceMemoryIds: req.body.evidence_memory_ids,
     evidenceFor: req.body.evidence_for,
     evidenceAgainst: req.body.evidence_against,
+    evidenceItems: req.body.evidence_items,
     persistence: req.body.persistence,
     method: req.body.method,
     sources: req.body.sources,
@@ -70,6 +72,7 @@ router.post('/:id/evidence', asyncRoute(async (req, res) => {
   const h = await hypotheses.applyEvidence(bankId, id, {
     relation: req.body.relation,
     evidenceId: req.body.evidence_id,
+    evidenceItem: req.body.evidence_item,
     confidenceDelta: req.body.confidence_delta,
     rationale: req.body.rationale,
   });

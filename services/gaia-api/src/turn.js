@@ -1262,7 +1262,11 @@ async function runDeferredCognition({
       );
     } catch (_) {}
     try {
-      hypothesisRuntime.manager.applyReasoningResult(reasoningResult);
+      // The turn's assembled evidence rides along: it is the last moment the
+      // ids Logos cited still mean something (see reasoning/cognitionSink.js).
+      hypothesisRuntime.manager.applyReasoningResult(reasoningResult, {
+        evidence: Array.isArray(evidence) ? evidence : [],
+      });
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
     }

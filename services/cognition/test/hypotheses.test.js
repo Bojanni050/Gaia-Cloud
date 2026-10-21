@@ -80,6 +80,31 @@ test('propose() carries evidence, persistence and method', async () => {
   assert.equal(fake.calls[0].params[8], 'derived');  // method
 });
 
+test('propose() keeps the snapshot of what the cited evidence said', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ evidence_items: [{ id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' }] })] }));
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.propose('gaia', {
+    statement: 'x',
+    evidenceFor: ['hindsight-1'],
+    evidenceItems: [
+      { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' },
+      { id: 'ghost', content: '   ' },              // no text → dropped
+      { content: 'no id → dropped' },
+      { id: 'hindsight-1', content: 'a duplicate id is never stored twice' },
+    ],
+  });
+
+  assert.deepEqual(h.evidence_items, [
+    { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' },
+  ]);
+  // Stored once, cleaned, as JSON — the ids in evidence_for keep the relation.
+  assert.deepEqual(JSON.parse(fake.calls[0].params[16]), [
+    { id: 'hindsight-1', source: 'hindsight', content: 'They asked for short answers.' },
+  ]);
+});
+
 test('propose() carries the counter-hypothesis and scope', async () => {
   const fake = makeFakePool();
   fake.setImpl(async () => ({ rows: [row({ counter_hypothesis: 'the opposite reading', scope: 'micro' })] }));
@@ -455,6 +480,56 @@ test('applyEvidence: contradicts demotes a confirmed statement back to testing',
   assert.equal(h.status, 'testing');
   assert.deepEqual(h.evidence_against, ['m9']);
   assert.equal(fake.calls[1].params[4], 0.75); // 0.9 - default 0.15
+});
+
+test('applyEvidence: keeps what the cited item said, beside the id', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) {
+      return {
+        rows: [row({
+          status: 'proposed',
+          evidence_against: [],
+          evidence_items: [{ id: 'model-1', source: 'hindsight', content: 'An older note.' }],
+        })],
+      };
+    }
+    return { rows: [row({ status: 'testing' })] };
+  });
+  pool.query = fake.pool.query;
+
+  await hypotheses.applyEvidence('gaia', 'h1', {
+    relation: 'contradicts',
+    evidenceId: 'turn-2',
+    evidenceItem: { id: 'turn-2', source: 'conversation', content: 'They said the opposite yesterday.' },
+  });
+
+  const stored = JSON.parse(fake.calls[1].params[7]); // evidence_items
+  assert.deepEqual(stored, [
+    { id: 'model-1', source: 'hindsight', content: 'An older note.' },
+    { id: 'turn-2', source: 'conversation', content: 'They said the opposite yesterday.' },
+  ]);
+});
+
+test('applyEvidence: an item-less verdict leaves the snapshots it already has untouched', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) {
+      return { rows: [row({ status: 'proposed', evidence_items: [{ id: 'model-1', source: 'hindsight', content: 'An older note.' }] })] };
+    }
+    return { rows: [row({ status: 'testing' })] };
+  });
+  pool.query = fake.pool.query;
+
+  await hypotheses.applyEvidence('gaia', 'h1', { relation: 'supports', evidenceId: 'hindsight-9' });
+
+  assert.deepEqual(JSON.parse(fake.calls[1].params[7]), [
+    { id: 'model-1', source: 'hindsight', content: 'An older note.' },
+  ]);
 });
 
 test('applyEvidence: rejects an unknown relation and never confirms', async () => {

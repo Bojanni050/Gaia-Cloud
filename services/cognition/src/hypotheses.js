@@ -102,9 +102,44 @@ function assertQuestionShape(shape) {
   }
 }
 
+/**
+ * The snapshot of one cited evidence item: which id it is, where it came from,
+ * and what it said. `id` is the only thing that ties it back to
+ * evidence_for / evidence_against — the relation stays in those two lists, so
+ * it is stored once and never duplicated here.
+ *
+ * Entries without an id or without text are dropped: a citation nobody can
+ * read is exactly the situation this column exists to end.
+ */
+function sanitizeEvidenceItems(items) {
+  const seen = new Set();
+  const clean = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || typeof item !== 'object') continue;
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : null;
+    const content = typeof item.content === 'string' ? item.content.trim() : '';
+    if (!id || !content || seen.has(id)) continue;
+    seen.add(id);
+    clean.push({
+      id,
+      source: typeof item.source === 'string' && item.source.trim() ? item.source.trim() : null,
+      content,
+    });
+  }
+  return clean;
+}
+
+/** Merge snapshots by id — a later capture of the same id never duplicates it. */
+function mergeEvidenceItems(existing, incoming) {
+  const byId = new Map();
+  for (const item of sanitizeEvidenceItems(existing)) byId.set(item.id, item);
+  for (const item of sanitizeEvidenceItems(incoming)) byId.set(item.id, item);
+  return [...byId.values()];
+}
+
 const COLUMNS = `
   id, bank_id, kind, statement, confidence, status, verification_plan,
-  evidence_memory_ids, evidence_for, evidence_against, persistence, method,
+  evidence_memory_ids, evidence_for, evidence_against, evidence_items, persistence, method,
   sources, supersedes_id, superseded_by_id,
   counter_hypothesis, scope, question_shape, question_options, answer, answered_at,
   confirmed_document_id, rejection_reason, verwerp_bron,
@@ -114,7 +149,7 @@ const COLUMNS = `
 
 async function propose(bankId, {
   statement, confidence = 0.5, verificationPlan = '', evidenceMemoryIds = [],
-  evidenceFor = [], evidenceAgainst = [], persistence = 'ephemeral', method = 'asserted',
+  evidenceFor = [], evidenceAgainst = [], evidenceItems = [], persistence = 'ephemeral', method = 'asserted',
   sources = [], kind = 'hypothesis', supersedesId = null,
   counterHypothesis = null, scope = undefined,
   questionShape = null, questionOptions = [],
@@ -134,13 +169,13 @@ async function propose(bankId, {
     `INSERT INTO hypotheses
        (bank_id, statement, confidence, verification_plan, evidence_memory_ids,
         evidence_for, evidence_against, persistence, method, sources, kind, supersedes_id,
-        counter_hypothesis, scope, question_shape, question_options)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'macro'), $15, $16)
+        counter_hypothesis, scope, question_shape, question_options, evidence_items)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'macro'), $15, $16, $17)
      RETURNING ${COLUMNS}`,
     [bankId, statement, confidence, verificationPlan, evidenceMemoryIds,
       evidenceFor, evidenceAgainst, persistence, method, sources, kind, supersedesId,
       (typeof counterHypothesis === 'string' && counterHypothesis.trim()) ? counterHypothesis.trim() : null,
-      scope ?? null, questionShape, options],
+      scope ?? null, questionShape, options, JSON.stringify(sanitizeEvidenceItems(evidenceItems))],
   );
   return rows[0];
 }
@@ -177,7 +212,7 @@ async function get(bankId, id) {
 /** Update statement/confidence/verification_plan/sources/evidence/persistence/method. From `testing` or `corroborated`, this is a refine and resets status to `proposed` (mirrors Stash's RefineHypothesis). */
 async function update(bankId, id, {
   statement, confidence, verificationPlan, evidenceMemoryIds,
-  evidenceFor, evidenceAgainst, persistence, method, sources,
+  evidenceFor, evidenceAgainst, evidenceItems, persistence, method, sources,
   counterHypothesis, scope,
 } = {}) {
   assertPersistence(persistence);
@@ -191,6 +226,11 @@ async function update(bankId, id, {
   const refines = (current.status === 'testing' || current.status === 'corroborated')
     && statement !== undefined && statement !== null && String(statement) !== current.statement;
   const nextStatus = refines ? 'proposed' : current.status;
+  // A patch carries only the snapshots it actually resolved; whatever the
+  // record already holds is kept, never replaced by an emptier view.
+  const nextEvidenceItems = (evidenceItems === undefined || evidenceItems === null)
+    ? null
+    : JSON.stringify(mergeEvidenceItems(current.evidence_items, evidenceItems));
   const { rows } = await pool.query(
     `UPDATE hypotheses SET
        statement = COALESCE($3, statement),
@@ -204,6 +244,7 @@ async function update(bankId, id, {
        method = COALESCE($12, method),
        counter_hypothesis = COALESCE($13, counter_hypothesis),
        scope = COALESCE($14, scope),
+       evidence_items = COALESCE($15, evidence_items),
        status = $8,
        tested_at = CASE WHEN $8 = 'proposed' THEN NULL ELSE tested_at END,
        updated_at = now()
@@ -212,7 +253,7 @@ async function update(bankId, id, {
     [bankId, id, statement ?? null, confidence ?? null, verificationPlan ?? null, evidenceMemoryIds ?? null, sources ?? null, nextStatus,
       evidenceFor ?? null, evidenceAgainst ?? null, persistence ?? null, method ?? null,
       (typeof counterHypothesis === 'string' && counterHypothesis.trim()) ? counterHypothesis.trim() : null,
-      scope ?? null],
+      scope ?? null, nextEvidenceItems],
   );
   return rows[0];
 }
@@ -454,8 +495,12 @@ function clampConfidence(value) {
  *   contradicts  → evidence_against, confidence − |delta|, confirmed/proposed → testing
  *   irrelevant   → recorded as a no-op (updated_at only)
  * Only a human reaches `confirmed` (Absolute Override); this never confirms.
+ *
+ * `evidenceItem` is the optional snapshot of what the cited id said. It is the
+ * only moment the text is still in hand — the caller's turn is holding the
+ * assembled list — so it is kept here, beside the id, or not at all.
  */
-async function applyEvidence(bankId, id, { relation, evidenceId, confidenceDelta, rationale } = {}) {
+async function applyEvidence(bankId, id, { relation, evidenceId, evidenceItem, confidenceDelta, rationale } = {}) {
   if (!RELATIONS.includes(relation)) throw new ValidationError(`unknown relation: ${relation}`);
   const current = await get(bankId, id);
   if (current.status === 'rejected') {
@@ -464,6 +509,7 @@ async function applyEvidence(bankId, id, { relation, evidenceId, confidenceDelta
 
   const evidenceFor = [...(current.evidence_for || [])];
   const evidenceAgainst = [...(current.evidence_against || [])];
+  const evidenceItems = mergeEvidenceItems(current.evidence_items, evidenceItem ? [evidenceItem] : []);
   let confidence = clampConfidence(current.confidence);
   let status = current.status;
   let testedAt = current.tested_at;
@@ -489,13 +535,14 @@ async function applyEvidence(bankId, id, { relation, evidenceId, confidenceDelta
     `UPDATE hypotheses SET
        evidence_for = $3,
        evidence_against = $4,
+       evidence_items = $8,
        confidence = $5,
        status = $6,
        tested_at = $7,
        updated_at = now()
      WHERE bank_id = $1 AND id = $2
      RETURNING ${COLUMNS}`,
-    [bankId, id, evidenceFor, evidenceAgainst, confidence, status, testedAt],
+    [bankId, id, evidenceFor, evidenceAgainst, confidence, status, testedAt, JSON.stringify(evidenceItems)],
   );
   return rows[0];
 }

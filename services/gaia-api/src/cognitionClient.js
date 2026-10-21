@@ -75,9 +75,11 @@ function createCognitionClient({
   const proposeHypothesis = (record) => request('POST', '/hypotheses', record);
   const updateHypothesis = (id, patch) => request('PATCH', `/hypotheses/${encodeURIComponent(id)}`, patch);
   const markTesting = (id) => request('POST', `/hypotheses/${encodeURIComponent(id)}/test`);
-  const applyEvidence = (id, { relation, evidenceId, confidenceDelta, rationale } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/evidence`, {
+  const applyEvidence = (id, { relation, evidenceId, evidenceItem, confidenceDelta, rationale } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/evidence`, {
     relation,
     ...(evidenceId !== undefined ? { evidence_id: evidenceId } : {}),
+    // The snapshot of what that id said, while the turn still holds it.
+    ...(evidenceItem ? { evidence_item: evidenceItem } : {}),
     ...(confidenceDelta !== undefined ? { confidence_delta: confidenceDelta } : {}),
     ...(rationale !== undefined ? { rationale } : {}),
   });

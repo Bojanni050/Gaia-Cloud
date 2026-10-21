@@ -30,6 +30,42 @@ function createCognitionSink({ cognition, sync } = {}) {
   const hypIdMap = new Map();     // manager hyp id -> cognition id
   const patternIdMap = new Map(); // manager pattern id -> cognition id
 
+  /**
+   * The turn's assembled evidence (reasoning/evidenceAssembler.js) as a lookup
+   * by its local id. This is the only place those ids still mean something:
+   * after the turn, `hindsight-1` is just a label. Passing it on with the id is
+   * what lets a stored citation carry the sentence behind it.
+   */
+  function indexEvidence(items) {
+    const index = new Map();
+    for (const item of Array.isArray(items) ? items : []) {
+      if (!item || item.id == null) continue;
+      const content = typeof item.content === 'string' ? item.content.trim() : '';
+      if (!content) continue;
+      index.set(String(item.id), {
+        id: String(item.id),
+        source: item.source || null,
+        content,
+      });
+    }
+    return index;
+  }
+
+  /** Snapshots for exactly the ids a record cites — nothing more is kept. */
+  function snapshotsFor(index, ids) {
+    if (!index || index.size === 0) return [];
+    const snapshots = [];
+    const seen = new Set();
+    for (const id of Array.isArray(ids) ? ids : []) {
+      const key = String(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const item = index.get(key);
+      if (item) snapshots.push(item);
+    }
+    return snapshots;
+  }
+
   async function mirrorHypothesis(record) {
     if (!sync || !record) return;
     try { await sync.syncHypothesis(record); } catch (_) { /* mirroring never breaks a turn */ }
@@ -41,12 +77,17 @@ function createCognitionSink({ cognition, sync } = {}) {
 
   // --- hypotheses ---------------------------------------------------------
 
-  async function saveHypothesis(next) {
+  async function saveHypothesis(next, { evidence } = {}) {
+    // The evidence the record cites, captured while the turn still holds it.
+    // Omitted entirely when nothing resolved, so a record that arrived without
+    // a snapshot is not rewritten to an empty one.
+    const snapshots = snapshotsFor(indexEvidence(evidence), [...(next.evidenceFor || []), ...(next.evidenceAgainst || [])]);
     const record = await cognition.proposeHypothesis({
       statement: next.statement,
       confidence: next.confidence,
       evidence_for: next.evidenceFor || [],
       evidence_against: next.evidenceAgainst || [],
+      ...(snapshots.length > 0 ? { evidence_items: snapshots } : {}),
       persistence: next.persistence,
       method: next.method,
       kind: next.kind || 'hypothesis',
@@ -59,7 +100,7 @@ function createCognitionSink({ cognition, sync } = {}) {
     return record;
   }
 
-  async function updateHypothesis(id, next, prev) {
+  async function updateHypothesis(id, next, prev, { evidence } = {}) {
     const cid = hypIdMap.get(String(id)) || String(id);
     const before = prev || {};
     let record = null;
@@ -79,13 +120,24 @@ function createCognitionSink({ cognition, sync } = {}) {
 
     const prevFor = new Set(before.evidenceFor || []);
     const prevAgainst = new Set(before.evidenceAgainst || []);
+    const evidenceIndex = indexEvidence(evidence);
     for (const evidenceId of next.evidenceFor || []) {
       if (prevFor.has(evidenceId)) continue;
-      record = await cognition.applyEvidence(cid, { relation: 'supports', evidenceId, confidenceDelta: 0 });
+      record = await cognition.applyEvidence(cid, {
+        relation: 'supports',
+        evidenceId,
+        evidenceItem: evidenceIndex.get(String(evidenceId)),
+        confidenceDelta: 0,
+      });
     }
     for (const evidenceId of next.evidenceAgainst || []) {
       if (prevAgainst.has(evidenceId)) continue;
-      record = await cognition.applyEvidence(cid, { relation: 'contradicts', evidenceId, confidenceDelta: 0 });
+      record = await cognition.applyEvidence(cid, {
+        relation: 'contradicts',
+        evidenceId,
+        evidenceItem: evidenceIndex.get(String(evidenceId)),
+        confidenceDelta: 0,
+      });
     }
 
     if (before.status !== next.status) {
