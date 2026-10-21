@@ -138,6 +138,10 @@ function createFoundationClient({
       throw new Error('foundation search returned an unreadable response');
     }
 
+    // Two honest shapes: the service answers a bare array, and older clients
+    // read an envelope. Reading only `results` made this seam return nothing
+    // for a live API that answers an array — a silent empty memory.
+    if (Array.isArray(data)) return data;
     return (data && Array.isArray(data.results)) ? data.results : [];
   }
 

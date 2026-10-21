@@ -33,6 +33,19 @@ test('createFromEnv returns undefined when no base URL is set', () => {
   assert.equal(createFromEnv({}), undefined);
 });
 
+test('searchResults reads the bare array the live service answers, not only an envelope', async () => {
+  const client = createFoundationClient({
+    baseUrl: 'http://foundation:4577',
+    token: 'tok',
+    fetchImpl: async () => ({ ok: true, json: async () => ([{ fragment: 'vps smoke test' }]) }),
+  });
+
+  const results = await client.searchResults('test');
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].fragment, 'vps smoke test');
+});
+
 test('searchResults GETs /api/memory/search with the bounded limit and returns results', async () => {
   const calls = [];
   const client = createFoundationClient({
