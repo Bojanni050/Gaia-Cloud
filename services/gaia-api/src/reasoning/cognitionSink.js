@@ -42,11 +42,15 @@ function createCognitionSink({ cognition, sync } = {}) {
 
   // --- hypotheses ---------------------------------------------------------
 
-  async function saveHypothesis(next, { evidence, observedAt } = {}) {
+  async function saveHypothesis(next, { evidence, evidenceItems, observedAt } = {}) {
     // The evidence the record cites, captured while the turn still holds it.
+    // A caller that already holds assembled snapshots (the belief formation
+    // pass, which reads them from the observation store) passes them directly.
     // Omitted entirely when nothing resolved, so a record that arrived without
     // a snapshot is not rewritten to an empty one.
-    const snapshots = snapshotsFor(indexEvidence(evidence, observedAt), [...(next.evidenceFor || []), ...(next.evidenceAgainst || [])]);
+    const snapshots = Array.isArray(evidenceItems) && evidenceItems.length > 0
+      ? evidenceItems
+      : snapshotsFor(indexEvidence(evidence, observedAt), [...(next.evidenceFor || []), ...(next.evidenceAgainst || [])]);
     const record = await cognition.proposeHypothesis({
       statement: next.statement,
       confidence: next.confidence,

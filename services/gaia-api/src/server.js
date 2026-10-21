@@ -46,6 +46,7 @@ const { createCognitionSync } = require('./reasoning/cognitionSync');
 const { createCognitionSink } = require('./reasoning/cognitionSink');
 const { createSoftPromotionScan } = require('./reasoning/softPromotionScan');
 const { createExpiryScan } = require('./reasoning/expiryScan');
+const { createBeliefFormationScan } = require('./reasoning/beliefFormationScan');
 const { readReachPolicy } = require('./reasoning/openQuestionReach');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
@@ -269,6 +270,7 @@ function createApp(env = process.env) {
   let hypothesisRuntime = null;
   let softPromotionScan = null;
   let expiryScan = null;
+  let beliefFormationScan = null;
   if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
     const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
 
@@ -341,6 +343,17 @@ function createApp(env = process.env) {
       cognition,
       sink: cognitionSink.hypothesis,
       env,
+    });
+
+    // The belief formation pass: the ONLY thing that forms a statement from
+    // observations. It needs repeated ground (the same sourceRef seen in more
+    // than one conversation), so a single turn can no longer put a claim in
+    // front of a person (see reasoning/beliefFormationScan.js).
+    beliefFormationScan = createBeliefFormationScan({
+      cognition,
+      sink: cognitionSink.hypothesis,
+      env,
+      logger: console,
     });
   }
   // Durable Logos decision log (adminRoutes.js's
@@ -1191,6 +1204,9 @@ function createApp(env = process.env) {
   if (softPromotionScan) softPromotionScan.start();
   // The hypothesis expiry pass — same posture: best-effort, invisible to turns.
   if (expiryScan) expiryScan.start();
+  // Belief formation — the periodic pass that forms a statement from
+  // observations that share their ground across conversations.
+  if (beliefFormationScan) beliefFormationScan.start();
 
   // Calm JSON error surface — no stack traces, no provider names.
   app.use((err, req, res, next) => {
