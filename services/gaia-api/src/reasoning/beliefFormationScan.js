@@ -135,6 +135,7 @@ function createBeliefFormationScan({
   lookback = Number(env.GAIA_BELIEF_LOOKBACK) || DEFAULT_LOOKBACK,
   now = Date.now,
   logger = console,
+  onFormed = null,
 } = {}) {
   if ((env.GAIA_BELIEF_FORMATION || 'true') !== 'true') return null;
   if (!cognition || typeof cognition.listObservations !== 'function') {
@@ -215,6 +216,12 @@ function createBeliefFormationScan({
           known.add(normalizeStatement(statement));
           result.formed += 1;
           result.ids.push(record && record.id ? record.id : null);
+          // The caller keeps its live view current (server.js seeds the manager)
+          // so the statement is recognizable next turn instead of existing only
+          // in the store.
+          if (typeof onFormed === 'function') {
+            try { onFormed(record); } catch (_) { /* never break the pass */ }
+          }
           // Only now does the group stop being open material; a failed mark
           // leaves the observations for the next pass, whose duplicate check
           // keeps the same statement from being formed twice.

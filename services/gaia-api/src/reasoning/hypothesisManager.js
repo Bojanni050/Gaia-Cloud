@@ -311,6 +311,11 @@ function makeAudit(record) {
 function createHypothesisManager(options = {}) {
   const policy = { ...DEFAULT_POLICY, ...(options.policy || {}) };
   const sink = options.sink || {};
+  // Per-turn formation: a statement born inside one recall slice. It is off
+  // where the belief formation pass runs (server.js), because a claim should
+  // rest on repeated ground rather than on one turn's slice. Evidence verdicts
+  // on statements that already exist keep flowing either way.
+  const formPerTurn = options.formPerTurn !== false;
   const now = options.now || (() => new Date());
   const byId = new Map();
   const byNormalized = new Map();
@@ -770,7 +775,11 @@ function createHypothesisManager(options = {}) {
   function applyReasoningResult(reasoningResult, context = {}) {
     const applied = [];
     const sinkContext = context;
-    const resultHyps = Array.isArray(reasoningResult && reasoningResult.hypotheses) ? reasoningResult.hypotheses : [];
+    const allHyps = Array.isArray(reasoningResult && reasoningResult.hypotheses) ? reasoningResult.hypotheses : [];
+    // With formation off, the model's proposals are not statements yet: they
+    // were derived from this one turn's evidence, and the formation pass is
+    // what turns repeated ground into something a person is asked about.
+    const resultHyps = formPerTurn ? allHyps : [];
     const idFor = new Map(); // result-hypothesis -> managed id
 
     for (const rh of resultHyps) {
@@ -869,7 +878,12 @@ function createHypothesisManager(options = {}) {
       const managedId = u.hypothesisId;
       applied.push(applyUpdate({ ...u, hypothesisId: managedId }, sinkContext));
     }
-    return { applied };
+    return {
+      applied,
+      // Visible in the decision log without a second lookup: how many claims the
+      // model offered that this deployment deliberately did not make.
+      skippedProposals: formPerTurn ? 0 : allHyps.filter((h) => h && h.statement).length,
+    };
   }
 
   /**

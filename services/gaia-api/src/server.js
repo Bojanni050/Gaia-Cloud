@@ -277,7 +277,14 @@ function createApp(env = process.env) {
     // Read adapters (Hindsight) — recall/load only; their sinks are retired.
     // They read the derived-knowledge bank, matching where cognitionSync writes.
     const hypothesisAdapter = createHindsightHypothesisAdapter({ client: hindsightLogos });
-    const hypothesisManager = createHypothesisManager({ sink: cognitionSink.hypothesis });
+    const hypothesisManager = createHypothesisManager({
+      sink: cognitionSink.hypothesis,
+      // Optie 2: per-turn formation is off unless explicitly asked for. A claim
+      // must rest on repeated ground (reasoning/beliefFormationScan.js), not on
+      // one turn's recall slice. `GAIA_HYPOTHESIS_FORMATION=per_turn` restores
+      // the old behaviour without a code change.
+      formPerTurn: (env.GAIA_HYPOTHESIS_FORMATION || 'beliefs') === 'per_turn',
+    });
     // Logos pattern formation over DURABLE hypotheses — persisted to Cognition
     // (the read side still reconstructs patterns from Hindsight).
     const patternAdapter = createHindsightPatternAdapter({ client: hindsightLogos });
@@ -354,6 +361,25 @@ function createApp(env = process.env) {
       sink: cognitionSink.hypothesis,
       env,
       logger: console,
+      // A belief born in the pass must be visible to the manager in the same
+      // process, otherwise the model can neither recognize it next turn (no
+      // existingId) nor weigh new evidence against it.
+      onFormed: (record) => {
+        try {
+          hypothesisManager.seed([{
+            id: record.id,
+            statement: record.statement,
+            status: record.status,
+            method: record.method,
+            persistence: record.persistence,
+            counterHypothesis: record.counter_hypothesis,
+            scope: record.scope,
+            confidence: record.confidence,
+            evidenceFor: record.evidence_for || [],
+            evidenceAgainst: record.evidence_against || [],
+          }]);
+        } catch (_) { /* seeding must never break the pass */ }
+      },
     });
   }
   // Durable Logos decision log (adminRoutes.js's

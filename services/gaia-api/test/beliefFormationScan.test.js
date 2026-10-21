@@ -135,6 +135,31 @@ test('material older than the term is left alone', async () => {
   assert.equal(result.formed, 0);
 });
 
+test('a formed belief is handed to the caller so the live view stays current', async () => {
+  const formed = [];
+  const cognition = {
+    listObservations: async () => [
+      observation({ id: 'o1' }),
+      observation({ id: 'o2', conversation_id: 'conv-b' }),
+    ],
+    listHypotheses: async () => [],
+    markObservationsConsumed: async () => ({ consumed: 2 }),
+  };
+  const scan = createBeliefFormationScan({
+    cognition,
+    sink: { save: async () => ({ id: 'cog-1', statement: 'They prefer short answers.' }) },
+    env: {},
+    now: () => NOW,
+    logger: { info() {}, warn() {}, error() {} },
+    onFormed: (record) => formed.push(record),
+  });
+
+  await scan.runOnce();
+
+  assert.equal(formed.length, 1);
+  assert.equal(formed[0].id, 'cog-1');
+});
+
 test('the pass is off when the environment says so', () => {
   const scan = createBeliefFormationScan({ cognition: {}, sink: {}, env: { GAIA_BELIEF_FORMATION: 'false' } });
   assert.equal(scan, null);
