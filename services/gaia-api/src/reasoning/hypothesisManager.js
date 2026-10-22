@@ -780,6 +780,19 @@ function createHypothesisManager(options = {}) {
     // were derived from this one turn's evidence, and the formation pass is
     // what turns repeated ground into something a person is asked about.
     const resultHyps = formPerTurn ? allHyps : [];
+    // What is not made a statement is not thrown away: a one-turn claim with the
+    // evidence it stood on IS an observation, and the formation pass decides
+    // later whether repeated ground makes it a belief (see sink.observe).
+    let observed = 0;
+    if (!formPerTurn) {
+      for (const rh of allHyps) {
+        if (!rh || !rh.statement) continue;
+        try {
+          if (typeof sink.observe === 'function') settleSinkCall(sink.observe(rh, sinkContext));
+          observed += 1;
+        } catch (_) { /* persistence must never break reasoning-state upkeep */ }
+      }
+    }
     const idFor = new Map(); // result-hypothesis -> managed id
 
     for (const rh of resultHyps) {
@@ -881,8 +894,10 @@ function createHypothesisManager(options = {}) {
     return {
       applied,
       // Visible in the decision log without a second lookup: how many claims the
-      // model offered that this deployment deliberately did not make.
-      skippedProposals: formPerTurn ? 0 : allHyps.filter((h) => h && h.statement).length,
+      // model offered that this deployment deliberately did not make, and how
+      // many of those were kept as observations instead.
+      skippedProposals: formPerTurn ? 0 : observed,
+      observed,
     };
   }
 

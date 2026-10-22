@@ -98,6 +98,33 @@ test('saveHypothesis keeps the store-side identity and the moment, not just the 
   }]);
 });
 
+test('observe keeps a one-turn claim as raw material, not as a statement', async () => {
+  const cognition = fakeCognition();
+  cognition.createObservation = async (r) => { cognition.calls.push(['observation', r]); return { id: 'o1', ...r }; };
+  const sink = createCognitionSink({ cognition, sync: null });
+
+  await sink.hypothesis.observe(
+    { statement: 'They want the answer, not the reasoning.', evidenceFor: ['hindsight-1'], evidenceAgainst: [] },
+    {
+      evidence: [{ id: 'hindsight-1', source: 'hindsight', sourceRef: 'fact-88', content: 'Asked to skip the explanation.' }],
+      observedAt: '2026-10-22T09:15:00.000Z',
+      conversationId: 'conv-7',
+    },
+  );
+
+  const [, record] = cognition.calls[0];
+  assert.equal(record.statement, 'They want the answer, not the reasoning.');
+  assert.equal(record.conversation_id, 'conv-7');
+  assert.equal(record.observed_at, '2026-10-22T09:15:00.000Z');
+  assert.deepEqual(record.evidence_items, [{
+    id: 'hindsight-1',
+    source: 'hindsight',
+    sourceRef: 'fact-88',
+    observedAt: '2026-10-22T09:15:00.000Z',
+    content: 'Asked to skip the explanation.',
+  }]);
+});
+
 test('saveHypothesis carries the counter-hypothesis and scope into Cognition', async () => {
   const cognition = fakeCognition();
   const sink = createCognitionSink({ cognition, sync: null });

@@ -544,24 +544,35 @@ test('applyReasoningResult without a turn still saves — the snapshot is option
 test('per-turn formation can be switched off without losing evidence verdicts', () => {
   const saved = [];
   const updated = [];
+  const observed = [];
   const m = createHypothesisManager({
     hypotheses: [{ id: 'hyp-1', statement: 'An existing belief.', status: 'testing', confidence: 0.6, evidenceFor: [] }],
     formPerTurn: false,
     sink: {
       save: (hyp) => { saved.push(hyp); },
       update: (id, next) => { updated.push({ id, next }); },
+      observe: (claim, context) => { observed.push({ claim, context }); },
     },
   });
 
-  const { applied, skippedProposals } = m.applyReasoningResult({
+  const { applied, skippedProposals, observed: observedCount } = m.applyReasoningResult({
     hypotheses: [{ statement: 'A claim from this one turn.', confidence: 0.7, evidenceFor: ['upload-1'] }],
     hypothesisUpdates: [{ hypothesisId: 'hyp-1', relation: 'supports', evidenceId: 'turn-2', confidenceDelta: 0.1 }],
+  }, {
+    evidence: [{ id: 'upload-1', source: 'upload', content: 'A document.' }],
+    observedAt: '2026-10-22T09:15:00.000Z',
+    conversationId: 'conv-7',
   });
 
   // The one-turn claim is not made a statement...
   assert.equal(saved.length, 0);
   assert.equal(skippedProposals, 1);
   assert.equal(m.list().filter((h) => h.statement === 'A claim from this one turn.').length, 0);
+  // ...it is kept as an observation, with the turn's ground and conversation.
+  assert.equal(observedCount, 1);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].claim.statement, 'A claim from this one turn.');
+  assert.equal(observed[0].context.conversationId, 'conv-7');
   // ...but weighing evidence against something that already exists still happens.
   assert.equal(updated.length, 1);
   assert.equal(applied.length, 1);

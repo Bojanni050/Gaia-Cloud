@@ -1269,6 +1269,9 @@ async function runDeferredCognition({
         // The turn's own clock, carried into every snapshot: a later pass can
         // then tell "seen again" from "seen twice in the same breath".
         observedAt: new Date(now).toISOString(),
+        // Which conversation this was: a claim only counts as independent when
+        // the same ground shows up in ANOTHER one.
+        conversationId,
       });
     } catch (err) {
       console.warn(`[gaia:hypotheses] applyReasoningResult failed (non-fatal): ${err.message}`);
