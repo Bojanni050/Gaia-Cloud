@@ -8,7 +8,7 @@ const path = require('path');
 const logosSchema = require('../src/logos/logosSchema');
 const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('../src/logos/logosValidate');
 const { buildLogosPrompt } = require('../src/logos/logosPrompt');
-const { createLogosModelClient } = require('../src/logos/logosModelClient');
+const { createLogosModelClient, EmptyModelContentError } = require('../src/logos/logosModelClient');
 const reasonIQ = require('../src/logos/logos');
 const { evaluate, explainReasoningDepth, decideReasoningDepth } = reasonIQ;
 const { logLogosGate } = require('../src/logos/logosLog');
@@ -502,6 +502,87 @@ test('reasonIQ: with no reasoning model configured at all, a deep-worthy turn st
   );
   assert.equal(result.meta.reasoningModelConfigured, false);
   assert.equal(result.meta.fallbackReason, 'reasoning_model_unavailable');
+});
+
+// --- reasonIQ.evaluate — one retry for an unusable answer ------------------
+
+const RETRY_INPUT = { text: 'Why is my website crashing?', evidence: [{ content: 'server logs show OOM errors' }] };
+
+test('reasonIQ: a `{}` answer is retried once, and the rescue is visible in meta', async () => {
+  let calls = 0;
+  const model = {
+    chat: async () => { calls += 1; return calls === 1 ? '{}' : VALID_OUTPUT; },
+    isConfigured: () => true,
+  };
+  const result = await reasonIQ.evaluate(RETRY_INPUT, { reasoningModel: model, ...silent });
+  assert.equal(calls, 2);
+  assert.equal(result.meta.fallbackReason, null);
+  assert.equal(result.meta.attempts, 2);
+  assert.equal(result.hypotheses.length, 1);
+});
+
+test('reasonIQ: an empty body is retried too — the model answered, it just said nothing', async () => {
+  let calls = 0;
+  const model = {
+    chat: async () => {
+      calls += 1;
+      if (calls === 1) throw new EmptyModelContentError();
+      return VALID_OUTPUT;
+    },
+    isConfigured: () => true,
+  };
+  const result = await reasonIQ.evaluate(RETRY_INPUT, { reasoningModel: model, ...silent });
+  assert.equal(calls, 2);
+  assert.equal(result.meta.fallbackReason, null);
+});
+
+test('reasonIQ: a timeout is not retried — repeating the wait buys the same wait', async () => {
+  let calls = 0;
+  const model = {
+    chat: async () => {
+      calls += 1;
+      const err = new Error('aborted');
+      err.name = 'TimeoutError';
+      throw err;
+    },
+    isConfigured: () => true,
+  };
+  const result = await reasonIQ.evaluate(RETRY_INPUT, { reasoningModel: model, ...silent });
+  assert.equal(calls, 1);
+  assert.equal(result.meta.fallbackReason, 'reasoning_model_unavailable');
+  assert.equal(result.meta.attempts, 1);
+});
+
+test('reasonIQ: two unusable answers degrade with the validator reason on the record', async () => {
+  let calls = 0;
+  const model = { chat: async () => { calls += 1; return '{}'; }, isConfigured: () => true };
+  const result = await reasonIQ.evaluate(RETRY_INPUT, { reasoningModel: model, ...silent });
+  assert.equal(calls, 2);
+  assert.equal(result.meta.fallbackReason, 'malformed_model_output');
+  assert.equal(result.meta.attempts, 2);
+  assert.match(result.meta.fallbackDetail, /missing or empty interpretation/);
+});
+
+test('reasonIQ: LOGOS_MALFORMED_RETRIES=0 restores the single attempt', async () => {
+  let calls = 0;
+  const model = { chat: async () => { calls += 1; return '{}'; }, isConfigured: () => true };
+  const result = await reasonIQ.evaluate(RETRY_INPUT, {
+    reasoningModel: model,
+    env: { LOGOS_MALFORMED_RETRIES: '0' },
+    ...silent,
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.meta.attempts, 1);
+});
+
+test('logosLog: a degraded result says why it fell back and how many calls it took', async () => {
+  const lines = [];
+  const model = { chat: async () => 'this is not json', isConfigured: () => true };
+  await reasonIQ.evaluate(RETRY_INPUT, { reasoningModel: model, logger: (line) => lines.push(line) });
+  const record = lines.map((line) => JSON.parse(line)).find((r) => r.kind === 'logos.result');
+  assert.equal(record.fallbackReason, 'malformed_model_output');
+  assert.match(record.fallbackDetail, /malformed logos model output/);
+  assert.equal(record.attempts, 2);
 });
 
 // --- epistemic honesty -----------------------------------------------------

@@ -264,15 +264,61 @@ function shallowResult(input) {
 }
 
 /** The reasoning model was warranted but unavailable or produced unusable output — never silently substitute a guess. */
-function degradedResult(reason, modelConfigured, evidence = []) {
+function degradedResult(reason, modelConfigured, evidence = [], extra = {}) {
   return baseResult({
     interpretation: 'Reasoning could not be completed for this turn.',
     reasoningDepth: 'deep',
     informationGaps: ['the reasoning model could not be reached or returned an unusable result'],
     sufficientForConclusion: false,
     confidence: 0,
-    meta: { reasonerVersion: REASONER_VERSION, reasoningModelConfigured: modelConfigured, fallbackReason: reason },
+    meta: {
+      reasonerVersion: REASONER_VERSION,
+      reasoningModelConfigured: modelConfigured,
+      fallbackReason: reason,
+      ...extra,
+    },
   }, evidence);
+}
+
+// How many extra attempts a model that answered with garbage gets. One is
+// deliberate: the observed failure is a fast, cheap `{}`, so a second call
+// costs about a second and recovers roughly half of them (measured live on
+// DeepInfra/DeepSeek-V4-Flash: 30 of 38 results were `{}` at ~1s). More than
+// one retry only stacks that cost, and a slow malformed answer should not
+// be repeated at all.
+const MAX_UNUSABLE_RETRIES = 3;
+
+/**
+ * @param {NodeJS.ProcessEnv} env LOGOS_MALFORMED_RETRIES overrides the default
+ * @returns {number}
+ */
+function readUnusableRetries(env = process.env) {
+  const n = Number(env.LOGOS_MALFORMED_RETRIES);
+  if (!Number.isFinite(n) || n < 0) return 1;
+  return Math.min(MAX_UNUSABLE_RETRIES, Math.floor(n));
+}
+
+/**
+ * "The model answered, but there is nothing in it" — not "the model was not
+ * there". A retry is only sensible for the first kind; a timeout or an
+ * unreachable provider would just repeat the same wait.
+ */
+function isUnusableOutput(err) {
+  return err instanceof MalformedReasoningOutputError || (Boolean(err) && err.name === 'EmptyModelContentError');
+}
+
+/**
+ * Remembers *why* a deep call degraded, bounded and stripped of model prose.
+ * The reason label alone ('malformed_model_output') cost days of guessing: 30
+ * such records in the decision log said nothing about whether the model
+ * returned `{}`, an empty body, or truncated JSON. This is the validator's own
+ * message ("missing or empty interpretation", "Unexpected end of JSON input"),
+ * never the model's text.
+ */
+function failureDetail(err) {
+  if (!err) return null;
+  const message = typeof err.message === 'string' ? err.message : String(err.name || 'error');
+  return message.length > 160 ? `${message.slice(0, 160)}…` : message;
 }
 
 // --- public API ------------------------------------------------------------
@@ -297,7 +343,7 @@ function degradedResult(reason, modelConfigured, evidence = []) {
  * `degradedResult`, never taking down a turn.
  *
  * @param {LogosInput} input
- * @param {{ model?: { chat: Function, isConfigured?: Function }, reasoningModel?: { chat: Function, isConfigured?: Function }, providerStore?: object, silent?: boolean, logger?: Function }} [options] `reasoningModel` is the legacy option name, accepted during migration.
+ * @param {{ model?: { chat: Function, isConfigured?: Function }, reasoningModel?: { chat: Function, isConfigured?: Function }, providerStore?: object, silent?: boolean, logger?: Function, env?: NodeJS.ProcessEnv }} [options] `reasoningModel` is the legacy option name, accepted during migration. `env` is a test seam for LOGOS_MALFORMED_RETRIES.
  * @returns {Promise<import('./logosSchema').LogosResult>}
  */
 async function evaluate(input, options = {}) {
@@ -319,24 +365,42 @@ async function evaluate(input, options = {}) {
     result = shallowResult(input);
   } else {
     const messages = buildLogosPrompt(input);
-    try {
-      const raw = await model.chat(messages, {
-        logger: options.logger,
-        contextId: input.contextId || null,
-        correlationId,
-      });
-      // The supplied evidence list is also the provenance whitelist (0.2
-      // §16): any evidence id the model cites that is not in it was
-      // invented, and is stripped before the result goes anywhere. 0.3
-      // applies the same discipline to hypothesis references: existingId /
-      // hypothesisUpdates must point at hypotheses that were in the input
-      // context, never at ones the model conjured up.
-      const validated = parseAndValidateReasoningOutput(
-        raw,
-        Array.isArray(input.evidence) ? input.evidence : [],
-        Array.isArray(input.existingHypotheses) ? input.existingHypotheses : [],
-        Array.isArray(input.existingPatterns) ? input.existingPatterns : []
-      );
+    // A model that answers with `{}` (or nothing) gets one fresh attempt: the
+    // answer itself is worthless, and the same call usually succeeds. A model
+    // that timed out does not — see isUnusableOutput().
+    const maxAttempts = 1 + readUnusableRetries(options.env);
+    let validated = null;
+    let lastError = null;
+    let attemptsMade = 0;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      attemptsMade += 1;
+      try {
+        const raw = await model.chat(messages, {
+          logger: options.logger,
+          contextId: input.contextId || null,
+          correlationId,
+        });
+        // The supplied evidence list is also the provenance whitelist (0.2
+        // §16): any evidence id the model cites that is not in it was
+        // invented, and is stripped before the result goes anywhere. 0.3
+        // applies the same discipline to hypothesis references: existingId /
+        // hypothesisUpdates must point at hypotheses that were in the input
+        // context, never at ones the model conjured up.
+        validated = parseAndValidateReasoningOutput(
+          raw,
+          Array.isArray(input.evidence) ? input.evidence : [],
+          Array.isArray(input.existingHypotheses) ? input.existingHypotheses : [],
+          Array.isArray(input.existingPatterns) ? input.existingPatterns : []
+        );
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (!isUnusableOutput(err)) break;
+      }
+    }
+
+    if (validated) {
       const { evidenceCount, evidenceSources } = evidenceMeta(input.evidence);
       result = {
         schemaVersion: SCHEMA_VERSION,
@@ -349,11 +413,15 @@ async function evaluate(input, options = {}) {
           fallbackReason: null,
           evidenceCount,
           evidenceSources,
+          attempts: attemptsMade,
         },
       };
-    } catch (err) {
-      const reason = err instanceof MalformedReasoningOutputError ? 'malformed_model_output' : 'reasoning_model_unavailable';
-      result = degradedResult(reason, modelConfigured, input.evidence);
+    } else {
+      const reason = lastError instanceof MalformedReasoningOutputError ? 'malformed_model_output' : 'reasoning_model_unavailable';
+      result = degradedResult(reason, modelConfigured, input.evidence, {
+        fallbackDetail: failureDetail(lastError),
+        attempts: attemptsMade,
+      });
     }
   }
 

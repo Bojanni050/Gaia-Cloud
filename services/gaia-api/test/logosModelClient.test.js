@@ -36,6 +36,28 @@ test('readLogosTimeoutMs: 20s default, REASONIQ_MODEL_TIMEOUT_MS overrides, junk
   assert.equal(readLogosTimeoutMs({ REASONIQ_MODEL_TIMEOUT_MS: '-3' }), 20000);
 });
 
+test('readLogosTimeoutMs: LOGOS_MODEL_TIMEOUT_MS wins over the legacy name', () => {
+  assert.equal(readLogosTimeoutMs({ LOGOS_MODEL_TIMEOUT_MS: '45000' }), 45000);
+  assert.equal(readLogosTimeoutMs({ LOGOS_MODEL_TIMEOUT_MS: '45000', REASONIQ_MODEL_TIMEOUT_MS: '5000' }), 45000);
+  assert.equal(readLogosTimeoutMs({ LOGOS_MODEL_TIMEOUT_MS: 'nope', REASONIQ_MODEL_TIMEOUT_MS: '5000' }), 5000);
+});
+
+test('chat: an empty content body is its own error, not a generic failure', async () => {
+  const { lines, logger } = collectLogs();
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: '' } }] }),
+  });
+  const client = createLogosModelClient({ ...BASE, fetchImpl });
+  await assert.rejects(
+    () => client.chat([{ role: 'user', content: 'hi' }], { logger }),
+    (err) => err.name === 'EmptyModelContentError'
+  );
+  const call = lines.find((l) => l.kind === 'llm.call');
+  assert.equal(call.ok, false);
+  assert.equal(call.errorMessage, 'no content in response');
+});
+
 test('chat: a call that never answers is cut off at timeoutMs and logged as timeout', async () => {
   const { lines, logger } = collectLogs();
   const fetchImpl = (_url, { signal }) => new Promise((_resolve, reject) => {

@@ -101,6 +101,14 @@ function logLogosResult(entry, sink = (line) => console.log(line)) {
     informationGapCount: Array.isArray(entry.result.informationGaps) ? entry.result.informationGaps.length : 0,
     confidence: entry.result.confidence,
     fallbackReason: meta.fallbackReason || null,
+    // Why it degraded, in the validator's own words — the label alone left 30
+    // live malformed results indistinguishable from each other. Bounded, and
+    // never the model's own text.
+    fallbackDetail: meta.fallbackDetail || null,
+    // How many model calls this deep turn took (1 normally, 2 when the first
+    // answer was unusable and the retry helped). Makes a retry that rescued a
+    // turn visible instead of silent.
+    attempts: typeof meta.attempts === 'number' ? meta.attempts : null,
   };
   sink(JSON.stringify(record));
   return record;

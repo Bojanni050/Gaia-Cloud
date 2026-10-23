@@ -32,13 +32,32 @@ const REASONING_TIMEOUT_MS = 20000;
  * @returns {number}
  */
 function readLogosTimeoutMs(env = process.env) {
-  const n = Number(env.LOGOS_MODEL_TIMEOUT_MS ?? env.REASONIQ_MODEL_TIMEOUT_MS);
-  return Number.isFinite(n) && n > 0 ? n : REASONING_TIMEOUT_MS;
+  // The new name wins, but a junk value in it must not erase a usable legacy
+  // one: a typo would silently reset the budget to the default.
+  for (const raw of [env.LOGOS_MODEL_TIMEOUT_MS, env.REASONIQ_MODEL_TIMEOUT_MS]) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return REASONING_TIMEOUT_MS;
 }
 // Backward-compat alias.
 const readReasoningTimeoutMs = readLogosTimeoutMs;
 
 const isTimeout = (error) => Boolean(error) && (error.name === 'TimeoutError' || error.name === 'AbortError');
+
+/**
+ * The provider answered 200 with nothing usable in `choices[0].message.content`.
+ * Distinct from a transport failure because the cause is different and so is
+ * the right response: the model (or its gateway) decided not to produce text,
+ * which a fresh call often does produce. Logos retries this, and does not
+ * retry a timeout — repeating a 20-second wait only buys the same wait again.
+ */
+class EmptyModelContentError extends Error {
+  constructor() {
+    super('logos model returned no content');
+    this.name = 'EmptyModelContentError';
+  }
+}
 
 /** @param {NodeJS.ProcessEnv} env */
 function readLogosModelConfig(env = process.env) {
@@ -150,7 +169,7 @@ function createLogosModelClient(options = {}) {
     if (typeof content !== 'string' || content.length === 0) {
       console.error(`[logos:model] no content in response at ${config.baseUrl}`);
       logCall(false, 'no content in response');
-      throw new Error('logos model returned no content');
+      throw new EmptyModelContentError();
     }
     logCall(true);
     return content;
@@ -159,4 +178,4 @@ function createLogosModelClient(options = {}) {
   return { chat, config, isConfigured: () => isConfigured(config) };
 }
 
-module.exports = { createLogosModelClient, createReasoningModelClient: createLogosModelClient, readLogosModelConfig, readReasoningModelConfig: readLogosModelConfig, readLogosTimeoutMs, readReasoningTimeoutMs, isConfigured };
+module.exports = { createLogosModelClient, createReasoningModelClient: createLogosModelClient, readLogosModelConfig, readReasoningModelConfig: readLogosModelConfig, readLogosTimeoutMs, readReasoningTimeoutMs, isConfigured, EmptyModelContentError };
