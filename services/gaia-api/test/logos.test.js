@@ -1290,6 +1290,30 @@ test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason
   }
 });
 
+test('social gate: only a greeting is skipped, everything else is looked at', () => {
+  const gate = { socialGate: true };
+  // Social exchange: nothing to observe.
+  for (const text of ['hoi', 'dank je wel', 'oké', 'ja precies', 'hoi, alles goed?', '']) {
+    assert.equal(decideReasoningDepth({ text, evidence: [] }, gate), 'shallow', text);
+    assert.equal(explainReasoningDepth({ text, evidence: [] }, gate), 'social_turn', text);
+  }
+  // A short meaningful remark, no evidence, conversational intent — all deep.
+  for (const text of ['de planning loopt vast', 'nee, dat klopt niet', 'hoi, kun je naar de planning kijken?']) {
+    assert.equal(decideReasoningDepth({ text, evidence: [] }, gate), 'deep', text);
+  }
+  assert.equal(
+    explainReasoningDepth({ text: 'hoe werkt dat?', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }, gate),
+    'deep'
+  );
+  // reason and depth still agree
+  for (const input of [{ text: 'hoi' }, { text: 'de planning loopt vast' }]) {
+    assert.equal(
+      decideReasoningDepth(input, gate) === 'deep',
+      explainReasoningDepth(input, gate) === 'deep'
+    );
+  }
+});
+
 test('logLogosGate writes a cheap per-turn trace without user text', () => {
   const lines = [];
   const record = logLogosGate(

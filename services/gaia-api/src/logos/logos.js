@@ -55,6 +55,7 @@
 
 const crypto = require('crypto');
 const { buildLogosPrompt } = require('./logosPrompt');
+const { isSocialTurn } = require('./socialFilter');
 const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('./logosValidate');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logosModelClient');
 const { resolveRoleConfig } = require('../providerConfigResolver');
@@ -76,13 +77,14 @@ function defaultModelConfig(providerStore, env = process.env) {
   }
 }
 
-// --- reasoning depth heuristic --------------------------------------------
+// --- reasoning depth gate -------------------------------------------------
 
 /**
  * Intents whose turns never need weighed conclusions from evidence — plain
  * conversation and questions about Gaia herself. Even with evidence in
  * hand (a recalled memory riding along), these stay shallow: their answers
- * are conversational, and the turn answers them natively.
+ * are conversational, and the turn answers them natively. (Used only when the
+ * social gate is off; the gate itself is the default for now.)
  */
 const CONTEXT_ONLY_INTENTS = new Set([
   'converse',
@@ -93,21 +95,26 @@ const CONTEXT_ONLY_INTENTS = new Set([
 ]);
 
 /**
- * Deep reasoning is warranted when there is evidence to weigh AND the turn
- * is actually trying to do something with it (brief §14's gating: "simple
- * conversational turn → shallow; analysis / decision / contradiction /
- * hypothesis task → evidence-aware reasoning"). Mere evidence PRESENCE is
- * not a task signal: since 0.2 the evidence channel is populated whenever
- * Hindsight happened to recall something, so a personal-memory chat turn
- * carrying one recalled item must not suddenly pay for a model call or get
- * re-routed away from Gaia's native voice. An IntentIQ decision marking the
- * turn unclassified/ambiguous/conversational keeps it shallow; any other
- * intent (or no decision at all — the explicit-evidence eval/CLI shape)
- * lets evidence drive depth as before.
- * @param {{ text: string, evidence?: Array, intentHint?: object|null, intentDecision?: object|null }} input
+ * Depth is no longer a judgment about the turn, only about how much context a
+ * reasoning call gets. The single question left is whether there is anything
+ * to look at: a greeting, thanks, an acknowledgement or a farewell is not, and
+ * that is answered lexically by `isSocialTurn` (see logos/socialFilter.js).
+ *
+ * Why the old gates went: "no evidence" and "conversational intent" starved the
+ * learning path. A short meaningful remark, or any turn where Hindsight recalled
+ * nothing, never reached Logos — so no observation was written and the belief
+ * formation pass had nothing to aggregate.
+ * @param {{ text?: string }} input
  * @returns {'shallow'|'deep'}
  */
-function decideLogosDepth(input) {
+function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE === 'on' } = {}) {
+  // SOCIAL GATE (opt-in): look at every conversation except a pure greeting.
+  // The old gate also skipped on "no evidence" and on conversational intent,
+  // which starved the learning path: a short meaningful remark, or any turn
+  // where Hindsight recalled nothing, never reached Logos — so no observation
+  // was written and the belief formation pass had nothing to aggregate.
+  if (socialGate) return isSocialTurn(input && input.text) ? 'shallow' : 'deep';
+
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'shallow';
 
@@ -121,16 +128,14 @@ function decideLogosDepth(input) {
 }
 
 /**
- * The explicit reason behind a shallow decideReasoningDepth outcome — the
- * gate's own answer to "why was this turn skipped?". A sister function, not
- * a second heuristic: turn.js logs this next to the depth decision so the
- * decision log shows WHY ReasonIQ let a turn pass, not just that it did —
- * without it, a shallow turn leaves no trace at all and "ReasonIQ never
- * does anything" cannot be distinguished from "the gate is too strict".
- * @param {{ text: string, evidence?: Array, intentHint?: object|null, intentDecision?: object|null }} input
- * @returns {'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep'}
+ * The log's answer to "why was this turn skipped?" — there is exactly one
+ * reason left, and it is lexical, so a silent skip is impossible.
+ * @param {{ text?: string }} input
+ * @returns {'social_turn'|'deep'}
  */
-function explainLogosDepth(input) {
+function explainLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE === 'on' } = {}) {
+  if (socialGate) return isSocialTurn(input && input.text) ? 'social_turn' : 'deep';
+
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'no_evidence';
 
