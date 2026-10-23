@@ -153,14 +153,19 @@ function createApp(env = process.env) {
     budget: hindsightBudget,
     timeoutMs: hindsightTimeoutMs,
   });
-  // The banks Gaia recalls over: the system memory, the derived knowledge, and
-  // her own bank — so a derived statement or one of her own memories is as
-  // surfaceable as a raw memory of Bo's. `HINDSIGHT_RECALL_BANK_IDS` overrides
-  // the set; the app bank is always the primary (every non-recall method stays
-  // on it).
+  // The banks Gaia recalls over on an explicit lookup: her own bank plus Bo's.
+  // The derived bank (hypotheses, Kairos episodes, relationship bookkeeping) is
+  // deliberately NOT in the default any more (2026-10-23). Measured in it that
+  // day: 4.424 rows, of which 3.811 `world` — nearly all of it bookkeeping prose
+  // ("Gaia hypothesis (ID: …) is proposed with a confidence of 0.5", "Gaia
+  // Kairos episode geïnterpreteerd door gaia-logos"), still being written today,
+  // and exactly one mental model. A lookup that pulls that in competes with the
+  // fact Bo is asking about. `HINDSIGHT_RECALL_BANK_IDS` still puts any bank
+  // back when a specific question needs it; the app bank is always the primary
+  // (every non-recall method stays on it).
   const recallBankIds = String(
     env.HINDSIGHT_RECALL_BANK_IDS
-      || `${hindsightBankId},${hindsightLogosBankId},${hindsightOwnBankId}`
+      || `${hindsightBankId},${hindsightOwnBankId}`
   ).split(',').map((id) => id.trim()).filter(Boolean);
   const recallClients = [];
   const seenRecallBanks = new Set();
