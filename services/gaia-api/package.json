@@ -2,7 +2,7 @@
   "name": "gaia-api",
   "version": "0.1.0",
   "private": true,
-  "description": "The Gaia API — the server-side seam first-class clients (Desktop, Web) talk to. Owns identity loading and Hermes orchestration; never leaks providers or models.",
+  "description": "The Gaia API \u2014 the server-side seam first-class clients (Desktop, Web) talk to. Owns identity loading and Hermes orchestration; never leaks providers or models.",
   "type": "commonjs",
   "main": "src/server.js",
   "scripts": {
@@ -19,9 +19,13 @@
     "express": "^4.19.2",
     "mammoth": "^1.13.0",
     "multer": "^2.0.0",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "supertest": "^6.3.3"
+  },
+  "optionalDependencies": {
+    "@mastra/core": "^1.0.0"
   }
 }

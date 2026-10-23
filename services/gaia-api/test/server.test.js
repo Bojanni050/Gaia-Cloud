@@ -214,12 +214,14 @@ async function withServer(app, fn) {
 
 // --- createApp wiring (unit-level) -----------------------------------------
 
-test('createApp does not throw when GAIA_NATIVE_* is unset (native generator stays undefined)', () => {
-  assert.doesNotThrow(() => createApp(baseEnv()));
+test('createApp does not throw when GAIA_NATIVE_* is unset (native generator stays undefined)', async () => {
+  const app = await createApp(baseEnv());
+  assert.ok(app);
 });
 
-test('createApp does not throw when GAIA_NATIVE_* is set (native generator is constructed)', () => {
-  assert.doesNotThrow(() => createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' })));
+test('createApp does not throw when GAIA_NATIVE_* is set (native generator is constructed)', async () => {
+  const app = await createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
+  assert.ok(app);
 });
 
 // --- research reach gating (opt-in, off by default) -------------------------
@@ -230,7 +232,7 @@ test('research reach is off by default: a research ask never starts a Hermes run
   await withMockedFetch(
     mockFetch({ onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
+      const app = await createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -254,7 +256,7 @@ test('research reach with GAIA_RESEARCH_REACH=on submits a run and still answers
   await withMockedFetch(
     mockFetch({ onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({
+      const app = await createApp(baseEnv({
         GAIA_NATIVE_BASE_URL: NATIVE_BASE,
         GAIA_NATIVE_MODEL: 'test-model',
         GAIA_RESEARCH_REACH: 'on',
@@ -286,7 +288,7 @@ test('non-streaming: a native-routable turn reaches GaiaGenerator\'s real HTTP c
   await withMockedFetch(
     mockFetch({ onNative: () => { nativeCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
+      const app = await createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -311,7 +313,7 @@ test('non-streaming: without generation configured, the turn answers a calm 503 
   await withMockedFetch(
     mockFetch({ onNative: () => { nativeCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv()); // no GAIA_NATIVE_* at all
+      const app = await createApp(baseEnv()); // no GAIA_NATIVE_* at all
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -340,7 +342,7 @@ test('streaming: a native-routable turn reaches GaiaGenerator\'s real HTTP call,
   await withMockedFetch(
     mockFetch({ onNative: () => { nativeCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
+      const app = await createApp(baseEnv({ GAIA_NATIVE_BASE_URL: NATIVE_BASE, GAIA_NATIVE_MODEL: 'test-model' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -370,7 +372,7 @@ test('streaming: without generation configured, the turn answers a calm 503 JSON
   await withMockedFetch(
     mockFetch({ onNative: () => { nativeCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv()); // no GAIA_NATIVE_* at all
+      const app = await createApp(baseEnv()); // no GAIA_NATIVE_* at all
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',
@@ -399,7 +401,7 @@ test('POST /speech returns audio/wav on success, reaching the configured TTS end
   await withMockedFetch(
     mockFetch({ onTts: (href, body) => { ttsCalls += 1; seenBody = body; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+      const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -423,7 +425,7 @@ test('POST /speech returns audio/wav on success, reaching the configured TTS end
 
 test('POST /speech requires auth, same boundary as /conversation/turn', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',
@@ -438,7 +440,7 @@ test('POST /speech requires auth, same boundary as /conversation/turn', async ()
 test('POST /speech rejects empty/missing text with a 400, never calling the TTS endpoint', async () => {
   let ttsCalls = 0;
   await withMockedFetch(mockFetch({ onTts: () => { ttsCalls += 1; } }), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model' }));
     await withServer(app, async (port) => {
       const res1 = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',
@@ -459,7 +461,7 @@ test('POST /speech rejects empty/missing text with a 400, never calling the TTS 
 
 test('POST /speech answers 503 when GAIA_TTS_* is not configured (no attempted call)', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    const app = await createApp(baseEnv()); // no GAIA_TTS_* at all
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',
@@ -477,7 +479,7 @@ test('POST /speech maps a Xiaomi failure to a calm 502, never leaking the provid
   await withMockedFetch(
     mockFetch({ ttsShouldFail: true }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
+      const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'test-model', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -553,7 +555,7 @@ test('POST /speech dispatches to Mistral Voxtral when the stored TTS provider is
         model: 'voxtral-mini-tts-2603',
         voiceId: 'gaia-voice-1',
       });
-      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -587,7 +589,7 @@ test('POST /speech omits voice_id when no voice is configured, never sending an 
         apiKey: 'mistral-key',
         model: 'voxtral-mini-tts-2603',
       });
-      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -605,7 +607,7 @@ test('POST /speech records each attempt in the admin voice-activity log', async 
   await withMockedFetch(
     mockFetch(),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+      const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
       await withServer(app, async (port) => {
         const speechRes = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -634,7 +636,7 @@ test('POST /speech logs not-configured attempts instead of failing silently', as
   await withMockedFetch(
     mockFetch(),
     async (originalFetch) => {
-      const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+      const app = await createApp(baseEnv()); // no GAIA_TTS_* at all
       await withServer(app, async (port) => {
         const speechRes = await originalFetch(`http://127.0.0.1:${port}/speech`, {
           method: 'POST',
@@ -680,7 +682,7 @@ test('POST /speech/stream writes each PCM chunk out as it arrives — real strea
   await withMockedFetch(
     mockFetch({ onTts: (href, body) => { seenBody = body; }, ttsAfterFirstChunk: () => gate }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({
+      const app = await createApp(baseEnv({
         GAIA_TTS_BASE_URL: TTS_BASE,
         GAIA_TTS_MODEL: 'mimo-v2.5-tts',
         GAIA_TTS_VOICE_ID: 'Chloe',
@@ -727,7 +729,7 @@ test('POST /speech/stream writes each PCM chunk out as it arrives — real strea
 
 test('POST /speech/stream requires auth, same boundary as POST /speech', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, {
         method: 'POST',
@@ -742,7 +744,7 @@ test('POST /speech/stream requires auth, same boundary as POST /speech', async (
 test('POST /speech/stream rejects empty text with a 400, never calling the TTS endpoint', async () => {
   let ttsCalls = 0;
   await withMockedFetch(mockFetch({ onTts: () => { ttsCalls += 1; } }), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: '   ' }));
       assert.equal(res.status, 400);
@@ -753,7 +755,7 @@ test('POST /speech/stream rejects empty text with a 400, never calling the TTS e
 
 test('POST /speech/stream answers 503 and logs the attempt when no voice is configured', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    const app = await createApp(baseEnv()); // no GAIA_TTS_* at all
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
       assert.equal(res.status, 503);
@@ -774,7 +776,7 @@ test('POST /speech/stream maps a provider failure to a calm 502 while nothing ha
   await withMockedFetch(
     mockFetch({ ttsShouldFail: true }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
+      const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts', GAIA_TTS_AUTH_TOKEN: 'secret-tts-key' }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
         const body = await res.json();
@@ -804,7 +806,7 @@ test('POST /speech/stream answers with the whole clip for a provider that cannot
         model: 'voxtral-mini-tts-2603',
         voiceId: 'gaia-voice-1',
       });
-      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+      const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
         const buf = Buffer.from(await res.arrayBuffer());
@@ -821,7 +823,7 @@ test('POST /speech/stream answers with the whole clip for a provider that cannot
 
 test('POST /speech/stream records the attempt, the first byte and the size in the voice-activity log', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv({
+    const app = await createApp(baseEnv({
       GAIA_TTS_BASE_URL: TTS_BASE,
       GAIA_TTS_MODEL: 'mimo-v2.5-tts',
       GAIA_TTS_VOICE_ID: 'Chloe',
@@ -856,7 +858,7 @@ test('POST /speech/stream hangs the provider request up when the listener goes a
   await withMockedFetch(
     mockFetch({ onTts: (href, body, options) => { seenSignal = options.signal; }, ttsAfterFirstChunk: () => gate }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
+      const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts' }));
       await withServer(app, async (port) => {
         const client = new AbortController();
         const res = await originalFetch(
@@ -881,7 +883,7 @@ test('POST /speech/stream hangs the provider request up when the listener goes a
 
 test('GET /speech/info requires auth, same boundary as POST /speech', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv());
+    const app = await createApp(baseEnv());
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`);
       assert.equal(res.status, 401);
@@ -891,7 +893,7 @@ test('GET /speech/info requires auth, same boundary as POST /speech', async () =
 
 test('GET /speech/info reports unconfigured with English-only languages when no TTS is set', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv()); // no GAIA_TTS_* at all
+    const app = await createApp(baseEnv()); // no GAIA_TTS_* at all
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
         headers: { Authorization: `Bearer ${TOKEN}` },
@@ -907,7 +909,7 @@ test('GET /speech/info reports unconfigured with English-only languages when no 
 
 test('GET /speech/info reports the env (MiMo) voice as Chinese/English-only', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
         headers: { Authorization: `Bearer ${TOKEN}` },
@@ -929,7 +931,7 @@ test('GET /speech/info reports the stored Mistral voice with Dutch among its lan
       apiKey: 'mistral-key',
       model: 'voxtral-mini-tts-2603',
     });
-    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech/info`, {
         headers: { Authorization: `Bearer ${TOKEN}` },
@@ -968,7 +970,7 @@ test('POST /speech picks the English voice for language=en and the default voice
   };
 
   await withMockedFetch(fake, async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
     await withServer(app, async (port) => {
       const speak = async (payload) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
@@ -994,7 +996,7 @@ test('POST /speech picks the English voice for language=en and the default voice
 
 test('POST /speech speaks English with the default voice when no English voice is configured', async () => {
   await withMockedFetch(mockFetch(), async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
+    const app = await createApp(baseEnv({ GAIA_TTS_BASE_URL: TTS_BASE, GAIA_TTS_MODEL: 'mimo-v2.5-tts-voicedesign' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',
@@ -1015,7 +1017,7 @@ test('POST /speech uses Fish Audio when it is the stored provider, even without 
     return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) };
   };
   await withMockedFetch(fake, async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    const app = await createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',
@@ -1061,7 +1063,7 @@ test('streaming: an external-knowledge turn is answered by configured generation
   await withMockedFetch(
     mockFetch({ onNative: () => { nativeCalls += 1; }, onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv({
+      const app = await createApp(baseEnv({
         GAIA_NATIVE_BASE_URL: NATIVE_BASE,
         GAIA_NATIVE_MODEL: 'test-model',
         GAIA_WEB_SEARCH_API_KEY: 'test-key',
@@ -1093,7 +1095,7 @@ test('streaming: without generation configured, an external-knowledge turn is a 
   await withMockedFetch(
     mockFetch({ onWebSearch: () => { webCalls += 1; }, onHermes: () => { hermesCalls += 1; } }),
     async (originalFetch) => {
-      const app = createApp(baseEnv()); // no GAIA_NATIVE_*, no GAIA_WEB_SEARCH_* at all
+      const app = await createApp(baseEnv()); // no GAIA_NATIVE_*, no GAIA_WEB_SEARCH_* at all
       await withServer(app, async (port) => {
         const res = await originalFetch(`http://127.0.0.1:${port}/conversation/turn`, {
           method: 'POST',

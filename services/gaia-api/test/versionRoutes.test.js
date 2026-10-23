@@ -37,7 +37,7 @@ describe('GET /api/version', () => {
   let server;
 
   before(async () => {
-    app = createApp(testEnv);
+    app = await createApp(testEnv);
     server = app.listen(0);
   });
 

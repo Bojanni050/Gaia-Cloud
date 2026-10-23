@@ -89,6 +89,7 @@ const { createResearchJobStore } = require('./researchJobStore');
 const { startResearchJob, pollResearchJobs, saveResearchMessage, saveResearchCheckin, answerJobApproval, resolveOutboxDir } = require('./researchJob');
 const { createResearchRouter } = require('./researchRoutes');
 const { HERMES_OUTBOX_DIR } = require('./researchReach');
+const { createMastraResearchClient, pollMastraResearchJobs } = require('./mastra/mastraResearchClient');
 const { createHistoryRouter } = require('./historyRoutes');
 const { createDecisionStore } = require('./logos/decisionStore');
 const { createTtsLog } = require('./speech/ttsLog');
@@ -99,7 +100,7 @@ const { createVersionRouter } = require('./versionRoutes');
 
 const PORT = Number(process.env.PORT || 8891);
 
-function createApp(env = process.env) {
+async function createApp(env = process.env) {
   const soul = loadSoulWithEnv(env);
   const documents = loadFoundationDocumentsWithEnv(env);
   // Hermes is handed exactly ONE thing: a research run, where Gaia names a
@@ -776,6 +777,59 @@ function createApp(env = process.env) {
     if (typeof timer.unref === 'function') timer.unref();
   }
 
+  // MASTRA RESEARCH — a PARALLEL deep-research capability built on the Mastra
+  // agent framework (https://mastra.ai). Same async shape as the Hermes
+  // research reach above: a turn submits a job, answers immediately, and a
+  // poll cycle picks the findings up, writes them into the conversation, and
+  // announces them through GET /research/jobs. The two paths share the job
+  // store and the poll endpoint; they differ in who investigates — a typed
+  // Mastra agent under Gaia's SOUL, with Gaia's own tools (web search,
+  // Hindsight, Foundation, conversations), instead of a Hermes skill named
+  // in a prompt. Off unless GAIA_MASTRA_RESEARCH=on. The Mastra packages are
+  // optional: when @mastra/core is not installed the client resolves to null
+  // and the capability simply never appears.
+  const mastraResearch = await createMastraResearchClient({
+    enabled: env.GAIA_MASTRA_RESEARCH === 'on',
+    soulPrompt: soul.prompt,
+    roleConfig: resolveRoleConfig('reasoning', providerStore, env),
+    webSearch,
+    hindsight,
+    foundation,
+    conversationSearch,
+  });
+  const mastraResearchJobs = mastraResearch
+    ? {
+        start: async ({ question, skillId, conversationId }) => {
+          const job = await mastraResearch.start({ question, skillId, conversationId });
+          if (!job) return null;
+          return researchStore.create({
+            conversationId: job.conversationId,
+            skillId: job.skillId,
+            question: job.question,
+            runId: job.runId,
+            executor: 'mastra',
+          });
+        },
+        executor: 'mastra',
+      }
+    : undefined;
+
+  if (mastraResearch) {
+    const pollMs = Number(env.GAIA_MASTRA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_MASTRA_RESEARCH_POLL_MS) : 20000;
+    const pollOnce = skipWhileRunning(() => pollMastraResearchJobs({
+        client: mastraResearch,
+        store: researchStore,
+        onCompleted: async (job) => {
+          const saved = saveResearchMessage({ job, historyStore });
+          if (saved) researchStore.update(job.id, { messageSaved: true });
+        },
+      }));
+    const timer = setInterval(() => {
+      pollOnce().catch(() => { /* a poll cycle never rejects */ });
+    }, pollMs);
+    if (typeof timer.unref === 'function') timer.unref();
+  }
+
   // GaiaChat review surface — the human Absolute Override (list/test/reject/
   // confirm) with active supersession. Part of the client contract.
   app.use('/cognition', createCognitionRouter({ cognition, sync: cognitionSync, auth }));
@@ -883,6 +937,7 @@ function createApp(env = process.env) {
         generator: getEffectiveNativeGenerator(),
         backupGenerator: getEffectiveBackupGenerator(),
         researchJobs,
+        mastraResearchJobs,
         historyStore,
         decisionStore,
         attachments: resolvedAttachments,
@@ -1288,10 +1343,16 @@ function loadFoundationDocumentsWithEnv(env) {
 }
 
 if (require.main === module) {
-  const app = createApp();
-  app.listen(PORT, () => {
-    console.log(`Gaia API listening on :${PORT}`);
+  createApp().then((app) => {
+    app.listen(PORT, () => {
+      console.log(`Gaia API listening on :${PORT}`);
+    });
+  }).catch((err) => {
+    console.error('Failed to start Gaia API:', err);
+    process.exit(1);
   });
 }
 
 module.exports = { createApp, PORT };
+// createApp is async: it awaits the optional Mastra research client, which
+// lazily imports the ESM-only @mastra/core package. Callers must await it.

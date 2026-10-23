@@ -81,6 +81,22 @@ const CAPABILITY_REGISTRY = Object.freeze({
     skills: Object.freeze([]),
   }),
 
+  // Mastra research — a PARALLEL deep-research capability built on the Mastra
+  // agent framework (https://mastra.ai). Same async shape as `research` above
+  // (submit a job, answer immediately, findings arrive via the poll endpoint),
+  // but the investigation runs as a typed Mastra agent under Gaia's SOUL with
+  // Gaia's own tools (web search, Hindsight, Foundation, conversations) instead
+  // of a Hermes skill named in a prompt. Off unless GAIA_MASTRA_RESEARCH=on.
+  mastra_research: Object.freeze({
+    id: 'mastra_research',
+    type: 'capability',
+    description: 'a deep, multi-step investigation run by a structured research agent — searches the web, recalls memory, reads the archive, and returns sourced findings in the background',
+    skills: Object.freeze([
+      Object.freeze({ id: 'structured-research', category: 'research', routing: false, description: 'multi-step research with tool use: web search, memory recall, archive search, conversation search' }),
+      Object.freeze({ id: 'sourced-findings', category: 'research', routing: false, description: 'findings returned with sources, confidence labels and open questions' }),
+    ]),
+  }),
+
   web_search: Object.freeze({
     id: 'web_search',
     type: 'retrieval',
