@@ -304,15 +304,36 @@ test('reasoningModelClient: chat() maps a failing fetch to a generic error, no U
   });
 });
 
-test('reasoningModelClient: chat() defaults to forcing json_object (ReasonIQ\'s own need)', async () => {
+test('reasoningModelClient: chat() does NOT force json_object by default (DeepInfra returns `{}` when it is set)', async () => {
+  let capturedBody;
+  const fakeFetch = async (url, init) => {
+    capturedBody = JSON.parse(init.body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }) };
+  };
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch, env: {} });
+  await client.chat([{ role: 'user', content: 'hi' }]);
+  assert.ok(!('response_format' in capturedBody));
+});
+
+test('reasoningModelClient: LOGOS_RESPONSE_FORMAT=json asks for json_object again', async () => {
   let capturedBody;
   const fakeFetch = async (url, init) => {
     capturedBody = JSON.parse(init.body);
     return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' } }] }) };
   };
-  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch });
+  const client = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: fakeFetch, env: { LOGOS_RESPONSE_FORMAT: 'json' } });
   await client.chat([{ role: 'user', content: 'hi' }]);
   assert.deepEqual(capturedBody.response_format, { type: 'json_object' });
+});
+
+test('reasoningModelClient: a ```json fence is stripped, and bare JSON is left alone', async () => {
+  const reply = (content) => async () => ({ ok: true, json: async () => ({ choices: [{ message: { content } }] }) });
+  const fenced = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: reply('```json\n{"a": 1}\n```') });
+  assert.equal(await fenced.chat([{ role: 'user', content: 'hi' }]), '{"a": 1}');
+  const bare = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: reply('{"a": 1}') });
+  assert.equal(await bare.chat([{ role: 'user', content: 'hi' }]), '{"a": 1}');
+  const prose = createLogosModelClient({ baseUrl: 'http://fake:1234', model: 'm', fetchImpl: reply('no json here') });
+  assert.equal(await prose.chat([{ role: 'user', content: 'hi' }]), 'no json here');
 });
 
 test('reasoningModelClient: chat() omits response_format entirely when explicitly passed null (e.g. OCR)', async () => {

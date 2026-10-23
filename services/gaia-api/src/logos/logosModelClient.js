@@ -74,12 +74,41 @@ function isConfigured(config) {
 }
 
 /**
+ * DeepSeek-V4-Flash on DeepInfra answers `{}` — literally two characters — for
+ * any large Logos prompt when `response_format: {"type":"json_object"}` is set,
+ * and it does so in about a second. The very same prompt without that field
+ * produces the whole analysis (measured 2026-10-23 on the real turn: 9 of 10
+ * turns returned `{}` in json mode; 3 of 3 returned complete JSON without it).
+ * So json mode is not asked for by default — the prompt already demands JSON,
+ * and a code fence is cheaper to strip than a silently empty analysis is to
+ * lose. LOGOS_RESPONSE_FORMAT=json asks for it again, for a provider that
+ * genuinely needs the hint.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ */
+function defaultResponseFormat(env = process.env) {
+  return env.LOGOS_RESPONSE_FORMAT === 'json' ? { type: 'json_object' } : null;
+}
+
+/**
+ * Models that are not in json mode like to answer inside a ```json fence.
+ * Stripping it is not a repair of the answer — the JSON inside is exactly what
+ * the prompt asked for, and anything that is still wrong after this is caught
+ * by the validator.
+ */
+function stripCodeFence(text) {
+  const trimmed = String(text).trim();
+  const fenced = /^```(?:json|javascript|js)?\s*\r?\n([\s\S]*?)\r?\n?```$/i.exec(trimmed);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+/**
  * Creates Logos's reasoning model client. `chat()` requests a single,
  * non-streaming, structured-JSON completion — Logos is a cognitive
  * step inside one turn, not a chat surface, so there is no streaming
  * concern here the way there is in hermesClient.js.
  *
- * @param {{ baseUrl?: string, model?: string, apiKey?: string, provider?: string, fetchImpl?: Function, timeoutMs?: number, logSystem?: string, logPurpose?: string }} [options]
+ * @param {{ baseUrl?: string, model?: string, apiKey?: string, provider?: string, fetchImpl?: Function, timeoutMs?: number, logSystem?: string, logPurpose?: string, env?: NodeJS.ProcessEnv }} [options]
  */
 function createLogosModelClient(options = {}) {
   const config = {
@@ -90,6 +119,7 @@ function createLogosModelClient(options = {}) {
   };
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const defaultFormat = defaultResponseFormat(options.env || process.env);
   // Which subsystem this client serves, for the llm.call log line. Logos's own
   // reflection is 'logos'; the Aion pass reuses this client but is a different
   // thing, so it labels its calls 'aion' — otherwise /admin's decision log shows
@@ -128,7 +158,7 @@ function createLogosModelClient(options = {}) {
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
     Object.assign(headers, identityHeadersFor(config.baseUrl));
 
-    const responseFormat = options.responseFormat === undefined ? { type: 'json_object' } : options.responseFormat;
+    const responseFormat = options.responseFormat === undefined ? defaultFormat : options.responseFormat;
     const body = { model: config.model, stream: false, messages };
     if (responseFormat) body.response_format = responseFormat;
 
@@ -172,10 +202,10 @@ function createLogosModelClient(options = {}) {
       throw new EmptyModelContentError();
     }
     logCall(true);
-    return content;
+    return stripCodeFence(content);
   }
 
   return { chat, config, isConfigured: () => isConfigured(config) };
 }
 
-module.exports = { createLogosModelClient, createReasoningModelClient: createLogosModelClient, readLogosModelConfig, readReasoningModelConfig: readLogosModelConfig, readLogosTimeoutMs, readReasoningTimeoutMs, isConfigured, EmptyModelContentError };
+module.exports = { createLogosModelClient, createReasoningModelClient: createLogosModelClient, readLogosModelConfig, readReasoningModelConfig: readLogosModelConfig, readLogosTimeoutMs, readReasoningTimeoutMs, isConfigured, EmptyModelContentError, defaultResponseFormat, stripCodeFence };
