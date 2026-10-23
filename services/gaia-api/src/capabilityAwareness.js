@@ -27,17 +27,21 @@ const {
  * @returns {string|null}
  */
 function renderCapabilityAwareness(availableCapabilities) {
-  const ids = (Array.isArray(availableCapabilities) ? availableCapabilities : [])
-    .map((c) => c && c.id)
-    .filter(Boolean);
-
   const lines = [];
-  for (const id of ids) {
+  for (const capability of Array.isArray(availableCapabilities) ? availableCapabilities : []) {
+    const id = capability && capability.id;
+    if (!id) continue;
     const profile = getCapabilityProfile(id);
     if (!profile) continue; // unknown to the registry: never claimed
     lines.push(`- ${profile.id}: ${profile.description}`);
-    if (profile.skills.length > 0) {
-      lines.push(`  skills: ${profile.skills.map((s) => s.id).join(', ')}`);
+    // A capability may report the narrower set it really has this turn (the
+    // desktop knows which skills the connected client can carry out). Falling
+    // back to the registry is right for capabilities that are all-or-nothing.
+    const skills = Array.isArray(capability.skills)
+      ? capability.skills.filter((s) => profile.skills.some((known) => known.id === s))
+      : profile.skills.map((s) => s.id);
+    if (skills.length > 0) {
+      lines.push(`  skills: ${skills.join(', ')}`);
     }
   }
   if (lines.length === 0) return null;

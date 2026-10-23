@@ -16,6 +16,15 @@ Off unless `GAIA_DESKTOP=true`. Even then a turn offers `desktop` only when
 running. Otherwise Gaia neither claims nor receives the tool. The backup
 generator never gets it.
 
+Which skills the tool offers is the client's report, not the registry's list:
+`desktopSkills` in the same body names them (`["file-read","open-url"]`). The
+server keeps the registry's order, drops names it does not know, narrows the
+tool's `skill` enum **and** its prose, and narrows what Gaia is told she has this
+turn. An absent field means an older client that can carry everything; an empty
+array means nothing, and then there is no desktop capability at all. This is
+what lets a machine without Desktop Commander still open a page: `open-url` is
+built into the app, while the file skills need the commander answering.
+
 ## Policy (server-side; the client cannot downgrade it)
 
 | skill | policy | meaning |
@@ -93,7 +102,10 @@ expire immediately.
 
 ## Client obligations (Gaia-Desktop)
 
-1. Send `desktop: true` only while Desktop Commander is running and allowed.
+1. Send `desktop: true` only while the person has allowed work on this computer,
+   and `desktopSkills` with exactly what this machine can carry out right now
+   (`open-url` needs nothing but the switch; the file skills need Desktop
+   Commander answering and at least one allowed folder).
 2. Restrict Desktop Commander to allowed folders and a command blocklist; refuse
    (report `ok: false`) rather than run anything outside them.
 3. Never execute an action whose `status` is not `approved`.

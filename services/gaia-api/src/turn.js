@@ -347,7 +347,10 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   // Gaia-Cloud executes on the desktop; absent the executor she must not
   // claim it.
   if (desktop && typeof desktop.execute === 'function') {
-    capabilities.push({ id: 'desktop' });
+    // The skills come from the broker's per-turn list, not the registry: this client may carry only
+    // some of them, and Gaia must not offer what the machine cannot do.
+    const carried = Array.isArray(desktop.skills) ? desktop.skills : undefined;
+    capabilities.push(carried ? { id: 'desktop', skills: carried } : { id: 'desktop' });
   }
   // The shallow live lookup — real only when the primary generator actually
   // carries the `web_search` tool, i.e. when a search provider is configured.
@@ -1474,6 +1477,7 @@ async function performStreamingTurn({
   desktopRoots,
   desktopPlaces,
   desktopIndex,
+  desktopSkills,
   ...turn
 }) {
   const problem = validateMessages(messages);
@@ -1493,6 +1497,7 @@ async function performStreamingTurn({
       roots: desktopRoots,
       places: desktopPlaces,
       index: desktopIndex,
+      skills: desktopSkills,
       ...(signal ? { signal } : {}),
     })
     : undefined;

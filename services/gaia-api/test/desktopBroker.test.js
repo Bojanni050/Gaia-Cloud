@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const request = require('supertest');
 
-const { createDesktopBroker, policyFor, summarize, openableUrl, DESKTOP_TOOL } = require('../src/desktopBroker');
+const { createDesktopBroker, policyFor, summarize, openableUrl, selectSkills, DESKTOP_TOOL } = require('../src/desktopBroker');
 const { createDesktopRouter } = require('../src/desktopRoutes');
 const { listCapabilityIds } = require('../src/capabilityRegistry');
 
@@ -13,7 +13,7 @@ function harness(options = {}) {
   const frames = [];
   const logs = [];
   const broker = createDesktopBroker({ logger: (l) => logs.push(JSON.parse(l)), ...options });
-  const turn = broker.forTurn({ emit: (v) => frames.push(v), conversationId: 'c1', signal: options.signal });
+  const turn = broker.forTurn({ emit: (v) => frames.push(v), conversationId: 'c1', signal: options.signal, skills: options.skills });
   return { broker, turn, frames, logs };
 }
 const tick = () => new Promise((r) => setImmediate(r));
@@ -86,6 +86,41 @@ test('open-url refuses anything that is not an ordinary http(s) address — and 
   assert.equal(openableUrl('http://example.com'), 'http://example.com/');
   assert.equal(frames.length, 0);
   assert.equal(broker.size(), 0);
+});
+
+test('skills keep the registry order, and unknown names are dropped', () => {
+  assert.deepEqual(selectSkills(['open-url', 'file-read', 'format-disk']), ['file-read', 'open-url']);
+  assert.deepEqual(selectSkills(undefined), ['file-read', 'file-search', 'file-write', 'run-command', 'open-url']);
+  assert.deepEqual(selectSkills([]), []);
+});
+
+test('a client that can only open pages is offered only that skill, and prose that does not promise the rest', async () => {
+  const { broker, turn, frames } = harness({ skills: ['open-url'] });
+  const tool = turn.tools[0].function;
+  assert.deepEqual(tool.parameters.properties.skill.enum, ['open-url']);
+  assert.match(tool.description, /Opening a web address runs/);
+  assert.doesNotMatch(tool.description, /terminal command|absolute Windows path|search index|folders? are/);
+  // The enum is a hint, not a promise: a model can still name a skill this client lacks, and then
+  // nothing may be sent to the machine.
+  assert.match(await turn.execute('run-command', { command: 'calc.exe' }), /cannot do that right now/);
+  assert.equal(frames.length, 0);
+  assert.equal(broker.size(), 0);
+});
+
+test('a client without the page opener is not told it can open pages', () => {
+  const { turn } = harness({ skills: ['file-read', 'file-search'] });
+  const tool = turn.tools[0].function;
+  assert.deepEqual(tool.parameters.properties.skill.enum, ['file-read', 'file-search']);
+  assert.doesNotMatch(tool.description, /web address/);
+  assert.match(tool.description, /absolute Windows path/);
+  assert.doesNotMatch(tool.description, /terminal command/);
+});
+
+test('a client that can carry nothing gets no desktop turn at all', () => {
+  const broker = createDesktopBroker({ logger: () => {} });
+  assert.equal(broker.forTurn({ emit: () => {}, skills: [] }), null);
+  // An older client that sends only `desktop: true` still gets every skill.
+  assert.equal(broker.forTurn({ emit: () => {} }).tools[0].function.parameters.properties.skill.enum.length, 5);
 });
 
 test('confirm action: waits for approval, then for the result', async () => {
@@ -274,6 +309,51 @@ test('streamed turn WITHOUT the client declaring desktop: no capability, no desk
   // machine is not, because this client never said it could.
   const names = (seen.tools || []).map((tool) => tool.function.name);
   assert.deepEqual(names, ['read_back']);
+  assert.equal(seen.claimed, false);
+});
+
+test('a client that can only open pages still gets desktop, with exactly that skill', async () => {
+  const { performStreamingTurn } = require('../src/turn');
+  const broker = createDesktopBroker({ logger: () => {} });
+  const res = { writableEnded: false, writeHead() {}, status() { return this; }, json() {}, write() {}, end() { this.writableEnded = true; } };
+  let seen = null;
+  const generator = {
+    stream: async (messages, opts) => {
+      const system = messages.find((m) => m.role === 'system' && /- desktop:/.test(m.content));
+      seen = { tools: opts.tools, system: system ? system.content : '' };
+      opts.onDelta('ok', false);
+      return 'ok';
+    },
+  };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'open nu.nl' }],
+    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
+    res, generator, desktopBroker: broker, desktopClient: true, desktopSkills: ['open-url'],
+  });
+  assert.deepEqual(seen.tools[0].function.parameters.properties.skill.enum, ['open-url']);
+  // She is told only what she can actually do: a machine without Desktop Commander can still
+  // open a page, and claiming more would make her promise something that silently fails.
+  assert.match(seen.system, /skills: open-url/);
+});
+
+test('a client that can carry no skill at all is not told she has a desktop', async () => {
+  const { performStreamingTurn } = require('../src/turn');
+  const broker = createDesktopBroker({ logger: () => {} });
+  const res = { writableEnded: false, writeHead() {}, status() { return this; }, json() {}, write() {}, end() { this.writableEnded = true; } };
+  let seen = null;
+  const generator = {
+    stream: async (messages, opts) => {
+      seen = { tools: opts.tools, claimed: messages.some((m) => m.role === 'system' && /- desktop:/.test(m.content)) };
+      opts.onDelta('ok', false);
+      return 'ok';
+    },
+  };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hallo' }],
+    documents: { 'soul.md': 'S', 'principles.md': 'P', 'lexicon.md': 'L' },
+    res, generator, desktopBroker: broker, desktopClient: true, desktopSkills: [],
+  });
+  assert.deepEqual((seen.tools || []).map((tool) => tool.function.name), ['read_back']);
   assert.equal(seen.claimed, false);
 });
 

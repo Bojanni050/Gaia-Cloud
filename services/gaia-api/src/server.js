@@ -874,6 +874,10 @@ function createApp(env = process.env) {
         desktopRoots: req.body && req.body.desktopRoots,
         desktopPlaces: req.body && req.body.desktopPlaces,
         desktopIndex: Boolean(req.body && req.body.desktopIndex === true),
+        // Which skills this client can actually carry out (e.g. opening a URL needs no Desktop
+        // Commander, so a machine without it can still offer that). Absent means an older client
+        // that only sends `desktop: true` and gets every skill; an empty list means none.
+        desktopSkills: req.body && req.body.desktopSkills,
         res,
         conversationId,
         generator: getEffectiveNativeGenerator(),
