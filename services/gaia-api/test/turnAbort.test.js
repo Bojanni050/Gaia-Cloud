@@ -315,7 +315,7 @@ test('over real HTTP: a turn that is allowed to finish is not aborted and is sav
     });
     return { ok: true, body };
   };
-  const app = createApp({
+  const app = await createApp({
     GAIA_API_TOKEN: TOKEN,
     GAIA_NATIVE_BASE_URL: NATIVE_BASE,
     GAIA_NATIVE_MODEL: 'test-model',
@@ -367,7 +367,7 @@ test('over real HTTP, production-like (primary with tools): a client that leaves
       }),
     };
   };
-  const app = createApp({
+  const app = await createApp({
     GAIA_API_TOKEN: TOKEN,
     GAIA_NATIVE_BASE_URL: NATIVE_BASE,
     GAIA_NATIVE_MODEL: 'test-model',

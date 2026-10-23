@@ -299,7 +299,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs, mastraResearchJobs } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -360,6 +360,12 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   // why it is a separate capability from the lookup above.
   if (researchJobs && typeof researchJobs.start === 'function') {
     capabilities.push({ id: 'research' });
+  }
+  // The PARALLEL deep path: a Mastra research agent (https://mastra.ai) doing
+  // the same job with Gaia's own tools. Real only when the client is wired
+  // this turn — same honesty rule as every capability above.
+  if (mastraResearchJobs && typeof mastraResearchJobs.start === 'function') {
+    capabilities.push({ id: 'mastra_research' });
   }
   return capabilities;
 }
@@ -479,6 +485,7 @@ async function describeImagesAsText(images, describeImage, signal) {
 async function recallForTurn({
   userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
   hindsight, recallHindsight, recallHindsightSelf, foundation, conversationSearch, hypothesisRuntime, researchJobs,
+  mastraResearchJobs,
 }) {
   // Archive-shaped asks ("wat staat er in foundation…") open a read over
   // Foundation — the raw-record counterpart to Hindsight recall. The signal
@@ -535,7 +542,7 @@ async function recallForTurn({
     && shouldAttemptPatternRetrieval(userText, intentDecision, shape)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, openQuestionRows] = await Promise.all([
+  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, mastraResearchJob, openQuestionRows] = await Promise.all([
     hindsight
       // Bo's own bank fills the nine lines (his rule, 18-10-2026). Her own bank
       // joins only when the turn asks about her; the derived bank takes no lines
@@ -581,6 +588,15 @@ async function recallForTurn({
         .then(() => researchJobs.start({ question: userText, skillId: reachSkill, conversationId }))
         .catch(() => null)
       : Promise.resolve(null),
+    // Mastra research — the PARALLEL deep-research path (https://mastra.ai).
+    // Same async shape: submitted alongside recall, never awaited, findings
+    // arrive via the poll endpoint. Fires on the same research-with-sources
+    // signal, so a deployment runs one path or the other (or both, to compare).
+    mastraResearchJobs && typeof mastraResearchJobs.start === 'function' && conversationId
+      ? Promise.resolve()
+        .then(() => mastraResearchJobs.start({ question: userText, skillId: 'mastra-research', conversationId }))
+        .catch(() => null)
+      : Promise.resolve(null),
     // Independent of the rest, so it rides the same wait instead of adding its
     // own; a failure simply means she raises nothing extra (see below).
     hypothesisRuntime && hypothesisRuntime.openQuestions
@@ -608,10 +624,16 @@ async function recallForTurn({
   }
   timing.end('evidence_recall');
 
+  // A Mastra research job and a Hermes research job never both fire on the
+  // same turn in the default wiring (only one is enabled), but the recall
+  // shape carries whichever exists — the prompt's pending block and the
+  // transport's onResearchJob hook read `researchJob` first, then this.
+  const activeResearchJob = researchJob || mastraResearchJob;
+
   return {
     wantFoundation, wantConversationHistory, wantPatterns, reachSkill,
     reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults,
-    conversationHits, researchJob, openQuestionRows, dualRecall,
+    conversationHits, researchJob: activeResearchJob, openQuestionRows, dualRecall,
   };
 }
 
@@ -674,7 +696,7 @@ function logRecallObservability({
 function buildTurnPrompt({
   userText, messages, documents, attachments, conversationId, traceId, timing, decisionLogger,
   primary, backup, nativeGenerator, hermes, generator, foundation, conversationSearch,
-  hindsight, aion, desktop, researchJobs, hypothesisRuntime,
+  hindsight, aion, desktop, researchJobs, mastraResearchJobs, hypothesisRuntime,
   wantFoundation, wantPatterns, reflections, mentalModels, recalledPatterns, knowledgePages,
   foundationResults, conversationHits, researchJob, openQuestionRows, dualRecall,
 }) {
@@ -717,7 +739,7 @@ function buildTurnPrompt({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs, mastraResearchJobs });
   // One clock for the whole turn: the "now" block Gaia is given and the
   // relative ages on recalled memory and earlier conversations all read the
   // same instant, so they can never contradict each other.
@@ -898,6 +920,7 @@ async function runTurnCore({
   nativeGenerator,
   hermes,
   researchJobs,
+  mastraResearchJobs,
   foundation,
   conversationSearch,
   hypothesisRuntime,
@@ -949,6 +972,7 @@ async function runTurnCore({
     recallHindsightSelf: hindsightSelf,
     userText, shape, intentDecision, conversationId, traceId, timing, decisionLogger,
     hindsight, foundation, conversationSearch, hypothesisRuntime, researchJobs,
+    mastraResearchJobs,
   });
   const {
     reflections, mentalModels, recalledPatterns, knowledgePages, researchJob,
@@ -974,7 +998,7 @@ async function runTurnCore({
   const { assembled, buildAssembled, evidence, textAttachments, multimodalAttachments, now } = buildTurnPrompt({
     userText, messages, documents, attachments, conversationId, traceId, timing, decisionLogger,
     primary, backup, nativeGenerator, hermes, generator, foundation, conversationSearch,
-    hindsight, aion, desktop, researchJobs, hypothesisRuntime,
+    hindsight, aion, desktop, researchJobs, mastraResearchJobs, hypothesisRuntime,
     ...recall,
   });
 

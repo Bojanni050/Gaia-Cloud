@@ -259,6 +259,67 @@ gate (free, bilingual)  ─ signal ─▶  model     due loop ─▶ politeness 
   surviving a closed window or a reconnect. `conversationStore`'s
   `/conversations/events` ping fires too.
 
+## Mastra Research — a parallel deep-research capability
+
+The Hermes research reach (above) is one deep path. **Mastra research** is a
+second, independent one, built on the [Mastra](https://mastra.ai) agent
+framework: a typed TypeScript agent that runs under Gaia's SOUL with Gaia's own
+tools, instead of a Hermes skill named in a prompt. The two paths share the
+async research-job lifecycle — submit, answer immediately, poll for findings,
+write them into the conversation, announce via `GET /research/jobs` — so a
+client cannot tell them apart, and a deployment can run one, the other, or
+both to compare.
+
+```
+turn (research-with-sources signal)
+        │
+        ├── Hermes path (GAIA_RESEARCH_REACH=on) ──► skill named in prompt ──► Hermes loads it
+        │                                                            ▲
+        └── Mastra path (GAIA_MASTRA_RESEARCH=on) ──► typed agent ────┘
+                src/mastra/mastraResearchAgent.js
+                ├── SOUL as instructions (identity/soul.md)
+                ├── reasoning role as model (providerConfigResolver)
+                └── Gaia's tools (mastraTools.js):
+                    ├── gaia-web-search      (live web, shallow)
+                    ├── gaia-memory-recall   (Hindsight, derived memory)
+                    ├── gaia-archive-search  (Foundation, raw records)
+                    └── gaia-conversation-search (literal transcript)
+                              │
+                              ▼
+                    findings → researchJobStore (executor: 'mastra')
+                              │
+                              ▼
+                    pollMastraResearchJobs → saveResearchMessage
+                              │
+                              ▼
+                    GET /research/jobs (same endpoint as Hermes path)
+```
+
+- **SOUL is the instructions.** The Mastra agent's `instructions` are Gaia's
+  SOUL plus a research frame ("findings, not the reply; cite every claim").
+  Character Before Model holds: the agent is Gaia's research faculty, not a
+  second Gaia.
+- **The model is Gaia's reasoning role.** Resolved through
+  `providerConfigResolver` (admin panel), never through Mastra's own env-var
+  router. Invisible Implementation holds: no provider or model name crosses
+  into a client response.
+- **The tools are Gaia's subsystems.** Each Mastra tool wraps an existing Gaia
+  client (webSearch, hindsight, foundation, conversationSearch). The agent
+  never talks to a store directly; it calls a tool, the tool calls Gaia.
+- **Findings, not the reply.** The agent produces material — sourced findings,
+  confidence labels, open questions. The turn that submitted the research still
+  owns the answer, in Gaia's voice, through `responseEngine.js`. Same boundary
+  as `researchReach.js` ("materiaal, geen antwoord").
+- **Optional by design.** `@mastra/core` is an `optionalDependency`. When it is
+  not installed, `createMastraResearchClient()` resolves to null and the
+  capability never appears — a missing optional capability degrades, never
+  crashes. `zod` is a regular dependency (the tools' schemas need it).
+- **Shared store, separate executor.** Both research paths write to the same
+  `researchJobStore`; the `executor: 'mastra'` tag on a job tells the poller
+  which client to ask. The Hermes poller ignores Mastra jobs and vice versa.
+- **Off by default:** `GAIA_MASTRA_RESEARCH=on`. Poll cadence:
+  `GAIA_MASTRA_RESEARCH_POLL_MS` (default 20000 ms).
+
 ## Switches
 
 Behaviour that is optional is controlled by environment flags (read in
@@ -270,6 +331,7 @@ Behaviour that is optional is controlled by environment flags (read in
 | `GAIA_ELEOS` | off | Eleos check-ins (`true` to enable) |
 | `GAIA_DESKTOP` | off | the `desktop` capability and its broker (`true` to enable) |
 | `GAIA_RESEARCH_REACH` | off | research jobs at Hermes (`on` to enable) |
+| `GAIA_MASTRA_RESEARCH` | off | Mastra research agent, a parallel deep-research path (`on` to enable) |
 | `GAIA_AION` | on | the Aion pass (`false` to disable) |
 | `GAIA_MEMORY_TOOL` | on | the `remember` tool (`false` to disable) |
 | `GAIA_HYPOTHESIS_PERSISTENCE` | on | writing hypotheses to Cognition (`false` to disable) |
