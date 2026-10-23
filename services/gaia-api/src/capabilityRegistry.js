@@ -170,6 +170,7 @@ const CAPABILITY_REGISTRY = Object.freeze({
       Object.freeze({ id: 'file-search', category: 'files', routing: false, description: 'search file names and contents on the connected computer (no confirmation needed)' }),
       Object.freeze({ id: 'file-write', category: 'files', routing: false, description: 'create or edit files on the connected computer; the person confirms first' }),
       Object.freeze({ id: 'run-command', category: 'system', routing: false, description: 'run a terminal command on the connected computer; the person confirms first' }),
+      Object.freeze({ id: 'open-url', category: 'browser', routing: false, description: "open a web address in the person's own browser (http and https only)" }),
     ]),
   }),
 

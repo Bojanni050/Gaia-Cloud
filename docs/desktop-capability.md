@@ -21,8 +21,16 @@ generator never gets it.
 | skill | policy | meaning |
 | --- | --- | --- |
 | `file-read`, `file-search` | `auto` | runs without asking |
+| `open-url` | `auto` | opens an http(s) address in the person's browser, without asking |
 | `file-write`, `run-command` | `confirm` | runs only after the person approves |
 | anything else | `confirm` | fail closed |
+
+`open-url` is `auto` on purpose: it has to work hands-free in a voice turn,
+where nobody is at the keyboard to approve a prompt. The address itself is
+shown in the conversation (`summary` and `input`), so what opened stays
+inspectable. Only `http:` and `https:` addresses are accepted — no `file:`,
+`javascript:`, `data:` or app links, no credentials in the URL, no whitespace —
+checked on the server **and** in the client.
 
 A client **may** ask for more confirmation than `policy` says (e.g. reading a
 path outside its allowed folders). It must never ask for less.

@@ -45,6 +45,11 @@ wacht op het resultaat. Deze taak is de clientkant van dat contract.
      al verlopen of beantwoord).
 4. **Skills aan Desktop Commander koppelen.**
    - `file-read`, `file-search`: beleid `auto`, direct uitvoeren.
+   - `open-url`: beleid `auto`, direct uitvoeren — maar dit gaat **niet** via Desktop
+     Commander; je opent de URL zelf (Tauri-command). Alleen `http:` en `https:`,
+     geen `file:`/`javascript:`/`data:`/app-links, geen credentials in de URL, geen
+     spaties. Weiger de rest met `ok: false` en een korte reden. Sla de eis van
+     toegestane mappen over: een URL heeft geen pad.
    - `file-write`, `run-command`: beleid `confirm`, alleen uitvoeren na goedkeuring.
    - Onbekende skill: rapporteer `ok: false`, voer niets uit.
 5. **Veiligheid aan de clientkant.**
