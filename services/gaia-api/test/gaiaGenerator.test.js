@@ -412,3 +412,38 @@ test('stream() offers per-call tools on top of constructor tools and routes each
   await gen.stream([{ role: 'user', content: 'hi' }], { onDelta() {} });
   assert.deepEqual(sent.at(-1).tools.map((t) => t.function.name), ['remember']);
 });
+
+test('stream() records a refused desktop skill as a skill.gap, with the skill she asked for', async () => {
+  const { createGaiaGenerator } = require('../src/generation/gaiaGenerator');
+  const lines = [];
+  let round = 0;
+  const sse = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
+  const fetchImpl = async () => {
+    round += 1;
+    const body = round === 1
+      ? sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'desktop', arguments: '{"skill":"send-email","input":{"to":"piet@example.nl"}}' } }] } }] }) + 'data: [DONE]\n\n'
+      : sse({ choices: [{ delta: { content: 'dat kan ik niet' } }] }) + 'data: [DONE]\n\n';
+    const encoder = new TextEncoder();
+    return { ok: true, status: 200, body: new ReadableStream({ start(c) { c.enqueue(encoder.encode(body)); c.close(); } }) };
+  };
+  const callTool = { type: 'function', function: { name: 'desktop', parameters: { type: 'object', properties: {} } } };
+  const gen = createGaiaGenerator({
+    baseUrl: 'http://x', model: 'm', fetchImpl,
+    logger: (line) => lines.push(line),
+  });
+  await gen.stream([{ role: 'user', content: 'mail Piet even' }], {
+    sessionId: 'conv-3',
+    onDelta() {},
+    tools: [callTool],
+    onToolCall: async () => 'That is not something the desktop can do.',
+  });
+
+  const gaps = lines.map((line) => JSON.parse(line)).filter((record) => record.kind === 'skill.gap');
+  assert.equal(gaps.length, 1);
+  assert.equal(gaps[0].reason, 'unknown-skill');
+  assert.equal(gaps[0].capability, 'desktop');
+  assert.equal(gaps[0].skill, 'send-email');
+  assert.equal(gaps[0].conversationId, 'conv-3');
+  assert.equal(gaps[0].round, 1);
+  assert.ok(!lines.join('').includes('piet@example.nl'), 'no argument value reaches the log');
+});

@@ -36,6 +36,7 @@
 
 const { logLlmCall } = require('../logos/llmCallLog');
 const { logToolCall, logToolUnavailable } = require('../toolLog');
+const { logSkillGap } = require('../skillGap');
 const { identityHeadersFor } = require('../providerHeaders');
 
 const DEFAULT_TIMEOUT_MS = 60000;
@@ -341,8 +342,12 @@ function createGaiaGenerator(options = {}) {
       let resultText = 'Unknown action.';
       let ok = true;
       const startedAt = Date.now();
+      // Parsed once, before dispatch, so a refusal can be read as a gap: for the
+      // desktop tool the requested skill lives in the arguments, and the result
+      // sentence alone cannot say which ability was missing.
+      const args = parseToolArguments(call.arguments);
       try {
-        resultText = String((await dispatch(call.name, parseToolArguments(call.arguments))) || 'Done.');
+        resultText = String((await dispatch(call.name, args)) || 'Done.');
       } catch (error) {
         ok = false;
         resultText = 'That could not be done.';
@@ -357,6 +362,11 @@ function createGaiaGenerator(options = {}) {
           ok,
           latencyMs: Date.now() - startedAt,
         }, logger);
+        // A refusal can be a missing ability rather than a failed action. Only
+        // the four "this does not exist / this machine cannot do it" sentences
+        // count (see ../skillGap.js); an ordinary failure does not, because a
+        // broken tool is not a missing skill.
+        logSkillGap({ tool: call.name, input: args, resultText, round, conversationId }, logger);
       }
       toolMessages.push({ role: 'tool', tool_call_id: call.id, content: resultText });
     }
