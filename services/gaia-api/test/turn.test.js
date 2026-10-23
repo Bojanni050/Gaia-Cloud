@@ -578,7 +578,8 @@ test('performStreamingTurn recalls only when the policy fires; Hindsight reflect
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(reflectCalls.length, 1);
-  assert.match(reflectCalls[0].summary, /A real reply here\./);
+  assert.equal(reflectCalls[0].summary, 'Bojan: Onthoud dat de project database altijd op de VPS draait.');
+  assert.ok(!reflectCalls[0].summary.includes('A real reply here.'));
 });
 
 // --- Logos.IntentIQ integration (interpretation-only seam) -----------------

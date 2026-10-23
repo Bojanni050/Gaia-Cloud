@@ -542,6 +542,7 @@ test('reflectOnTurn keeps a statement turn and drops a question-only turn', asyn
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(captured.length, 1);
   assert.match(captured[0].summary, /^Bojan: Hij heeft mij gisteren bezocht/);
+  assert.ok(!captured[0].summary.includes('Wat fijn.'), captured[0].summary);
 
   // A question attached to something the person states keeps the statement,
   // and the question itself is not handed over as if it were said.
@@ -556,14 +557,13 @@ test('reflectOnTurn keeps a statement turn and drops a question-only turn', asyn
   assert.ok(!captured[1].summary.includes('Wat weet je over MelodiQ?'), captured[1].summary);
 });
 
-test('reflectOnTurn leaves her bare confirmation out of the retained turn', async () => {
+test('reflectOnTurn sends only the user statement, never the assistant reply', async () => {
   const captured = [];
   const hindsight = { reflect: async (opts) => { captured.push(opts); } };
 
-  // Keeping "Genoteerd." as her side of the turn makes the extractor record
-  // that she noted the information as a fact of its own ("Gaia noteert de
-  // informatie van Bojan", dry-run-extract 18-10-2026) — the chatter this
-  // turn exists to keep out.
+  // Previously, including "Genoteerd." made the extractor record that Gaia
+  // noted the information as a fact of its own. The assistant reply is now
+  // excluded regardless of whether it is a bare acknowledgement or substantive.
   reflectOnTurn(hindsight, {
     userText: 'Ik heb twee 27 inch monitoren',
     assistantText: 'Genoteerd.',
@@ -575,7 +575,7 @@ test('reflectOnTurn leaves her bare confirmation out of the retained turn', asyn
   assert.match(captured[0].summary, /^Bojan: Ik heb twee 27 inch monitoren$/);
   assert.ok(!captured[0].summary.includes('Genoteerd.'), captured[0].summary);
 
-  // A real answer still travels with the turn.
+  // Even a substantive answer is not part of the memory extractor input.
   reflectOnTurn(hindsight, {
     userText: 'Ik heb twee 27 inch monitoren',
     assistantText: 'Dan kun je de twee vensters naast elkaar zetten.',
@@ -583,7 +583,8 @@ test('reflectOnTurn leaves her bare confirmation out of the retained turn', asyn
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(captured.length, 2);
-  assert.ok(captured[1].summary.includes('Dan kun je de twee vensters naast elkaar zetten.'));
+  assert.equal(captured[1].summary, 'Bojan: Ik heb twee 27 inch monitoren');
+  assert.ok(!captured[1].summary.includes('Dan kun je de twee vensters naast elkaar zetten.'));
 });
 
 // --- mental models -----------------------------------------------------

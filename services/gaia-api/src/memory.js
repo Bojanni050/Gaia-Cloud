@@ -8,7 +8,6 @@
  * contract.
  */
 const { shouldRecall, shouldReflect, distillQuery } = require('./memoryPolicy');
-const { isPureAcknowledgement } = require('./memoryWorthiness');
 const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
 const { relativeAge } = require('./nowContext');
 
@@ -382,14 +381,11 @@ function spokenPart(text) {
  * GATE itself lives at the call site (turn.js); this function stays the
  * transport.
  *
- * Only what the person said is retained on their side of the summary: their
- * questions are left out (see spokenPart) so the extractor is not handed
- * "Bo asked about X" as if Bo had stated it, and a turn that is nothing but a
- * question is not retained at all. Reason, measured on 18-10-2026 with a
- * dry-run extract: her answer to "what do you know about X" is itself a
- * restatement of what is already stored, so retaining that exchange is how
- * "Gaia knows nothing about Yassine" became a stored fact that then outranked
- * the real ones. A turn in which the person states anything is still retained,
+ * Only the person's selected statement reaches Hindsight's extractor. Their
+ * questions are left out (see spokenPart), and the assistant's reply is never
+ * included: Hindsight otherwise turns its wording into apparent world facts
+ * about Gaia or the conversation. A turn that is nothing but a question is
+ * not retained at all. A turn in which the person states anything is retained,
  * question attached or not.
  *
  * Identity: the persisted conversation is Gaia ↔ User (Bojan for dev,
@@ -405,26 +401,18 @@ function spokenPart(text) {
 function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText, { shape })) return;
-  // Nothing stated on the person's side means nothing to remember: a turn that
-  // only asks would otherwise store her answer to that question, and an answer
-  // to "what do you know about X" is a restatement of what memory already
-  // holds — never a new fact. See spokenPart for what counts as asking.
+  // Nothing stated on the person's side means nothing to remember. See
+  // spokenPart for what counts as asking. The assistant reply is deliberately
+  // not used as memory content: it is not evidence about the user's world.
   const spoken = spokenPart(userText);
   if (!spoken) return;
-  // A reply that is nothing but a confirmation ("Genoteerd.") is not worth
-  // handing to the extractor: it would be kept as a fact about her noting what
-  // he said. Measured 18-10-2026, where "Gaia noteert de informatie van Bojan"
-  // came out of exactly that shape.
-  const reply = isPureAcknowledgement(assistantText) ? '' : assistantText;
   const assistantIdentity = getAssistantIdentity();
   const userIdentity = getUserIdentity(
     userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}
   );
   const context = getConversationContext({ userDisplayName: userIdentity.displayName });
   // Summary uses the authoritative display names, not hardcoded "Bo"/"Gaia" literals
-  const summary = reply
-    ? `${userIdentity.displayName}: ${spoken}\n\n${assistantIdentity.displayName}: ${reply}`
-    : `${userIdentity.displayName}: ${spoken}`;
+  const summary = `${userIdentity.displayName}: ${spoken}`;
   // Identity metadata: conversational agent is always Gaia, even when a
   // capability (Hermes, etc.) executed internally. Capability executor may
   // be recorded separately where useful, but never as the conversation agent.
