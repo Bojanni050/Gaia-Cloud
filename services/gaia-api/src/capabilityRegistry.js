@@ -164,7 +164,10 @@ const CAPABILITY_REGISTRY = Object.freeze({
   desktop: Object.freeze({
     id: 'desktop',
     type: 'capability',
-    description: "working on the person's own computer when a turn asks for it — reading, searching and (with their confirmation) changing files or running commands",
+    // Deliberately does not enumerate the work in prose: which skills this machine really has changes
+    // per client, and the awareness block lists those separately. Naming them here made Gaia claim
+    // file work on a machine that could only open a page.
+    description: "working on the person's own computer when a turn asks for it — what she may do there is the skills list below",
     skills: Object.freeze([
       Object.freeze({ id: 'file-read', category: 'files', routing: false, description: 'read and list files on the connected computer (no confirmation needed)' }),
       Object.freeze({ id: 'file-search', category: 'files', routing: false, description: 'search file names and contents on the connected computer (no confirmation needed)' }),
