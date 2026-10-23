@@ -54,6 +54,54 @@ test('readTurn states the live recall gate for every shape', () => {
   }
 });
 
+test('readTurn: doubt and a challenge to her memory open the gate as repair', () => {
+  // Bo's own turns from 23-10-2026, where the gate stayed shut while the fact
+  // sat in her bank. These are not past-references; they are the person saying
+  // "you should know this" and "that is not what I said".
+  const challenges = [
+    'Als het goed is, weet je over Pieter dat hij bij mij op visite is geweest en een hond heeft.',
+    'Hoe kom je aan die informatie over Pieter? Want dat is iets wat ik totaal niet herken.',
+    'Volgens mij klopt dat niet.',
+    'Kun je het je niet herinneren?',
+    'Kan je het je niet herinneren, ik heb het je verteld.',
+    'Weet je dat niet meer?',
+    'Dat is niet wat ik zei.',
+    'Waar heb je dat vandaan?',
+    'Kun je er nog eens naar kijken?',
+    "Can't you remember what I told you?",
+    'That is not what I said.',
+  ];
+  for (const text of challenges) {
+    const shape = readTurn(text);
+    assert.equal(shape.wantsRecall, true, `gate shut for: ${JSON.stringify(text)}`);
+    assert.ok(
+      shape.matched.includes('repair') || shape.matched.includes('pastReference'),
+      `cue not named for: ${JSON.stringify(text)}`
+    );
+  }
+});
+
+test('readTurn: asking the same question again opens the gate, a new question does not', () => {
+  const previous = [
+    'Weet je nog wat de hond van Pieter heet?',
+    'Wat voor werk doet Pieter eigenlijk?',
+  ];
+  // Same question, reworded — the shortest honest form of "you did not answer me".
+  const repeated = readTurn('Hoe heet de hond van Pieter ook alweer?', { previousUserTexts: previous });
+  assert.equal(repeated.repeatAsk, true);
+  assert.equal(repeated.wantsRecall, true);
+  assert.ok(repeated.matched.includes('repeatAsk'));
+
+  // Same person, different question: must stay separate.
+  const different = readTurn('Waar woont Pieter tegenwoordig?', { previousUserTexts: previous });
+  assert.equal(different.repeatAsk, false);
+
+  // Without history the shape is exactly what it was before the cue existed.
+  assert.equal(readTurn('Hoe heet de hond van Pieter ook alweer?').repeatAsk, false);
+  // Too short to be a repeat: two content words are a topic, not a question.
+  assert.equal(readTurn('En Pieter?', { previousUserTexts: previous }).repeatAsk, false);
+});
+
 test('readTurn states the live pattern gate for every shape', () => {
   for (const text of CORPUS) {
     assert.equal(

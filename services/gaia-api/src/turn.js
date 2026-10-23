@@ -238,6 +238,30 @@ function latestUserText(messages) {
 }
 
 /**
+ * The user turns before the current one, oldest first. Only the repeat-ask cue
+ * needs them: asking the same thing twice is itself a statement that the first
+ * answer missed, and that is knowledge no single sentence contains.
+ *
+ * Bounded to the last few turns on purpose — "asked again" means in this
+ * conversation, not somewhere in a long transcript, and two turns back is
+ * already generous.
+ */
+const REPEAT_LOOKBACK_TURNS = 4;
+
+function previousUserTexts(messages, limit = REPEAT_LOOKBACK_TURNS) {
+  const texts = [];
+  for (let i = messages.length - 1; i >= 0 && texts.length < limit; i -= 1) {
+    const message = messages[i];
+    if (message && message.role === 'user' && typeof message.content === 'string') {
+      texts.unshift(message.content);
+    }
+  }
+  // The last entry is the current turn, which is not "previous".
+  if (texts.length > 0) texts.pop();
+  return texts;
+}
+
+/**
  * Adapts a legacy Hermes client (`{ chat, stream }`) to the generator
  * shape (`{ generate, stream }`) the live path speaks. Backward
  * compatibility for existing callers/tests only — production wiring
@@ -909,7 +933,7 @@ async function runTurnCore({
   // zin met de woordjeslijsten van alle poorten samen. Elke poort hieronder
   // luistert naar dit ene antwoord in plaats van zelf opnieuw naar dezelfde
   // tekst te kijken — dat is precies waar ze uit elkaar liepen.
-  const shape = readTurn(userText);
+  const shape = readTurn(userText, { previousUserTexts: previousUserTexts(messages) });
 
   // No live interpretation: language understanding happens inside the single
   // inference call. The IntentIQ classifier that once produced a decision has

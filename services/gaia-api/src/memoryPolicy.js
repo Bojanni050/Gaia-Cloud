@@ -128,6 +128,59 @@ const HER_VIEW_SIGNALS = [
   phrase('your view'), phrase('how do you see'),
 ];
 
+/**
+ * Repair signals — the turn is not asking *about* the past, it is telling her
+ * that what she just said is wrong, or that she should have known it. Measured
+ * 23-10-2026 on Bo's own conversation, where "Als het goed is, weet je over
+ * Pieter dat hij bij mij op visite is geweest en een hond heeft" and "Hoe kom je
+ * aan die informatie over Pieter? Want dat is iets wat ik totaal niet herken"
+ * both walked with the gate shut: she answered out of background summaries
+ * while the fact sat in her own bank.
+ *
+ * The lesson is that a memory question is not only a question about the past.
+ * The two shapes that most reliably need the store are **doubt** ("volgens mij
+ * klopt dat niet", "dat is niet wat ik zei") and **a challenge to her memory**
+ * ("weet je dat niet meer?", "kan je het je niet herinneren?"), plus the plain
+ * knowledge claim that used to be read as small talk: "weet je over Pieter
+ * dat…" carries the cue "weet je", and only "weet je nog" was in the list.
+ *
+ * This is deliberately the widest group in the file, and it accepts a known
+ * false positive: "weet je wat, laten we…" is a discourse marker, and it will
+ * open the gate. The cost of that mistake is one recall (~900 ms) and a few
+ * lines of context; the cost of the opposite mistake was a person insisting
+ * three times that she knows something while she kept answering "ik heb niets
+ * over Pieter". Bias toward looking.
+ */
+const REPAIR_SIGNALS = [
+  // The knowing-question, not just "weet je nog": "weet je over Pieter dat…",
+  // "weet je dat hij een hond heeft", "weet jij wie dat is".
+  phrase('weet je'), phrase('weet jij'),
+  phrase('je weet toch'), phrase('je zou moeten weten'), phrase('je zou toch moeten weten'),
+  phrase('als het goed is weet je'), phrase('dat zou je moeten weten'),
+  phrase('kan je het je niet herinneren'), phrase('kun je het je niet herinneren'),
+  phrase('kan je het niet herinneren'), phrase('kun je het niet herinneren'),
+  phrase('weet je dat niet'), phrase('weet je dat nog'), phrase('dat weet je toch'),
+  phrase('dat heb ik je verteld'), phrase('dat heb ik je al verteld'),
+  // Doubt and correction of what she just said.
+  phrase('klopt niet'), phrase('klopt dat'), phrase('volgens mij klopt'),
+  phrase('niet herken'), phrase('herken ik niet'), phrase('niet bekend voor'),
+  phrase('dat is niet wat ik'), phrase('dat heb ik nooit gezegd'),
+  phrase('dat heb ik niet gezegd'), phrase('dat zei ik niet'),
+  phrase('waar heb je dat vandaan'), phrase('waar komt dat vandaan'),
+  phrase('hoe kom je aan die informatie'), phrase('hoe kom je daaraan'),
+  phrase('hoe weet je dat'), phrase('waar baseer je dat op'),
+  // "Kun je er nog eens naar kijken?" — an explicit request to look again.
+  phrase('nog eens naar kijken'), phrase('nog eens kijken'), phrase('nog een keer kijken'),
+  phrase('er nog eens naar'), phrase('opnieuw kijken'), phrase('opnieuw naar kijken'),
+  phrase('zoek het nog eens'), phrase('zoek nog eens'), phrase('kijk er nog eens'),
+  // English equivalents of the same three shapes.
+  phrase("can't you remember"), phrase('cannot you remember'),
+  phrase('do you not remember'), phrase("don't you remember"),
+  phrase('i never said that'), phrase("that's not what i said"), phrase('that is not what i said'),
+  phrase('where did you get that'), phrase('how do you know'),
+  phrase('look again'), phrase('check again'), phrase('try again'),
+];
+
 function shouldRecall(query, context = {}) {
   const shape = context && context.shape;
   if (shape) return Boolean(shape.wantsRecall);
@@ -140,7 +193,9 @@ function shouldRecall(query, context = {}) {
     if (intent.meta && intent.meta.reason === 'assistant_anchored_follow_up_unresolved_intent') return true;
     if (intent.meta && intent.meta.reason === 'assistant_anchored_follow_up_inherited') return true;
   }
-  return hasSignal(text, PAST_REFERENCE_SIGNALS) || hasSignal(text, DURABLE_CONTEXT_SIGNALS);
+  return hasSignal(text, PAST_REFERENCE_SIGNALS)
+    || hasSignal(text, DURABLE_CONTEXT_SIGNALS)
+    || hasSignal(text, REPAIR_SIGNALS);
 }
 
 /**
@@ -178,5 +233,6 @@ module.exports = {
   FILLER_PATTERNS,
   PAST_REFERENCE_SIGNALS,
   DURABLE_CONTEXT_SIGNALS,
+  REPAIR_SIGNALS,
   HER_VIEW_SIGNALS,
 };
