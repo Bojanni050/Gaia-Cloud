@@ -54,6 +54,7 @@ const { pickOpenQuestion, renderOpenQuestionRaise, fromQuestionRow } = require('
 const { renderFoundationContext } = require('./foundationClient');
 const { renderConversationHistoryContext } = require('./conversationSearch');
 const { createConversationTool } = require('./reasoning/conversationTool');
+const { dedupeObservations } = require('./reasoning/cognitionKnowledgeAdapter');
 const { renderNowContext } = require('./nowContext');
 const { generateConversationTitle, withDeadline, TITLE_DEADLINE_MS } = require('./conversationTitle');
 const { resolveReachSkill, renderResearchPending } = require('./researchReach');
@@ -1299,7 +1300,7 @@ async function runDeferredCognition({
     //    not conversational memory.
     if (hypothesisRuntime.cognition && reasoningResult) {
       const { retainObservation, retainOpenQuestion, retainRelationship } = hypothesisRuntime.cognition;
-      const observations = Array.isArray(reasoningResult.observations) ? reasoningResult.observations : [];
+      const observations = dedupeObservations(Array.isArray(reasoningResult.observations) ? reasoningResult.observations : []);
       const openQuestions = Array.isArray(reasoningResult.openQuestions) ? reasoningResult.openQuestions : [];
       const relationships = Array.isArray(reasoningResult.relationships) ? reasoningResult.relationships : [];
       // The three kinds, and the items inside each, are independent writes to

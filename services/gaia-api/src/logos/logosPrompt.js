@@ -62,9 +62,20 @@ Rules:
   evidence relations and honest confidence.
 - If two pieces of input evidence conflict, report the conflict in contradictions
   with both sides' ids; do not silently pick which source is true.
-- observations are CONCRETE derived information ("the user explicitly decided X"),
-  never interpretations — an interpretation belongs in hypotheses. Link each
-  observation to the input evidence ids it stands on; never invent an id.
+- observations are CLAIMS ABOUT THE WORLD that will still be true tomorrow
+  ("Pieter has a dog", "Bo prefers a direct, functional tone", "Bo no longer
+  recognises the characterization 'egoist'"), written in the third person and
+  self-contained: a reader who sees only that line must understand it. ONE
+  claim per entry.
+  Never narrate the conversation instead of stating what it revealed. None of
+  these is an observation, whatever else they may be: what you or the
+  assistant replied, that the user confirmed/asked/mentioned/agreed to
+  something, which language is being spoken, how short or long a message was,
+  or your own reasoning process. "The user's reply is a short affirmative"
+  states nothing; "Bo agreed to drop the unverified Pieter characterization"
+  does. Do not restate the same claim in two entries.
+  An interpretation belongs in hypotheses, not here. Link each observation to
+  the input evidence ids it stands on; never invent an id.
 - openQuestions are unresolved questions worth keeping (an uncertain interpretation,
   a hypothesis needing more evidence, an unfinished goal). You identify them;
   you NEVER ask the user about them — that is Gaia's decision, later. Each entry
@@ -136,7 +147,7 @@ Schema:
   "uncertainties": [string],
   "informationGaps": [string],
   "observations": [{
-    "statement": string,            // concrete derived information, NOT an interpretation
+    "statement": string,            // a durable third-person claim, NOT narration of this turn
     "evidence": [string],           // input evidence IDS this observation stands on
     "relatedHypothesisId": string|null // EXISTING hypothesis this is relevant to, when one does
   }],

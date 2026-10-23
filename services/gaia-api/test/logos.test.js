@@ -1121,6 +1121,19 @@ test('v1.0 prompt: the schema asks for observations/openQuestions/reflection and
   assert.match(messages[1].content, /achtergrondcognitie/);
 });
 
+test('v1.0 prompt: observations are asked for as durable claims, never as narration of the turn', () => {
+  const messages = buildLogosPrompt({ text: 'We decided ReasonIQ stays in the background.', evidence: [] });
+  const system = messages[0].content;
+  assert.match(system, /CLAIMS ABOUT THE WORLD/);
+  assert.match(system, /will still be true tomorrow/);
+  assert.match(system, /ONE\s+claim per entry/);
+  // The four things the model actually produced instead (2026-10-23):
+  assert.match(system, /what you or the\s+assistant replied/);
+  assert.match(system, /which language is being spoken/);
+  assert.match(system, /Do not restate the same claim in two entries/);
+  assert.match(system, /a durable third-person claim, NOT narration of this turn/);
+});
+
 test('v1.0 logging: the result line counts observations/open questions and reports reflection presence', async () => {
   const lines = [];
   await evaluate(

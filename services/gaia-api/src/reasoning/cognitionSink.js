@@ -42,32 +42,6 @@ function createCognitionSink({ cognition, sync } = {}) {
 
   // --- hypotheses ---------------------------------------------------------
 
-  /**
-   * A claim the per-turn phase is not allowed to make — yet.
-   *
-   * When per-turn formation is off, the model still derives statements from
-   * this turn's evidence; those are exactly observations: one moment, with the
-   * ground it stood on. Dropping them starved the formation pass (nothing to
-   * aggregate, because Logos's own `observations` array comes back empty).
-   * Writing them here keeps the raw material flowing while the pass decides
-   * whether repeated ground makes them a statement.
-   *
-   * @param {{ statement?: string, evidenceFor?: string[], evidenceAgainst?: string[] }} claim
-   * @param {{ evidence?: Array<object>, observedAt?: string, conversationId?: string }} [context]
-   */
-  async function observe(claim, { evidence, observedAt, conversationId } = {}) {
-    const statement = String((claim && claim.statement) || '').trim();
-    if (!statement) return null;
-    const cited = [...(claim.evidenceFor || []), ...(claim.evidenceAgainst || [])];
-    const snapshots = snapshotsFor(indexEvidence(evidence, observedAt), cited);
-    return cognition.createObservation({
-      statement,
-      ...(snapshots.length > 0 ? { evidence_items: snapshots } : {}),
-      ...(conversationId ? { conversation_id: conversationId } : {}),
-      ...(observedAt ? { observed_at: observedAt } : {}),
-    });
-  }
-
   async function saveHypothesis(next, { evidence, evidenceItems, observedAt } = {}) {
     // The evidence the record cites, captured while the turn still holds it.
     // A caller that already holds assembled snapshots (the belief formation
@@ -207,7 +181,7 @@ function createCognitionSink({ cognition, sync } = {}) {
   }
 
   return {
-    hypothesis: { save: saveHypothesis, update: updateHypothesis, observe },
+    hypothesis: { save: saveHypothesis, update: updateHypothesis },
     pattern: { save: savePattern, update: updatePattern },
     hypIdMap,
     patternIdMap,

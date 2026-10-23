@@ -555,7 +555,7 @@ test('per-turn formation can be switched off without losing evidence verdicts', 
     },
   });
 
-  const { applied, skippedProposals, observed: observedCount } = m.applyReasoningResult({
+  const { applied, skippedProposals } = m.applyReasoningResult({
     hypotheses: [{ statement: 'A claim from this one turn.', confidence: 0.7, evidenceFor: ['upload-1'] }],
     hypothesisUpdates: [{ hypothesisId: 'hyp-1', relation: 'supports', evidenceId: 'turn-2', confidenceDelta: 0.1 }],
   }, {
@@ -568,11 +568,10 @@ test('per-turn formation can be switched off without losing evidence verdicts', 
   assert.equal(saved.length, 0);
   assert.equal(skippedProposals, 1);
   assert.equal(m.list().filter((h) => h.statement === 'A claim from this one turn.').length, 0);
-  // ...it is kept as an observation, with the turn's ground and conversation.
-  assert.equal(observedCount, 1);
-  assert.equal(observed.length, 1);
-  assert.equal(observed[0].claim.statement, 'A claim from this one turn.');
-  assert.equal(observed[0].context.conversationId, 'conv-7');
+  // ...and this manager does not write it as an observation either: the turn's
+  // observation stream (reasoningResult.observations, via the cognition
+  // adapter) is the one writer. Two writers made one moment look like two.
+  assert.equal(observed.length, 0);
   // ...but weighing evidence against something that already exists still happens.
   assert.equal(updated.length, 1);
   assert.equal(applied.length, 1);

@@ -28,6 +28,41 @@ function renderRelationship(relationship) {
   return `${from} ${relationship.type} ${to}`;
 }
 
+/**
+ * A claim reduced to the thing that makes two wordings "the same sentence":
+ * case, accents, punctuation and spacing. Deliberately not a paraphrase
+ * detector — a fuzzy match here would silently drop a claim that is merely
+ * similar, and the prompt (logosPrompt.js) is what asks for one claim per fact.
+ */
+function claimKey(statement) {
+  return String(statement || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * One claim, one row, within one turn. Logos restates a claim several ways in
+ * a single answer — written as-is, one moment looks like four, and the review
+ * card shows the same sentence three times. Those rows can never corroborate
+ * anyway: same conversation, so the formation pass would refuse them.
+ *
+ * @param {Array<{statement?: string}>} observations
+ */
+function dedupeObservations(observations) {
+  const seen = new Set();
+  const kept = [];
+  for (const observation of Array.isArray(observations) ? observations : []) {
+    const key = claimKey(observation && observation.statement);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    kept.push(observation);
+  }
+  return kept;
+}
+
 function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
   if (!cognition) throw new Error('cognitionKnowledgeAdapter requires a cognition client');
 
@@ -121,4 +156,4 @@ function createCognitionKnowledgeAdapter({ cognition, sync, foundation } = {}) {
   return { retainObservation, retainOpenQuestion, retainRelationship };
 }
 
-module.exports = { createCognitionKnowledgeAdapter, renderRelationship };
+module.exports = { createCognitionKnowledgeAdapter, renderRelationship, dedupeObservations, claimKey };

@@ -3056,6 +3056,32 @@ test('v1.0 background analysis: observations and open questions reach Hindsight 
   assert.equal(questions[0].shape, 'yes_no');
 });
 
+test('v1.0 background analysis: the same claim stated twice in one turn is stored once', async () => {
+  const runtime = cognitionRuntimeFor();
+  const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'Analyseer de streaming architecture op race conditions, zoals we eerder bespraken.' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: DEEP_EVIDENCE_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'inform.explain', status: 'accepted' }),
+    reasonIQ: async () => v1ReasoningResult({
+      observations: [
+        { statement: 'Pieter has a dog.', evidence: [{ id: 'hindsight-1', source: 'hindsight' }], relatedHypothesisId: null },
+        { statement: 'pieter has a dog', evidence: [{ id: 'hindsight-1', source: 'hindsight' }], relatedHypothesisId: null },
+        { statement: 'Bo prefers short answers.', evidence: [{ id: 'hindsight-1', source: 'hindsight' }], relatedHypothesisId: null },
+      ],
+    }),
+    hypothesisRuntime: runtime,
+  });
+  await flushBackground();
+  const observations = runtime.retained.filter((r) => r.kind === 'observation');
+  // Case and punctuation are the same claim; a different claim is not.
+  assert.equal(observations.length, 2);
+  assert.deepEqual(observations.map((o) => o.statement), ['Pieter has a dog.', 'Bo prefers short answers.']);
+});
+
 test('v1.0 background analysis: a memory-discarded turn still stores legitimate analysis products — the same §15 rule as hypotheses', async () => {
   const runtime = cognitionRuntimeFor();
   const hermes = { stream: async (m, { onDelta }) => { onDelta('A reply.', false); return 'A reply.'; } };

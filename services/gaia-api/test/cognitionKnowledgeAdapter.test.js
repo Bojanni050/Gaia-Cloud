@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createCognitionKnowledgeAdapter } = require('../src/reasoning/cognitionKnowledgeAdapter');
+const { createCognitionKnowledgeAdapter, dedupeObservations, claimKey } = require('../src/reasoning/cognitionKnowledgeAdapter');
 
 function fakeCognition() {
   const calls = [];
@@ -81,4 +81,24 @@ test('retainObservation survives a store that cannot take the linked copy', asyn
   // The raw moment is already safe; the working set is best-effort.
   assert.equal(foundation.calls.length, 1);
   assert.equal(outcome.submitted, true);
+});
+
+test('dedupeObservations: one claim written several ways is one row, and a different claim is untouched', () => {
+  const kept = dedupeObservations([
+    { statement: 'Bo has a dog.', evidence: [] },
+    { statement: 'bo has a dog', evidence: [] },
+    { statement: '  Bo  has   a dog!  ', evidence: [] },
+    { statement: 'Bo heeft een hond.', evidence: [] },
+    { statement: '', evidence: [] },
+    { evidence: [] },
+  ]);
+  assert.deepEqual(kept.map((o) => o.statement), ['Bo has a dog.', 'Bo heeft een hond.']);
+});
+
+test('dedupeObservations: accents and punctuation are the same claim, and the first wording survives', () => {
+  assert.equal(claimKey('Café — “oké”'), claimKey('cafe oke'));
+  const kept = dedupeObservations([{ statement: 'Café is closed.' }, { statement: 'cafe is closed' }]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].statement, 'Café is closed.');
+  assert.deepEqual(dedupeObservations(undefined), []);
 });

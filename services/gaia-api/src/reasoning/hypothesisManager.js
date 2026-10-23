@@ -780,19 +780,14 @@ function createHypothesisManager(options = {}) {
     // were derived from this one turn's evidence, and the formation pass is
     // what turns repeated ground into something a person is asked about.
     const resultHyps = formPerTurn ? allHyps : [];
-    // What is not made a statement is not thrown away: a one-turn claim with the
-    // evidence it stood on IS an observation, and the formation pass decides
-    // later whether repeated ground makes it a belief (see sink.observe).
-    let observed = 0;
-    if (!formPerTurn) {
-      for (const rh of allHyps) {
-        if (!rh || !rh.statement) continue;
-        try {
-          if (typeof sink.observe === 'function') settleSinkCall(sink.observe(rh, sinkContext));
-          observed += 1;
-        } catch (_) { /* persistence must never break reasoning-state upkeep */ }
-      }
-    }
+    // What the model offers while formation is off is NOT dropped: the turn's
+    // observations are written from `reasoningResult.observations` by the
+    // cognition adapter (turn.js), which is the one writer of an observation.
+    // This manager used to write proposals as observations too, which put two
+    // rows of the same moment in the store and made the formation pass count a
+    // conversation as its own corroboration. A proposal the model did not also
+    // state as an observation is simply not persisted — visible as
+    // `skippedProposals`, never silent.
     const idFor = new Map(); // result-hypothesis -> managed id
 
     for (const rh of resultHyps) {
@@ -894,10 +889,9 @@ function createHypothesisManager(options = {}) {
     return {
       applied,
       // Visible in the decision log without a second lookup: how many claims the
-      // model offered that this deployment deliberately did not make, and how
-      // many of those were kept as observations instead.
-      skippedProposals: formPerTurn ? 0 : observed,
-      observed,
+      // model offered that this deployment deliberately did not make. They are
+      // not lost — the same turn's observations carry what it actually noticed.
+      skippedProposals: formPerTurn ? 0 : allHyps.length,
     };
   }
 
