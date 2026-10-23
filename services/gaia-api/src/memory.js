@@ -305,74 +305,9 @@ async function recallRelevantContext(hindsight, query, options = {}) {
   }
 }
 
-const QUESTION_OPENERS = new Set([
-  // Dutch interrogatives and inverted verb openers
-  'wat', 'wie', 'waar', 'waarvan', 'waarom', 'wanneer', 'hoe', 'hoeveel', 'welke', 'welk',
-  'is', 'zijn', 'was', 'waren', 'ben', 'heb', 'hebt', 'heeft', 'hebben', 'had', 'hadden',
-  'kun', 'kan', 'kunt', 'kunnen', 'kon', 'wil', 'wilt', 'willen', 'zou', 'zouden',
-  'zal', 'zult', 'mag', 'mogen', 'moet', 'moeten', 'doe', 'doet', 'doen', 'weet', 'vind', 'denk',
-  // English
-  'what', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'which', 'whichever',
-  'do', 'does', 'did', 'am', 'can', 'could', 'will', 'would', 'shall', 'should', 'may', 'might',
-]);
-
-// Openers that carry no content of their own: a greeting, an acknowledgement or
-// a discourse marker in front of the actual question ("Oké, en wat weet je dan
-// van Luca?"). A single word followed by a comma is skipped too, which is how a
-// name in front of a question is handled ("Yassine, wat weet je van hem?").
-const QUESTION_NOISE = /^(ok(é|ay)?|okay|hey|hoi|hallo|hello|hi|nou|ja|nee|zeg|eens|even|dus|en|maar|and|but|so|well|yes|no)(?![\p{L}\p{N}])[,.!?\s]*/giu;
-const QUESTION_ADDRESS = /^\p{L}{2,20},\s*/u;
-
-function questionLead(sentence) {
-  let rest = sentence;
-  for (let i = 0; i < 5; i += 1) {
-    const before = rest;
-    rest = rest.replace(QUESTION_NOISE, '').replace(QUESTION_ADDRESS, '');
-    if (rest === before) break;
-  }
-  return (rest.toLowerCase().match(/[a-zà-ÿ]+/) || [''])[0];
-}
-
-function isPureQuestion(sentence) {
-  if (!sentence.endsWith('?')) return false;
-  return QUESTION_OPENERS.has(questionLead(sentence));
-}
-
 /**
- * What the person actually said, with their questions left out.
- *
- * Hindsight extracts facts from the text we retain, and it reads a question as
- * content: on 18-10-2026 a measured quarter of the store turned out to be
- * records of the exchange itself ("user asked about X", "Gaia has no knowledge
- * of Y"), and those phrasings outrank the real facts because they repeat the
- * question's own words. The seed is that the person's question was handed over
- * as if the person had stated it.
- *
- * So a sentence that only asks is not retained as something the person said,
- * while a sentence that states something always is. A turn that mixes the two
- * keeps its stating part, and a sentence that corrects and asks at once stays
- * whole ("Dat klopt niet, wat weet je over Luca?" does not open with a question
- * word, so it is kept). A turn that is nothing but questions leaves nothing on
- * the person's side, and the retained summary then carries only the answer.
- *
- * The list of question openers is deliberately short and behavioural — it
- * decides what NOT to hand over, so a miss keeps the text (the safe side) and
- * the extractor still sees everything the person stated.
- * @param {string} text
- * @returns {string} the stating sentences, joined, or '' when there are none
- */
-function spokenPart(text) {
-  if (!text) return '';
-  const sentences = String(text).match(/[^.!?]+[.!?]*/g) || [];
-  return sentences
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence && !isPureQuestion(sentence))
-    .join(' ');
-}
-
-/**
- * Fire-and-forget reflection, policy-gated. Callers must not await this
- * for turn completion — matches gaia-web's reflectOnTurn contract exactly.
+ * Fire-and-forget retention of a complete, role-labelled turn. Callers must
+ * not await this for turn completion — Hindsight performs extraction async.
  *
  * Memoryworthiness 0.1: an optional `metadata` object (gaia_memory_* keys
  * describing the ingest decision, see memoryWorthiness.js) rides along on
@@ -381,17 +316,16 @@ function spokenPart(text) {
  * GATE itself lives at the call site (turn.js); this function stays the
  * transport.
  *
- * Only the person's selected statement reaches Hindsight's extractor. Their
- * questions are left out (see spokenPart), and the assistant's reply is never
- * included: Hindsight otherwise turns its wording into apparent world facts
- * about Gaia or the conversation. A turn that is nothing but a question is
- * not retained at all. A turn in which the person states anything is retained,
- * question attached or not.
+ * The complete User/Assistant exchange is serialized as a JSON array, matching
+ * the Hermes Hindsight integration. Explicit role labels preserve who said
+ * what, so assistant-generated context is not presented as a user statement.
+ * The existing reflection and memoryworthiness gates still decide which turns
+ * are retained; this transport does not retain trivial exchanges.
  *
  * Identity: the persisted conversation is Gaia ↔ User (Bojan for dev,
  * dynamically derived for multi-user). Hermes is a capability, never the
- * conversational identity. The context and summary use the authoritative
- * identity module, not hardcoded strings.
+ * conversational identity. Context and metadata use the authoritative
+ * identity module, not hardcoded names.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {{ conversationId: string, userText: string, assistantText: string,
  *          assistantMessageId?: string, metadata?: Record<string,string>,
@@ -401,18 +335,17 @@ function spokenPart(text) {
 function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText, { shape })) return;
-  // Nothing stated on the person's side means nothing to remember. See
-  // spokenPart for what counts as asking. The assistant reply is deliberately
-  // not used as memory content: it is not evidence about the user's world.
-  const spoken = spokenPart(userText);
-  if (!spoken) return;
   const assistantIdentity = getAssistantIdentity();
   const userIdentity = getUserIdentity(
     userDisplayName ? { displayName: userDisplayName } : userIdentityOptions || {}
   );
   const context = getConversationContext({ userDisplayName: userIdentity.displayName });
-  // Summary uses the authoritative display names, not hardcoded "Bo"/"Gaia" literals
-  const summary = `${userIdentity.displayName}: ${spoken}`;
+  // Match Hermes' role-labelled JSON payload. Names remain in metadata/context;
+  // the extractor gets stable role labels rather than an ambiguous transcript.
+  const summary = JSON.stringify([
+    `User: ${String(userText).trim()}`,
+    `Assistant: ${String(assistantText).trim()}`,
+  ]);
   // Identity metadata: conversational agent is always Gaia, even when a
   // capability (Hermes, etc.) executed internally. Capability executor may
   // be recorded separately where useful, but never as the conversation agent.
@@ -500,7 +433,6 @@ module.exports = {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
-  spokenPart,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,

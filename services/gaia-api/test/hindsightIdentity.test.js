@@ -58,7 +58,7 @@ test('identity: getConversationContext returns Gaia and user', () => {
   assert.equal(ctx2, 'conversation between Gaia and Alice');
 });
 
-test('Hindsight reflection stores Bojan’s statement and keeps Gaia as conversation identity', async () => {
+test('Hindsight reflection stores the role-labelled turn and keeps Gaia as conversation identity', async () => {
   const capture = {};
   const client = {
     reflect: async ({ domain, context, summary, provenance, metadata }) => {
@@ -94,8 +94,10 @@ test('Hindsight reflection stores Bojan’s statement and keeps Gaia as conversa
   assert.ok(capture.opts);
   assert.equal(capture.opts.domain, 'context');
   assert.equal(capture.opts.context, 'conversation between Gaia and Bojan');
-  assert.equal(capture.opts.summary, 'Bojan: Ik ben in Maarn');
-  assert.ok(!capture.opts.summary.includes('Leuk, hoe is het daar?'));
+  assert.deepEqual(JSON.parse(capture.opts.summary), [
+    'User: Ik ben in Maarn',
+    'Assistant: Leuk, hoe is het daar?',
+  ]);
   assert.equal(capture.opts.metadata.agent_identity, 'Gaia');
   assert.equal(capture.opts.metadata.conversation_agent, 'Gaia');
   assert.equal(capture.opts.metadata.user_display_name, 'Bojan');
@@ -211,8 +213,10 @@ test('Future user identity Alice produces Gaia ↔ Alice without code changes', 
   });
   await new Promise((r) => setImmediate(r));
   assert.equal(captured.context, 'conversation between Gaia and Alice');
-  assert.equal(captured.summary, 'Alice: Hallo Gaia, I wanted to share how my day went today');
-  assert.ok(!captured.summary.includes('I am glad you shared that with me'));
+  assert.deepEqual(JSON.parse(captured.summary), [
+    'User: Hallo Gaia, I wanted to share how my day went today',
+    'Assistant: Hallo Alice, I am glad you shared that with me',
+  ]);
   assert.equal(captured.metadata.user_display_name, 'Alice');
   assert.equal(captured.metadata.agent_identity, 'Gaia');
 

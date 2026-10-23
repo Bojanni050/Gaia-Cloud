@@ -11,7 +11,6 @@ const {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
-  spokenPart,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,
@@ -491,48 +490,22 @@ test('reflectOnTurn skips trivial exchanges and never throws even if Hindsight r
   assert.equal(calls, 1);
 });
 
-test('spokenPart keeps what the person said and leaves their questions out', () => {
-  // A question is not something the person said — it is what the extractor
-  // turned into "user asked about X" records (measured 18-10-2026).
-  assert.equal(spokenPart('Wat weet jij over Yassin?'), '');
-  assert.equal(spokenPart('Kun je wel bij het geheugen?'), '');
-  assert.equal(spokenPart('Yassine, wat weet je van hem?'), '');
-  assert.equal(spokenPart('Oké, en wat weet je dan van Luca?'), '');
-  assert.equal(spokenPart(''), '');
-  assert.equal(spokenPart(null), '');
-  // A statement always stays, and a sentence that corrects and asks at once
-  // stays whole.
-  assert.equal(
-    spokenPart('Nee, hij heeft mij gisteren bezocht en dat was gezellig.'),
-    'Nee, hij heeft mij gisteren bezocht en dat was gezellig.'
-  );
-  assert.equal(
-    spokenPart('Dat klopt niet, wat weet je over Luca?'),
-    'Dat klopt niet, wat weet je over Luca?'
-  );
-  // A mixed turn keeps its stating part and drops the asking part.
-  assert.equal(spokenPart('Hoe werkt het? Vertel eens.'), 'Vertel eens.');
-  assert.equal(
-    spokenPart('Wat weet je over MelodiQ? Ik heb gisteren de player gerepareerd.'),
-    'Ik heb gisteren de player gerepareerd.'
-  );
-});
-
-test('reflectOnTurn keeps a statement turn and drops a question-only turn', async () => {
+test('reflectOnTurn retains question-and-answer context with role labels', async () => {
   const captured = [];
   const hindsight = { reflect: async (opts) => { captured.push(opts); } };
 
-  // A turn that only asks states nothing of its own: her answer to a memory
-  // question is a restatement of what is already stored, and retaining that
-  // exchange is how "Gaia knows nothing about Yassine" became a stored fact
-  // (dry-run-extract, 18-10-2026).
+  // The exchange is useful as context, and role labels preserve who said what.
   reflectOnTurn(hindsight, {
     userText: 'Wat weet jij over Yassin?',
     assistantText: 'Yassine is een vriend van Bo die een opleiding volgt.',
     conversationId: 'c1',
   });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(captured.length, 0);
+  assert.equal(captured.length, 1);
+  assert.deepEqual(JSON.parse(captured[0].summary), [
+    'User: Wat weet jij over Yassin?',
+    'Assistant: Yassine is een vriend van Bo die een opleiding volgt.',
+  ]);
 
   reflectOnTurn(hindsight, {
     userText: 'Hij heeft mij gisteren bezocht en dat was gezellig.',
@@ -540,30 +513,32 @@ test('reflectOnTurn keeps a statement turn and drops a question-only turn', asyn
     conversationId: 'c1',
   });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(captured.length, 1);
-  assert.match(captured[0].summary, /^Bojan: Hij heeft mij gisteren bezocht/);
-  assert.ok(!captured[0].summary.includes('Wat fijn.'), captured[0].summary);
+  assert.equal(captured.length, 2);
+  assert.deepEqual(JSON.parse(captured[1].summary), [
+    'User: Hij heeft mij gisteren bezocht en dat was gezellig.',
+    'Assistant: Wat fijn.',
+  ]);
 
-  // A question attached to something the person states keeps the statement,
-  // and the question itself is not handed over as if it were said.
+  // Mixed turns are passed intact too; no question-sentence filtering remains.
+  // The question stays attributed under the User role, not as an assistant claim.
   reflectOnTurn(hindsight, {
     userText: 'Wat weet je over MelodiQ? Ik heb gisteren de player gerepareerd.',
     assistantText: 'Mooi.',
     conversationId: 'c1',
   });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(captured.length, 2);
-  assert.match(captured[1].summary, /^Bojan: Ik heb gisteren de player gerepareerd\./);
-  assert.ok(!captured[1].summary.includes('Wat weet je over MelodiQ?'), captured[1].summary);
+  assert.equal(captured.length, 3);
+  assert.deepEqual(JSON.parse(captured[2].summary), [
+    'User: Wat weet je over MelodiQ? Ik heb gisteren de player gerepareerd.',
+    'Assistant: Mooi.',
+  ]);
 });
 
-test('reflectOnTurn sends only the user statement, never the assistant reply', async () => {
+test('reflectOnTurn sends both messages as Hermes-style role-labelled entries', async () => {
   const captured = [];
   const hindsight = { reflect: async (opts) => { captured.push(opts); } };
 
-  // Previously, including "Genoteerd." made the extractor record that Gaia
-  // noted the information as a fact of its own. The assistant reply is now
-  // excluded regardless of whether it is a bare acknowledgement or substantive.
+  // Role labels retain context without implying both messages came from the user.
   reflectOnTurn(hindsight, {
     userText: 'Ik heb twee 27 inch monitoren',
     assistantText: 'Genoteerd.',
@@ -572,10 +547,12 @@ test('reflectOnTurn sends only the user statement, never the assistant reply', a
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(captured.length, 1);
-  assert.match(captured[0].summary, /^Bojan: Ik heb twee 27 inch monitoren$/);
-  assert.ok(!captured[0].summary.includes('Genoteerd.'), captured[0].summary);
+  assert.deepEqual(JSON.parse(captured[0].summary), [
+    'User: Ik heb twee 27 inch monitoren',
+    'Assistant: Genoteerd.',
+  ]);
 
-  // Even a substantive answer is not part of the memory extractor input.
+  // Substantive answers are preserved too, with their source explicit.
   reflectOnTurn(hindsight, {
     userText: 'Ik heb twee 27 inch monitoren',
     assistantText: 'Dan kun je de twee vensters naast elkaar zetten.',
@@ -583,8 +560,10 @@ test('reflectOnTurn sends only the user statement, never the assistant reply', a
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(captured.length, 2);
-  assert.equal(captured[1].summary, 'Bojan: Ik heb twee 27 inch monitoren');
-  assert.ok(!captured[1].summary.includes('Dan kun je de twee vensters naast elkaar zetten.'));
+  assert.deepEqual(JSON.parse(captured[1].summary), [
+    'User: Ik heb twee 27 inch monitoren',
+    'Assistant: Dan kun je de twee vensters naast elkaar zetten.',
+  ]);
 });
 
 // --- mental models -----------------------------------------------------
