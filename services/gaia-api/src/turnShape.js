@@ -38,39 +38,13 @@
 
 const {
   isTrivial, MEMORY_POLICY, PAST_REFERENCE_SIGNALS, DURABLE_CONTEXT_SIGNALS,
-  REPAIR_SIGNALS, HER_VIEW_SIGNALS,
+  REPAIR_SIGNALS, HER_VIEW_SIGNALS, contentWords,
 } = require('./memoryPolicy');
 const { detectSignals, detectSkillTasks } = require('./logos/intentSignals');
 
 /** Local copy of memoryPolicy's own probe — the signal lists stay arrays of RegExps. */
 function hasSignal(text, patterns) {
   return patterns.some((pattern) => pattern.test(text));
-}
-
-/**
- * The content words of a turn, for "did he ask this before?". Accents stripped,
- * case dropped, punctuation and the words that carry no subject removed — the
- * same normalisation the repair signals use, extended to a word set.
- */
-const STOPWORDS = new Set([
-  'de', 'het', 'een', 'en', 'of', 'maar', 'dat', 'die', 'dit', 'deze', 'is', 'was', 'waren',
-  'zijn', 'ik', 'jij', 'je', 'jou', 'jouw', 'mij', 'mijn', 'we', 'wij', 'ze', 'zij', 'er',
-  'nog', 'eens', 'keer', 'wel', 'niet', 'geen', 'van', 'over', 'aan', 'in', 'op', 'te',
-  'met', 'voor', 'wat', 'wie', 'hoe', 'waar', 'waarom', 'wanneer', 'kan', 'kun', 'kunt',
-  'zou', 'zal', 'heb', 'hebt', 'heeft', 'hebben', 'bij', 'al', 'ook', 'dan', 'toch', 'nou',
-  'even', 'als', 'om', 'dat', 'dus', 'ja', 'nee', 'the', 'and', 'that', 'this', 'you', 'your',
-  'was', 'were', 'did', 'does', 'do', 'for', 'with', 'about', 'have', 'has', 'had',
-]);
-
-function contentWords(text) {
-  const words = String(text == null ? '' : text)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 2 && !STOPWORDS.has(word));
-  return new Set(words);
 }
 
 /**

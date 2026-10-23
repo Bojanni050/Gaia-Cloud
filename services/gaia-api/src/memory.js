@@ -7,7 +7,7 @@
  * Same rendering, same gating, same "never blocks or breaks the turn"
  * contract.
  */
-const { shouldRecall, shouldReflect } = require('./memoryPolicy');
+const { shouldRecall, shouldReflect, distillQuery } = require('./memoryPolicy');
 const { isPureAcknowledgement } = require('./memoryWorthiness');
 const { getAssistantIdentity, getUserIdentity, getConversationContext } = require('./identity');
 const { relativeAge } = require('./nowContext');
@@ -297,7 +297,10 @@ async function recallRelevantContext(hindsight, query, options = {}) {
     return [];
   }
   try {
-    return await hindsight.recall(query);
+    // The gate read the turn as Bo wrote it; retrieval reads only the words
+    // that carry it (distillQuery — a whole conversational sentence pushed the
+    // right fact to rank 38 of 44, "Pieter hond" put it first).
+    return await hindsight.recall(distillQuery(query) || query);
   } catch (_) {
     return [];
   }

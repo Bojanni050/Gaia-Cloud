@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { shouldRecall, shouldReflect } = require('../src/memoryPolicy');
+const { shouldRecall, shouldReflect, distillQuery } = require('../src/memoryPolicy');
 const { createHindsightClient } = require('../src/hindsightClient');
 const {
   condenseMemoryContext,
@@ -430,8 +430,33 @@ test('recallRelevantContext skips the call for a policy-trivial query and never 
   assert.deepEqual(await recallRelevantContext(failing, 'remember what I said about the project'), []);
 });
 
-test('a turn that asks about her opens the recall gate, so her own bank can answer', async () => {
-  // "wat houdt je bezig?" carries no past cue of its own, so the policy skips
+test('distillQuery asks for the name when the turn names something, its content words otherwise', () => {
+  // Measured on the live bank: this whole sentence put the dog fact on rank 38
+  // of 44, its content words on rank 13–2, and the name alone on rank 1.
+  assert.equal(
+    distillQuery('Als het goed is, weet je over Pieter dat hij bij mij op visite is geweest en een hond heeft.'),
+    'Pieter'
+  );
+  assert.equal(distillQuery('Hoe kom je aan die informatie over Pieter? Want dat is iets wat ik totaal niet herken.'), 'Pieter');
+  assert.equal(distillQuery('Pieter heeft een hond die OA heet'), 'Pieter OA');
+  // No name: the content words, in the order they were said.
+  assert.equal(distillQuery('een twee drie vier vijf zes zeven acht negen', { maxWords: 3 }), 'twee drie vier');
+  // Nothing but filler is still a better query than no query at all.
+  assert.equal(distillQuery('ok, thanks'), 'ok thanks');
+  assert.equal(distillQuery('   '), '');
+});
+
+test('recallRelevantContext asks Hindsight with the distilled query', async () => {
+  const queries = [];
+  const hindsight = { recall: async (query) => { queries.push(query); return []; } };
+  await recallRelevantContext(
+    hindsight,
+    'Als het goed is, weet je over Pieter dat hij bij mij op visite is geweest en een hond heeft.'
+  );
+  assert.deepEqual(queries, ['Pieter']);
+});
+
+test('a turn that asks about her opens the recall gate, so her own bank can answer', async () => {  // "wat houdt je bezig?" carries no past cue of its own, so the policy skips
   // the lookup and her bank is never asked (measured 18-10-2026: the turn
   // logged reflectionCount 0 and she answered "Bo niet."). The turn shape is
   // the second key: a question about her opens the gate the same way a past

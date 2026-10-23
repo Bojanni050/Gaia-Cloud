@@ -181,8 +181,7 @@ const REPAIR_SIGNALS = [
   phrase('look again'), phrase('check again'), phrase('try again'),
 ];
 
-function shouldRecall(query, context = {}) {
-  const shape = context && context.shape;
+function shouldRecall(query, context = {}) {  const shape = context && context.shape;
   if (shape) return Boolean(shape.wantsRecall);
   const text = (query || '').trim();
   const normalized = normalize(text);
@@ -221,6 +220,96 @@ const MEMORY_POLICY = Object.freeze({
   minReflectLength: MIN_REFLECT_LENGTH,
 });
 
+/**
+ * The words in a turn that carry what it is about. Shared with the repeat-ask
+ * cue (turnShape.js) so "the same question again" and "what should we look up"
+ * cannot drift apart: both are the same judgment about which words matter.
+ */
+const STOPWORDS = new Set([
+  'de', 'het', 'een', 'en', 'of', 'maar', 'dat', 'die', 'dit', 'deze', 'is', 'was', 'waren',
+  'zijn', 'ik', 'jij', 'je', 'jou', 'jouw', 'mij', 'mijn', 'we', 'wij', 'ze', 'zij', 'er',
+  'nog', 'eens', 'keer', 'wel', 'niet', 'geen', 'van', 'over', 'aan', 'in', 'op', 'te',
+  'met', 'voor', 'wat', 'wie', 'hoe', 'waar', 'waarom', 'wanneer', 'kan', 'kun', 'kunt',
+  'zou', 'zal', 'heb', 'hebt', 'heeft', 'hebben', 'bij', 'al', 'ook', 'dan', 'toch', 'nou',
+  'even', 'als', 'om', 'dat', 'dus', 'ja', 'nee', 'the', 'and', 'that', 'this', 'you', 'your',
+  'was', 'were', 'did', 'does', 'do', 'for', 'with', 'about', 'have', 'has', 'had',
+  // Pronouns and the cue verbs themselves carry no subject: "weet je over
+  // Pieter dat hij een hond heeft" is about Pieter and the dog, nothing else.
+  'hij', 'hem', 'haar', 'hun', 'ons', 'jullie', 'me', 'men', 'zich', 'u',
+  'weet', 'weten', 'wist', 'zeg', 'zegt', 'zei', 'gezegd',
+  'want', 'iets', 'kom', 'komt', 'komen',
+]);
+
+/** Lowercased, accent-free form of one token — the identity used for dedupe and stopword tests. */
+function wordKey(token) {
+  return String(token == null ? '' : token)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * The content words of a text, in the order they were said, deduped, keeping
+ * the original casing of each token. Order matters for retrieval: Hindsight's
+ * recall is keyword-shaped, and the words Bo actually used are the query.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function contentWordList(text) {
+  const words = [];
+  const seen = new Set();
+  for (const token of String(text == null ? '' : text).split(/\s+/)) {
+    const bare = token.replace(/[^\p{L}\p{N}]+/gu, '');
+    const key = wordKey(bare);
+    // Only single characters are dropped: an abbreviation or a name of two
+    // letters is exactly the kind of thing a lookup is about ("OA", "tv").
+    if (key.length < 2 || STOPWORDS.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    words.push(bare);
+  }
+  return words;
+}
+
+/** @param {string} text @returns {Set<string>} normalized content words, for set comparison */
+function contentWords(text) {
+  return new Set(contentWordList(text).map(wordKey));
+}
+
+/**
+ * The query we hand to Hindsight.
+ *
+ * Measured 23-10-2026 against the live bank, one sentence at a time:
+ *   "Als het goed is, weet je over Pieter dat hij bij mij op visite is geweest
+ *    en een hond heeft."                        → dog fact at rank 38 of 44
+ *   distilled ("goed Pieter visite geweest hond") → rank 2
+ *   just the name ("Pieter")                     → rank 1, top 9 all Pieter
+ *   "Hoe kom je aan die informatie over Pieter?"  → rank 34 as a whole
+ *   distilled ("informatie Pieter totaal herken") → rank 13, still noise
+ *   just the name                                 → rank 1
+ * The pattern is that generic words ("informatie", "totaal", "herken") pull
+ * generic memories, and the name is what identifies the subject. So: when the
+ * turn names someone or something, the name IS the query. Otherwise fall back
+ * to its content words. Falls back to the raw text when nothing is left.
+ *
+ * @param {string} text
+ * @param {{ maxWords?: number }} [options]
+ * @returns {string}
+ */
+function distillQuery(text, options = {}) {
+  const raw = String(text == null ? '' : text).trim();
+  if (!raw) return '';
+  const requested = Number(options.maxWords);
+  const maxWords = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : 8;
+  const words = contentWordList(raw);
+  // A capitalised content word is a name as far as retrieval is concerned.
+  // Sentence-initial capitals are already gone: every word that starts a Dutch
+  // or English sentence ("Ik", "De", "Wat", "Weet", "Hoe") is a stopword.
+  const entities = words.filter((word) => /^[A-Z\u00c0-\u00de]/.test(word));
+  if (entities.length > 0) return entities.slice(0, maxWords).join(' ');
+  if (words.length === 0) return raw;
+  return words.slice(0, maxWords).join(' ');
+}
+
 module.exports = {
   shouldRecall,
   shouldReflect,
@@ -235,4 +324,10 @@ module.exports = {
   DURABLE_CONTEXT_SIGNALS,
   REPAIR_SIGNALS,
   HER_VIEW_SIGNALS,
+  // One definition of "which words matter", shared with the recall query and
+  // the repeat-ask cue.
+  STOPWORDS,
+  contentWordList,
+  contentWords,
+  distillQuery,
 };
