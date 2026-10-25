@@ -10,7 +10,7 @@ const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = requi
 const { buildLogosPrompt } = require('../src/logos/logosPrompt');
 const { createLogosModelClient, EmptyModelContentError } = require('../src/logos/logosModelClient');
 const reasonIQ = require('../src/logos/logos');
-const { evaluate, explainReasoningDepth, decideReasoningDepth } = reasonIQ;
+const { evaluate, explainReasoningDepth, decideReasoningDepth, decideLogosDepth } = reasonIQ;
 const { logLogosGate } = require('../src/logos/logosLog');
 const { runLogos } = require('../src/logos/index');
 
@@ -369,7 +369,7 @@ function throwingModel(message) {
   return { chat: async () => { throw new Error(message); }, isConfigured: () => true };
 }
 
-test('reasonIQ: trivial input never calls the reasoning model (shallow)', async () => {
+test('reasonIQ: a pure social turn never calls the reasoning model (shallow)', async () => {
   let called = false;
   const model = { chat: async () => { called = true; return '{}'; }, isConfigured: () => true };
   const result = await reasonIQ.evaluate({ text: 'ok' }, { reasoningModel: model, ...silent });
@@ -377,53 +377,70 @@ test('reasonIQ: trivial input never calls the reasoning model (shallow)', async 
   assert.equal(result.reasoningDepth, 'shallow');
 });
 
-test('reasonIQ: an accepted converse intent with no evidence is shallow', async () => {
-  let called = false;
-  const model = { chat: async () => { called = true; return '{}'; }, isConfigured: () => true };
-  const result = await reasonIQ.evaluate(
-    { text: 'I just need to vent for a second, it has been a long week honestly', intentDecision: { intent: 'converse', status: 'accepted' } },
-    { reasoningModel: model, ...silent }
-  );
-  assert.equal(called, false);
-  assert.equal(result.reasoningDepth, 'shallow');
-});
-
-test('reasonIQ: supplied evidence always triggers deep reasoning, even for short input', async () => {
+test('reasonIQ: an accepted converse intent with no evidence is still looked at (deep) — the social gate skips only pure social exchange', async () => {
   let called = false;
   const model = stubModelReturning({ interpretation: 'ok' });
   model.chat = async () => { called = true; return JSON.stringify({ interpretation: 'ok' }); };
   const result = await reasonIQ.evaluate(
-    { text: 'and this?', evidence: [{ content: 'the server restarted at 3am' }] },
+    { text: 'I just need to vent for a second, it has been a long week honestly', intentDecision: { intent: 'converse', status: 'accepted' } },
     { reasoningModel: model, ...silent }
   );
   assert.equal(called, true);
   assert.equal(result.reasoningDepth, 'deep');
 });
 
-test('reasonIQ: a substantial, non-conversational turn WITHOUT evidence still stays shallow — intent alone no longer triggers a model call', async () => {
+test('reasonIQ: any non-social turn triggers deep reasoning, with or without evidence', async () => {
+  let called = false;
+  const model = stubModelReturning({ interpretation: 'ok' });
+  model.chat = async () => { called = true; return JSON.stringify({ interpretation: 'ok' }); };
+  const withEvidence = await reasonIQ.evaluate(
+    { text: 'and this?', evidence: [{ content: 'the server restarted at 3am' }] },
+    { reasoningModel: model, ...silent }
+  );
+  assert.equal(called, true);
+  assert.equal(withEvidence.reasoningDepth, 'deep');
+
+  called = false;
+  const withoutEvidence = await reasonIQ.evaluate(
+    { text: 'and this?', evidence: [] },
+    { reasoningModel: model, ...silent }
+  );
+  assert.equal(called, true, 'no evidence is no longer a reason to skip: a short meaningful remark is still looked at');
+  assert.equal(withoutEvidence.reasoningDepth, 'deep');
+});
+
+test('reasonIQ: a substantial, non-conversational turn WITHOUT evidence is looked at (deep) — the social gate reads the text, not the evidence', async () => {
   let called = false;
   const model = { chat: async () => { called = true; return JSON.stringify({ interpretation: 'ok' }); }, isConfigured: () => true };
   const result = await reasonIQ.evaluate(
     { text: 'Why does the API return a 500 on the checkout endpoint sometimes?', intentDecision: { intent: 'inform.explain', status: 'accepted' } },
     { reasoningModel: model, ...silent }
   );
-  assert.equal(called, false);
-  assert.equal(result.reasoningDepth, 'shallow');
+  assert.equal(called, true);
+  assert.equal(result.reasoningDepth, 'deep');
 });
 
-test('reasonIQ: decideReasoningDepth depends only on evidence, not intent or text length', () => {
-  assert.equal(reasonIQ.decideReasoningDepth({ text: 'short' }), 'shallow');
-  assert.equal(reasonIQ.decideReasoningDepth({ text: 'a long, substantial, detailed question about something important' }), 'shallow');
+test('reasonIQ: decideReasoningDepth depends only on the text (social or not), not on evidence or intent', () => {
+  // A greeting/acknowledgement is shallow regardless of evidence or intent.
+  assert.equal(reasonIQ.decideReasoningDepth({ text: 'hoi' }), 'shallow');
+  assert.equal(reasonIQ.decideReasoningDepth({ text: 'hoi', evidence: [{ content: 'anything' }] }), 'shallow');
+  assert.equal(reasonIQ.decideReasoningDepth({ text: 'dank je wel', intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'shallow');
+  // Anything else is looked at, with or without evidence.
+  assert.equal(reasonIQ.decideReasoningDepth({ text: 'a long, substantial, detailed question about something important' }), 'deep');
+  assert.equal(reasonIQ.decideReasoningDepth({ text: 'short but meaningful remark' }), 'deep');
   assert.equal(reasonIQ.decideReasoningDepth({ text: 'x', evidence: [{ content: 'anything' }] }), 'deep');
+  // No text at all is social (nothing to observe).
   assert.equal(reasonIQ.decideReasoningDepth({ text: '', evidence: [] }), 'shallow');
 });
 
 // --- shallow path is a real (cheap) judgment, not a placeholder -----------
 
 test('shallow: an evidence-dependent intent with no evidence reports an honest information gap, not false sufficiency', async () => {
+  // A social turn routes shallow under the default gate; shallowResult's own
+  // judgment (gap, low confidence) is what this still guards.
   const model = { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true };
   const result = await reasonIQ.evaluate(
-    { text: 'Why is my website crashing?', intentDecision: { intent: 'inform.explain', status: 'accepted' } },
+    { text: 'hoi', intentDecision: { intent: 'inform.explain', status: 'accepted' } },
     { reasoningModel: model, ...silent }
   );
   assert.equal(result.reasoningDepth, 'shallow');
@@ -434,17 +451,25 @@ test('shallow: an evidence-dependent intent with no evidence reports an honest i
 
 test('shallow: converse and meta.relational intents are not evidence-dependent — no gap, ordinary confidence', async () => {
   const converse = await reasonIQ.evaluate(
-    { text: 'I just need to vent for a second, long week honestly', intentDecision: { intent: 'converse', status: 'accepted' } },
+    { text: 'hoi', intentDecision: { intent: 'converse', status: 'accepted' } },
     { silent: true }
   );
   assert.equal(converse.informationGaps.length, 0);
   assert.equal(converse.sufficientForConclusion, true);
   assert.equal(converse.confidence, 0.5);
+
+  const relational = await reasonIQ.evaluate(
+    { text: 'dank je', intentDecision: { intent: 'meta.relational', status: 'accepted' } },
+    { silent: true }
+  );
+  assert.equal(relational.informationGaps.length, 0);
+  assert.equal(relational.sufficientForConclusion, true);
+  assert.equal(relational.confidence, 0.5);
 });
 
 test('shallow: an unresolved (unknown) intent reports genuine uncertainty and low confidence', async () => {
   const result = await reasonIQ.evaluate(
-    { text: 'asdkfj alkj qzx', intentDecision: { intent: null, status: 'unknown' } },
+    { text: 'hoi', intentDecision: { intent: null, status: 'unknown' } },
     { silent: true }
   );
   assert.equal(result.sufficientForConclusion, false);
@@ -453,14 +478,14 @@ test('shallow: an unresolved (unknown) intent reports genuine uncertainty and lo
 });
 
 test('shallow: no intentDecision at all is treated the same as unknown', async () => {
-  const result = await reasonIQ.evaluate({ text: 'some plain input here' }, { silent: true });
+  const result = await reasonIQ.evaluate({ text: 'hoi' }, { silent: true });
   assert.equal(result.sufficientForConclusion, false);
   assert.ok(result.uncertainties.length > 0);
 });
 
 test('shallow: an ambiguous intent reports uncertainty distinct from unknown', async () => {
   const result = await reasonIQ.evaluate(
-    { text: 'I need you to handle this.', intentDecision: { intent: null, status: 'ambiguous' } },
+    { text: 'hoi', intentDecision: { intent: null, status: 'ambiguous' } },
     { silent: true }
   );
   assert.equal(result.sufficientForConclusion, false);
@@ -470,7 +495,7 @@ test('shallow: an ambiguous intent reports uncertainty distinct from unknown', a
 
 test('shallow: an ambiguous, evidence-dependent intent combines both signals into the lower confidence', async () => {
   const result = await reasonIQ.evaluate(
-    { text: 'Should we ship or wait?', intentDecision: { intent: 'decide.support', status: 'ambiguous' } },
+    { text: 'hoi', intentDecision: { intent: 'decide.support', status: 'ambiguous' } },
     { silent: true }
   );
   assert.ok(result.uncertainties.length > 0);
@@ -696,7 +721,7 @@ test('runLogos: passes an intent hint into the prompt without re-deriving it', a
   assert.match(userMessage.content, /"intent":\s*"inform\.explain"/);
 });
 
-test('runLogos: a shallow-worthy turn never calls the model and needs no hint', async () => {
+test('runLogos: a social turn never calls the model and needs no hint', async () => {
   let called = false;
   const model = { chat: async () => { called = true; return '{}'; }, isConfigured: () => true };
   const { intentHint, logosResult } = await runLogos([{ role: 'user', content: 'ok' }], { model, silent: true });
@@ -778,24 +803,29 @@ const DEEP_OUTPUT = JSON.stringify({
   confidence: 0.6,
 });
 
-test('0.2 gating: evidence alone is not a task — conversational/unknown turns stay shallow', () => {
+test('0.2 gating: conversational/unknown turns are no longer skipped — the social gate reads the text, not the intent', () => {
+  // "Hoi Gaia" is pure social (a greeting) and stays shallow even with evidence;
+  // every other turn is looked at, whatever the intent decision says.
   const evidence = [{ id: 'hindsight-1', source: 'hindsight', content: 'a recalled memory' }];
-  assert.equal(decideReasoningDepth({ text: 'Weet je nog wat we over Luca bespraken?', evidence, intentDecision: { intent: null, status: 'unknown' } }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'Weet je nog wat we over Luca bespraken?', evidence, intentDecision: { intent: null, status: 'unknown' } }), 'deep');
   assert.equal(decideReasoningDepth({ text: 'Hoi Gaia', evidence, intentDecision: { intent: 'converse', status: 'accepted' } }), 'shallow');
-  assert.equal(decideReasoningDepth({ text: 'Wat bedoel je?', evidence, intentDecision: { intent: null, status: 'ambiguous' } }), 'shallow');
-  assert.equal(decideReasoningDepth({ text: 'Waarom deed je dat?', evidence, intentDecision: { intent: 'meta.question', status: 'accepted' } }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'Wat bedoel je?', evidence, intentDecision: { intent: null, status: 'ambiguous' } }), 'deep');
+  assert.equal(decideReasoningDepth({ text: 'Waarom deed je dat?', evidence, intentDecision: { intent: 'meta.question', status: 'accepted' } }), 'deep');
 });
 
-test('0.2 gating: analysis-shaped turns WITH evidence go deep, as do explicit-evidence calls without a decision', () => {
+test('0.2 gating: analysis-shaped turns go deep with OR without evidence; a greeting stays shallow', () => {
   const evidence = [{ id: 'upload-1', source: 'upload', content: 'design doc' }];
   assert.equal(decideReasoningDepth({ text: 'Analyseer de race conditions.', evidence, intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'deep');
   assert.equal(decideReasoningDepth({ text: 'What can you derive from these earlier conversations?', evidence, intentDecision: { intent: 'memory.inspect', status: 'accepted' } }), 'deep');
-  // Legacy shape (no IntentDecision supplied): presence of evidence still forces depth.
+  // No evidence is no longer a reason to skip a non-social turn.
+  assert.equal(decideReasoningDepth({ text: 'Analyseer de race conditions.', evidence: [], intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'deep');
+  // Legacy shape (no IntentDecision supplied): a non-social turn is still deep.
   assert.equal(decideReasoningDepth({ text: 'Why did the deploy fail?', evidence }), 'deep');
+  assert.equal(decideReasoningDepth({ text: 'Why did the deploy fail?', evidence: [] }), 'deep');
   assert.equal(decideReasoningDepth({ text: 'Hoi Gaia', evidence: [] }), 'shallow');
 });
 
-test('0.2 evaluate: shallow turn with evidence carries evidence metadata without a model call', async () => {
+test('0.2 evaluate: a social turn carries evidence metadata without a model call, even with evidence supplied', async () => {
   const result = await evaluate(
     { text: 'Hoi Gaia', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 }, evidence: [{ id: 'hindsight-1', source: 'hindsight', content: 'memory' }] },
     { reasoningModel: { chat: async () => { throw new Error('must not be called'); }, isConfigured: () => true }, silent: true }
@@ -996,7 +1026,7 @@ test('0.3 malformed: an invalid relation in a hypothesisUpdate is rejected, not 
   assert.throws(() => parseAndValidateReasoningOutput(bad, [], EXISTING), MalformedReasoningOutputError);
 });
 
-test("0.3 shallow path carries an empty hypothesisUpdates list", async () => {
+test("0.3 shallow path (a social turn) carries an empty hypothesisUpdates list", async () => {
   const result = await evaluate(
     { text: 'Hoi Gaia', intentDecision: { intent: 'converse', status: 'accepted', confidence: 0.9 }, evidence: [] },
     { reasoningModel: { chat: async () => { throw new Error('no calls'); }, isConfigured: () => true }, silent: true }
@@ -1386,15 +1416,15 @@ test('v1.1 logging: shallow results log empty relationship fields', async () => 
 
 // === ReasonIQ gate log ====================================================
 
-test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason', () => {
-  assert.equal(explainReasoningDepth({ text: 'short', evidence: [] }), 'no_evidence');
-  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }), 'no_evidence');
-  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'converse', status: 'accepted' } }), 'context_only_intent');
-  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: null, status: 'unknown' } }), 'unknown_intent');
-  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } }), 'deep');
+test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason (default: the social gate)', () => {
+  // Default gate: only a social turn is skipped, reason 'social_turn'.
+  assert.equal(explainReasoningDepth({ text: 'hoi', evidence: [] }), 'social_turn');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }), 'social_turn');
+  assert.equal(explainReasoningDepth({ text: 'de planning loopt vast', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }), 'deep');
+  assert.equal(explainReasoningDepth({ text: 'de planning loopt vast', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: null, status: 'unknown' } }), 'deep');
   // reason and depth agree on the same input, always
   for (const input of [
-    { text: 'x', evidence: [] },
+    { text: 'hoi', evidence: [] },
     { text: 'x', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'meta.question', status: 'accepted' } },
     { text: 'x', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } },
   ]) {
@@ -1405,8 +1435,22 @@ test('explainReasoningDepth mirrors decideReasoningDepth with an explicit reason
   }
 });
 
-test('social gate: only a greeting is skipped, everything else is looked at', () => {
+test('legacy gate (opt-out, socialGate: false): the old reasons still apply for comparison', () => {
+  const legacy = { socialGate: false };
+  assert.equal(explainReasoningDepth({ text: 'short', evidence: [] }, legacy), 'no_evidence');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [], intentDecision: { intent: 'converse', status: 'accepted' } }, legacy), 'no_evidence');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'converse', status: 'accepted' } }, legacy), 'context_only_intent');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: null, status: 'unknown' } }, legacy), 'unknown_intent');
+  assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } }, legacy), 'deep');
+  // The env opt-out selects the legacy gate for callers that read process.env.
+  assert.equal(decideLogosDepth({ text: 'de planning loopt vast', evidence: [] }, { socialGate: process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' }), 'deep');
+});
+
+test('social gate (the default): only a greeting is skipped, everything else is looked at', () => {
   const gate = { socialGate: true };
+  // The default IS the social gate: no option, same verdict.
+  assert.equal(decideReasoningDepth({ text: 'hoi' }), 'shallow');
+  assert.equal(decideReasoningDepth({ text: 'de planning loopt vast' }), 'deep');
   // Social exchange: nothing to observe.
   for (const text of ['hoi', 'dank je wel', 'oké', 'ja precies', 'hoi, alles goed?', '']) {
     assert.equal(decideReasoningDepth({ text, evidence: [] }, gate), 'shallow', text);

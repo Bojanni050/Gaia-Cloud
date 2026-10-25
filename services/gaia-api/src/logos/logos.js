@@ -104,17 +104,19 @@ const CONTEXT_ONLY_INTENTS = new Set([
  * learning path. A short meaningful remark, or any turn where Hindsight recalled
  * nothing, never reached Logos — so no observation was written and the belief
  * formation pass had nothing to aggregate.
+ *
+ * The social filter IS the default (2026-10-25): the old depth gate is kept
+ * only as an explicit opt-out for comparison, because it answered two questions
+ * at once ("is there evidence?" and "is this a task?") and both starved the
+ * learning path. GAIA_LOGOS_SOCIAL_GATE=off restores it.
  * @param {{ text?: string }} input
  * @returns {'shallow'|'deep'}
  */
-function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE === 'on' } = {}) {
-  // SOCIAL GATE (opt-in): look at every conversation except a pure greeting.
-  // The old gate also skipped on "no evidence" and on conversational intent,
-  // which starved the learning path: a short meaningful remark, or any turn
-  // where Hindsight recalled nothing, never reached Logos — so no observation
-  // was written and the belief formation pass had nothing to aggregate.
+function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' } = {}) {
   if (socialGate) return isSocialTurn(input && input.text) ? 'shallow' : 'deep';
 
+  // LEGACY GATE (opt-out, GAIA_LOGOS_SOCIAL_GATE=off): skipped on "no evidence"
+  // and on conversational intent as well — which starved the learning path.
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'shallow';
 
@@ -133,9 +135,10 @@ function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GA
  * @param {{ text?: string }} input
  * @returns {'social_turn'|'deep'}
  */
-function explainLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE === 'on' } = {}) {
+function explainLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' } = {}) {
   if (socialGate) return isSocialTurn(input && input.text) ? 'social_turn' : 'deep';
 
+  // LEGACY GATE (opt-out): the old reasons, kept so the comparison is legible.
   const hasEvidence = Array.isArray(input.evidence) && input.evidence.length > 0;
   if (!hasEvidence) return 'no_evidence';
 

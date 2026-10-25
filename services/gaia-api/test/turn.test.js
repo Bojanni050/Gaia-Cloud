@@ -333,7 +333,10 @@ test('performTurn hands both transports the identical assembled prompt, direct t
 
   const intentDecision = { schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted', entities: [], sourceOfTruth: 'conversation', needsClarification: false };
   const result = await performTurn({
-    messages: [{ role: 'user', content: 'hello' }],
+    // A non-social turn: under the default social gate the deferred
+    // reasoning path stays reachable, which is what makes the
+    // "not on the LIVE path" assertion below meaningful.
+    messages: [{ role: 'user', content: 'Kun je uitleggen waarom mijn site soms traag is?' }],
     documents: DOCUMENTS,
     generator,
     intentIQ: async () => { intentIQCalls += 1; return intentDecision; },
@@ -344,9 +347,11 @@ test('performTurn hands both transports the identical assembled prompt, direct t
   // The prompt carries the SOUL context and history for direct
   // generation — no interpretation layer ran first.
   assert.equal(intentIQCalls, 0, 'IntentIQ must not run on the live path');
-  assert.equal(reasonIQCalls, 0, 'ReasonIQ must not run on the live path');
+  // ReasonIQ may run once, deferred after the reply — the single prompt above
+  // proves it never shaped the generation call.
+  assert.equal(reasonIQCalls, 1, 'ReasonIQ runs deferred only, never on the live path');
   assert.ok(seenPrompts[0].some((m) => m.role === 'system' && /SOUL/.test(m.content)));
-  assert.ok(seenPrompts[0].some((m) => m.role === 'user' && m.content === 'hello'));
+  assert.ok(seenPrompts[0].some((m) => m.role === 'user' && m.content === 'Kun je uitleggen waarom mijn site soms traag is?'));
   assert.equal(result.status, 200);
   assert.equal(result.body.reply, 'hi there');
 });
@@ -681,13 +686,14 @@ test('a normal turn calls only the configured generation route — once, with th
   });
   await flush();
 
-  assert.equal(reasonIQCalls.length, 0, 'ReasonIQ must not run on the live path');
-  assert.deepEqual(callOrder, ['generate']);
+  // ReasonIQ runs deferred, AFTER the reply — never before it on the live path.
+  assert.equal(reasonIQCalls.length, 1, 'a non-social turn reaches the deferred reasoning once');
+  assert.deepEqual(callOrder, ['generate', 'reasonIQ'], 'generation first, reasoning deferred');
   assert.equal(seenPrompts.length, 1, 'exactly one generation call for the turn');
   assert.match(res.written.at(-1), /data: \[DONE\]/);
 });
 
-test('a non-streaming normal turn also completes without calling ReasonIQ', async () => {
+test('a non-streaming normal turn also completes with only a deferred ReasonIQ call', async () => {
   let reasonIQCalls = 0;
   const result = await performTurn({
     messages: [{ role: 'user', content: 'Why is my website crashing?' }],
@@ -698,7 +704,7 @@ test('a non-streaming normal turn also completes without calling ReasonIQ', asyn
     reasonIQ: async () => { reasonIQCalls += 1; return {}; },
   });
   await flush();
-  assert.equal(reasonIQCalls, 0, 'ReasonIQ must not run for a normal non-streaming turn either');
+  assert.equal(reasonIQCalls, 1, 'a non-social turn reaches the deferred reasoning once (never live)');
   assert.equal(result.status, 200);
   assert.equal(result.body.reply, 'A reply.');
 });
@@ -870,10 +876,9 @@ test('performStreamingTurn persists background reflection records when a decisio
   // decision.plan. Only background reflection records are persisted:
   // the memory judgment, the reasoning gate and the DecisionIQ review.
   assert.equal(intentIQCalls, 0, 'IntentIQ never runs live');
-  assert.equal(reasonIQCalls, 0);
+  assert.equal(reasonIQCalls, 1, 'a non-social turn reaches the deferred reasoning once');
   assert.equal(appended.filter((r) => r.kind === 'intentiq.decision').length, 0);
   assert.equal(appended.filter((r) => r.kind === 'decision.plan').length, 0);
-  assert.equal(appended.filter((r) => r.kind === 'reasoniq.result').length, 0);
   assert.ok(appended.some((r) => r.kind === 'memory.worthiness'), 'every turn gets a memory judgment record');
   assert.ok(appended.some((r) => r.kind === 'logos.gate'), 'every turn logs its reasoning gate');
   assert.ok(appended.some((r) => r.kind === 'decision.review'), 'every turn gets a DecisionIQ review');
@@ -1442,7 +1447,7 @@ test('0.2: the background ReasonIQ call receives the assembled Hindsight + uploa
 // PHASE 2: no evidence to weigh means no ReasonIQ call at all — an empty
 // evidence list no longer "flows to ReasonIQ"; there is nothing to reason
 // over, so the turn is decided without it.
-test('0.2: with no recall results and no attachments, ReasonIQ is not called at all', async () => {
+test('0.2: with no recall results and no attachments, a non-social turn is still reasoned (deferred)', async () => {
   const reasonIQCalls = [];
   const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
 
@@ -1457,14 +1462,33 @@ test('0.2: with no recall results and no attachments, ReasonIQ is not called at 
   });
   await flush();
 
-  assert.equal(reasonIQCalls.length, 0);
+  // No evidence is no longer a reason to skip: the social gate reads the text.
+  assert.equal(reasonIQCalls.length, 1, 'a non-social turn reaches the deferred reasoning even with zero evidence');
 });
 
-// Images are model-native input, never text evidence — and an image-only
-// turn has no evidence to weigh, so ReasonIQ stays out of it entirely; the
-// native generator answers. (The evidence assembler's own skip-images rule
-// stays covered by evidenceAssembler.test.js.)
-test('0.2: image attachments are model-native input — no ReasonIQ call, native answers', async () => {
+test('0.2: a pure social turn with no recall results never calls ReasonIQ', async () => {
+  const reasonIQCalls = [];
+  const hermes = { stream: async (messages, { onDelta }) => { onDelta('ok', false); return 'A reply.'; } };
+
+  await performStreamingTurn({
+    messages: [{ role: 'user', content: 'hoi' }],
+    documents: DOCUMENTS,
+    hermes,
+    hindsight: SILENT_HINDSIGHT,
+    res: fakeRes(),
+    intentIQ: () => ({ schemaVersion: 'intentiq.v1', intent: 'converse', status: 'accepted' }),
+    reasonIQ: async (input) => { reasonIQCalls.push(input); return {}; },
+  });
+  await flush();
+
+  assert.equal(reasonIQCalls.length, 0, 'a greeting carries nothing to observe');
+});
+
+// Images are model-native input, never text evidence — the reasoning call may
+// run deferred, but the image must not reach it as evidence; the native
+// generator answers. (The evidence assembler's own skip-images rule stays
+// covered by evidenceAssembler.test.js.)
+test('0.2: image attachments are model-native input — ReasonIQ never sees the image, native answers', async () => {
   const reasonIQCalls = [];
   const hindsight = { recall: async () => [], reflect: async () => {} };
   const nativeGenerator = {
@@ -1486,7 +1510,9 @@ test('0.2: image attachments are model-native input — no ReasonIQ call, native
   });
   await flush();
 
-  assert.equal(reasonIQCalls.length, 0);
+  assert.equal(reasonIQCalls.length, 1, 'a non-social turn is still reasoned (deferred)');
+  const evidence = reasonIQCalls[0] && reasonIQCalls[0].evidence;
+  assert.ok(!JSON.stringify(evidence || []).includes('photo.png'), 'the image never becomes text evidence');
 });
 
 // --- Hypothesis Persistence 0.1: optional hypothesisRuntime wiring -----------
@@ -1985,7 +2011,10 @@ test("0.1 memory §15: a discarded turn closes memory AND the pattern trigger �
   const hermes = { stream: async (m, { onDelta }) => { onDelta("Hoi!", false); return "Hoi!"; } };
 
   await performStreamingTurn({
-    messages: [{ role: "user", content: "Oké prima" }],
+    // A non-social remark: under the default social gate the deferred reasoning
+    // path must stay open for it (a bare "oké prima" is skipped lexically).
+    // The memory verdict below must still discard this turn.
+    messages: [{ role: "user", content: "Oké prima, de analyse staat in de bijlage" }],
     documents: DOCUMENTS,
     hermes,
     hindsight,
@@ -3244,7 +3273,8 @@ test('deferred reasoning: every turn logs exactly one logos.gate record with its
   const gates = appended.filter((r) => r.kind === 'logos.gate');
   assert.equal(gates.length, 1, 'exactly one gate record per turn');
   assert.equal(gates[0].depth, 'shallow');
-  assert.equal(gates[0].reason, 'no_evidence');
+  // A greeting is the one skip left under the default social gate.
+  assert.equal(gates[0].reason, 'social_turn');
   // v3.0: no live IntentIQ feeds the gate — the record carries no intent.
   assert.equal(gates[0].intent, null);
   assert.equal(gates[0].evidenceCount, 0);

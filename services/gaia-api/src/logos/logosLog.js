@@ -123,7 +123,7 @@ function logLogosResult(entry, sink = (line) => console.log(line)) {
  * includes user text — intent and counts only, same observability posture
  * as the result record.
  *
- * @param {{ depth: 'shallow'|'deep', reason: 'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep', intent: string|null, evidenceCount: number, existingHypothesisCount: number, contextId: string|undefined, correlationId: string }} entry
+ * @param {{ depth: 'shallow'|'deep', reason: 'social_turn'|'no_evidence'|'context_only_intent'|'ambiguous_intent'|'unknown_intent'|'deep', intent: string|null, evidenceCount: number, existingHypothesisCount: number, contextId: string|undefined, correlationId: string }} entry
  * @param {(line: string) => void} [sink]
  */
 function logLogosGate(entry, sink = (line) => console.log(line)) {
