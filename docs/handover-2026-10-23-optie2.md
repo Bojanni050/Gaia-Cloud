@@ -37,6 +37,7 @@ Daarna volgde de grotere vraag: waarom ontstaan er eigenlijk 206 hypotheses in �
 - `[beliefs] formation pass started (every 900000ms, min 2 observations from 2 conversations)` staat in de log.
 - **`observations` stond daarna op 0 rijen** — dat was de aanleiding voor `f51ebaf` (Logos' eigen `observations`-array komt leeg terug; de claims worden nu omgeleid). Of dat op de VPS al is gedeployed is niet bevestigd.
 - `d9b26e9` (sociale filter) is nog niet gedeployed.
+- `6ce0d1a` (walkthrough) + branch `vibe/logos-social-gate-default-8a4556`: de sociale filter is **default** geworden (`GAIA_LOGOS_SOCIAL_GATE=off` is nu de opt-out), en er is een kostenmonitor (`npm run why:logos-gate`) die deep/shallow per uur uit het decision log rapporteert.
 
 ## Wat als eerste te controleren
 
@@ -58,8 +59,8 @@ En de regel waar het om gaat: `[beliefs] formed N statement(s)`.
 ## Openstaand werk, in volgorde van waarde
 
 1. **De as is smal — opgelost door recall-overlap (vibe/recall-overlap-grouping-8a4556).** `evidenceAssembler.js` gaf alleen Hindsight-items een `sourceRef`; mentale modellen, uploads, gespreksbeurten en tool-resultaten kregen `null`, dus die observaties konden nooit aggregeren. De formatie-pass verrijkt nu elke open observatie zonder `sourceRef` met **recall ground**: een recall (dezelfde cross-bank seam als de beurt, `low` budget) van de stelling, waarvan de top memory-unit ids op de observatie worden opgeslagen (`recall_ground`, migratie 017). Twee observaties wier recall ground overlappert — zelfs één gedeelde unit — zijn hetzelfde onderwerp. De merge is idempotent, dus een hertonnen pass na een halve failure convergeert. Union-find groepeert nu over `ref:` én `recall:` keys. Env: `GAIA_BELIEF_RECALL_GROUND` (default true), `..._MAX_PER_PASS` (50), `..._TOP` (5).
-2. **De sociale poort is een modus, geen default.** `GAIA_LOGOS_SOCIAL_GATE=on` zet hem aan. Default maken vereist dat **17 tests** in `test/logos.test.js` en `test/turn.test.js` worden herschreven: ze leggen de oude politiek vast (skip op geen-bewijs en op intentie), en een deel bewaakt echte semantics (information gaps, confidence bij shallow). Niet mechanisch omzetten.
-3. **Kostenmonitor.** Met de sociale poort aan kost elke niet-sociale beurt een Logos-call. Meet het aantal `deep`-beslissingen per uur in de decision log voordat je dit breed aanzet.
+2. **De sociale poort is default (opgelost, `vibe/logos-social-gate-default-8a4556`).** `GAIA_LOGOS_SOCIAL_GATE=off` zet de oude diepte-poort terug als expliciete opt-out voor vergelijking. De 17 tests in `test/logos.test.js` en `test/turn.test.js` zijn herschreven: de oude politiek (skip op geen-bewijs en op intentie) is vervangen door de sociale filter, de echte semantics (information gaps, confidence bij shallow) zijn bewaakt gebleven. gaia-api 1661/1661, cognition 73/73.
+3. **Kostenmonitor — gebouwd, meten loopt.** Met de sociale poort als default kost elke niet-sociale beurt een Logos-call. `npm run why:logos-gate` (`services/gaia-api/scripts/summarize-logos-gate.js`) leest het decision log (dir, file of stdin) en rapporteert per UTC-uur: turns, deep, shallow, deep% en per-reason counts — hoeveel `deep`-beslissingen per uur er echt gemaakt worden, voordat dit gejudged wordt. Nog open: een paar dagen live data verzamelen op de VPS en dan pas beslissen of de default blijft.
 4. **De 166 oude `proposed` hypotheses** zijn wezen van het oude model: geen bewijs-tekst (van vóór `015`) en geen observatie-herkomst. Ze kunnen niet opnieuw gevormd worden; laten verlopen of handmatig settle'n.
 5. **Retroactief bewijs bestaat niet.** Alles van vóór `015` houdt `'[]'` en toont de eerlijke terugval. Alleen nieuw bewijs draagt tekst.
 
@@ -95,5 +96,5 @@ GAIA_BELIEF_LOOKBACK                 # default 200
 GAIA_BELIEF_RECALL_GROUND=true|false # recall-overlap as (default: true)
 GAIA_BELIEF_RECALL_GROUND_MAX_PER_PASS  # default 50
 GAIA_BELIEF_RECALL_GROUND_TOP        # default 5
-GAIA_LOGOS_SOCIAL_GATE=on            # sociale filter i.p.v. diepte-poort
+GAIA_LOGOS_SOCIAL_GATE=off           # oude diepte-poort terug (default: sociale filter aan)
 ```
