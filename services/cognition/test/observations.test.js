@@ -94,3 +94,28 @@ test('markConsumed() with no ids touches nothing', async () => {
   assert.deepEqual(await observations.markConsumed('gaia', [], 'h-9'), { consumed: 0 });
   assert.equal(fake.calls.length, 0);
 });
+
+test('mergeRecallGround() unions the new unit ids with the existing ground and reports the size', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [{ recall_ground: ['unit-1', 'unit-2', 'unit-3'] }] }));
+  pool.query = fake.pool.query;
+
+  const outcome = await observations.mergeRecallGround('gaia', 'o1', ['unit-2', 'unit-3', '  ', null]);
+
+  assert.match(fake.calls[0].sql, /recall_ground/);
+  assert.match(fake.calls[0].sql, /array_agg\(DISTINCT unit_id\)/);
+  assert.equal(fake.calls[0].params[0], 'gaia');
+  assert.equal(fake.calls[0].params[1], 'o1');
+  assert.deepEqual(fake.calls[0].params[2], ['unit-2', 'unit-3']);
+  assert.deepEqual(outcome, { merged: 3 });
+});
+
+test('mergeRecallGround() with no usable ids touches nothing and keeps NULL distinct from empty', async () => {
+  const fake = makeFakePool();
+  pool.query = fake.pool.query;
+
+  assert.deepEqual(await observations.mergeRecallGround('gaia', 'o1', []), { merged: 0 });
+  assert.deepEqual(await observations.mergeRecallGround('gaia', 'o1', null), { merged: 0 });
+  assert.deepEqual(await observations.mergeRecallGround('gaia', 'o1', ['  ', 42]), { merged: 0 });
+  assert.equal(fake.calls.length, 0);
+});

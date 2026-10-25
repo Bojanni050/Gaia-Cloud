@@ -16,6 +16,18 @@
  * are about the same thing even when the model worded them differently, which
  * is exactly what wording-based matching (206 singletons) could not see.
  *
+ * sourceRef is not the whole axis. Only Hindsight recall results carry one;
+ * an observation that stood on a mental model, an upload, a conversation turn
+ * or a tool result has no store-side identity and could never aggregate. The
+ * pass therefore widens the axis with RECALL GROUND: for every open observation
+ * without a sourceRef it asks Hindsight "what does the store already say that
+ * is like this" (the same cross-bank recall seam a turn uses, `low` budget),
+ * and stores the returned memory-unit ids on the observation
+ * (`recall_ground`, migration 017). Two observations whose recall ground
+ * overlaps — even one shared unit — are about the same thing. The ids are
+ * merged idempotently, so a retried pass after a partial failure converges
+ * instead of growing the list. Off with GAIA_BELIEF_RECALL_GROUND=false.
+ *
  * The rule, deliberately strict:
  *   ≥ minObservations observations,
  *   from at least two DIFFERENT conversations (twice in one breath proves
@@ -41,6 +53,13 @@ const DEFAULT_LOOKBACK = 200;
 const BASE_CONFIDENCE = 0.75;
 const CONFIDENCE_STEP = 0.05;
 const MAX_CONFIDENCE = 0.9;
+// Recall-ground enrichment: how many open observations get a recall per pass,
+// how many memory units count as ground per observation, and the per-call
+// budget. `low` — this is a widening pass, not a turn; the recall is context,
+// not the reply.
+const DEFAULT_RECALL_GROUND_MAX_PER_PASS = 50;
+const DEFAULT_RECALL_GROUND_TOP = 5;
+const RECALL_GROUND_BUDGET = 'low';
 
 function evidenceKeys(observation) {
   const items = Array.isArray(observation && observation.evidence_items) ? observation.evidence_items : [];
@@ -48,6 +67,14 @@ function evidenceKeys(observation) {
   for (const item of items) {
     const ref = item && typeof item.sourceRef === 'string' ? item.sourceRef.trim() : '';
     if (ref) keys.push(`ref:${ref}`);
+  }
+  // Recall-derived ground: memory-unit ids a recall of the statement returned,
+  // stored by this pass (migration 017). A shared unit is shared ground even
+  // when no evidence item carried a sourceRef.
+  const ground = Array.isArray(observation && observation.recall_ground) ? observation.recall_ground : [];
+  for (const unitId of ground) {
+    const id = typeof unitId === 'string' ? unitId.trim() : '';
+    if (id) keys.push(`recall:${id}`);
   }
   return keys;
 }
@@ -128,11 +155,15 @@ function groupBySharedGround(rows) {
 function createBeliefFormationScan({
   cognition,
   sink,
+  hindsight = null,
   env = process.env,
   intervalMs = Number(env.GAIA_BELIEF_FORMATION_INTERVAL_MS) || DEFAULT_INTERVAL_MS,
   minObservations = Number(env.GAIA_BELIEF_MIN_OBSERVATIONS) || DEFAULT_MIN_OBSERVATIONS,
   maxAgeDays = Number(env.GAIA_BELIEF_MAX_AGE_DAYS) || DEFAULT_MAX_AGE_DAYS,
   lookback = Number(env.GAIA_BELIEF_LOOKBACK) || DEFAULT_LOOKBACK,
+  recallGround = (env.GAIA_BELIEF_RECALL_GROUND || 'true') !== 'false',
+  recallGroundMaxPerPass = Number(env.GAIA_BELIEF_RECALL_GROUND_MAX_PER_PASS) || DEFAULT_RECALL_GROUND_MAX_PER_PASS,
+  recallGroundTop = Number(env.GAIA_BELIEF_RECALL_GROUND_TOP) || DEFAULT_RECALL_GROUND_TOP,
   now = Date.now,
   logger = console,
   onFormed = null,
@@ -159,6 +190,49 @@ function createBeliefFormationScan({
     }
   }
 
+  /**
+   * The recall-ground half of the axis. For every open observation that has no
+   * sourceRef at all (the narrow axis cannot see it), ask Hindsight what the
+   * store already says that is like the statement, and keep the top memory-unit
+   * ids as derived ground on the observation. Best-effort per observation: a
+   * failed recall leaves the observation without ground this pass, never throws.
+   * Observations that already carry a sourceRef are skipped — their ground is
+   * already store-side, and a recall would only duplicate it.
+   */
+  async function enrichWithRecallGround(rows) {
+    const result = { recalled: 0, stored: 0, failed: 0 };
+    if (!recallGround) return result;
+    if (!hindsight || typeof hindsight.recall !== 'function') return result;
+    if (!cognition || typeof cognition.mergeObservationGround !== 'function') return result;
+    const candidates = rows.filter((row) => evidenceKeys(row).length === 0 && row && row.id);
+    for (const row of candidates.slice(0, recallGroundMaxPerPass)) {
+      const statement = String(row.statement || '').trim();
+      if (!statement) continue;
+      let hits = [];
+      try {
+        hits = await hindsight.recall(statement, { budget: RECALL_GROUND_BUDGET });
+      } catch (_) {
+        result.failed += 1;
+        continue;
+      }
+      result.recalled += 1;
+      const unitIds = (Array.isArray(hits) ? hits : [])
+        .map((hit) => (hit && typeof hit.id === 'string' ? hit.id.trim() : ''))
+        .filter(Boolean)
+        .slice(0, recallGroundTop);
+      if (unitIds.length === 0) continue;
+      try {
+        await cognition.mergeObservationGround(row.id, unitIds);
+        row.recall_ground = [...new Set([...(Array.isArray(row.recall_ground) ? row.recall_ground : []), ...unitIds])];
+        result.stored += 1;
+      } catch (error) {
+        result.failed += 1;
+        logger.warn?.(`[beliefs] could not store recall ground for ${row.id}: ${error.message}`);
+      }
+    }
+    return result;
+  }
+
   /** One pass. Never throws; the caller logs an `{ error }` result like the other workers. */
   async function runOnce() {
     if (running) return { skipped: true };
@@ -166,6 +240,7 @@ function createBeliefFormationScan({
     try {
       const result = {
         examined: 0, formed: 0, singleConversation: 0, duplicate: 0, failed: 0, ids: [],
+        recallGround: { recalled: 0, stored: 0, failed: 0 },
       };
       const rows = observationsOfAge(
         await cognition.listObservations({ limit: lookback }),
@@ -173,6 +248,10 @@ function createBeliefFormationScan({
       );
       result.examined = rows.length;
       if (rows.length < minObservations) return result;
+
+      // Widen the axis before grouping: observations with no sourceRef get
+      // recall-derived ground, so the union-find below can connect them too.
+      result.recallGround = await enrichWithRecallGround(rows);
 
       const known = await existingStatements();
       for (const group of groupBySharedGround(rows)) {
@@ -271,6 +350,8 @@ module.exports = {
   DEFAULT_INTERVAL_MS,
   DEFAULT_MIN_OBSERVATIONS,
   DEFAULT_MAX_AGE_DAYS,
+  DEFAULT_RECALL_GROUND_MAX_PER_PASS,
+  DEFAULT_RECALL_GROUND_TOP,
   groupBySharedGround,
   unionEvidence,
 };

@@ -19,7 +19,7 @@ const { ValidationError } = require('./errors');
 
 const COLUMNS = `
   id, bank_id, statement, evidence_items, conversation_id,
-  observed_at, consumed_by_id, consumed_at, created_at
+  observed_at, consumed_by_id, consumed_at, created_at, recall_ground
 `;
 
 /**
@@ -61,6 +61,37 @@ async function list(bankId, { consumed = false, limit = 200 } = {}) {
 }
 
 /**
+ * Merges recall-derived ground into an observation: the Hindsight memory-unit
+ * ids a recall of the observation's statement returned. Idempotent (a unit id
+ * already present is not added again) and additive (existing ground is kept),
+ * so a retried pass after a partial failure converges instead of duplicating.
+ * An empty list is a no-op — NULL ("never recalled") is not overwritten with
+ * an empty answer, because the two mean different things.
+ * @returns {Promise<{ merged: number }>} the size of the ground after the merge
+ */
+async function mergeRecallGround(bankId, id, groundIds) {
+  const list = (Array.isArray(groundIds) ? groundIds : [])
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim());
+  if (list.length === 0) return { merged: 0 };
+  const { rows } = await pool.query(
+    `UPDATE observations
+        SET recall_ground = (
+          SELECT COALESCE(
+            (SELECT array_agg(DISTINCT unit_id)
+               FROM unnest(COALESCE(recall_ground, '{}'::text[]) || $3::text[]) AS unit_id),
+            '{}'::text[]
+          )
+        )
+      WHERE bank_id = $1 AND id = $2::uuid
+      RETURNING recall_ground`,
+    [bankId, id, list],
+  );
+  const after = Array.isArray(rows[0] && rows[0].recall_ground) ? rows[0].recall_ground : [];
+  return { merged: after.length };
+}
+
+/**
  * Marks observations as fed into one statement. Idempotent: an already consumed
  * observation keeps the first statement it fed, so a retried pass can never
  * steal it away from a belief that already rests on it.
@@ -79,4 +110,4 @@ async function markConsumed(bankId, ids, hypothesisId) {
   return { consumed: rowCount };
 }
 
-module.exports = { create, list, markConsumed, COLUMNS };
+module.exports = { create, list, markConsumed, mergeRecallGround, COLUMNS };

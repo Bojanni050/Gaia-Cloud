@@ -108,3 +108,23 @@ test('getKairosState reads last_captured_at out of the state response', async ()
   assert.equal(state, '2026-10-04T10:00:00Z');
   assert.match(calls[0].url, /\/episodes\/state$/);
 });
+
+test('mergeObservationGround PATCHes the recall ground onto one observation', async () => {
+  const { calls, fetchImpl } = fakeFetch();
+  const client = createCognitionClient({ baseUrl: 'http://c:8890', bankId: 'gaia', fetchImpl });
+
+  await client.mergeObservationGround('o-1', ['unit-1', 'unit-2']);
+
+  assert.equal(calls[0].init.method, 'PATCH');
+  assert.match(calls[0].url, /\/v1\/banks\/gaia\/observations\/o-1\/ground$/);
+  assert.deepEqual(calls[0].body, { recall_ground: ['unit-1', 'unit-2'] });
+});
+
+test('mergeObservationGround coerces a non-array to an empty list', async () => {
+  const { calls, fetchImpl } = fakeFetch();
+  const client = createCognitionClient({ baseUrl: 'http://c:8890', fetchImpl });
+
+  await client.mergeObservationGround('o-1', null);
+
+  assert.deepEqual(calls[0].body, { recall_ground: [] });
+});
