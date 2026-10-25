@@ -138,6 +138,12 @@ function createCognitionClient({
     ids,
     ...(hypothesisId ? { hypothesis_id: hypothesisId } : {}),
   });
+  // Recall-derived ground for one observation (see migration 017): the
+  // Hindsight memory-unit ids a recall of its statement returned. The formation
+  // pass writes this so observations without a sourceRef can still aggregate.
+  const mergeObservationGround = (id, recallGround) => request('PATCH', `/observations/${encodeURIComponent(id)}/ground`, {
+    recall_ground: Array.isArray(recallGround) ? recallGround : [],
+  });
 
   // --- Patterns ---
   const listPatterns = () => request('GET', '/patterns').then((r) => (r && r.patterns) || []);
@@ -178,6 +184,7 @@ function createCognitionClient({
     supersedeHypothesis,
     answerHypothesis,
     listObservations,
+    mergeObservationGround,
     createObservation,
     markObservationsConsumed,
     listPatterns,

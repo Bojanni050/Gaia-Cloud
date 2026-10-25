@@ -57,7 +57,7 @@ En de regel waar het om gaat: `[beliefs] formed N statement(s)`.
 
 ## Openstaand werk, in volgorde van waarde
 
-1. **De as is smal.** `evidenceAssembler.js` geeft alleen Hindsight-items een `sourceRef` (regel 71); mentale modellen, uploads, gespreksbeurten en tool-resultaten krijgen `null` (regels 89, 107, 124, 140). Leunt een observatie op die bronnen, dan kan hij nooit aggregeren. Volgende as: **recall-overlap** — bij elke open observatie Hindsight vragen "wat lijkt hierop?" en groeperen op overlappende ids. Gebruikt de bestaande seam, geen nieuwe provider.
+1. **De as is smal — opgelost door recall-overlap (vibe/recall-overlap-grouping-8a4556).** `evidenceAssembler.js` gaf alleen Hindsight-items een `sourceRef`; mentale modellen, uploads, gespreksbeurten en tool-resultaten kregen `null`, dus die observaties konden nooit aggregeren. De formatie-pass verrijkt nu elke open observatie zonder `sourceRef` met **recall ground**: een recall (dezelfde cross-bank seam als de beurt, `low` budget) van de stelling, waarvan de top memory-unit ids op de observatie worden opgeslagen (`recall_ground`, migratie 017). Twee observaties wier recall ground overlappert — zelfs één gedeelde unit — zijn hetzelfde onderwerp. De merge is idempotent, dus een hertonnen pass na een halve failure convergeert. Union-find groepeert nu over `ref:` én `recall:` keys. Env: `GAIA_BELIEF_RECALL_GROUND` (default true), `..._MAX_PER_PASS` (50), `..._TOP` (5).
 2. **De sociale poort is een modus, geen default.** `GAIA_LOGOS_SOCIAL_GATE=on` zet hem aan. Default maken vereist dat **17 tests** in `test/logos.test.js` en `test/turn.test.js` worden herschreven: ze leggen de oude politiek vast (skip op geen-bewijs en op intentie), en een deel bewaakt echte semantics (information gaps, confidence bij shallow). Niet mechanisch omzetten.
 3. **Kostenmonitor.** Met de sociale poort aan kost elke niet-sociale beurt een Logos-call. Meet het aantal `deep`-beslissingen per uur in de decision log voordat je dit breed aanzet.
 4. **De 166 oude `proposed` hypotheses** zijn wezen van het oude model: geen bewijs-tekst (van vóór `015`) en geen observatie-herkomst. Ze kunnen niet opnieuw gevormd worden; laten verlopen of handmatig settle'n.
@@ -92,5 +92,8 @@ GAIA_BELIEF_FORMATION_INTERVAL_MS    # default 900000
 GAIA_BELIEF_MIN_OBSERVATIONS         # default 2
 GAIA_BELIEF_MAX_AGE_DAYS             # default 14
 GAIA_BELIEF_LOOKBACK                 # default 200
+GAIA_BELIEF_RECALL_GROUND=true|false # recall-overlap as (default: true)
+GAIA_BELIEF_RECALL_GROUND_MAX_PER_PASS  # default 50
+GAIA_BELIEF_RECALL_GROUND_TOP        # default 5
 GAIA_LOGOS_SOCIAL_GATE=on            # sociale filter i.p.v. diepte-poort
 ```

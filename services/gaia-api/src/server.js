@@ -364,6 +364,10 @@ function createApp(env = process.env) {
     beliefFormationScan = createBeliefFormationScan({
       cognition,
       sink: cognitionSink.hypothesis,
+      // The recall-ground half of the axis: the same cross-bank recall client
+      // `search_memory` uses, so an observation without a sourceRef can still
+      // find the store units it is about (see beliefFormationScan.js).
+      hindsight,
       env,
       logger: console,
       // A belief born in the pass must be visible to the manager in the same

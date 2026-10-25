@@ -31,6 +31,16 @@ router.get('/', asyncRoute(async (req, res) => {
   res.json({ observations: list });
 }));
 
+// Recall-derived ground for an observation: the Hindsight memory-unit ids a
+// recall of the statement returned. The formation pass writes this so two
+// observations that never shared a sourceRef can still be recognized as the
+// same ground. Idempotent and additive — a retried pass adds nothing new.
+router.patch('/:id/ground', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  const outcome = await observations.mergeRecallGround(bankId, id, req.body.recall_ground);
+  res.json(outcome);
+}));
+
 // Which statement an observation fed. Idempotent, so a retried pass cannot take
 // an observation away from the belief that already rests on it.
 router.post('/consumed', asyncRoute(async (req, res) => {
