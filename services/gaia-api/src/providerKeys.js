@@ -24,6 +24,7 @@ const PROVIDER_KEY_ENV = Object.freeze({
   alibaba: 'ALIBABA_API_KEY',
   nvidia: 'NVIDIA_API_KEY',
   opencode: 'OPENCODE_API_KEY',
+  commandcode: 'COMMANDCODE_API_KEY',
   litellm: 'LITELLM_API_KEY',
   elevenlabs: 'ELEVENLABS_API_KEY',
   fishaudio: 'FISHAUDIO_API_KEY',
