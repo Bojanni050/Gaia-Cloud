@@ -14,7 +14,8 @@
     "eval:memory": "node eval/run-memoryworthiness.js",
     "reconcile:hindsight": "node scripts/reconcile-hindsight-tags.js",
     "why:recall": "node scripts/why-recall.js",
-    "why:logos-gate": "node scripts/summarize-logos-gate.js"
+    "why:logos-gate": "node scripts/summarize-logos-gate.js",
+    "survey:legacy-hypotheses": "node scripts/survey-legacy-hypotheses.js"
   },
   "dependencies": {
     "express": "^4.19.2",
