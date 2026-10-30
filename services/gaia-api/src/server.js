@@ -51,6 +51,7 @@ const { readReachPolicy } = require('./reasoning/openQuestionReach');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
+const { createReflectionNudge } = require('./reasoning/reflectionNudge');
 const { createMemoryTool } = require('./reasoning/memoryTool');
 const { createMemoryRouter } = require('./memoryRoutes');
 const { createWebSearchTool } = require('./reasoning/webSearchTool');
@@ -529,6 +530,16 @@ function createApp(env = process.env) {
           : 5 * 60 * 1000,
       });
 
+  // Reflection nudge: every GAIA_MEMORY_NUDGE_EVERY_TURNS retained turns
+  // the post-turn reflection carries gaia_memory_nudge — the persist
+  // reminder from the Hermes learning loop. Off with GAIA_MEMORY_NUDGE=false;
+  // the default interval is 10 retained turns.
+  const reflectionNudge = env.GAIA_MEMORY_NUDGE === 'false'
+    ? undefined
+    : createReflectionNudge({
+        everyTurns: Number(env.GAIA_MEMORY_NUDGE_EVERY_TURNS) || undefined,
+      });
+
   /**
    * The speech-to-text client for the current configuration (provider store,
    * else GAIA_STT_* env), plus the resolved config so POST /speech/transcribe
@@ -873,6 +884,7 @@ function createApp(env = process.env) {
         conversationSearch,
         aion,
         eleos,
+        reflectionNudge,
         desktopBroker,
         desktopClient: Boolean(req.body && req.body.desktop === true),
         desktopRoots: req.body && req.body.desktopRoots,
@@ -937,6 +949,7 @@ function createApp(env = process.env) {
       conversationSearch,
       aion,
       eleos,
+      reflectionNudge,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),
