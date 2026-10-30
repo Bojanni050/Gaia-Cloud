@@ -272,6 +272,7 @@ Behaviour that is optional is controlled by environment flags (read in
 | `GAIA_RESEARCH_REACH` | off | research jobs at Hermes (`on` to enable) |
 | `GAIA_AION` | on | the Aion pass (`false` to disable) |
 | `GAIA_MEMORY_TOOL` | on | the `remember` tool (`false` to disable) |
+| `GAIA_MEMORY_NUDGE` | on | the reflection nudge — every N retained turns the post-turn reflection carries `gaia_memory_nudge` (`GAIA_MEMORY_NUDGE_EVERY_TURNS`, default 10) (`false` to disable) |
 | `GAIA_HYPOTHESIS_PERSISTENCE` | on | writing hypotheses to Cognition (`false` to disable) |
 
 Models, speech (STT/TTS) and storage paths are configured per role through
