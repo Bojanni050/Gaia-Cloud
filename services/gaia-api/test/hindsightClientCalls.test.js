@@ -31,6 +31,24 @@ test('a soft read still treats the generating placeholder as no content', async 
   assert.equal(await clientWith(ok({ id: 'mm', content: 'Generating content...' })).getMentalModel('mm'), null);
 });
 
+test('reflect keeps the domain tag and adds what the caller tags on', async () => {
+  const seen = [];
+  const client = clientWith(async (url, options) => { seen.push(options); return { ok: true, json: async () => ({}) }; });
+  const tagsOf = (i) => JSON.parse(seen[i].body).items[0].tags;
+
+  await client.reflect({ summary: 's', domain: 'context', tags: ['gaia:memory_nudge'] });
+  assert.deepEqual(tagsOf(0), ['context', 'gaia:memory_nudge']);
+
+  await client.reflect({ summary: 's', domain: 'context' });
+  assert.deepEqual(tagsOf(1), ['context'], 'no caller tags means exactly the domain tag');
+
+  await client.reflect({ summary: 's', tags: ['gaia:memory_nudge'] });
+  assert.deepEqual(tagsOf(2), ['gaia:memory_nudge'], 'a caller tag without a domain still lands');
+
+  await client.reflect({ summary: 's', domain: 'context', tags: ['context'] });
+  assert.deepEqual(tagsOf(3), ['context'], 'the same tag twice is one tag');
+});
+
 test('the async retain sends no abort signal, the sync retain a long one', async () => {
   const seen = [];
   const client = clientWith(async (url, options) => { seen.push(options); return { ok: true, json: async () => ({}) }; });

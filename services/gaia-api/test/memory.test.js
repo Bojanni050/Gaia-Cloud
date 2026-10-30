@@ -11,6 +11,7 @@ const {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
+  NUDGE_TAG,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,
@@ -618,4 +619,37 @@ test('fetchMentalModelContext never throws even if getMentalModel rejects', asyn
   const hindsight = { getMentalModel: async () => { throw new Error('unreachable'); } };
   const models = await fetchMentalModelContext(hindsight, { now: () => Date.now() + 999999999 });
   assert.deepEqual(models, []);
+});
+
+// The nudge travels as a tag, and this is the assertion that keeps it that way:
+// it is the field the memory layer this is moving to keeps and hands on, while a
+// free metadata key is exactly what it drops (`docs/spike-cortexiq.md`,
+// 2026-11-16, section 3). The reminder must survive the swap of the thing it is
+// stored in, so it may not ride in the field that dies with it.
+test('reflectOnTurn carries the nudge as a tag, and never as a metadata key', async () => {
+  const captured = [];
+  const hindsight = { reflect: async (opts) => { captured.push(opts); } };
+  const settled = () => new Promise((resolve) => setImmediate(resolve));
+
+  reflectOnTurn(hindsight, {
+    userText: 'I always work better after midnight, remember that',
+    assistantText: 'Noted.',
+    conversationId: 'c1',
+    nudge: true,
+  });
+  await settled();
+
+  assert.deepEqual(captured[0].tags, [NUDGE_TAG]);
+  assert.equal(NUDGE_TAG, 'gaia:memory_nudge', 'the tag on the wire is the vocabulary, not the constant name');
+  assert.equal('gaia_memory_nudge' in (captured[0].metadata || {}), false,
+    'the old metadata channel must be gone, not merely quiet');
+
+  reflectOnTurn(hindsight, {
+    userText: 'I always work better after midnight, remember that',
+    assistantText: 'Noted.',
+    conversationId: 'c1',
+  });
+  await settled();
+
+  assert.deepEqual(captured[1].tags, [], 'an ordinary turn carries no nudge tag');
 });

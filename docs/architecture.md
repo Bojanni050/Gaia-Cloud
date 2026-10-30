@@ -503,6 +503,7 @@ neither has an interval to be late on.
 | `GAIA_OPEN_QUESTION_REACH` | off | `server.js` | Gaia re-raising her own open question |
 | `GAIA_AION` | on | `server.js` | the Aion pass |
 | `GAIA_MEMORY_TOOL` | on | `server.js` | **all five** memory tools; the `/memory/*` routes are independent of it |
+| `GAIA_MEMORY_NUDGE` | on | `server.js` | the reflection nudge: every `GAIA_MEMORY_NUDGE_EVERY_TURNS` (default 10) *retained* turns, the post-turn reflection carries the `gaia:memory_nudge` tag so the store is reminded to persist what the turn earned |
 | `GAIA_HYPOTHESIS_PERSISTENCE` | on | `server.js` | the whole derived-knowledge runtime: manager, pattern manager, knowledge adapter, open-question reach and the three scans |
 | `GAIA_HYPOTHESIS_FORMATION` | `'beliefs'` | `server.js` | not a flag but an enum (`'beliefs'` \| `'per_turn'`): per-turn formation is off unless `'per_turn'` |
 | `GAIA_HYPOTHESIS_SCAN` | on | `softPromotionScan.js` | the soft-promotion scan (`GAIA_HYPOTHESIS_SCAN_INTERVAL_MS`, 15 min) |

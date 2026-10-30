@@ -54,6 +54,7 @@ const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowle
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
 const { createPassRegistry } = require('./passRegistry');
+const { createReflectionNudge } = require('./reasoning/reflectionNudge');
 const { createMemoryTool } = require('./reasoning/memoryTool');
 const { createMemoryRouter } = require('./memoryRoutes');
 const { createWebSearchTool } = require('./reasoning/webSearchTool');
@@ -560,6 +561,13 @@ function createApp(env = process.env) {
     passRegistry.declare('aion', { enabled: false, reason: 'GAIA_AION is off' });
   }
 
+  // Reflection nudge: every GAIA_MEMORY_NUDGE_EVERY_TURNS retained turns the
+  // post-turn reflection carries the gaia:memory_nudge tag — the persist reminder
+  // from the Hermes learning loop. On by default; GAIA_MEMORY_NUDGE=false stops it.
+  const reflectionNudge = flag(env, 'GAIA_MEMORY_NUDGE', { default: true })
+    ? createReflectionNudge({ everyTurns: Number(env.GAIA_MEMORY_NUDGE_EVERY_TURNS) || undefined })
+    : undefined;
+
   /**
    * The speech-to-text client for the current configuration (provider store,
    * else GAIA_STT_* env), plus the resolved config so POST /speech/transcribe
@@ -940,6 +948,7 @@ function createApp(env = process.env) {
         conversationSearch,
         aion,
         eleos,
+        reflectionNudge,
         desktopBroker,
         desktopClient: Boolean(req.body && req.body.desktop === true),
         desktopRoots: req.body && req.body.desktopRoots,
@@ -1004,6 +1013,7 @@ function createApp(env = process.env) {
       conversationSearch,
       aion,
       eleos,
+      reflectionNudge,
       attachments,
       generator: getEffectiveNativeGenerator(),
       backupGenerator: getEffectiveBackupGenerator(),

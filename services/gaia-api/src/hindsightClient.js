@@ -155,21 +155,29 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
    * Memoryworthiness 0.1: an optional `metadata` record rides along on the
    * retained item (string→string, same as every Hindsight metadata field)
    * alongside the existing source_message_id provenance.
+   *
+   * `tags` ride along next to the domain tag. A tag is the field the stores keep
+   * and hand on: Hindsight writes every reflection with `tags: [domain]` already,
+   * and CortexIQ stores tags, lets the facts derived from a memory inherit them
+   * and can filter on them — while free `metadata` comes back as `{}` there
+   * (`docs/spike-cortexiq.md`, 2026-11-16). Anything that must survive a
+   * memory-layer swap belongs in a tag, not in a metadata blob.
    * @param {{ summary: string, domain?: string, context?: string, provenance?: object,
-   *           metadata?: Record<string,string> }} reflection
+   *           metadata?: Record<string,string>, tags?: string[] }} reflection
    */
-  async function reflect({ summary, domain, context, provenance = {}, metadata }) {
+  async function reflect({ summary, domain, context, provenance = {}, metadata, tags = [] }) {
     const mergedMetadata = {
       ...(provenance.source_message_id ? { source_message_id: provenance.source_message_id } : {}),
       ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
     };
+    const allTags = [...new Set([...(domain ? [domain] : []), ...(Array.isArray(tags) ? tags : [])])];
     const item = {
       content: summary,
       context: context || domain || null,
       timestamp: provenance.observed_at || null,
       document_id: provenance.conversation_id || undefined,
       metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : undefined,
-      tags: domain ? [domain] : undefined,
+      tags: allTags.length > 0 ? allTags : undefined,
     };
 
     await send(bankUrl('/memories'), {
