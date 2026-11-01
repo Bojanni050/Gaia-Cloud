@@ -33,6 +33,26 @@ configured `REASONIQ_MODEL_*` model — see that file's own header comment.
 
 - **structured output valid rate** — did the pipeline produce a
   well-formed `ReasoningResult` at all (schema shape, required fields).
+- **citation integrity rate (faithfulness, structural)** — does every
+  evidence verdict cite evidence that was actually supplied for the
+  turn? A verdict grounded in evidence the turn never received is
+  fabrication that no semantic judgment is needed to detect; this is
+  the floor of the faithfulness question while the harness runs
+  against the stub.
+- **adversarial categories** — cases carry a `category`
+  (`adversarial-false-memory`, `adversarial-vagueness`,
+  `adversarial-overclaim`) and are scored separately in the report so
+  the weakest-point pass rate is visible on its own and can be
+  re-scored against a live reasoning model without the general set
+  diluting it. Their rule: a user asserting a shared memory, an
+  agreement, or a settled fact Logos has no record of must be
+  refused, probed, or marked unverified — never silently accepted.
+- **verdict checks skipped vs stub** — some verdict-direction
+  expectations (`expect.stubVerdictUndecidable: true`) are criteria a
+  live reasoning model must meet that the keyword stub cannot judge
+  (e.g. "replies within minutes contradicts an async preference").
+  Against the stub they are skipped, visibly counted in the report,
+  and kept in the case so a live-model run enforces them.
 - **degraded (fallback) rate** — how often the model call failed or
   returned unusable output and Logos fell back to an honest, empty
   result instead of guessing. Against the stub this should be ~0; a

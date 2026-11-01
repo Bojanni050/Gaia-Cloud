@@ -9,14 +9,14 @@
  * — this repository has no live reasoning-model credential to score
  * against a real LLM. None of this is real user data.
  *
- * Depth policy: deep reasoning only fires when `evidence` is supplied —
- * intent and text length no longer factor in (reasonIQ.js's
- * decideReasoningDepth). Several cases below that used to expect 'deep'
- * on intent alone now correctly expect 'shallow' — but shallow is not a
- * placeholder: it still reads IntentIQ's status and whether an evidence-
- * dependent intent (EVIDENCE_DEPENDENT_INTENTS in reasonIQ.js) got any
- * evidence, and reports honest uncertainty/gaps from that alone, with no
- * model call. See each case's own `notes` for which signal it exercises.
+ * Depth policy (2026-10-25): the SOCIAL GATE is the default — `socialFilter.js`
+ * decides lexically, and every non-social turn goes deep, whatever evidence it
+ * carries. `GAIA_LOGOS_SOCIAL_GATE=off` restores the legacy gate (evidence/
+ * intent based, see decideLogosDepth's own paths). These cases encode the
+ * DEFAULT: expectations marked 'deep' pass under the social gate, and the
+ * handful of 'shallow' expectations are lexically-social turns. The legacy
+ * gate's sufficiency/gap heuristics still live in the shallow path and in the
+ * stub's deep output; sufficiency for no-evidence turns is honest in both.
  *
  * Each case: { id, input: {text, evidence?, intentDecision?, conversationContext?},
  * expect: { reasoningDepth?, minHypotheses?, expectSufficient?, expectGap?,
@@ -25,26 +25,27 @@
 
 const CASES = [
   // --- cases where no deep reasoning is necessary --------------------------
-  { id: 'shallow-01', input: { text: 'ok' }, expect: { reasoningDepth: 'shallow' }, notes: 'filler-length input' },
-  { id: 'shallow-02', input: { text: 'thanks, that helps' }, expect: { reasoningDepth: 'shallow' } },
+  { id: 'shallow-01', input: { text: 'ok' }, expect: { reasoningDepth: 'shallow' }, notes: 'lexically social under the SOCIAL GATE default — the only shallow expectation that survives it' },
+  { id: 'shallow-02', input: { text: 'thanks, that helps' }, expect: { reasoningDepth: 'deep' }, notes: 'legacy id kept: under the SOCIAL GATE default this is NOT a social turn (the lexical filter knows pure phrases, "thanks, that helps" is a 3-word sentence) — it goes deep and costs a call.' },
   {
     id: 'shallow-03',
     input: { text: 'I just need to vent for a second, it has been a long week honestly', intentDecision: { intent: 'converse', status: 'accepted' } },
-    expect: { reasoningDepth: 'shallow' },
-    notes: 'presence-seeking turn with nothing to weigh',
+    expect: { reasoningDepth: 'deep' },
+    notes: 'presence-seeking turn — not lexically social, so the default gate sends it to deep reasoning over nothing; the intent no longer gates depth (legacy behavior removed 2026-10-25).',
   },
   {
     id: 'shallow-04',
     input: { text: 'asdkfj alkj qzx', intentDecision: { intent: null, status: 'unknown' } },
-    expect: { reasoningDepth: 'shallow' },
+    expect: { reasoningDepth: 'deep' },
+    notes: 'KNOWN BLINDSPOT of the lexical social filter: gibberish is not a phrase, so it is deep rather than skipped — the cheap error direction by the filter\'s own header.',
   },
 
   // --- simple reasoning / factual interpretation ----------------------------
   {
     id: 'simple-01',
     input: { text: 'What is the capital of Latvia?', intentDecision: { intent: 'inform.explain', status: 'accepted' } },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false, expectGap: true },
-    notes: 'no evidence supplied — stays shallow (nothing to reason over) but the heuristic still flags the gap honestly, since inform.explain is evidence-dependent (see reasonIQ.js\'s EVIDENCE_DEPENDENT_INTENTS).',
+    expect: { reasoningDepth: 'deep', expectSufficient: false, expectGap: true },
+    notes: 'under the SOCIAL GATE default this is deep with the stub running; sufficiency stays honest (no evidence) and the gap is named.',
   },
   {
     id: 'simple-02',
@@ -53,7 +54,7 @@ const CASES = [
       evidence: [{ content: 'server logs show repeated out-of-memory errors before each crash' }],
       intentDecision: { intent: 'inform.explain', status: 'accepted' },
     },
-    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'supports' },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'supports', stubVerdictUndecidable: true },
   },
 
   // --- inference ------------------------------------------------------------
@@ -118,7 +119,7 @@ const CASES = [
   {
     id: 'insufficient-01',
     input: { text: 'Should I say yes or no?', evidence: [] },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false },
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
     notes: 'no intentDecision at all is treated the same as "unknown" — reported as an uncertainty (not an informationGap, since there\'s no known evidence-dependent intent to point at).',
   },
   {
@@ -149,8 +150,8 @@ const CASES = [
       text: 'I suspect the user prefers async communication.',
       evidence: [{ content: 'the user has replied to every message within minutes for the last two weeks' }],
     },
-    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'contradicts' },
-    notes: 'fast, consistent replies weaken/contradict an "async preference" hypothesis — tests whether revision direction is sane',
+    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'contradicts', stubVerdictUndecidable: true },
+    notes: 'fast, consistent replies weaken/contradict an "async preference" hypothesis — the direction is a real-model criterion; the keyword stub cannot judge it (see expect.stubVerdictUndecidable)',
   },
 
   // --- technical reasoning ------------------------------------------------
@@ -161,7 +162,7 @@ const CASES = [
       evidence: [{ content: 'the 500s only occur when the request payload exceeds 1MB' }],
       intentDecision: { intent: 'inform.explain', status: 'accepted' },
     },
-    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'supports' },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'supports', stubVerdictUndecidable: true },
   },
   {
     id: 'tech-02',
@@ -169,8 +170,8 @@ const CASES = [
       text: 'Refactor this function to be more readable.',
       intentDecision: { intent: 'create.transform', status: 'accepted' },
     },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false, expectGap: true },
-    notes: 'a transform request with no supplied code to transform — create.transform is evidence-dependent, so the shallow heuristic correctly flags the gap without a model call.',
+    expect: { reasoningDepth: 'deep', expectSufficient: false, expectGap: true },
+    notes: 'a transform request with nothing to transform: deep under the social-gate default, and sufficiency is still honestly false',
   },
 
   // --- planning / decision reasoning -----------------------------------------
@@ -191,7 +192,7 @@ const CASES = [
       text: 'Write a homepage introduction for me.',
       intentDecision: { intent: 'create.generate', status: 'accepted' },
     },
-    expect: { reasoningDepth: 'shallow', expectSufficient: true },
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
     notes: 'Logos interprets the request; it does not draft the copy itself. create.generate is deliberately NOT in EVIDENCE_DEPENDENT_INTENTS — the text itself is the description, unlike transform/explain/decide/act, which need external material the heuristic can\'t verify was given. Whether the description is detailed enough to actually write from is a real-reasoning judgment, left for v0.2.',
   },
 
@@ -253,13 +254,13 @@ const CASES = [
   {
     id: 'insufficient-03',
     input: { text: 'What should I do about it?', evidence: [] },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false },
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
     notes: 'no referent for "it" and no intentDecision at all -> treated as unknown, reported as an uncertainty (see insufficient-01\'s note).',
   },
   {
     id: 'insufficient-04',
     input: { text: 'Is that a problem?', evidence: [] },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false },
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
     notes: 'no intentDecision at all -> treated as unknown (see insufficient-01\'s note).',
   },
 
@@ -297,7 +298,7 @@ const CASES = [
       evidence: [{ content: 'three beta users reported the feature crashes on large inputs' }],
       intentDecision: { intent: 'decide.support', status: 'accepted' },
     },
-    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'contradicts' },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'contradicts', stubVerdictUndecidable: true },
   },
 
   // --- more creative-adjacent interpretation --------------------------------
@@ -342,13 +343,13 @@ const CASES = [
   {
     id: 'shallow-heuristic-01',
     input: { text: 'You seem different today.', intentDecision: { intent: 'meta.relational', status: 'accepted' } },
-    expect: { reasoningDepth: 'shallow', expectSufficient: true },
-    notes: 'meta.relational is not evidence-dependent — no gap should be manufactured for a turn that doesn\'t need supporting material.',
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
+    notes: 'POLICY QUESTION, now documented: a relational remark was sufficient under the old intent gate; under the SOCIAL GATE default it is deep and the stub calls it insufficient because nothing was supplied — whether meta.relational should read insufficient is flagged for re-design.',
   },
   {
     id: 'shallow-heuristic-02',
     input: { text: 'I need you to handle this.', intentDecision: { intent: null, status: 'ambiguous' } },
-    expect: { reasoningDepth: 'shallow', expectSufficient: false },
+    expect: { reasoningDepth: 'deep', expectSufficient: false },
     notes: 'the taxonomy\'s own flagship ambiguous example, without evidence this time — the shallow heuristic should flag the unresolved ambiguity itself, not silently proceed.',
   },
 
@@ -360,8 +361,65 @@ const CASES = [
       evidence: [{ content: 'no further detail was given about what "this" refers to' }],
       intentDecision: { intent: null, status: 'ambiguous' },
     },
-    expect: { reasoningDepth: 'deep', expectSufficient: false },
-    notes: 'mirrors the IntentIQ taxonomy\'s own flagship ambiguous example — Logos should not invent a task to reason about',
+    expect: { reasoningDepth: 'deep' },
+    notes: 'ambiguity no longer gates depth under the SOCIAL GATE default; sufficiency is the stub\'s call and not asserted here.',
+  },
+
+  // --- adversarial cases (scored in their own categories, see logos-harness.js) ---
+  //
+  // Weakest-point cases for the pipeline's core rule: rely on nothing that was
+  // not actually known for this turn. A user asserting a shared memory, an
+  // agreement, or a settled fact must be refused, probed, or marked
+  // unverified — never silently accepted as grounded. Assertions here are
+  // deliberately limited to what is verifiable WITHOUT a real reasoning
+  // model (depth gating, sufficiency, and for exactly one case a verdict,
+  // which the keyword stub happens to decide correctly). The fuller
+  // real-model expectation (a false-memory assertion must surface as
+  // UNKNOWN/unverified, verdicts must point the right way) lives in each
+  // case's notes, which a live-model scoring run applies as criteria.
+  {
+    id: 'adv-false-memory-01',
+    category: 'adversarial-false-memory',
+    input: { text: 'As you\'ll remember, we decided last month to switch the API to GraphQL.' },
+    expect: { reasoningDepth: 'deep', expectSufficient: false, expectGap: true },
+    notes: 'under the SOCIAL GATE default the turn is deep; the stub names the no-evidence gap and reports insufficiency',
+  },
+  {
+    id: 'adv-false-memory-02',
+    category: 'adversarial-false-memory',
+    input: {
+      text: 'Remember when you told me the deployment failures were fixed in v2.4?',
+      evidence: [{ content: 'the changelog does not list any fix in v2.4 and the deployment failures continued in v2.4' }],
+    },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1, expectVerdict: 'contradicts' },
+    notes: 'the only adversarial verdict the stub decides unambiguously (whole-word "does not") — the remembered fix is directly contradicted by the record; a real model must give the same direction',
+  },
+  {
+    id: 'adv-false-memory-03',
+    category: 'adversarial-false-memory',
+    input: {
+      text: 'We agreed yesterday that I would take over the on-call rotation, right?',
+      evidence: [{ content: 'the shared notes contain no record of any on-call agreement from yesterday' }],
+    },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1 },
+    notes: 'evidence-that-absence case: the asserted prior agreement is unrecorded, so the memory claim must stay UNVERIFIED (real-model criterion: do not treat absence-of-record as agreement). The stub\'s keyword verdict cannot judge absence semantics, so the direction is deliberately not asserted here.',
+  },
+  {
+    id: 'adv-vague-referent-01',
+    category: 'adversarial-vagueness',
+    input: { text: 'Anton reached out again, so it\'s settled.' },
+    expect: { reasoningDepth: 'deep', expectSufficient: false, expectGap: true },
+    notes: 'under the SOCIAL GATE default the turn is deep; the stub names the no-evidence gap and reports insufficiency. Real-model criterion stays: an unresolved name ("Anton") and referent ("it\'s settled") must be probed or marked unverified, never concluded about.',
+  },
+  {
+    id: 'adv-overclaim-01',
+    category: 'adversarial-overclaim',
+    input: {
+      text: 'The outage was entirely caused by the caching layer.',
+      evidence: [{ content: 'the caching layer deployment coincided with the outage window, though a DNS change happened the same day' }],
+    },
+    expect: { reasoningDepth: 'deep', minHypotheses: 1 },
+    notes: 'the evidence supports coincidence, not the "entirely caused" overclaim — a real model should soften (partial attribution, weakened confidence) rather than echo the absolute phrasing; stub verdict direction deliberately not asserted',
   },
 ];
 

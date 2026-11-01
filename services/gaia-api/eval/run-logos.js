@@ -19,12 +19,25 @@ runEvaluation(CASES, model).then(({ report, results }) => {
   console.log(`cases:                     ${report.total}`);
   console.log(`pass rate:                 ${report.passRate}`);
   console.log(`structured output valid:   ${report.structuredOutputValidRate}`);
+  console.log(`citation integrity:        ${report.citationIntegrityRate}`);
   console.log(`degraded (fallback) rate:  ${report.degradedRate}`);
   console.log(`shallow rate:              ${report.shallowRate}`);
   console.log(`deep rate:                 ${report.deepRate}`);
   console.log(`hypothesis formation rate: ${report.hypothesisFormationRate}`);
   console.log(`sufficiency rate:          ${report.sufficiencyRate}`);
   console.log(`confidence:                min=${report.confidenceStats.min} max=${report.confidenceStats.max} avg=${report.confidenceStats.avg}`);
+
+  const categoryEntries = Object.entries(report.categoryStats);
+  if (categoryEntries.length > 1) {
+    if (report.stubSkippedVerdictCases) {
+    console.log(`\nverdict checks skipped vs stub:  ${report.stubSkippedVerdictCases} (live-model criteria kept in expect)`);
+  }
+
+  console.log('\nper category:');
+    for (const [name, stats] of categoryEntries) {
+      console.log(`  ${name.padEnd(30)} pass ${stats.passRate}  (${stats.total} case${stats.total === 1 ? '' : 's'})`);
+    }
+  }
 
   if (report.failures.length) {
     console.log(`\nfailures (${report.failures.length}):`);
