@@ -9,6 +9,7 @@ const {
   memoryKindOf,
   renderMemoryContext,
   renderDualRecallContext,
+  renderRecallCaveat,
   recallRelevantContext,
   reflectOnTurn,
   MENTAL_MODEL_IDS,
@@ -419,14 +420,36 @@ test('renderDualRecallContext lays the literal Foundation records under the item
 });
 
 
+test('renderRecallCaveat warns only when a bank that claims things about the person failed', () => {
+  // No status at all (gate never opened, or an older client): nothing to say.
+  assert.equal(renderRecallCaveat(null), null);
+  assert.equal(renderRecallCaveat({}), null);
+
+  // Every bank answered: nothing to say.
+  assert.equal(renderRecallCaveat({ bojan: { status: 'ok' }, gaia: { status: 'ok' } }), null);
+
+  // bojan (system memory about the person) failed: this is the Yassine case —
+  // 0 items is indistinguishable from "nothing there" without this caveat.
+  const bojanFailed = renderRecallCaveat({ bojan: { status: 'failed', reason: 'timeout' }, gaia: { status: 'ok' } });
+  assert.match(bojanFailed, /incomplete/);
+  assert.match(bojanFailed, /never state outright/i);
+
+  // gaia-logos (derived knowledge about the person) failed: also warn.
+  assert.notEqual(renderRecallCaveat({ 'gaia-logos': { status: 'failed', reason: 'unreachable' } }), null);
+
+  // Only gaia (her own, non-user-facing bank) failed: no caveat — that bank
+  // carries no claim about the person, so there is nothing to wrongly deny.
+  assert.equal(renderRecallCaveat({ gaia: { status: 'failed', reason: 'unreachable' } }), null);
+});
+
 test('recallRelevantContext skips the call for a policy-trivial query and never throws on failure', async () => {
   let called = false;
   const hindsight = { recall: async () => { called = true; return []; } };
-  assert.deepEqual(await recallRelevantContext(hindsight, 'ok'), []);
+  assert.deepEqual(await recallRelevantContext(hindsight, 'ok'), { items: [], bankStatus: {} });
   assert.equal(called, false);
 
   const failing = { recall: async () => { throw new Error('unreachable'); } };
-  assert.deepEqual(await recallRelevantContext(failing, 'remember what I said about the project'), []);
+  assert.deepEqual(await recallRelevantContext(failing, 'remember what I said about the project'), { items: [], bankStatus: {} });
 });
 
 test('distillQuery asks for the name when the turn names something, its content words otherwise', () => {
@@ -455,6 +478,24 @@ test('recallRelevantContext asks Hindsight with the distilled query', async () =
   assert.deepEqual(queries, ['Pieter']);
 });
 
+test('recallRelevantContext reports per-bank status when the client supports it', async () => {
+  const okThenFail = {
+    recallWithStatus: async () => ({
+      items: [{ text: 'x' }],
+      bankStatus: { bojan: { status: 'ok' }, gaia: { status: 'failed', reason: 'timeout' } },
+    }),
+  };
+  const result = await recallRelevantContext(okThenFail, 'remember what I said about the project');
+  assert.deepEqual(result.bankStatus, { bojan: { status: 'ok' }, gaia: { status: 'failed', reason: 'timeout' } });
+  assert.equal(result.items.length, 1);
+
+  // A client without recallWithStatus (older wiring, or a test double) still
+  // works exactly as before: items only, empty bankStatus.
+  const plain = { recall: async () => [{ text: 'y' }] };
+  const plainResult = await recallRelevantContext(plain, 'remember what I said about the project');
+  assert.deepEqual(plainResult, { items: [{ text: 'y' }], bankStatus: {} });
+});
+
 test('a turn that asks about her opens the recall gate, so her own bank can answer', async () => {  // "wat houdt je bezig?" carries no past cue of its own, so the policy skips
   // the lookup and her bank is never asked (measured 18-10-2026: the turn
   // logged reflectionCount 0 and she answered "Bo niet."). The turn shape is
@@ -462,14 +503,14 @@ test('a turn that asks about her opens the recall gate, so her own bank can answ
   // reference does.
   let calls = 0;
   const hindsight = { recall: async () => { calls += 1; return [{ reflection: 'x', line: 'y' }]; } };
-  assert.deepEqual(await recallRelevantContext(hindsight, 'wat houdt je bezig?'), []);
+  assert.deepEqual(await recallRelevantContext(hindsight, 'wat houdt je bezig?'), { items: [], bankStatus: {} });
   assert.equal(calls, 0);
 
   const answer = await recallRelevantContext(hindsight, 'wat houdt je bezig?', {
     shape: { asksAboutHer: true },
   });
   assert.equal(calls, 1);
-  assert.equal(answer.length, 1);
+  assert.equal(answer.items.length, 1);
 });
 
 test('reflectOnTurn skips trivial exchanges and never throws even if Hindsight rejects', async () => {

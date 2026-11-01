@@ -4,10 +4,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, quotaForBankCount, CROSS_BANK_QUOTA } = require('../src/hindsightClient');
 
-function fakeClient(name, results) {
+function fakeClient(name, results, bankId = name) {
   const calls = [];
   return {
     name,
+    bankId,
     calls,
     async recall(query, options = {}) {
       calls.push({ query, options });
@@ -93,6 +94,45 @@ test('one bank failing drops only its slice (best-effort per bank)', async () =>
   const client = createCrossBankRecallClient(app, logos);
 
   assert.deepEqual((await client.recall('q')).map((u) => u.id), ['a']);
+});
+
+// --- recallWithStatus: the side channel that tells a caller WHICH bank, if
+// any, silently dropped out this turn (docs/memory-pipe-issues.md #1) -------
+
+test('recallWithStatus reports every bank ok when all answer', async () => {
+  const app = fakeClient('app', [unit('a', 0.3)]);
+  const logos = fakeClient('logos', [unit('b', 0.5)]);
+  const client = createCrossBankRecallClient(app, logos);
+
+  const { items, bankStatus } = await client.recallWithStatus('q');
+
+  // mergeBankSlices takes a round in bank order, not global score order
+  // (same rule proven by the other merge tests above).
+  assert.deepEqual(items.map((u) => u.id), ['a', 'b']);
+  assert.deepEqual(bankStatus, { app: { status: 'ok' }, logos: { status: 'ok' } });
+});
+
+test('recallWithStatus marks a failed bank by its bankId, with a reason, and keeps the other slice', async () => {
+  const app = fakeClient('app', [unit('a', 0.3)]);
+  const logos = fakeClient('logos', new Error('hindsight recall unreachable: timeout'));
+  const client = createCrossBankRecallClient(app, logos);
+
+  const { items, bankStatus } = await client.recallWithStatus('q');
+
+  assert.deepEqual(items.map((u) => u.id), ['a']);
+  assert.deepEqual(bankStatus, {
+    app: { status: 'ok' },
+    logos: { status: 'failed', reason: 'unreachable' },
+  });
+});
+
+test('recall() itself stays a bare array even when a bank fails — recallWithStatus is strictly additive', async () => {
+  const app = fakeClient('app', [unit('a', 0.3)]);
+  const logos = fakeClient('logos', new Error('down'));
+  const client = createCrossBankRecallClient(app, logos);
+
+  const items = await client.recall('q');
+  assert.deepEqual(items.map((u) => u.id), ['a']);
 });
 
 test('non-recall methods stay on the primary bank', async () => {

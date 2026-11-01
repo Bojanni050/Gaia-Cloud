@@ -40,7 +40,7 @@
  */
 
 const { buildSystemPrompt } = require('./foundation');
-const { recallRelevantContext, renderDualRecallContext, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
+const { recallRelevantContext, renderDualRecallContext, renderRecallCaveat, reflectOnTurn, fetchMentalModelContext, renderMentalModelContext } = require('./memory');
 const { searchRelevantKnowledgePages, renderKnowledgePageContext } = require('./knowledgePages');
 const { assembleEvidence } = require('./reasoning/evidenceAssembler');
 const { fetchEvidenceForReflections } = require('./reasoning/evidenceRecall');
@@ -299,7 +299,7 @@ function resolveLiveGenerators({ generator, backupGenerator, nativeGenerator, he
  * Derives the capability-awareness entries from the live generation pair
  * so Gaia's self-knowledge stays truthful without a Decision Engine.
  */
-function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs } = {}) {
+function generationCapabilities({ primary }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, recallBankStatus, aion, desktop, researchJobs } = {}) {
   const capabilities = [];
   if ((generator || nativeGenerator || primary) && !(hermes && !generator && !nativeGenerator)) {
     capabilities.push({ id: 'native' });
@@ -316,9 +316,28 @@ function generationCapabilities({ primary }, { nativeGenerator, hermes, generato
   }
   // Memory is real this turn whenever Hindsight recall is wired — the
   // capability-awareness block is the one place Gaia learns that, so leaving
-  // it out made her honestly deny a memory she actually has.
+  // it out made her honestly deny a memory she actually has. But claiming it
+  // unconditionally once `recall` exists as a function was its own honesty
+  // bug: all three banks could have just failed and she would still be told
+  // the capability is "real" (docs/memory-pipe-issues.md #1). recallBankStatus
+  // (from this turn's gated recall, see memory.js recallRelevantContext) makes
+  // the claim track what actually happened: no claim when every bank she
+  // asked failed, a `note` when only some did.
   if (hindsight && typeof hindsight.recall === 'function') {
-    capabilities.push({ id: 'hindsight' });
+    const statuses = recallBankStatus && typeof recallBankStatus === 'object'
+      ? Object.values(recallBankStatus)
+      : [];
+    const totalCount = statuses.length;
+    const failedCount = statuses.filter((s) => s && s.status === 'failed').length;
+    if (totalCount === 0 || failedCount < totalCount) {
+      capabilities.push(
+        failedCount > 0
+          ? { id: 'hindsight', note: 'part of your memory banks were unreachable this turn — treat recall as possibly incomplete, never as proof something is absent' }
+          : { id: 'hindsight' }
+      );
+    }
+    // totalCount > 0 && failedCount === totalCount: every bank this turn's
+    // gated recall asked just failed — do not claim the capability at all.
   }
   // The on-demand shared-memory tool, when the primary generator carries it.
   const toolNames = primary && Array.isArray(primary.toolNames) ? primary.toolNames : [];
@@ -538,7 +557,7 @@ async function recallForTurn({
     && shouldAttemptPatternRetrieval(userText, intentDecision, shape)
   );
   timing.start('memory_recall');
-  const [reflections, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, openQuestionRows] = await Promise.all([
+  const [recallResult, mentalModels, recalledPatterns, knowledgePages, foundationResults, conversationHits, researchJob, openQuestionRows] = await Promise.all([
     hindsight
       // Bo's own bank fills the nine lines (his rule, 18-10-2026). Her own bank
       // joins only when the turn asks about her; the derived bank takes no lines
@@ -549,7 +568,7 @@ async function recallForTurn({
         userText,
         { pastReference: wantConversationHistory, shape }
       )
-      : Promise.resolve([]),
+      : Promise.resolve({ items: [], bankStatus: {} }),
     hindsight ? fetchMentalModelContext(hindsight).catch(() => []) : Promise.resolve([]),
     wantPatterns
       ? hypothesisRuntime.recallPatterns(userText).catch((err) => {
@@ -593,6 +612,8 @@ async function recallForTurn({
       : Promise.resolve(null),
   ]);
   timing.end('memory_recall');
+  const reflections = recallResult.items;
+  const recallBankStatus = recallResult.bankStatus;
 
   // Dual Recall — de terugweg. A recalled Hindsight item carries the raw
   // Foundation observation ids it was built from (gaia_*_sources, see
@@ -720,7 +741,7 @@ function buildTurnPrompt({
   // Prompt assembly: canonical SOUL/context documents first, then live
   // capability awareness, standing knowledge, memory, attachments and
   // (gated) pattern guidance. Both transports build the exact same prompt.
-  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, aion, desktop, researchJobs });
+  const availableCapabilities = generationCapabilities({ primary: primary, backup }, { nativeGenerator, hermes, generator, foundation, conversationSearch, hindsight, recallBankStatus, aion, desktop, researchJobs });
   // One clock for the whole turn: the "now" block Gaia is given and the
   // relative ages on recalled memory and earlier conversations all read the
   // same instant, so they can never contradict each other.
@@ -728,6 +749,10 @@ function buildTurnPrompt({
   const nowBlock = renderNowContext(now);
   const systemPrompt = buildSystemPrompt(documents, messages);
   const memoryBlock = renderDualRecallContext(reflections, dualRecall ? dualRecall.evidenceByFactId : null, now);
+  // Independent of memoryBlock on purpose: a failed bank renders 0 items,
+  // which is exactly when memoryBlock is null — gating the caveat on "there
+  // is a memory block" would hide it in precisely the case it exists for.
+  const recallCaveatBlock = renderRecallCaveat(recallBankStatus);
   const mentalModelBlock = renderMentalModelContext(mentalModels);
   const knowledgePageBlock = renderKnowledgePageContext(knowledgePages);
   const foundationBlock = wantFoundation ? renderFoundationContext(foundationResults) : null;
@@ -777,6 +802,7 @@ function buildTurnPrompt({
     if (conversationHistoryBlock) systemMessages.push({ role: 'system', content: conversationHistoryBlock });
     if (researchPendingBlock) systemMessages.push({ role: 'system', content: researchPendingBlock });
     if (openQuestionBlock) systemMessages.push({ role: 'system', content: openQuestionBlock });
+    if (recallCaveatBlock) systemMessages.push({ role: 'system', content: recallCaveatBlock });
     if (memoryBlock) systemMessages.push({ role: 'system', content: memoryBlock });
     if (attachmentBlock) systemMessages.push({ role: 'system', content: attachmentBlock });
     if (patternBlock) systemMessages.push({ role: 'system', content: patternBlock });

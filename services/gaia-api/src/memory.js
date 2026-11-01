@@ -255,6 +255,51 @@ function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()
 }
 
 /**
+ * A bank that failed to answer this turn (timeout, unreachable, HTTP error)
+ * is reported as `0 items`, which is indistinguishable from "nothing relevant
+ * exists" once it reaches `renderDualRecallContext` — exactly the Yassine
+ * failure (docs/memory-pipe-issues.md #1): the gate was open, eleven valid
+ * items sat in a bank, and that bank being down read as "she has nothing".
+ *
+ * This caveat deliberately does NOT depend on whether any memory line
+ * survived — `renderDualRecallContext` returns null on zero items, which is
+ * the exact case a failed bank produces, so gating the caveat on "there is a
+ * memoryBlock" would hide it precisely when it matters most.
+ *
+ * Severity is judged by what the bank claims ABOUT THE PERSON, not by how
+ * important the bank is to Gaia herself: `bojan` (system memory: reflections
+ * and mental models about the person) and `gaia-logos` (derived knowledge
+ * about the person — hypotheses, patterns) can make her wrongly deny
+ * something she knows about the person, so their failure needs a caveat.
+ * `gaia` — her own bank, her personal views and human side — carries no
+ * claim about the person; its failure may make her feel less herself, but it
+ * cannot make her lie to the person about what she knows of them, so it is
+ * deliberately excluded here.
+ * @param {Record<string, { status: string, reason?: string }>|null|undefined} bankStatus
+ * @param {{ ownBankId?: string, userFacingBankIds?: string[] }} [options]
+ * @returns {string|null}
+ */
+function renderRecallCaveat(bankStatus, { ownBankId = 'gaia', userFacingBankIds } = {}) {
+  if (!bankStatus || typeof bankStatus !== 'object') return null;
+  const userFacing = Array.isArray(userFacingBankIds) && userFacingBankIds.length > 0
+    ? new Set(userFacingBankIds)
+    : null;
+  const failedUserFacing = Object.keys(bankStatus).filter((bank) => {
+    if (bankStatus[bank]?.status !== 'failed') return false;
+    if (bank === ownBankId) return false;
+    return userFacing ? userFacing.has(bank) : true;
+  });
+  if (failedUserFacing.length === 0) return null;
+  return [
+    'Your memory lookup was incomplete just now: part of what you know about',
+    'the person could not be reached (a technical failure, not "nothing',
+    'found"). Never state outright that you do not know something because of',
+    'this — say you cannot reach part of your memory right now instead of',
+    'denying you have it.',
+  ].join('\n');
+}
+
+/**
  * Best-effort recall, policy-gated. Never throws — a slow or unreachable
  * Hindsight, or a query the policy judges not worth a lookup, both
  * resolve to [] rather than failing or delaying the turn. The optional
@@ -278,12 +323,18 @@ function renderDualRecallContext(reflections, evidenceByFactId, now = Date.now()
  * `shape` is the verdict of `turnShape.readTurn` for this same query (stap 4
  * van "de vraag één keer lezen"): when the turn read the question once, the
  * policy uses that reading instead of scanning the text a second time.
+ * Returns `{ items, bankStatus }` rather than a bare array: `bankStatus` is
+ * the per-bank outcome (`{ [bankId]: { status: 'ok'|'failed', reason? } }`),
+ * empty whenever the gate never opened or the client predates
+ * `recallWithStatus` — a caller that only reads `.items` sees unchanged
+ * behaviour.
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {string} query
  * @param {{ intentDecision?: object|null, pastReference?: boolean, shape?: object|null }} [options]
+ * @returns {Promise<{ items: object[], bankStatus: Record<string, { status: string, reason?: string }> }>}
  */
 async function recallRelevantContext(hindsight, query, options = {}) {
-  if (!query || !query.trim()) return [];
+  if (!query || !query.trim()) return { items: [], bankStatus: {} };
   // A turn that asks about her opens the gate by itself: he wants her view, and
   // her own memories are part of what she answers from. Without this the
   // asksAboutHer branch in turn.js could never reach a line at all, because the
@@ -293,15 +344,19 @@ async function recallRelevantContext(hindsight, query, options = {}) {
   if (!options.pastReference
     && !asksAboutHer
     && !shouldRecall(query, { intentDecision: options.intentDecision, shape: options.shape })) {
-    return [];
+    return { items: [], bankStatus: {} };
   }
   try {
     // The gate read the turn as Bo wrote it; retrieval reads only the words
     // that carry it (distillQuery — a whole conversational sentence pushed the
     // right fact to rank 38 of 44, "Pieter hond" put it first).
-    return await hindsight.recall(distillQuery(query) || query);
+    const q = distillQuery(query) || query;
+    if (typeof hindsight.recallWithStatus === 'function') {
+      return await hindsight.recallWithStatus(q);
+    }
+    return { items: await hindsight.recall(q), bankStatus: {} };
   } catch (_) {
-    return [];
+    return { items: [], bankStatus: {} };
   }
 }
 
@@ -431,6 +486,7 @@ module.exports = {
   KIND_MARKERS,
   renderMemoryContext,
   renderDualRecallContext,
+  renderRecallCaveat,
   recallRelevantContext,
   reflectOnTurn,
   MENTAL_MODEL_IDS,

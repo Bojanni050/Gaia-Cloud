@@ -471,6 +471,7 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
   }
 
   return {
+    bankId,
     recall,
     reflect,
     getMentalModel,
@@ -563,6 +564,20 @@ function mergeBankSlices(slices, quota = CROSS_BANK_QUOTA) {
 }
 
 /**
+ * Classifies a recall failure for the status side-channel below — same three
+ * buckets `hindsightClient.js`'s own `request()` already logs (timeout vs.
+ * unreachable vs. an HTTP error), read back from the error message `send()`
+ * throws, since that message is all that crosses the per-bank `recall()`
+ * boundary.
+ */
+function classifyRecallError(error) {
+  const message = String(error && error.message || '');
+  if (/unreachable/.test(message)) return 'unreachable';
+  if (/responded \d+/.test(message)) return 'http_error';
+  return 'error';
+}
+
+/**
  * Compose a client whose `recall` spans several Hindsight banks while every
  * other method stays on the primary bank.
  *
@@ -580,18 +595,52 @@ function mergeBankSlices(slices, quota = CROSS_BANK_QUOTA) {
  */
 function createCrossBankRecallClient(primary, ...others) {
   const banks = [primary, ...others].filter(Boolean);
+
+  /**
+   * Same merge as `recall()` below, but keeps the per-bank outcome instead of
+   * discarding it. A bank that failed is reported `{ status: 'failed', reason }`
+   * rather than folded into an empty slice — that distinction ("nothing found"
+   * vs. "could not ask") is exactly what a flat `.catch(() => [])` erases, and
+   * what let Gaia deny a memory she actually has (docs/memory-pipe-issues.md #1).
+   * @returns {Promise<{ items: object[], bankStatus: Record<string, { status: 'ok'|'failed', reason?: string }> }>}
+   */
+  async function recallWithStatus(query, options = {}) {
+    const { quota, ...bankOptions } = options;
+    const outcomes = await Promise.all(
+      banks.map(async (client) => {
+        try {
+          return { bank: client.bankId, status: 'ok', items: await client.recall(query, bankOptions) };
+        } catch (error) {
+          return { bank: client.bankId, status: 'failed', reason: classifyRecallError(error), items: [] };
+        }
+      })
+    );
+    const slices = outcomes.map((outcome) => outcome.items);
+    const perBank = Number.isFinite(quota) && quota > 0
+      ? quota
+      : quotaForBankCount(slices.filter((slice) => Array.isArray(slice) && slice.length > 0).length);
+    const items = mergeBankSlices(slices, perBank);
+    const bankStatus = {};
+    for (const outcome of outcomes) {
+      bankStatus[outcome.bank] = outcome.status === 'ok'
+        ? { status: 'ok' }
+        : { status: 'failed', reason: outcome.reason };
+    }
+    return { items, bankStatus };
+  }
+
   return {
     ...primary,
+    // Unchanged contract for every existing caller (fetchMentalModelContext,
+    // the search_memory tool, hypothesisRuntime.recallPatterns, knowledge
+    // page search): still a bare Promise<Array>, still best-effort per bank.
     async recall(query, options = {}) {
-      const { quota, ...bankOptions } = options;
-      const slices = await Promise.all(
-        banks.map((client) => client.recall(query, bankOptions).catch(() => []))
-      );
-      const perBank = Number.isFinite(quota) && quota > 0
-        ? quota
-        : quotaForBankCount(slices.filter((slice) => Array.isArray(slice) && slice.length > 0).length);
-      return mergeBankSlices(slices, perBank);
+      const { items } = await recallWithStatus(query, options);
+      return items;
     },
+    // New — only the gated per-turn recall in memory.js uses this, to learn
+    // which bank (if any) silently dropped out this turn.
+    recallWithStatus,
   };
 }
 

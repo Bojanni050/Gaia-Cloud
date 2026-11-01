@@ -43,6 +43,12 @@ function renderCapabilityAwareness(availableCapabilities) {
     if (skills.length > 0) {
       lines.push(`  skills: ${skills.join(', ')}`);
     }
+    // A capability may flag that it is only partially usable this turn (e.g.
+    // hindsight when one of several banks failed to answer) — rendered the
+    // same way skills narrow desktop, additive and capability-agnostic.
+    if (typeof capability.note === 'string' && capability.note.trim()) {
+      lines.push(`  note: ${capability.note.trim()}`);
+    }
   }
   if (lines.length === 0) return null;
 
