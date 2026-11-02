@@ -376,7 +376,24 @@ function distillQuery(text, options = {}) {
   // Sentence-initial capitals are already gone: every word that starts a Dutch
   // or English sentence ("Ik", "De", "Wat", "Weet", "Hoe") is a stopword.
   const entities = words.filter((word) => /^[A-Z\u00c0-\u00de]/.test(word));
-  if (entities.length > 0) return entities.slice(0, maxWords).join(' ');
+  if (entities.length > 0) {
+    // A durable-topic word (DURABLE_CONTEXT_SIGNALS \u2014 "database", "server",
+    // "voorkeur", "besluit", \u2026) is never incidental: it is specifically one
+    // of the reasons the recall gate opens. Dropping it whenever a name also
+    // appears turned "Is dat besluit over de server ooit met Lotte
+    // besproken?" into the single word "Lotte" \u2014 losing both "besluit" and
+    // "server", the actual subject of the question
+    // (docs/memory-pipe-issues.md #4: the gate and this function can read
+    // different things out of the same sentence). This is NOT the same as
+    // the conversational chaff entity-only distillation was built to drop
+    // ("goed Pieter visite geweest hond" ranked below "Pieter" alone) \u2014 a
+    // durable topic is substantive, chaff is not, so only this one signal
+    // group rides along with the entity.
+    const durableWords = words.filter(
+      (word) => !entities.includes(word) && hasSignal(word, DURABLE_CONTEXT_SIGNALS)
+    );
+    return [...entities, ...durableWords].slice(0, maxWords).join(' ');
+  }
   if (words.length === 0) return raw;
   return words.slice(0, maxWords).join(' ');
 }

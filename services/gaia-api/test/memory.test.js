@@ -505,6 +505,31 @@ test('distillQuery asks for the name when the turn names something, its content 
   assert.equal(distillQuery('   '), '');
 });
 
+// docs/memory-pipe-issues.md #4: the gate and distillQuery can read different
+// things out of the same sentence. Confirmed before this fix: each sentence
+// below opens shouldRecall via a DURABLE_CONTEXT_SIGNALS word (database,
+// voorkeur, besluit, server) — the actual subject of the question — but
+// because a name also appears, the old entity-only branch threw that subject
+// away and sent Hindsight nothing but the name.
+test('distillQuery keeps the durable-topic word that opened the gate, even when a name is also present', () => {
+  assert.equal(
+    distillQuery('Klopt de configuratie van de Hermes-deployment nog?'),
+    'Klopt Hermesdeployment configuratie'
+  );
+  assert.equal(distillQuery('De database staat toch nog op Azure, klopt dat?'), 'Azure database');
+  assert.equal(distillQuery('Weet je iets over de voorkeur van Jan voor dark mode?'), 'Jan voorkeur');
+  assert.equal(distillQuery('Is dat besluit over de server ooit met Lotte besproken?'), 'Lotte besluit server');
+
+  // The two measured sentences that justified entity-only distillation in the
+  // first place must stay exactly as they were: neither carries a durable-
+  // topic word, so there is nothing to add back.
+  assert.equal(
+    distillQuery('Als het goed is, weet je over Pieter dat hij bij mij op visite is geweest en een hond heeft.'),
+    'Pieter'
+  );
+  assert.equal(distillQuery('Hoe kom je aan die informatie over Pieter? Want dat is iets wat ik totaal niet herken.'), 'Pieter');
+});
+
 test('recallRelevantContext asks Hindsight with the distilled query', async () => {
   const queries = [];
   const hindsight = { recall: async (query) => { queries.push(query); return []; } };
