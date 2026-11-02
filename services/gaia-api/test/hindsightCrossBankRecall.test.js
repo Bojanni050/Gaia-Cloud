@@ -88,6 +88,34 @@ test('mergeBankSlices tolerates a missing slice and a zero quota', () => {
   assert.deepEqual(mergeBankSlices([null, [unit('x', 1)]], 0).map((u) => u.id), ['x']);
 });
 
+test('the tail is round-robin too: two rich banks beyond their quota both keep their turn (docs/memory-pipe-issues.md #2)', async () => {
+  // Three banks, quota 3 (the default): `poor` only has one item, so the
+  // guaranteed-fair phase hands back just 1 + 3 + 3 = 7 lines, two short of a
+  // 9-line budget. `rich1` and `rich2` both have more than 3 relevant items —
+  // exactly the "as soon as a bank has more than 3 relevant items" case the
+  // issue names. The old flat-sort tail let whichever bank's 4th-best item
+  // scored higher claim BOTH of the two remaining slots; round-robin gives
+  // each rich bank exactly one of them instead.
+  const poor = fakeClient('poor', [unit('p1', 0.9)]);
+  // rich1's 4th and 5th best outscore rich2's, so a flat sort of the tail
+  // would hand rich1 both remaining slots and rich2 none.
+  const rich1 = fakeClient('rich1', [unit('r1a', 0.8), unit('r1b', 0.79), unit('r1c', 0.78), unit('r1d', 0.60), unit('r1e', 0.59)]);
+  const rich2 = fakeClient('rich2', [unit('r2a', 0.7), unit('r2b', 0.69), unit('r2c', 0.68), unit('r2d', 0.50), unit('r2e', 0.49)]);
+  const client = createCrossBankRecallClient(poor, rich1, rich2);
+
+  const merged = await client.recall('q');
+
+  // Fair phase (3 rounds, bank order poor/rich1/rich2): p1, r1a, r2a, r1b,
+  // r2b, r1c, r2c — 7 lines, poor exhausted after round 1. The continued
+  // round-robin then gives rich1 its 4th item AND rich2 its 4th item, in
+  // that order — not r1d followed by r1e, which a flat score sort would have
+  // produced (0.60 and 0.59 both beat r2's 0.50).
+  assert.deepEqual(
+    merged.slice(0, 9).map((u) => u.id),
+    ['p1', 'r1a', 'r2a', 'r1b', 'r2b', 'r1c', 'r2c', 'r1d', 'r2d']
+  );
+});
+
 test('one bank failing drops only its slice (best-effort per bank)', async () => {
   const app = fakeClient('app', [unit('a', 0.3)]);
   const logos = fakeClient('logos', new Error('down'));

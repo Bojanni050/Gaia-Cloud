@@ -502,9 +502,16 @@ function createHindsightClient({ baseUrl, bankId, budget = 'mid', fetchImpl = fe
  * ("weet je nog?" and "Wie is Pieter?" all sat around 1.07–1.10), which is why
  * this went unnoticed for so long.
  *
- * With a quota each bank speaks before any bank repeats: best of each, then
- * second best of each, and so on. Whatever is left over follows in the old
- * global score order, so nothing is lost and a single-bank caller is unchanged.
+ * Each bank speaks before any bank repeats: best of each, then second best of
+ * each, and so on, for as long as ANY bank still has items — not just for the
+ * first `CROSS_BANK_QUOTA` rounds. It used to be the latter: once a bank's
+ * quota ran out, the rest of that bank's items were dumped into a flat global
+ * score sort with every other bank's leftovers, which reintroduces the exact
+ * problem this quota was built to fix, just one layer down
+ * (docs/memory-pipe-issues.md #2) — a bank with more relevant items than its
+ * quota gets outscored in the leftovers by another bank's noise, the same way
+ * the pre-quota flat merge once lost Yassine to unrelated chatter. A
+ * single-bank caller is unaffected either way.
  */
 const CROSS_BANK_QUOTA = 3;
 
@@ -535,32 +542,51 @@ function unitScore(unit) {
 
 /**
  * Merge per-bank result slices that each bank already ranked best-first.
+ *
+ * Takes turns for the WHOLE merge, not just the first `quota` rounds — a
+ * bank with more relevant items than its quota still gets its 4th, 5th, …
+ * best item interleaved fairly against the other banks' leftovers, instead
+ * of those leftovers being decided by a flat score comparison across banks
+ * whose scores are not on the same scale (see CROSS_BANK_QUOTA's comment;
+ * docs/memory-pipe-issues.md #2). `quota` is accepted for backward
+ * compatibility with existing callers but no longer bounds the loop — making
+ * it a cutoff was exactly the bug.
  * @param {Array<Array<object>>} slices one slice per bank, in bank order
- * @param {number} [quota] lines one bank may claim before the next bank speaks
+ * @param {number} [quota] unused for ordering now; kept so existing call
+ *   sites (and their explicit overrides) do not need to change
  */
-function mergeBankSlices(slices, quota = CROSS_BANK_QUOTA) {
+function mergeBankSlices(slices, quota = CROSS_BANK_QUOTA) { // eslint-disable-line no-unused-vars
   const ranked = (Array.isArray(slices) ? slices : []).map((slice) =>
     Array.isArray(slice) ? slice.slice().sort((a, b) => unitScore(b) - unitScore(a)) : []
   );
   const merged = [];
   const taken = ranked.map(() => 0);
-  const rounds = Number.isFinite(quota) && quota > 0 ? Math.floor(quota) : 0;
-  for (let round = 0; round < rounds; round += 1) {
+  // Bounded by the longest slice rather than by `quota`: every bank keeps
+  // taking its turn until every bank is exhausted, so a "rich" bank's items
+  // beyond the old quota cutoff are interleaved fairly too, not dumped into a
+  // separate score-sorted tail.
+  const maxSliceLength = ranked.reduce((max, slice) => Math.max(max, slice.length), 0);
+  for (let round = 0; round < maxSliceLength; round += 1) {
     for (let bank = 0; bank < ranked.length; bank += 1) {
-      // A unit without a readable score has no claim to a reserved place: it
-      // waits in the tail, which is sorted, so it lands last as before.
+      // A unit without a readable score has no claim to a round-robin slot —
+      // same rule as before, just no longer only within the first `quota`
+      // rounds. It (and anything behind it in that bank's own ranking) falls
+      // through to the unscored tail below.
       if (ranked[bank].length > taken[bank] && Number.isFinite(unitScore(ranked[bank][taken[bank]]))) {
         merged.push(ranked[bank][taken[bank]]);
         taken[bank] += 1;
       }
     }
   }
-  const rest = [];
+  // What remains is, by construction, only units with no readable score (or
+  // unreachable behind one) — nothing with a real score is left unmerged.
+  // There is no meaningful order to interleave them by, so bank order is as
+  // good as any; they are a last resort, not a decision this function makes.
+  const unscored = [];
   for (let bank = 0; bank < ranked.length; bank += 1) {
-    for (let i = taken[bank]; i < ranked[bank].length; i += 1) rest.push(ranked[bank][i]);
+    for (let i = taken[bank]; i < ranked[bank].length; i += 1) unscored.push(ranked[bank][i]);
   }
-  rest.sort((a, b) => unitScore(b) - unitScore(a));
-  return merged.concat(rest);
+  return merged.concat(unscored);
 }
 
 /**
