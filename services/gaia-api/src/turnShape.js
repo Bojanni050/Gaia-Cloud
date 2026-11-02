@@ -38,7 +38,7 @@
 
 const {
   isTrivial, MEMORY_POLICY, PAST_REFERENCE_SIGNALS, DURABLE_CONTEXT_SIGNALS,
-  REPAIR_SIGNALS, HER_VIEW_SIGNALS, contentWords,
+  REPAIR_SIGNALS, HER_VIEW_SIGNALS, VERB_STEM_SIGNALS, namedEntityQuestion, contentWords,
 } = require('./memoryPolicy');
 const { detectSignals, detectSkillTasks } = require('./logos/intentSignals');
 
@@ -92,6 +92,8 @@ function isRepeatAsk(text, previousUserTexts) {
  *   durableTopic: boolean,   a durable-topic cue fired
  *   repair: boolean,         doubt, a challenge to her memory, or "look again"
  *   repeatAsk: boolean,      the same question came back in this conversation
+ *   verbStem: boolean,       a memory-verb conjugation aimed at her (wist je, kende je, ...)
+ *   entityQuestion: boolean, a question naming someone/something specific, no memory verb needed
  *   wantsRecall: boolean,    the live recall gate — must equal shouldRecall(text)
  *   looksInArchive: boolean, asks for what was literally said (transcript read)
  *   looksInRecords: boolean, asks what is recorded in Foundation (archive read)
@@ -115,13 +117,21 @@ function readTurn(text, options = {}) {
   // The same question asked again is a cue too, but only the caller knows the
   // conversation: it passes the earlier user turns in.
   const repeatAsk = isRepeatAsk(trimmed, options.previousUserTexts);
+  // Any conjugation of a memory verb aimed at her ("wist je", "kende je",
+  // "herinnerde je je") — see VERB_STEM_SIGNALS for why this is a stem match
+  // rather than one literal phrase per tense.
+  const verbStem = hasSignal(trimmed, VERB_STEM_SIGNALS);
+  // A question that names someone or something specific, with no memory verb
+  // in it at all ("Hoe zat het ook alweer met Yassine?") — see
+  // namedEntityQuestion in memoryPolicy.js.
+  const entityQuestion = namedEntityQuestion(trimmed);
 
   // The live recall gate: shouldRecall(query, { intentDecision: null }).
   // No length floor: a cue decides at any length, because the floor used to
   // swallow exactly the shortest memory questions ("weet je nog?" is eleven
   // characters, "geheugen?" eight). `trivial` below still feeds the pattern
   // gate, which keeps its floor.
-  const wantsRecall = pastReference || durableTopic || repair || repeatAsk;
+  const wantsRecall = pastReference || durableTopic || repair || repeatAsk || verbStem || entityQuestion;
 
   // The archive/transcript vocabulary (intentSignals). Never lets a vocabulary
   // failure take down a turn — same posture as turn.js' own guards.
@@ -155,6 +165,8 @@ function readTurn(text, options = {}) {
   if (durableTopic) matched.push('durableTopic');
   if (repair) matched.push('repair');
   if (repeatAsk) matched.push('repeatAsk');
+  if (verbStem) matched.push('verbStem');
+  if (entityQuestion) matched.push('entityQuestion');
   if (asksAboutHer) matched.push('asksAboutHer');
   if (signals) {
     if (signals.exactHistory) matched.push('exactHistory');
@@ -172,6 +184,8 @@ function readTurn(text, options = {}) {
     durableTopic,
     repair,
     repeatAsk,
+    verbStem,
+    entityQuestion,
     asksAboutHer,
     wantsRecall,
     looksInArchive,
@@ -203,6 +217,8 @@ function logTurnShape(entry, sink = (line) => console.log(line)) {
     durableTopic: Boolean(entry.durableTopic),
     repair: Boolean(entry.repair),
     repeatAsk: Boolean(entry.repeatAsk),
+    verbStem: Boolean(entry.verbStem),
+    entityQuestion: Boolean(entry.entityQuestion),
     asksAboutHer: Boolean(entry.asksAboutHer),
     wantsRecall: Boolean(entry.wantsRecall),
     looksInArchive: Boolean(entry.looksInArchive),

@@ -41,6 +41,43 @@ test('shouldRecall fires on past-reference and durable-context signals, EN and N
   assert.equal(shouldRecall('What did we decide about the project database?'), true);
 });
 
+// docs/memory-pipe-issues.md #3: the lexical gate grew one literal phrase per
+// incident ("weet je nog" after Yassine, then "geheugen"), and every next
+// paraphrase was a new hole. Confirmed false on the unpatched gate before this
+// fix: 'Ken je Yassine nog?', 'Wist je dat ik gisteren Yassine heb gezien?',
+// 'Herinnerde je je dat we dat besproken hadden?', 'Hoe zat het ook alweer met
+// Yassine?' and 'Did you know about the migration?' all returned false.
+test('shouldRecall generalizes over verb conjugations instead of one literal phrase per tense', () => {
+  // "weet je"/"weet jij" already existed; "wist je"/"wist jij" — the PAST
+  // tense of the exact same verb — did not.
+  assert.equal(shouldRecall('Wist je dat ik gisteren Yassine heb gezien?'), true);
+  assert.equal(shouldRecall('Wist jij nog van die afspraak?'), true);
+  // "ken je" (kennen) had no entry at all, in any tense.
+  assert.equal(shouldRecall('Ken je Yassine nog?'), true);
+  assert.equal(shouldRecall('Kende je dat verhaal al?'), true);
+  // "herinner" only matched as a bare word; "herinnerde"/"herinnerden" (past
+  // tense of the very same reflexive verb) did not.
+  assert.equal(shouldRecall('Herinnerde je je dat we dat besproken hadden?'), true);
+  assert.equal(shouldRecall('Herinnerde jij je dat nog?'), true);
+  // English: "do you know" existed, "did you know" / "do you remember" did not.
+  assert.equal(shouldRecall('Did you know about the migration?'), true);
+  assert.equal(shouldRecall('Do you remember the deployment plan?'), true);
+});
+
+test('shouldRecall opens on a question naming its topic even with no memory verb at all', () => {
+  // No "weet"/"ken"/"herinner" anywhere — only an interrogative and a name
+  // introduced as the topic ("met Yassine"). This is the shape that kept
+  // slipping through: every idiom meaning "tell me about X" is a new literal
+  // phrase to enumerate, unless the gate reads the SHAPE instead.
+  assert.equal(shouldRecall('Hoe zat het ook alweer met Yassine?'), true);
+  assert.equal(shouldRecall('Wat was het ook alweer met Pieter?'), true);
+  // The guard: a capitalised word in a question is not on its own enough —
+  // it must be introduced as a topic by a preposition, or a purely technical
+  // question ("why does Hermes retry twice?") would open the gate too.
+  assert.equal(shouldRecall('ok, but why does Hermes retry twice?'), false);
+  assert.equal(shouldRecall('How does React handle this?'), false);
+});
+
 test('shouldRecall opens for an IntentDecision that resolves the answer to memory (assistant-anchored follow-ups)', () => {
   // "wat was er in juni ook alweer?" right after GAIA said "...context rond
   // juni...": no lexical past-reference cue, but IntentIQ resolved the turn

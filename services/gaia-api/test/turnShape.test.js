@@ -42,6 +42,17 @@ const CORPUS = [
   'de configuratie van de deployment klopt niet',
   'kun je dat uitleggen?',
   'nou, dat is mooi',
+  // docs/memory-pipe-issues.md #3: conjugations and topic-shaped questions
+  // the literal phrase list used to miss (see memoryPolicy.js's
+  // VERB_STEM_SIGNALS / namedEntityQuestion), plus the guard against a
+  // technical question opening the gate just for naming a capitalised system.
+  'Wist je dat ik gisteren Yassine heb gezien?',
+  'Ken je Yassine nog?',
+  'Herinnerde je je dat we dat besproken hadden?',
+  'Did you know about the migration?',
+  'Hoe zat het ook alweer met Yassine?',
+  'ok, but why does Hermes retry twice?',
+  'How does React handle this?',
 ];
 
 test('readTurn states the live recall gate for every shape', () => {
@@ -145,6 +156,35 @@ test('the 18-10-2026 memory questions open the gate and name their cue', () => {
     assert.equal(shape.wantsRecall, true, `gate shut for: ${JSON.stringify(text)}`);
     assert.equal(shape.trivial, false, `read as trivial: ${JSON.stringify(text)}`);
     assert.ok(shape.matched.includes('pastReference'), `cue not named for: ${JSON.stringify(text)}`);
+  }
+});
+
+test('readTurn: a verb conjugation or a topic-shaped question opens the gate and names its cue (docs/memory-pipe-issues.md #3)', () => {
+  const verbStemCases = [
+    'Wist je dat ik gisteren Yassine heb gezien?',
+    'Ken je Yassine nog?',
+    'Herinnerde je je dat we dat besproken hadden?',
+    'Did you know about the migration?',
+  ];
+  for (const text of verbStemCases) {
+    const shape = readTurn(text);
+    assert.equal(shape.wantsRecall, true, `gate shut for: ${JSON.stringify(text)}`);
+    assert.ok(shape.verbStem, `verbStem not set for: ${JSON.stringify(text)}`);
+    assert.ok(shape.matched.includes('verbStem'), `cue not named for: ${JSON.stringify(text)}`);
+  }
+
+  const topicCase = readTurn('Hoe zat het ook alweer met Yassine?');
+  assert.equal(topicCase.wantsRecall, true);
+  assert.ok(topicCase.entityQuestion);
+  assert.ok(topicCase.matched.includes('entityQuestion'));
+
+  // The guard: naming a capitalised system in a how/why-does-it-work question
+  // is not a memory lookup — neither signal fires.
+  for (const text of ['ok, but why does Hermes retry twice?', 'How does React handle this?']) {
+    const shape = readTurn(text);
+    assert.equal(shape.wantsRecall, false, `gate open for: ${JSON.stringify(text)}`);
+    assert.equal(shape.verbStem, false, text);
+    assert.equal(shape.entityQuestion, false, text);
   }
 });
 

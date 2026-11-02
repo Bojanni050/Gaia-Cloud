@@ -42,6 +42,68 @@ function phrase(words) {
   return new RegExp(words.trim().replace(/\s+/g, '\\s+'), 'i');
 }
 
+/**
+ * A memory-verb STEM immediately followed by "je"/"jij" — one regex per verb
+ * covers every conjugation (ken/kent/kende/kennen, weet/weten/wist/wisten,
+ * herinner/herinnerde/herinnerden) instead of a new literal phrase per form.
+ * This is exactly the hole docs/memory-pipe-issues.md #3 names: the list
+ * below had "weet je"/"weet jij" but not "wist je" or "wist jij" (the past
+ * tense of the very same verb), and "herinner" only as a bare word — never
+ * "herinnerde" or "herinnerden". A stem match closes the whole conjugation
+ * family in one entry instead of waiting for each form to fail live first.
+ */
+function verbStemFollowedByYou(stems) {
+  return new RegExp(`\\b(${stems.join('|')})\\w*\\s+(je|jij)\\b`, 'i');
+}
+
+const VERB_STEM_SIGNALS = [
+  // "weten" is irregular (weet/weten vs. wist/wisten do not share a prefix),
+  // so its forms are spelled out rather than captured by one stem + \w*.
+  phrase('(weet|weten|wist|wisten)\\s+(je|jij)'),
+  verbStemFollowedByYou(['ken']), // ken je, kende je, kennen jij (tolerant of the ungrammatical form too — a false positive costs one recall call)
+  verbStemFollowedByYou(['herinner']), // herinner(de)(n) je/jij
+  // English: "do/does/did you know/remember/recall" — one regex for every
+  // tense instead of "do you know" and "what do you know" as two of
+  // arbitrarily many literal phrasings.
+  phrase('(do|does|did)\\s+you\\s+(know|remember|recall)'),
+];
+
+/**
+ * A question that NAMES someone or something specific as its TOPIC and asks
+ * about it — "Hoe zat het ook alweer met Yassine?" carries no memory-verb at
+ * all, only an interrogative and a name introduced by "met" (the Dutch/
+ * English topic prepositions below — "over/met/van"/"about/with/of").
+ * Enumerating every idiom that means "tell me what you know about X" is
+ * exactly the patch-per-incident pattern docs/memory-pipe-issues.md #3
+ * describes; this opens on the SHAPE of the question instead, the same way
+ * turnShape's `isRepeatAsk` reads structure instead of literal words.
+ *
+ * The preposition is load-bearing, not decoration: a first version of this
+ * signal fired on any capitalised word anywhere in a question, and it lit up
+ * on "ok, but why does Hermes retry twice?" — a question ABOUT a mechanism,
+ * not asking what Gaia knows about Hermes. "over/met/van/about/with/of" is
+ * specifically how Dutch and English introduce a topic ("over Yassine",
+ * "met Pieter", "about Luca"); a name that is instead the grammatical
+ * subject of a how/why-does-X-work question is not a memory lookup. Same
+ * bias as REPAIR_SIGNALS where it does fire: a false positive ("Wat vind je
+ * over Figma?") costs one ~900ms recall call; a false negative costs the
+ * person being told she has nothing on someone she has eleven memories of.
+ */
+const QUESTION_WORD = /\b(wie|wat|hoe|waar|wanneer|waarom|who|what|how|where|when|which|why)\w*\b/i;
+const TOPIC_ENTITY = /\b(?:over|met|van|about|with|of)\s+([A-ZÀ-Þ][\w'-]*)/;
+
+/**
+ * @param {string} text
+ * @returns {boolean}
+ */
+function namedEntityQuestion(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return false;
+  const isQuestion = /\?\s*$/.test(trimmed) || QUESTION_WORD.test(trimmed);
+  if (!isQuestion) return false;
+  return TOPIC_ENTITY.test(trimmed);
+}
+
 const PAST_REFERENCE_SIGNALS = [
   boundary('remember'), boundary('remind'), boundary('recall'),
   boundary('eerder'), boundary('vorige'),
@@ -194,7 +256,9 @@ function shouldRecall(query, context = {}) {  const shape = context && context.s
   }
   return hasSignal(text, PAST_REFERENCE_SIGNALS)
     || hasSignal(text, DURABLE_CONTEXT_SIGNALS)
-    || hasSignal(text, REPAIR_SIGNALS);
+    || hasSignal(text, REPAIR_SIGNALS)
+    || hasSignal(text, VERB_STEM_SIGNALS)
+    || namedEntityQuestion(text);
 }
 
 /**
@@ -233,6 +297,13 @@ const STOPWORDS = new Set([
   'zou', 'zal', 'heb', 'hebt', 'heeft', 'hebben', 'bij', 'al', 'ook', 'dan', 'toch', 'nou',
   'even', 'als', 'om', 'dat', 'dus', 'ja', 'nee', 'the', 'and', 'that', 'this', 'you', 'your',
   'was', 'were', 'did', 'does', 'do', 'for', 'with', 'about', 'have', 'has', 'had',
+  // The Dutch interrogatives above (wat/wie/hoe/waar/waarom/wanneer) had
+  // their English counterparts missing — meaning "What theme should I use
+  // tonight?" treated "What" as a content word (and, worse, as the only
+  // capitalised one, so distillQuery's entity heuristic would have handed
+  // Hindsight the query "What"). Added for the same reason the Dutch forms
+  // are here: an interrogative pronoun is never what a question is about.
+  'what', 'who', 'how', 'where', 'when', 'which', 'why',
   // Pronouns and the cue verbs themselves carry no subject: "weet je over
   // Pieter dat hij een hond heeft" is about Pieter and the dog, nothing else.
   'hij', 'hem', 'haar', 'hun', 'ons', 'jullie', 'me', 'men', 'zich', 'u',
@@ -324,6 +395,9 @@ module.exports = {
   DURABLE_CONTEXT_SIGNALS,
   REPAIR_SIGNALS,
   HER_VIEW_SIGNALS,
+  VERB_STEM_SIGNALS,
+  namedEntityQuestion,
+  QUESTION_WORD,
   // One definition of "which words matter", shared with the recall query and
   // the repeat-ask cue.
   STOPWORDS,
