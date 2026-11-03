@@ -4,8 +4,7 @@ Status: voorstel, niets besloten, geen code. Aangescherpt na afweging: alleen
 harnessing-level recursion, task-level recursion (Propose–Probe–Compose) valt
 buiten scope. Bron: Xu et al., *HARNESS²:
 Recursive Agent Harnessing for an Open World* (arXiv:2610.14224v1, 9 okt 2026,
-Google Cloud AI Research / Northwestern). Het paper-PDF zelf is nog niet in een
-repo opgenomen (zie sectie 6).
+Google Cloud AI Research / Northwestern). Het paper staat volgens Bo in Gaia-Documentation (zie sectie 6).
 
 ## 1. Wat het paper doet
 
@@ -120,11 +119,11 @@ voorstel gaat over het leren *binnen* dat plafond.
   `docs/memory-pipe-issues.md` oppakken? Die gaan over stille recall-failures,
   en een lerende lus bovenop een lekke leesroute leert van vervuild bewijs.
 
-## 6. Waar het paper hoort
+## 6. Waar het paper staat
 
-In je tekst staat `sources/research/`, `roadmap.md`, `vision.md` en
-`proposals/proposal-soft-evidence-micro-accumulator.md`. Die bestaan niet in
-Gaia-Cloud; `walkthrough.md` verwijst naar de aparte Gaia-Documentation-repo
-met `sources/` en `proposals/`. Het PDF en eventueel dit voorstel horen daar.
-Verwijzingen naar die bestanden zijn hier bewust weggelaten omdat ik ze niet
-heb kunnen lezen.
+Het paper staat volgens Bo al in de Gaia-Documentation-repo (`sources/`). Dat
+heb ik niet kunnen nagaan: die repo is in deze sessie niet gekoppeld. Dit
+voorstel staat voorlopig in Gaia-Cloud (`docs/proposals/`); verplaatsing naar
+Gaia-Documentation hangt af van waar voorstellen horen te staan.
+Verwijzingen naar `roadmap.md`, `vision.md` en het soft-evidence-voorstel uit
+de eerdere analyse zijn weggelaten omdat ik ze niet heb kunnen lezen.
