@@ -1,6 +1,8 @@
 # Voorstel — HARNESS²: harnessing-level recursion voor Logos en Hindsight
 
-Status: voorstel, niets besloten, geen code. Bron: Xu et al., *HARNESS²:
+Status: voorstel, niets besloten, geen code. Aangescherpt na afweging: alleen
+harnessing-level recursion, task-level recursion (Propose–Probe–Compose) valt
+buiten scope. Bron: Xu et al., *HARNESS²:
 Recursive Agent Harnessing for an Open World* (arXiv:2610.14224v1, 9 okt 2026,
 Google Cloud AI Research / Northwestern). Het paper-PDF zelf is nog niet in een
 repo opgenomen (zie sectie 6).
@@ -54,30 +56,58 @@ alleen ervaring gaat de library in. Voor Gaia:
 - Geleerd gedrag mag retrieval/gedrag informeren op `corroborated`, nooit als
   vaststaand (zelfde regel als `architecture.md` nu al stelt).
 
-## 4. Voorstel (klein beginnen)
+## 4. Voorstel: alleen de experience-library overnemen
 
-**Eerste toepassing: wanneer helpen en wanneer zwijgen.** Dat is het open-world
-probleem zonder verifier: er is geen label voor "dit had ze beter niet kunnen
-zeggen". Eleos kent al een plafond (één check-in per 24 uur,
-`architecture.md` rond regel 252); dit voorstel gaat over het leren *binnen* dat
-plafond.
+**Wat we overnemen:** harnessing-level recursion, dus een bewaarde, leesbare
+ervaringslaag naast de uitvoering. De ablatie van het paper steunt dat deel het
+sterkst: zonder library 3,1 en 1,8 punt lager; direct bijschaven zonder
+referentie of library maakt het slechter (Code 73,4 → 63,2).
 
-1. **Gedragssignalen, geen labels.** Gebruik wat al bestaat: herhaalt de
-   persoon zichzelf, negeert hij een check-in, corrigeert hij, antwoordt hij
-   kort of juist uitgebreid. Dat zijn contrasten tussen twee uitkomsten, geen
-   scores.
+**Wat we expliciet niet overnemen:** task-level recursion, dus
+Propose–Probe–Compose. Redenen:
+
+- Het draait kandidaten parallel naast een referentie-uitvoering van dezelfde
+  taak. Een gesprek met een persoon is niet twee keer te draaien zonder dat die
+  het merkt, en het kost latency en geld per turn.
+- De benchmarks (code, web, kantoordocumenten, juridisch werk) hebben een
+  eindproduct. Gaia's werk is een lange relatie zonder zo'n eindproduct.
+- Hun improver is een sterk model met een meetbare uitkomst per taak. Bij Gaia
+  moet het signaal uit gedrag van een persoon komen, en dat is dunner en
+  ruisgevoeliger.
+
+Alleen de library dus, gevoed door signalen die er al zijn of snel komen.
+
+**Eerste toepassing: wanneer helpen en wanneer zwijgen.** Er is geen label voor
+"dit had ze beter niet kunnen zeggen", dus een verifier ontbreekt. Eleos kent al
+een plafond (één check-in per 24 uur, `architecture.md` rond regel 252); dit
+voorstel gaat over het leren *binnen* dat plafond.
+
+1. **Passieve gedragssignalen, geen labels en geen extra experimenten.** De
+   persoon herhaalt zichzelf, negeert een check-in, corrigeert, antwoordt kort
+   of uitgebreid. Er wordt niets extra uitgevoerd; we lezen wat er toch al
+   gebeurt.
 2. **Experience-hypothesen.** Een les ("bij X-situaties werkt eerder zwijgen")
-   wordt een gewone Cognition-hypothese met evidence-balans en een
-   tegenhypothese, met de bestaande verplichting daartoe.
-3. **Leesbaar en bestuurbaar.** De persoon kan elke geleerde les inzien,
-   bevestigen, verwerpen. Groei mag geen black box worden.
-4. **Succesmaat.** "De persoon herhaalt zichzelf minder vaak." Geen
-   benchmarkpunten.
+   is een gewone Cognition-hypothese met evidence-balans en tegenhypothese, met
+   de bestaande verplichting daartoe. Per les noteren we wanneer hij gold, waarom
+   we denken dat hij werkt, en welk bewijs er ligt, naar het voorbeeld van
+   `EXPERIENCE.md` in het paper.
+3. **Bewaar alleen met bewijs.** Zoals in het paper: een les wordt alleen
+   bewaard als gedragscontrasten hem dragen. Eén reactie is geen les. Bij
+   onvoldoende bewijs wordt er niets toegevoegd.
+4. **Leesbaar en bestuurbaar.** De persoon kan elke geleerde les inzien,
+   bevestigen of verwerpen. Groei mag geen black box worden.
+5. **Succesmaat.** "De persoon herhaalt zichzelf minder vaak." Geen
+   benchmarkpunten. Daarbij een voorbehoud: dit signaal is ruisgevoelig, dus
+   het is een richting en geen bewijs op zichzelf.
 
-Niet in scope: Propose-Probe-Compose letterlijk overnemen (parallelle
-uitvoeringen per turn kosten latency en geld, en Gaia heeft geen taak die twee
-keer kan worden gedraaid zonder dat de persoon dat merkt); iets automatisch
-laten schrijven naar SOUL, `lexicon.md` of de Foundation-documenten.
+**Randvoorwaarden:**
+
+- SOUL, `lexicon.md` en de Foundation-documenten worden nooit automatisch
+  geschreven.
+- Alleen een mens zet `confirmed`; `corroborated` mag gedrag informeren maar
+  wordt nooit als vaststaand gepresenteerd.
+- Geleerde lessen sturen de turn-compositie (wat er in de prompt komt, of er een
+  check-in komt), niet de identiteit.
 
 ## 5. Open vragen voor Bo
 
