@@ -48,7 +48,7 @@ const { BUILT_IN_VOICES } = require('./speech/mimoTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
-const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv } = require('./providerKeys');
+const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv, envProviderHints } = require('./providerKeys');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos'];
 
@@ -132,7 +132,7 @@ function createAdminRouter({
       const envName = masked.hasApiKey ? null : keyEnvNameFor(masked.provider);
       const apiKeyFromEnv = envName && providerKeyFromEnv(masked.provider, env) ? envName : null;
       // Same story for the base URL: when the page never saved one, the
-      // environment may still be holding it (see providerKeys' HOPSKOTCH_BASE).
+      // environment may still be holding it (see providerKeys' HOPSCOTCH_BASE).
       const baseEnvName = masked.baseUrl ? null : baseEnvNameFor(masked.provider);
       const baseUrlFromEnv = baseEnvName && providerBaseFromEnv(masked.provider, env) ? baseEnvName : null;
       // Every card can take its key from the environment, not only the main
@@ -162,7 +162,9 @@ function createAdminRouter({
         const backup = masked.generationBackup;
         backup.apiKeyFromEnv = envKeyFor(backup.provider, backup.hasApiKey);
       }
-      return { ...masked, apiKeyFromEnv, baseUrlFromEnv, resolved };
+      // What the page may show without ever seeing a secret: per provider, the
+      // environment's base URL and the NAME of its key variable (never the key).
+      return { ...masked, apiKeyFromEnv, baseUrlFromEnv, envProviders: envProviderHints(env), resolved };
     }
 
     router.get('/api/provider/config', auth, (req, res) => {
@@ -190,7 +192,7 @@ function createAdminRouter({
         return res.status(400).json({ error: 'configure a provider first' });
       }
       // The base URL may be saved on the page or come from the environment
-      // (providerKeys' baseEnvNameFor — e.g. HOPSKOTCH_BASE for hopscotch).
+      // (providerKeys' baseEnvNameFor — e.g. HOPSCOTCH_BASE for hopscotch).
       const baseUrl = config.baseUrl || providerBaseFromEnv(config.provider, env);
       if (!baseUrl) {
         return res.status(400).json({ error: 'set a base URL for the provider' });
@@ -277,7 +279,9 @@ function createAdminRouter({
 
     // Fetch the model list for a role's OWN custom provider (not the Main
     // Provider's catalog), so the operator can pick a model id instead of
-    // typing it. Uses the body's apiKey when given, else the role's stored key.
+    // typing it. The key and base URL come from the body when given, else from
+    // what the role stored, else from the environment — so selecting a
+    // provider that lives in the .env works without retyping anything.
     router.post('/api/provider/role-models', auth, async (req, res) => {
       const body = req.body || {};
       const role = body.role;
@@ -285,7 +289,7 @@ function createAdminRouter({
         return res.status(400).json({ error: `role must be one of: ${CUSTOM_PROVIDER_ROLES.join(', ')}` });
       }
       const provider = typeof body.provider === 'string' ? body.provider.trim() : '';
-      const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
+      let baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : '';
       let apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
       if (!apiKey) {
         const stored = providerStore.getConfig();
@@ -293,6 +297,8 @@ function createAdminRouter({
         if (rp && rp.apiKey) apiKey = rp.apiKey;
       }
       if (!provider) return res.status(400).json({ error: 'select a provider first' });
+      if (!baseUrl) baseUrl = providerBaseFromEnv(provider, env);
+      if (!apiKey) apiKey = providerKeyFromEnv(provider, env);
       if (!baseUrl && provider !== 'edenai') return res.status(400).json({ error: 'set a base URL for the provider' });
 
       try {
@@ -321,11 +327,12 @@ function createAdminRouter({
       const rp = stored && stored.roleProviders ? stored.roleProviders[role] : null;
       let cfg = resolveRoleConfig(role, providerStore);
       if (body.baseUrl || body.model) {
+        const providerId = body.provider || (rp && rp.provider) || (cfg && cfg.provider) || 'custom';
         cfg = {
-          provider: body.provider || (rp && rp.provider) || (cfg && cfg.provider) || 'custom',
-          baseUrl: body.baseUrl || (rp && rp.baseUrl) || (cfg && cfg.baseUrl) || '',
+          provider: providerId,
+          baseUrl: body.baseUrl || (rp && rp.baseUrl) || (cfg && cfg.baseUrl) || providerBaseFromEnv(providerId, env) || '',
           model: body.model || (rp && rp.model) || (cfg && cfg.model) || '',
-          apiKey: body.apiKey || (rp && rp.apiKey) || (cfg && cfg.apiKey) || '',
+          apiKey: body.apiKey || (rp && rp.apiKey) || (cfg && cfg.apiKey) || providerKeyFromEnv(providerId, env) || '',
         };
       }
       if (!cfg || !cfg.baseUrl || !cfg.model) {

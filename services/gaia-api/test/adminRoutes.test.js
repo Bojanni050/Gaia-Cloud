@@ -354,6 +354,13 @@ test('provider/config names the env variables the key and base URL come from', a
     assert.equal(cfg.apiKeyFromEnv, 'HOPSCOTCH_KEY');
     // The base URL comes solely from the environment while nothing is saved.
     assert.equal(cfg.baseUrlFromEnv, 'HOPSCOTCH_BASE');
+    // The page can autofill the base URL and name the key variable, but the
+    // payload must never carry the key itself.
+    assert.deepEqual(cfg.envProviders.hopscotch, {
+      baseUrl: 'http://hopscotch.internal:8000/v1',
+      keyEnv: 'HOPSCOTCH_KEY',
+    });
+    assert.equal(JSON.stringify(cfg).includes('sk-hop'), false);
   } finally {
     await ctx.close();
   }
@@ -476,6 +483,28 @@ test('POST /admin/api/provider/role-models fetches models for a custom-provider 
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.models[0].id, 'gpt-4o-mini');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-models takes the base URL and key from the env when the form is empty', async () => {
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  try {
+    ctx.setProviderModels([{ id: 'hop/large', name: 'Hop Large' }]);
+    // Selecting hopscotch is enough: no base URL or key typed in the card.
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', provider: 'hopscotch' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.models[0].id, 'hop/large');
+    assert.deepEqual(ctx.getLastRetrieveArgs(), {
+      provider: 'hopscotch',
+      baseUrl: 'http://hopscotch.internal:8000/v1',
+      apiKey: 'sk-hop',
+    });
   } finally {
     await ctx.close();
   }

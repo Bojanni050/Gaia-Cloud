@@ -80,4 +80,20 @@ function providerKeyFromEnv(provider, env = process.env) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-module.exports = { PROVIDER_KEY_ENV, PROVIDER_BASE_ENV, keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv };
+// Everything the admin page may be told about the environment's provider
+// hints, per provider: the base URL itself (not a secret) and the NAME of the
+// key variable, never the key. Only providers with something set appear, so
+// the page can autofill a base URL the moment that provider is selected and
+// say where a missing key comes from.
+function envProviderHints(env = process.env) {
+  const ids = new Set([...Object.keys(PROVIDER_KEY_ENV), ...Object.keys(PROVIDER_BASE_ENV)]);
+  const hints = {};
+  for (const id of ids) {
+    const baseUrl = providerBaseFromEnv(id, env);
+    const keyEnv = providerKeyFromEnv(id, env) ? keyEnvNameFor(id) : null;
+    if (baseUrl || keyEnv) hints[id] = { baseUrl, keyEnv };
+  }
+  return hints;
+}
+
+module.exports = { PROVIDER_KEY_ENV, PROVIDER_BASE_ENV, keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv, envProviderHints };

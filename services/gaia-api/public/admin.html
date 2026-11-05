@@ -682,9 +682,17 @@
     litellm: 'http://100.64.144.93:4000/v1',
   };
 
+  // What the server's environment offers per provider: the base URL itself and
+  // the NAME of the key variable — never the key. Filled from provider/config
+  // so selecting a provider can autofill what the deployment already knows.
+  let envProviders = {};
+
   function wireBaseUrlAutofill(providerEl, baseUrlEl) {
     providerEl.addEventListener('change', () => {
-      const defaultUrl = PROVIDER_BASE_URLS[providerEl.value];
+      const hint = envProviders[providerEl.value];
+      // The environment wins over the built-in defaults: it is this
+      // deployment's own address (HOPSCOTCH_BASE and friends).
+      const defaultUrl = (hint && hint.baseUrl) || PROVIDER_BASE_URLS[providerEl.value];
       if (defaultUrl) baseUrlEl.value = defaultUrl;
     });
   }
@@ -801,6 +809,16 @@
     if (!el) return;
     if (!el.dataset.baseText) el.dataset.baseText = el.textContent;
     el.textContent = useMainProvider ? (el.dataset.baseText + borrowedKeySentence(mainCfg)) : el.dataset.baseText;
+  }
+
+  // A hint for a provider that was just picked in a dropdown: a saved key only
+  // counts for the provider it was saved for, and the environment can supply
+  // the key under a known variable name (envProviders comes from the server).
+  function pendingKeyHint(entry, provider, envMap) {
+    if (entry && entry.provider === provider) return keyHintText(entry);
+    const info = (envMap || {})[provider];
+    if (info && info.keyEnv) return 'No key saved here — using ' + info.keyEnv + ' from the server environment.';
+    return 'No key saved yet.';
   }
 
   function providerLabelFor(providerId) {
@@ -1080,6 +1098,9 @@
   const providerSelectEl = $('providerSelect'), baseUrlEl = $('baseUrl'), apiKeyEl = $('apiKey');
   wireBaseUrlAutofill(providerSelectEl, baseUrlEl);
   const keyHintEl = $('keyHint'), providerStatusEl = $('providerStatus');
+  providerSelectEl.addEventListener('change', () => {
+    keyHintEl.textContent = pendingKeyHint(currentConfig, providerSelectEl.value, envProviders);
+  });
   const saveProviderBtn = $('saveProviderBtn'), retrieveModelsBtn = $('retrieveModelsBtn');
   const capabilitiesSection = $('capabilitiesSection'), capabilitiesBar = $('capabilitiesBar');
   const genBadgeEl = $('genBadge'), genStatusEl = $('genStatus'), genSaveBtn = $('genSaveBtn');
@@ -1099,8 +1120,12 @@
       if (!res.ok) return;
       const cfg = await res.json();
       currentConfig = cfg;
+      envProviders = cfg.envProviders || {};
       if (cfg.provider) providerSelectEl.value = cfg.provider;
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
+      else if (cfg.provider && envProviders[cfg.provider] && envProviders[cfg.provider].baseUrl) {
+        baseUrlEl.value = envProviders[cfg.provider].baseUrl;
+      }
       // The base URL may live only on the server (see baseUrlFromEnv): show
       // which variable is used instead of pretending the field is required.
       baseUrlEl.placeholder = cfg.baseUrlFromEnv
@@ -1134,7 +1159,7 @@
     if (!provider) { setStatus(providerStatusEl, 'Select a provider first.', false); return; }
     const baseUrl = baseUrlEl.value.trim();
     // An empty base URL is allowed: the server may hold it in the
-    // environment (cfg.baseUrlFromEnv, e.g. HOPSKOTCH_BASE for hopscotch)
+    // environment (cfg.baseUrlFromEnv, e.g. HOPSCOTCH_BASE for hopscotch)
     // and resolution falls back to that at runtime. Saving only the
     // provider id keeps whatever base URL the store already has.
     const body = { provider };
@@ -1914,6 +1939,10 @@
     const fieldsEl = $(prefix + 'CustomFields');
     const mainHintEl = $(prefix + 'MainHint');
     wireBaseUrlAutofill(providerEl, $(prefix + 'BaseUrl'));
+    providerEl.addEventListener('change', () => {
+      const rp = (currentConfig && currentConfig.roleProviders && currentConfig.roleProviders[role]) || {};
+      $(prefix + 'KeyHint').textContent = pendingKeyHint(rp, providerEl.value, envProviders);
+    });
     wireMainProviderToggle(providerEl, fieldsEl, mainHintEl);
     const saveBtn = $(prefix + 'SaveProviderBtn');
     const statusEl = $(prefix + 'ProviderStatus');
@@ -2035,11 +2064,13 @@
       block.fieldsEl.style.display = usingMain ? 'none' : '';
       block.mainHintEl.style.display = usingMain ? '' : 'none';
       applyBorrowedHint(block.mainHintEl, usingMain, currentConfig);
-      $(prefix + 'BaseUrl').value = rp.baseUrl || '';
+      const envBase = !usingMain && rp.provider && envProviders[rp.provider] ? envProviders[rp.provider].baseUrl : '';
+      const baseUrlEl = $(prefix + 'BaseUrl');
+      baseUrlEl.value = rp.baseUrl || envBase || '';
       $(prefix + 'ApiKey').value = '';
       $(prefix + 'Model').value = rp.model || '';
       $(prefix + 'KeyHint').textContent = keyHintText(rp);
-      if (!usingMain && rp.baseUrl && rp.model && !block.loaded) {
+      if (!usingMain && baseUrlEl.value.trim() && rp.model && !block.loaded) {
         block.loaded = true;
         block.fetchModels(true);
       }

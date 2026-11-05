@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveRoleConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities } = require('../src/providerConfigResolver');
-const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv } = require('../src/providerKeys');
+const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv, envProviderHints } = require('../src/providerKeys');
 
 function createMockStore(config) {
   return { getConfig: () => config };
@@ -444,6 +444,22 @@ test('providerKeys: hopscotch reads HOPSCOTCH_KEY / HOPSCOTCH_BASE as the deploy
   assert.equal(providerBaseFromEnv('hopscotch', { HOPSCOTCH_BASE: ' http://hop:8000/v1 ' }), 'http://hop:8000/v1');
   assert.equal(providerBaseFromEnv('hopscotch', {}), '');
   assert.equal(providerBaseFromEnv('', { _BASE_URL: 'x' }), '');
+});
+
+test('providerKeys: envProviderHints offers the base URL and the key variable name, never the key', () => {
+  const hints = envProviderHints({
+    HOPSCOTCH_KEY: 'sk-hop',
+    HOPSCOTCH_BASE: ' http://hopscotch.internal:8000/v1 ',
+    OPENROUTER_API_KEY: 'sk-or',
+  });
+  assert.deepEqual(hints.hopscotch, {
+    baseUrl: 'http://hopscotch.internal:8000/v1',
+    keyEnv: 'HOPSCOTCH_KEY',
+  });
+  assert.deepEqual(hints.openrouter, { baseUrl: '', keyEnv: 'OPENROUTER_API_KEY' });
+  // Providers with nothing in the environment stay out of the map entirely.
+  assert.equal(hints.deepinfra, undefined);
+  assert.equal(JSON.stringify(hints).includes('sk-hop'), false);
 });
 
 test('resolveRoleConfig: a provider without a stored base URL borrows the one from the environment', () => {
