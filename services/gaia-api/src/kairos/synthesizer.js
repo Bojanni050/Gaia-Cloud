@@ -27,7 +27,17 @@ const { toSourceRef } = require('../foundationRef');
 const DEFAULT_TIMEOUT_MS = 60000;
 const MAX_WINDOW_CHARS = 200;
 const MAX_OCR_CHARS = 300;
+// A messaging window is the one place where the interesting text sits BELOW the
+// header: the first 300 characters of a WhatsApp screenshot are "Chats, Zoeken
+// of een nieuwe chat starten, Ongelezen 3, Favorieten" — the messages come
+// after. Capping those at MAX_OCR_CHARS produced episodes that only said the
+// app was open and echoed the unread badge, never what was said.
+const MAX_CONVERSATION_CHARS = 1500;
 const MAX_TITLE_CHARS = 120;
+
+// Foreground apps whose screen text is a conversation. Matched against the
+// derived app and window title capture-rs leaves on the observation.
+const MESSAGING_APP_PATTERN = /whatsapp|telegram|signal|messenger|discord|slack|teams|imessage|sms|berichten/i;
 
 const SYNTHESIS_SYSTEM_PROMPT = [
   'Je bent de Kairos Synthesizer binnen Gaia. Je zet een reeks ruwe scherm- en',
@@ -41,12 +51,20 @@ const SYNTHESIS_SYSTEM_PROMPT = [
   '1. Geef een korte, concrete TITEL van maximaal 8 woorden die zegt wát er',
   '   gebeurde. Noem het bestand, de site, het onderwerp of de handeling die in',
   '   de observaties zichtbaar is. Geen applicatienaam als titel en geen vage',
-  '   woorden ("werkzaamheden", "gegevens", "bezig met").',
+  '   woorden ("werkzaamheden", "gegevens", "bezig met"). Bij een berichtenapp',
+  '   noemt de titel het onderwerp van het gesprek en de gesprekspartner',
+  '   ("Afspraak met Yassine over zaterdag"), niet de app of het openen ervan.',
   '2. Vat daarna de episode samen in 2 tot 4 zinnen. Neem de concrete namen,',
   '   bestanden, sites, personen en onderwerpen uit de observatie-teksten',
   '   LETTERLIJK over waar ze relevant zijn, en zeg wat er gedaan is en waarmee.',
   '   Vermijd generieke formuleringen: "de gebruiker werkte met gegevens" is',
   '   fout, "paste de omzetkolom in Kwartaalcijfers Q3.xlsx aan" is goed.',
+  '2b. Gaat het om een berichtenapp (WhatsApp, Telegram, Signal, Messenger,',
+  '   Discord, Slack, Teams)? Dan is de INHOUD het onderwerp. Benoem met wie er',
+  '   gesproken werd en waar het gesprek over ging, met de namen, bedragen,',
+  '   afspraken en vragen die in de zichtbare berichten staan. Zeg niet alleen',
+  '   dat de app openstond, en herhaal geen badges of notificaties zoals',
+  '   "2 ongelezen berichten" of "yp een antwoord".',
   '3. Kies als primary_app exact één van de applicatienamen die in de',
   '   observaties voorkomen. Verzin geen nieuwe naam.',
   '4. Antwoord met uitsluitend een JSON-object, geen markdown, geen extra tekst.',
@@ -63,6 +81,18 @@ function cleanOneLine(value, max) {
 }
 
 /**
+ * How much of an observation's screen text survives into the prompt. Messaging
+ * windows get far more: their content is the conversation itself, and 300
+ * characters only reach the header. Pure.
+ * @param {{observed_app?: string, observed_window?: string}} observation
+ * @returns {number}
+ */
+function maxFragmentChars(observation) {
+  const where = `${observation?.observed_app || ''} ${observation?.observed_window || ''}`;
+  return MESSAGING_APP_PATTERN.test(where) ? MAX_CONVERSATION_CHARS : MAX_OCR_CHARS;
+}
+
+/**
  * Shape the cluster for the prompt: only the fields that help, truncated and
  * collapsed to one line so no fragment can smuggle a multi-line instruction.
  * @param {import('./types').ObservationCluster} cluster
@@ -73,7 +103,7 @@ function buildUserPrompt(cluster) {
     const parts = [`- ${o.observed_at} | ${o.observed_app || 'onbekend'}`];
     const window = cleanOneLine(o.observed_window, MAX_WINDOW_CHARS);
     if (window) parts.push(`venster: "${window}"`);
-    const fragment = cleanOneLine(o.fragment, MAX_OCR_CHARS);
+    const fragment = cleanOneLine(o.fragment, maxFragmentChars(o));
     if (fragment) parts.push(`tekst: "${fragment}"`);
     return parts.join(' | ');
   });
@@ -229,6 +259,9 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
 module.exports = {
   SYNTHESIS_SYSTEM_PROMPT,
   MAX_TITLE_CHARS,
+  MAX_OCR_CHARS,
+  MAX_CONVERSATION_CHARS,
+  maxFragmentChars,
   buildUserPrompt,
   validateSynthesis,
   createSynthesizer,
