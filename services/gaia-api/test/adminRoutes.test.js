@@ -322,7 +322,7 @@ test('GET /admin/api/provider/models returns 502 on provider failure', async () 
 });
 
 test('GET /admin/api/provider/models falls back to the env base URL when the page saved none', async () => {
-  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
   try {
     // Only the provider id is saved — no base URL, no key.
     await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
@@ -342,7 +342,7 @@ test('GET /admin/api/provider/models falls back to the env base URL when the pag
 });
 
 test('provider/config names the env variables the key and base URL come from', async () => {
-  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
   try {
     await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
       method: 'PUT', headers: authHeaders(),
@@ -353,7 +353,7 @@ test('provider/config names the env variables the key and base URL come from', a
     const cfg = await res.json();
     assert.equal(cfg.apiKeyFromEnv, 'HOPSCOTCH_KEY');
     // The base URL comes solely from the environment while nothing is saved.
-    assert.equal(cfg.baseUrlFromEnv, 'HOPSKOTCH_BASE');
+    assert.equal(cfg.baseUrlFromEnv, 'HOPSCOTCH_BASE');
   } finally {
     await ctx.close();
   }

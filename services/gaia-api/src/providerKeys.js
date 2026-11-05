@@ -17,7 +17,7 @@
 // page normally stores the base URL, but an operator can leave it in the
 // environment instead. Names follow <PROVIDER>_BASE_URL, with the explicit
 // table for providers whose deployment chose a different variable name
-// (hopscotch's deploy .env spells it HOPSKOTCH_BASE).
+// (hopscotch's deploy .env carries HOPSCOTCH_BASE).
 
 const PROVIDER_KEY_ENV = Object.freeze({
   edenai: 'EDENAI_API_KEY',
@@ -41,7 +41,7 @@ const PROVIDER_KEY_ENV = Object.freeze({
 // the generic <PROVIDER>_BASE_URL rule. The store wins here too: a base URL
 // saved on the page is the person's most recent choice.
 const PROVIDER_BASE_ENV = Object.freeze({
-  hopscotch: 'HOPSKOTCH_BASE',
+  hopscotch: 'HOPSCOTCH_BASE',
 });
 
 // The environment variable that would hold this provider's base URL, or ''

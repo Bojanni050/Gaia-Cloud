@@ -436,12 +436,12 @@ test('providerKeys: names follow the provider id and the value is trimmed', () =
   assert.equal(providerKeyFromEnv('', { _API_KEY: 'x' }), '');
 });
 
-test('providerKeys: hopscotch reads HOPSCOTCH_KEY / HOPSKOTCH_BASE as the deploy .env spells them', () => {
+test('providerKeys: hopscotch reads HOPSCOTCH_KEY / HOPSCOTCH_BASE as the deploy .env spells them', () => {
   assert.equal(keyEnvNameFor('hopscotch'), 'HOPSCOTCH_KEY');
-  assert.equal(baseEnvNameFor('hopscotch'), 'HOPSKOTCH_BASE');
+  assert.equal(baseEnvNameFor('hopscotch'), 'HOPSCOTCH_BASE');
   // Everything else still follows the generic <ID>_BASE_URL rule.
   assert.equal(baseEnvNameFor('deepinfra'), 'DEEPINFRA_BASE_URL');
-  assert.equal(providerBaseFromEnv('hopscotch', { HOPSKOTCH_BASE: ' http://hop:8000/v1 ' }), 'http://hop:8000/v1');
+  assert.equal(providerBaseFromEnv('hopscotch', { HOPSCOTCH_BASE: ' http://hop:8000/v1 ' }), 'http://hop:8000/v1');
   assert.equal(providerBaseFromEnv('hopscotch', {}), '');
   assert.equal(providerBaseFromEnv('', { _BASE_URL: 'x' }), '');
 });
@@ -454,7 +454,7 @@ test('resolveRoleConfig: a provider without a stored base URL borrows the one fr
   });
   const env = {
     HOPSCOTCH_KEY: 'sk-hop',
-    HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1',
+    HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1',
   };
   const config = resolveRoleConfig('generation', store, env);
   assert.equal(config.provider, 'hopscotch');
