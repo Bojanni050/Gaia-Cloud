@@ -87,8 +87,11 @@ test('buildUserPrompt still caps a non-messaging fragment at MAX_OCR_CHARS', () 
   assert.equal(prompt.includes('a'.repeat(MAX_OCR_CHARS + 1)), false);
 });
 
-test('the system prompt asks for conversation content, not the unread badge', () => {
-  assert.match(SYNTHESIS_SYSTEM_PROMPT, /berichtenapp/);
+test('the system prompt demands substance and literal quotes, not click narration', () => {
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /INHOUD GAAT VOOR/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /waardeloos/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /2 tot 10 zinnen/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /letterlijk overgenomen/);
   assert.match(SYNTHESIS_SYSTEM_PROMPT, /ongelezen berichten/);
 });
 
