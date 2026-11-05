@@ -37,10 +37,26 @@ test('saveProviderConfig persists and getConfig reads it back', () => {
 test('saveProviderConfig with a partial update keeps the previously stored apiKey', () => {
   const store = tempStore();
   store.saveProviderConfig({ apiKey: 'sk-eden-secret', provider: 'edenai', baseUrl: 'https://api.edenai.run/v1' });
-  store.saveProviderConfig({ provider: 'openrouter' }); // no apiKey field
+  store.saveProviderConfig({ baseUrl: 'https://api.edenai.run/v2' }); // no apiKey field
   const config = store.getConfig();
   assert.equal(config.apiKey, 'sk-eden-secret');
-  assert.equal(config.provider, 'openrouter');
+  assert.equal(config.baseUrl, 'https://api.edenai.run/v2');
+});
+
+test('saveProviderConfig drops a key saved for another provider', () => {
+  const store = tempStore();
+  store.saveProviderConfig({ apiKey: 'sk-litellm-secret', provider: 'litellm', baseUrl: 'http://100.64.144.93:4000/v1' });
+  store.saveProviderConfig({ provider: 'hopscotch' }); // switched, no new key
+  const config = store.getConfig();
+  assert.equal(config.provider, 'hopscotch');
+  assert.equal(config.apiKey, '');
+});
+
+test('saveProviderConfig accepts a key saved before a provider was chosen', () => {
+  const store = tempStore();
+  store.saveProviderConfig({ apiKey: 'sk-early' });
+  store.saveProviderConfig({ provider: 'openrouter' });
+  assert.equal(store.getConfig().apiKey, 'sk-early');
 });
 
 test('saveCatalog persists models and catalogRetrievedAt', () => {
@@ -246,11 +262,12 @@ test('saveBackupConfig with an empty apiKey keeps the previously stored key', as
   const store = createProviderStore({ storePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'provider-store-')), 'config.json') });
   store.saveBackupConfig({ provider: 'openrouter', model: 'm1', apiKey: 'backup-key' });
   store.saveBackupConfig({ model: 'm2', apiKey: '' }); // empty key is never an implicit change
-  store.saveBackupConfig({ provider: 'edenai' }); // omitted key keeps it too
   const config = store.getConfig();
   assert.equal(config.generationBackup.apiKey, 'backup-key');
   assert.equal(config.generationBackup.model, 'm2');
-  assert.equal(config.generationBackup.provider, 'edenai');
+  // Switching the backup provider drops the key it belonged to.
+  store.saveBackupConfig({ provider: 'edenai' });
+  assert.equal(store.getConfig().generationBackup.apiKey, '');
 });
 
 test('saveBackupConfig does not affect the main provider, roles or TTS', async () => {

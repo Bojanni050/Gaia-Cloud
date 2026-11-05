@@ -188,21 +188,29 @@ function createAdminRouter({
 
     router.get('/api/provider/models', auth, async (req, res) => {
       const config = providerStore.getConfig();
-      if (!config || !config.provider) {
+      // The page may pass the provider and base URL it currently shows, so
+      // Retrieve works right after switching providers without saving first.
+      const shownProvider = typeof req.query.provider === 'string' ? req.query.provider.trim() : '';
+      const shownBaseUrl = typeof req.query.baseUrl === 'string' ? req.query.baseUrl.trim() : '';
+      const provider = shownProvider || (config && config.provider);
+      if (!provider) {
         return res.status(400).json({ error: 'configure a provider first' });
       }
-      // The base URL may be saved on the page or come from the environment
+      // Saved values (including the key) only apply while the page is on the
+      // provider they were saved for; otherwise an old key would be sent to a
+      // different endpoint. The base URL may also come from the environment
       // (providerKeys' baseEnvNameFor — e.g. HOPSCOTCH_BASE for hopscotch).
-      const baseUrl = config.baseUrl || providerBaseFromEnv(config.provider, env);
+      const sameProvider = Boolean(config && config.provider === provider);
+      const baseUrl = shownBaseUrl || (sameProvider && config.baseUrl) || providerBaseFromEnv(provider, env);
       if (!baseUrl) {
         return res.status(400).json({ error: 'set a base URL for the provider' });
       }
 
       try {
         const catalog = await retrieveModelsFn({
-          provider: config.provider,
+          provider,
           baseUrl,
-          apiKey: config.apiKey || providerKeyFromEnv(config.provider, env),
+          apiKey: (sameProvider && config.apiKey) || providerKeyFromEnv(provider, env),
         });
         providerStore.saveCatalog(catalog, new Date().toISOString());
         res.json({ catalog, catalogRetrievedAt: new Date().toISOString() });
@@ -294,7 +302,10 @@ function createAdminRouter({
       if (!apiKey) {
         const stored = providerStore.getConfig();
         const rp = stored && stored.roleProviders ? stored.roleProviders[role] : null;
-        if (rp && rp.apiKey) apiKey = rp.apiKey;
+        // A stored key may only serve the provider it was entered for (or a
+        // key saved before any provider was chosen); a leftover key from
+        // another provider must never travel to that provider's endpoint.
+        if (rp && rp.apiKey && (!rp.provider || rp.provider === provider)) apiKey = rp.apiKey;
       }
       if (!provider) return res.status(400).json({ error: 'select a provider first' });
       if (!baseUrl) baseUrl = providerBaseFromEnv(provider, env);
@@ -328,11 +339,13 @@ function createAdminRouter({
       let cfg = resolveRoleConfig(role, providerStore);
       if (body.baseUrl || body.model) {
         const providerId = body.provider || (rp && rp.provider) || (cfg && cfg.provider) || 'custom';
+        // Saved values only apply to the provider they were saved for.
+        const rpMatches = Boolean(rp && (!rp.provider || rp.provider === providerId));
         cfg = {
           provider: providerId,
-          baseUrl: body.baseUrl || (rp && rp.baseUrl) || (cfg && cfg.baseUrl) || providerBaseFromEnv(providerId, env) || '',
-          model: body.model || (rp && rp.model) || (cfg && cfg.model) || '',
-          apiKey: body.apiKey || (rp && rp.apiKey) || (cfg && cfg.apiKey) || providerKeyFromEnv(providerId, env) || '',
+          baseUrl: body.baseUrl || (rpMatches && rp.baseUrl) || (cfg && cfg.baseUrl) || providerBaseFromEnv(providerId, env) || '',
+          model: body.model || (rpMatches && rp.model) || (cfg && cfg.model) || '',
+          apiKey: body.apiKey || (rpMatches && rp.apiKey) || (cfg && cfg.apiKey) || providerKeyFromEnv(providerId, env) || '',
         };
       }
       if (!cfg || !cfg.baseUrl || !cfg.model) {

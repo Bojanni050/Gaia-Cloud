@@ -1189,7 +1189,13 @@
     retrieveModelsBtn.disabled = true;
     setStatus(providerStatusEl, 'Retrieving models…', true);
     try {
-      const res = await fetch('/admin/api/provider/models', { headers: authHeaders() });
+      // Send what the page shows, so switching providers and hitting Retrieve
+      // works before saving; the server keeps the key on the provider it was
+      // saved for (or reads it from the environment).
+      const query = new URLSearchParams();
+      if (providerSelectEl.value) query.set('provider', providerSelectEl.value);
+      if (baseUrlEl.value.trim()) query.set('baseUrl', baseUrlEl.value.trim());
+      const res = await fetch('/admin/api/provider/models?' + query.toString(), { headers: authHeaders() });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'request failed');

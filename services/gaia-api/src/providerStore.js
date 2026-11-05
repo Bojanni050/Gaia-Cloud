@@ -132,11 +132,17 @@ function createProviderStore(options = {}) {
    */
   function saveProviderConfig(partial) {
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
+    const provider = partial.provider !== undefined ? partial.provider : current.provider;
+    // A key belongs to the provider it was entered for: switching to another
+    // provider without entering a new key drops the old one instead of sending
+    // it to a different endpoint. An empty previous provider means the key was
+    // saved before a provider was chosen, so there is nothing to switch from.
+    const providerChanged = Boolean(current.provider) && provider !== current.provider;
     const next = {
       ...current,
-      provider: partial.provider !== undefined ? partial.provider : current.provider,
+      provider,
       baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : current.baseUrl,
-      apiKey: partial.apiKey !== undefined ? partial.apiKey : current.apiKey,
+      apiKey: partial.apiKey !== undefined ? partial.apiKey : (providerChanged ? '' : current.apiKey),
       updatedAt: new Date().toISOString(),
     };
     writeRaw(next);
@@ -192,12 +198,15 @@ function createProviderStore(options = {}) {
     const key = slot === 'ttsEn' ? 'ttsEn' : 'tts';
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
     const currentTts = current[key] || { ...DEFAULT_TTS };
+    const provider = partial.provider !== undefined ? partial.provider : currentTts.provider;
+    const providerChanged = Boolean(currentTts.provider) && provider !== currentTts.provider;
     const next = {
       ...current,
       [key]: {
-        provider: partial.provider !== undefined ? partial.provider : currentTts.provider,
+        provider,
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentTts.baseUrl,
-        apiKey: partial.apiKey !== undefined ? partial.apiKey : currentTts.apiKey,
+        // See saveProviderConfig: a key never follows a provider switch.
+        apiKey: partial.apiKey !== undefined ? partial.apiKey : (providerChanged ? '' : currentTts.apiKey),
         model: partial.model !== undefined ? partial.model : currentTts.model,
         voiceId: partial.voiceId !== undefined ? partial.voiceId : (currentTts.voiceId || ''),
         useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentTts.useMainProvider),
@@ -218,12 +227,15 @@ function createProviderStore(options = {}) {
   function saveSttConfig(partial) {
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
     const currentStt = current.stt || { ...DEFAULT_STT };
+    const provider = partial.provider !== undefined ? partial.provider : currentStt.provider;
+    const providerChanged = Boolean(currentStt.provider) && provider !== currentStt.provider;
     const next = {
       ...current,
       stt: {
-        provider: partial.provider !== undefined ? partial.provider : currentStt.provider,
+        provider,
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentStt.baseUrl,
-        apiKey: partial.apiKey !== undefined ? partial.apiKey : currentStt.apiKey,
+        // See saveProviderConfig: a key never follows a provider switch.
+        apiKey: partial.apiKey !== undefined ? partial.apiKey : (providerChanged ? '' : currentStt.apiKey),
         model: partial.model !== undefined ? partial.model : currentStt.model,
         useMainProvider: partial.useMainProvider !== undefined ? Boolean(partial.useMainProvider) : Boolean(currentStt.useMainProvider),
       },
@@ -243,13 +255,15 @@ function createProviderStore(options = {}) {
   function saveBackupConfig(partial) {
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
     const currentBackup = current.generationBackup || { ...DEFAULT_BACKUP };
+    const provider = partial.provider !== undefined ? partial.provider : currentBackup.provider;
+    const providerChanged = Boolean(currentBackup.provider) && provider !== currentBackup.provider;
     const nextApiKey = partial.apiKey !== undefined && String(partial.apiKey).trim() !== ''
       ? partial.apiKey
-      : currentBackup.apiKey;
+      : (providerChanged ? '' : currentBackup.apiKey);
     const next = {
       ...current,
       generationBackup: {
-        provider: partial.provider !== undefined ? partial.provider : currentBackup.provider,
+        provider,
         baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentBackup.baseUrl,
         model: partial.model !== undefined ? partial.model : currentBackup.model,
         apiKey: nextApiKey || '',
@@ -274,15 +288,17 @@ function createProviderStore(options = {}) {
     }
     const current = readRaw() || { provider: '', baseUrl: '', apiKey: '', catalog: [], catalogRetrievedAt: null, roles: { ...DEFAULT_ROLES }, tts: { ...DEFAULT_TTS } };
     const currentRp = (current.roleProviders && current.roleProviders[role]) || { ...DEFAULT_ROLE_PROVIDER };
+    const provider = partial.provider !== undefined ? partial.provider : currentRp.provider;
+    const providerChanged = Boolean(currentRp.provider) && provider !== currentRp.provider;
     const nextApiKey = partial.apiKey !== undefined && String(partial.apiKey).trim() !== ''
       ? partial.apiKey
-      : currentRp.apiKey;
+      : (providerChanged ? '' : currentRp.apiKey);
     const next = {
       ...current,
       roleProviders: {
         ...(current.roleProviders || {}),
         [role]: {
-          provider: partial.provider !== undefined ? partial.provider : currentRp.provider,
+          provider,
           baseUrl: partial.baseUrl !== undefined ? partial.baseUrl : currentRp.baseUrl,
           model: partial.model !== undefined ? partial.model : currentRp.model,
           apiKey: nextApiKey || '',

@@ -341,6 +341,28 @@ test('GET /admin/api/provider/models falls back to the env base URL when the pag
   }
 });
 
+test('GET /admin/api/provider/models uses the env key after switching provider without saving', async () => {
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'litellm', baseUrl: 'http://100.64.144.93:4000/v1', apiKey: 'sk-litellm' }),
+    });
+    ctx.setProviderModels([{ id: 'hop/large', name: 'Hop Large', capabilities: [] }]);
+    // The page sends the provider it now shows; the saved litellm key must
+    // not travel to hopscotch.
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/models?provider=hopscotch`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    assert.deepEqual(ctx.getLastRetrieveArgs(), {
+      provider: 'hopscotch',
+      baseUrl: 'http://hopscotch.internal:8000/v1',
+      apiKey: 'sk-hop',
+    });
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('provider/config names the env variables the key and base URL come from', async () => {
   const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
   try {
@@ -500,6 +522,33 @@ test('POST /admin/api/provider/role-models takes the base URL and key from the e
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.models[0].id, 'hop/large');
+    assert.deepEqual(ctx.getLastRetrieveArgs(), {
+      provider: 'hopscotch',
+      baseUrl: 'http://hopscotch.internal:8000/v1',
+      apiKey: 'sk-hop',
+    });
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /admin/api/provider/role-models never sends a key saved for another provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  try {
+    ctx.providerStore.saveRoleProvider('reasoning', {
+      useMainProvider: false,
+      provider: 'litellm',
+      baseUrl: 'http://100.64.144.93:4000/v1',
+      apiKey: 'sk-litellm',
+      model: 'gpt-4o-mini',
+    });
+    ctx.setProviderModels([{ id: 'hop/large', name: 'Hop Large' }]);
+    // The card now shows hopscotch; the stored litellm key must be ignored.
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/role-models`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', provider: 'hopscotch' }),
+    });
+    assert.equal(res.status, 200);
     assert.deepEqual(ctx.getLastRetrieveArgs(), {
       provider: 'hopscotch',
       baseUrl: 'http://hopscotch.internal:8000/v1',
