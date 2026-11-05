@@ -1,5 +1,5 @@
 'use strict';
-const { providerKeyFromEnv } = require('./providerKeys');
+const { providerKeyFromEnv, providerBaseFromEnv } = require('./providerKeys');
 
 /**
  * Resolves model configurations for each role (Generation, Reasoning,
@@ -41,7 +41,7 @@ function resolveRoleConfig(role, providerStore, env = process.env) {
     if (selection && selection.model) {
       return {
         provider: stored.provider,
-        baseUrl: stored.baseUrl || '',
+        baseUrl: stored.baseUrl || providerBaseFromEnv(stored.provider, env),
         model: selection.model,
         apiKey: mainKey,
       };
@@ -77,7 +77,7 @@ function resolveTtsConfig(providerStore, env = process.env, language) {
     if (tts && tts.useMainProvider && tts.model && mainKey) {
       return {
         provider: stored.provider || 'openrouter',
-        baseUrl: stored.baseUrl || '',
+        baseUrl: stored.baseUrl || providerBaseFromEnv(stored.provider, env),
         model: tts.model,
         apiKey: mainKey,
         voiceId: tts.voiceId || '',
@@ -131,7 +131,7 @@ function resolveSttConfig(providerStore, env = process.env) {
   if (stored && stored.stt && stored.stt.useMainProvider && stored.stt.model && mainKey) {
     return {
       provider: stored.provider || 'openrouter',
-      baseUrl: stored.baseUrl || '',
+      baseUrl: stored.baseUrl || providerBaseFromEnv(stored.provider, env),
       model: stored.stt.model,
       apiKey: mainKey,
     };

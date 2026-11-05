@@ -294,6 +294,7 @@
       <option value="opencode">OpenCode</option>
       <option value="commandcode">CommandCode</option>
       <option value="litellm">LiteLLM</option>
+      <option value="hopscotch">Hopscotch</option>
       <option value="custom">Custom (OpenAI-compatible)</option>
     </select>
 
@@ -803,7 +804,7 @@
   }
 
   function providerLabelFor(providerId) {
-    const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral', opencode: 'OpenCode', commandcode: 'CommandCode', deepinfra: 'DeepInfra' };
+    const MAP = { openrouter: 'OpenRouter', openai: 'OpenAI', anthropic: 'Anthropic', edenai: 'EdenAI', mistral: 'Mistral', opencode: 'OpenCode', commandcode: 'CommandCode', deepinfra: 'DeepInfra', hopscotch: 'Hopscotch' };
     if (!providerId) return '';
     return MAP[providerId.toLowerCase()] || (providerId.charAt(0).toUpperCase() + providerId.slice(1));
   }
@@ -1100,6 +1101,11 @@
       currentConfig = cfg;
       if (cfg.provider) providerSelectEl.value = cfg.provider;
       if (cfg.baseUrl) baseUrlEl.value = cfg.baseUrl;
+      // The base URL may live only on the server (see baseUrlFromEnv): show
+      // which variable is used instead of pretending the field is required.
+      baseUrlEl.placeholder = cfg.baseUrlFromEnv
+        ? cfg.baseUrlFromEnv + ' — pulled from the server environment'
+        : 'https://openrouter.ai/api/v1';
       genDropdown.setProviderLabel(providerLabelFor(cfg.provider));
       genDropdown.setProviderId(cfg.provider);
       keyHintEl.textContent = keyHintText(cfg);
@@ -1127,8 +1133,12 @@
     const provider = providerSelectEl.value;
     if (!provider) { setStatus(providerStatusEl, 'Select a provider first.', false); return; }
     const baseUrl = baseUrlEl.value.trim();
-    if (!baseUrl) { setStatus(providerStatusEl, 'Enter a base URL.', false); return; }
-    const body = { provider, baseUrl };
+    // An empty base URL is allowed: the server may hold it in the
+    // environment (cfg.baseUrlFromEnv, e.g. HOPSKOTCH_BASE for hopscotch)
+    // and resolution falls back to that at runtime. Saving only the
+    // provider id keeps whatever base URL the store already has.
+    const body = { provider };
+    if (baseUrl) body.baseUrl = baseUrl;
     if (apiKeyEl.value.trim()) body.apiKey = apiKeyEl.value.trim();
     saveProviderBtn.disabled = true;
     try {
@@ -1872,6 +1882,7 @@
       +   '<option value="opencode">OpenCode</option>'
       +   '<option value="commandcode">CommandCode</option>'
       +   '<option value="litellm">LiteLLM</option>'
+      +   '<option value="hopscotch">Hopscotch</option>'
       +   '<option value="custom">Custom (OpenAI-compatible)</option>'
       + '</select>'
       + '<div id="' + prefix + 'CustomFields">'

@@ -321,6 +321,44 @@ test('GET /admin/api/provider/models returns 502 on provider failure', async () 
   }
 });
 
+test('GET /admin/api/provider/models falls back to the env base URL when the page saved none', async () => {
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  try {
+    // Only the provider id is saved — no base URL, no key.
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'hopscotch' }),
+    });
+    ctx.setProviderModels([
+      { id: 'hop/large', name: 'Hop Large', capabilities: [] },
+    ]);
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/models`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.catalog[0].id, 'hop/large');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('provider/config names the env variables the key and base URL come from', async () => {
+  const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'hopscotch' }),
+    });
+    const res = await fetch(`${ctx.baseUrl}/admin/api/provider/config`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const cfg = await res.json();
+    assert.equal(cfg.apiKeyFromEnv, 'HOPSCOTCH_KEY');
+    // The base URL comes solely from the environment while nothing is saved.
+    assert.equal(cfg.baseUrlFromEnv, 'HOPSKOTCH_BASE');
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('PUT /admin/api/provider/roles saves a role selection', async () => {
   const ctx = startTestServer({ withProviderStore: true });
   try {

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveRoleConfig, resolveTtsConfig, resolveEnvFallback, deriveCapabilities } = require('../src/providerConfigResolver');
-const { keyEnvNameFor, providerKeyFromEnv } = require('../src/providerKeys');
+const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv } = require('../src/providerKeys');
 
 function createMockStore(config) {
   return { getConfig: () => config };
@@ -434,4 +434,31 @@ test('providerKeys: names follow the provider id and the value is trimmed', () =
   assert.equal(providerKeyFromEnv('deepinfra', { DEEPINFRA_API_KEY: '  sk-x  ' }), 'sk-x');
   assert.equal(providerKeyFromEnv('deepinfra', {}), '');
   assert.equal(providerKeyFromEnv('', { _API_KEY: 'x' }), '');
+});
+
+test('providerKeys: hopscotch reads HOPSCOTCH_KEY / HOPSKOTCH_BASE as the deploy .env spells them', () => {
+  assert.equal(keyEnvNameFor('hopscotch'), 'HOPSCOTCH_KEY');
+  assert.equal(baseEnvNameFor('hopscotch'), 'HOPSKOTCH_BASE');
+  // Everything else still follows the generic <ID>_BASE_URL rule.
+  assert.equal(baseEnvNameFor('deepinfra'), 'DEEPINFRA_BASE_URL');
+  assert.equal(providerBaseFromEnv('hopscotch', { HOPSKOTCH_BASE: ' http://hop:8000/v1 ' }), 'http://hop:8000/v1');
+  assert.equal(providerBaseFromEnv('hopscotch', {}), '');
+  assert.equal(providerBaseFromEnv('', { _BASE_URL: 'x' }), '');
+});
+
+test('resolveRoleConfig: a provider without a stored base URL borrows the one from the environment', () => {
+  const store = createMockStore({
+    provider: 'hopscotch',
+    baseUrl: '',
+    roles: { generation: { mode: 'catalog', model: 'hop/large' } },
+  });
+  const env = {
+    HOPSCOTCH_KEY: 'sk-hop',
+    HOPSKOTCH_BASE: 'http://hopscotch.internal:8000/v1',
+  };
+  const config = resolveRoleConfig('generation', store, env);
+  assert.equal(config.provider, 'hopscotch');
+  assert.equal(config.baseUrl, 'http://hopscotch.internal:8000/v1');
+  assert.equal(config.model, 'hop/large');
+  assert.equal(config.apiKey, 'sk-hop');
 });

@@ -48,7 +48,7 @@ const { BUILT_IN_VOICES } = require('./speech/mimoTts');
 const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
-const { keyEnvNameFor, providerKeyFromEnv } = require('./providerKeys');
+const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv } = require('./providerKeys');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos'];
 
@@ -131,6 +131,10 @@ function createAdminRouter({
       }
       const envName = masked.hasApiKey ? null : keyEnvNameFor(masked.provider);
       const apiKeyFromEnv = envName && providerKeyFromEnv(masked.provider, env) ? envName : null;
+      // Same story for the base URL: when the page never saved one, the
+      // environment may still be holding it (see providerKeys' HOPSKOTCH_BASE).
+      const baseEnvName = masked.baseUrl ? null : baseEnvNameFor(masked.provider);
+      const baseUrlFromEnv = baseEnvName && providerBaseFromEnv(masked.provider, env) ? baseEnvName : null;
       // Every card can take its key from the environment, not only the main
       // one. A card with its own provider names the variable it would read;
       // a card that borrows the shared provider inherits what the main card
@@ -158,7 +162,7 @@ function createAdminRouter({
         const backup = masked.generationBackup;
         backup.apiKeyFromEnv = envKeyFor(backup.provider, backup.hasApiKey);
       }
-      return { ...masked, apiKeyFromEnv, resolved };
+      return { ...masked, apiKeyFromEnv, baseUrlFromEnv, resolved };
     }
 
     router.get('/api/provider/config', auth, (req, res) => {
@@ -185,14 +189,17 @@ function createAdminRouter({
       if (!config || !config.provider) {
         return res.status(400).json({ error: 'configure a provider first' });
       }
-      if (!config.baseUrl) {
+      // The base URL may be saved on the page or come from the environment
+      // (providerKeys' baseEnvNameFor — e.g. HOPSKOTCH_BASE for hopscotch).
+      const baseUrl = config.baseUrl || providerBaseFromEnv(config.provider, env);
+      if (!baseUrl) {
         return res.status(400).json({ error: 'set a base URL for the provider' });
       }
 
       try {
         const catalog = await retrieveModelsFn({
           provider: config.provider,
-          baseUrl: config.baseUrl,
+          baseUrl,
           apiKey: config.apiKey || providerKeyFromEnv(config.provider, env),
         });
         providerStore.saveCatalog(catalog, new Date().toISOString());
