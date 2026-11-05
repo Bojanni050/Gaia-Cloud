@@ -36,6 +36,15 @@
  * Re-fetch is cheap: a cluster whose episode already exists (`readEpisode`) is
  * SKIPPED — no second model call — and counts as finalized, so a conservative
  * watermark never re-spends tokens.
+ *
+ * THE BATCH BUDGET (fixed 2026-11-05). A run used to process EVERY cluster in
+ * the batch before writing the watermark, so a backlog of tens of thousands of
+ * observations became one multi-hour run: no progress was visible anywhere,
+ * the watermark could not move until the very end, and every run re-fetched the
+ * whole backlog. `maxClustersPerRun` bounds one run to a slice of the batch; the
+ * watermark then advances over that slice and the next run picks up further.
+ * Because the cursor only moves forward on finalized observations, a bounded
+ * run loses nothing — it just reports where it stopped.
  */
 
 const { groupObservations } = require('./clusterer');
@@ -127,6 +136,7 @@ function computeSafeWatermark(batch, finalizedClusters, currentWatermark) {
  *   readEpisode?: (episodeId: string) => Promise<object|null>,
  *   episodeIdFor?: (clusterId: string) => string,
  *   emit?: (episode: object) => void,
+ *   maxClustersPerRun?: number,
  *   logger?: { info: Function, warn: Function, error: Function },
  * }} deps
  */
@@ -141,6 +151,7 @@ function createKairosWorker({
   readEpisode,
   episodeIdFor,
   emit,
+  maxClustersPerRun = Number.POSITIVE_INFINITY,
   logger = console,
 } = {}) {
   if (!bankId) throw new Error('kairos worker requires a bankId');
@@ -148,6 +159,11 @@ function createKairosWorker({
   for (const [name, fn] of Object.entries(required)) {
     if (typeof fn !== 'function') throw new Error(`kairos worker requires ${name}`);
   }
+  // A non-positive or non-finite budget means "no cap" (the old behaviour).
+  const clusterBudget =
+    Number.isFinite(maxClustersPerRun) && maxClustersPerRun > 0
+      ? Math.floor(maxClustersPerRun)
+      : Number.POSITIVE_INFINITY;
 
   /** The episode already stored for a cluster, or null (skip = no model call). */
   async function existingEpisode(cluster) {
@@ -167,7 +183,7 @@ function createKairosWorker({
     const since = await readWatermark();
     const observations = await fetchObservations(since);
     if (!Array.isArray(observations) || observations.length === 0) {
-      return { processed: 0, emitted: 0, skipped: 0, failed: 0 };
+      return { processed: 0, emitted: 0, skipped: 0, failed: 0, remaining: 0 };
     }
 
     // Source selection is the boundary: only activity observations are clustered.
@@ -189,16 +205,24 @@ function createKairosWorker({
 
     const advance = async () => {
       const next = computeSafeWatermark(observations, finalized, since);
-      if (next && next !== since) {
-        try {
-          await writeWatermark(next);
-        } catch (_) {
-          // Best-effort: a failed watermark write just means a re-fetch next run.
-        }
+      const progress = `${finalizedClusters}/${clusters.length} clusters finalized, ${observations.length} observations fetched`;
+      if (!next || next === since) {
+        logger.info?.(`[kairos] watermark unchanged at ${since || '(none)'} (${progress})`);
+        return;
+      }
+      try {
+        await writeWatermark(next);
+        logger.info?.(`[kairos] watermark ${since || '(none)'} -> ${next} (${progress})`);
+      } catch (error) {
+        // a failed watermark write just means a re-fetch next run
+        logger.warn?.(`[kairos] watermark write failed for ${next}, will re-fetch: ${error.message}`);
       }
     };
 
     for (const cluster of clusters) {
+      // A bounded run stops here and lets the watermark advance over the slice
+      // it finished; the rest is picked up by the next run. See the header.
+      if (finalizedClusters >= clusterBudget) break;
       try {
         const existing = await existingEpisode(cluster);
         if (existing) {
@@ -227,12 +251,19 @@ function createKairosWorker({
         // are re-fetched. The watermark still advances over the safe prefix.
         logger.error?.(`[kairos] synthesis failed for ${cluster.id}, stopping batch: ${error.message}`);
         await advance();
-        return { processed, emitted, skipped: skippedEpisodes, failed: clusters.length - finalizedClusters };
+        return {
+          processed,
+          emitted,
+          skipped: skippedEpisodes,
+          failed: clusters.length - finalizedClusters,
+          remaining: Math.max(0, clusters.length - finalizedClusters),
+        };
       }
     }
 
     await advance();
-    return { processed, emitted, skipped: skippedEpisodes, failed: 0 };
+    // `remaining` is what this run's budget left for the next one (0 = caught up).
+    return { processed, emitted, skipped: skippedEpisodes, failed: 0, remaining: Math.max(0, clusters.length - finalizedClusters) };
   }
 
   return { runOnce };

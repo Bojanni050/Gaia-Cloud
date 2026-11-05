@@ -18,6 +18,9 @@ const { emitEpisode } = require('./emitter');
 const { resolveRoleConfig } = require('../providerConfigResolver');
 
 const DEFAULT_INTERVAL_MS = 30000;
+// One run processes at most this many clusters before it writes the watermark
+// and hands the rest to the next run (~120 * ~7s ≈ 15 min). See worker.js.
+const DEFAULT_MAX_CLUSTERS_PER_RUN = 120;
 
 /**
  * @param {{
@@ -62,6 +65,8 @@ function createKairosRuntime({
 
   const worker = createKairosWorker({
     bankId,
+    maxClustersPerRun:
+      Number(env.GAIA_KAIROS_MAX_CLUSTERS_PER_RUN) || DEFAULT_MAX_CLUSTERS_PER_RUN,
     readWatermark: () => cognition.getKairosState(),
     writeWatermark: (iso) => cognition.setKairosState(iso),
     fetchObservations: (since) => foundation.listObservationsSince(since),

@@ -36,7 +36,7 @@ test('no observations => no work, no watermark write', async () => {
     now: () => new Date('2026-10-04T23:00:00Z'),
   });
   const r = await worker.runOnce();
-  assert.deepEqual(r, { processed: 0, emitted: 0, skipped: 0, failed: 0 });
+  assert.deepEqual(r, { processed: 0, emitted: 0, skipped: 0, failed: 0, remaining: 0 });
   assert.equal(wrote, false);
 });
 
@@ -145,6 +145,62 @@ test('emit is best-effort: a throwing emitter never fails the episode', async ()
   const r = await worker.runOnce();
   assert.equal(r.processed, 2);
   assert.ok(watermark, 'watermark still advanced despite the emit error');
+});
+
+// --- the per-run budget: a bounded run still advances the watermark ---------
+
+test('a run stops at its cluster budget, advances the watermark and reports what is left', async () => {
+  const step = INACTIVITY_THRESHOLD_MS + 1000;
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + step).toISOString();
+  const t3 = new Date(Date.parse(t2) + step).toISOString();
+  const t4 = new Date(Date.parse(t3) + step).toISOString();
+  // Four separate clusters (each an app switch), the last one closed by "now".
+  const observations = [
+    obs(t1, 'A', t1, 'a'),
+    obs(t2, 'B', t2, 'b'),
+    obs(t3, 'C', t3, 'c'),
+    obs(t4, 'D', t4, 'd'),
+  ];
+  const saved = [];
+  let watermark = null;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    maxClustersPerRun: 2,
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => ({ id: cluster.id, summary: 's' }),
+    saveEpisode: async (ep) => { saved.push(ep.id); },
+    now: () => new Date(Date.parse(t4) + 10 * 60 * 1000),
+  });
+  const r = await worker.runOnce();
+  assert.equal(saved.length, 2, 'only the budgeted clusters are synthesized');
+  assert.equal(r.processed, 2);
+  assert.equal(r.remaining, 2, 'the untouched clusters are reported for the next run');
+  assert.equal(watermark, new Date(t2).toISOString(), 'the watermark advances over the finished slice');
+});
+
+test('a bounded run leaves nothing behind once the budget covers the batch', async () => {
+  const step = INACTIVITY_THRESHOLD_MS + 1000;
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + step).toISOString();
+  const observations = [obs(t1, 'A', t1, 'a'), obs(t2, 'B', t2, 'b')];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    maxClustersPerRun: 50,
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => ({ id: cluster.id, summary: 's' }),
+    saveEpisode: async () => {},
+    now: () => new Date(Date.parse(t2) + 10 * 60 * 1000),
+  });
+  const r = await worker.runOnce();
+  assert.equal(r.processed, 2);
+  assert.equal(r.remaining, 0);
 });
 
 // --- computeSafeWatermark: the captured_at-axis guarantee -------------------
