@@ -301,6 +301,13 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   returns a **title**, a summary and an app name; the epistemic literals are set
   in code, and the model cannot name an app the cluster never saw. A messaging
   app gets a higher fragment cap — the content under the header is the point.
+  The episode is a **work report, not a screen log**: what he read, wrote,
+  decided, sent or fixed and what came of it, with names, files, amounts,
+  errors and literal quotes. Opening, clicking and switching are at most the
+  run-up; an app is named only when the app itself is the subject. Where a
+  cluster holds nothing but navigation, the episode says so in one or two
+  sentences instead of narrating the clicks, and it keeps to "Bojan/hij" in
+  active voice — never "de gebruiker".
 - **Watermark is burst-safe.** The cursor (`captured_at`) advances only past the
   last cluster that actually completed; a failed cluster stops the batch so its
   observations are retried, never skipped, and the cursor never moves backwards

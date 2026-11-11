@@ -88,8 +88,9 @@ test('buildUserPrompt still caps a non-messaging fragment at MAX_OCR_CHARS', () 
 });
 
 test('the system prompt demands substance and literal quotes, not click narration', () => {
-  assert.match(SYNTHESIS_SYSTEM_PROMPT, /INHOUD GAAT VOOR/);
-  assert.match(SYNTHESIS_SYSTEM_PROMPT, /waardeloos/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /WAT HIJ DEED, NIET WAT HIJ OPENDE/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /twee dubbele facturen/);
+  assert.match(SYNTHESIS_SYSTEM_PROMPT, /EERLIJK OVER EEN MAGER BLOK/);
   assert.match(SYNTHESIS_SYSTEM_PROMPT, /2 tot 10 zinnen/);
   assert.match(SYNTHESIS_SYSTEM_PROMPT, /letterlijk overgenomen/);
   assert.match(SYNTHESIS_SYSTEM_PROMPT, /ongelezen berichten/);
