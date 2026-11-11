@@ -137,6 +137,13 @@ function createKairosRouter({ cognition, foundation, auth, digestWriter } = {}) 
       if (result.skipped === 'day-not-closed') {
         return res.status(409).json({ error: 'that day has not closed yet', date });
       }
+      if (result.skipped === 'too-few-episodes') {
+        return res.status(422).json({
+          error: 'too few episodes to summarize',
+          date,
+          episodeCount: result.episodeCount,
+        });
+      }
       return res.json(result.digest);
     } catch (err) {
       if (err && err.message && err.message.startsWith('kairos digest:')) {

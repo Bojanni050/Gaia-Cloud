@@ -35,6 +35,12 @@ const MIN_SUMMARY_CHARS = 200;
 // that quotes a real message is not noise, so the quote check comes first.
 const HARD_FLOOR_CHARS = 20;
 const LOW_SIGNAL_FALLBACK = 5;
+// A day with a couple of episodes is not a day worth summarizing: two cards
+// become a one-line "je keek wat rond" that teaches nothing and still looks
+// like a deliberate overview. Below this floor an automatic run writes no row,
+// so the day stays honestly empty in the UI. An explicit force — a human
+// re-writing a day — may go under it.
+const DEFAULT_MIN_EPISODES = 5;
 const MAX_APPS = 12;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20;
@@ -281,6 +287,7 @@ function collectApps(episodes, max = MAX_APPS) {
  *   fetchImpl?: Function,
  *   timeoutMs?: number,
  *   timeZone?: string,
+ *   minEpisodes?: number,
  *   logger?: object,
  * }} options
  */
@@ -291,6 +298,7 @@ function createDigestWriter({
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   timeZone = DEFAULT_TIMEZONE,
+  minEpisodes = DEFAULT_MIN_EPISODES,
   logger = console,
 } = {}) {
   if (!cognition || typeof cognition.listKairosEpisodes !== 'function') {
@@ -299,6 +307,9 @@ function createDigestWriter({
   if (typeof resolveConfig !== 'function') {
     throw new Error('createDigestWriter requires resolveConfig');
   }
+  const episodeFloor = Number.isFinite(minEpisodes)
+    ? Math.max(0, Math.trunc(minEpisodes))
+    : DEFAULT_MIN_EPISODES;
 
   async function listDayEpisodes(since, until) {
     const all = [];
@@ -336,6 +347,11 @@ function createDigestWriter({
     const episodes = await listDayEpisodes(start, end);
     if (episodes.length === 0) {
       return { skipped: 'no-episodes', date: digestDate, episodeCount: 0 };
+    }
+    // Too few to be a day: no model call, no row, and the UI keeps showing the
+    // day as empty instead of dressing up two cards as an overview.
+    if (!force && episodes.length < episodeFloor) {
+      return { skipped: 'too-few-episodes', date: digestDate, episodeCount: episodes.length };
     }
 
     const selected = selectDigestEpisodes(episodes);
@@ -403,7 +419,7 @@ function createDigestWriter({
     return { digest, date: digestDate, episodeCount: episodes.length, considered: selected.length };
   }
 
-  return { generate, listDayEpisodes, timeZone };
+  return { generate, listDayEpisodes, timeZone, minEpisodes: episodeFloor };
 }
 
 const DEFAULT_DIGEST_HOUR = 7;
@@ -447,6 +463,11 @@ function createDigestScheduler({
       if (result.skipped === 'no-episodes') {
         if (loggedEmptyDate !== target) {
           logger.info?.(`[kairos] no episodes for ${target}; no digest written`);
+          loggedEmptyDate = target;
+        }
+      } else if (result.skipped === 'too-few-episodes') {
+        if (loggedEmptyDate !== target) {
+          logger.info?.(`[kairos] only ${result.episodeCount} episode(s) for ${target} (minimum ${writer.minEpisodes ?? '?'}); no digest written`);
           loggedEmptyDate = target;
         }
       } else if (result.digest) {

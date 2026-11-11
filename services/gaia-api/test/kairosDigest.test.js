@@ -193,6 +193,38 @@ test('writer writes no row on a day without episodes', async () => {
   assert.equal(cognition.calls.created.length, 0);
 });
 
+test('writer leaves a day under the floor empty instead of dressing up two cards', async () => {
+  const cognition = fakeCognition({
+    episodes: [episode({ id: 'e1' }), episode({ id: 'e2' }), episode({ id: 'e3' })],
+  });
+  let fetched = 0;
+  const writer = createDigestWriter({
+    cognition,
+    resolveConfig: config,
+    fetchImpl: async () => { fetched += 1; return modelResponse({ title: 't', summary: 's' }); },
+    logger: { info() {}, warn() {} },
+  });
+  const result = await writer.generate({ date: '2026-11-10' });
+  assert.equal(result.skipped, 'too-few-episodes');
+  assert.equal(result.episodeCount, 3);
+  assert.equal(fetched, 0);
+  assert.equal(cognition.calls.created.length, 0);
+  assert.equal(writer.minEpisodes, 5);
+});
+
+test('a forced re-write may go under the episode floor', async () => {
+  const cognition = fakeCognition({ episodes: [episode({ id: 'e1' }), episode({ id: 'e2' })] });
+  const writer = createDigestWriter({
+    cognition,
+    resolveConfig: config,
+    fetchImpl: async () => modelResponse({ title: 't', summary: 's' }),
+    logger: { info() {}, warn() {} },
+  });
+  const result = await writer.generate({ date: '2026-11-10', force: true });
+  assert.equal(result.skipped, undefined);
+  assert.equal(cognition.calls.created.length, 1);
+});
+
 test('writer refuses a day that has not closed yet unless forced', async () => {
   const cognition = fakeCognition();
   let fetched = 0;
@@ -213,6 +245,7 @@ test('writer asks for exactly the closed day and stores the overview', async () 
   const writer = createDigestWriter({
     cognition,
     resolveConfig: config,
+    minEpisodes: 1,
     emit: (d) => emitted.push(d),
     fetchImpl: async (url, options) => {
       const body = JSON.parse(options.body);
@@ -245,6 +278,7 @@ test('writer pages through a busy day', async () => {
   const writer = createDigestWriter({
     cognition,
     resolveConfig: config,
+    minEpisodes: 1,
     fetchImpl: async () => modelResponse({ title: 't', summary: 's' }),
     logger: { info() {}, warn() {} },
   });
@@ -258,6 +292,7 @@ test('writer fails loudly when the model is unreachable', async () => {
   const writer = createDigestWriter({
     cognition,
     resolveConfig: config,
+    minEpisodes: 1,
     fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
     logger: { info() {}, warn() {} },
   });
@@ -270,6 +305,7 @@ test('writer throws when no Kairos model is configured', async () => {
   const writer = createDigestWriter({
     cognition,
     resolveConfig: () => null,
+    minEpisodes: 1,
     logger: { info() {}, warn() {} },
   });
   await assert.rejects(() => writer.generate({ date: '2026-11-06' }), /no model configured/);
@@ -304,6 +340,25 @@ test('scheduler generates yesterday once the hour has passed', async () => {
   });
   await sched.tick();
   assert.deepEqual(generated, [{ date: '2026-11-06' }]);
+});
+
+test('scheduler logs a too-thin day once, not on every tick', async () => {
+  const lines = [];
+  const sched = createDigestScheduler({
+    writer: {
+      minEpisodes: 5,
+      async generate() { return { skipped: 'too-few-episodes', date: '2026-11-10', episodeCount: 3 }; },
+    },
+    timeZone: TZ,
+    hour: 7,
+    now: () => new Date('2026-11-11T09:00:00.000Z'), // 10:00 local
+    logger: { info: (line) => lines.push(line), warn() {} },
+    setTimer: () => ({ unref() {} }),
+    clearTimer: () => {},
+  });
+  await sched.tick();
+  await sched.tick();
+  assert.equal(lines.filter((l) => l.includes('only 3 episode')).length, 1);
 });
 
 test('scheduler logs an empty day once, not on every tick', async () => {

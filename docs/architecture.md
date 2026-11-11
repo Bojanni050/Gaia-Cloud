@@ -331,8 +331,11 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   and `GET /kairos/digests` / `GET /kairos/digest?date=` read it back. Before
   the model sees them, low-signal episodes (no quote and under ~200 chars) are
   dropped and a busy day is sampled evenly rather than truncated; a day with no
-  episodes writes no row and spends no tokens. The Command Center shows the
-  latest overview at the top of the Kairos tab.
+  episodes — or fewer than `GAIA_KAIROS_DIGEST_MIN_EPISODES` (5) — writes no row
+  and spends no tokens, so a quiet day stays honestly empty instead of becoming
+  a one-line "je keek wat rond". A forced write (`POST … {"force": true}`, the
+  Command Center's *Herschrijf*) may go under that floor. The Command Center
+  shows the latest overview at the top of the Kairos tab.
 - Off by default. `GAIA_KAIROS_ENABLED=true` starts the worker, which polls every
   `GAIA_KAIROS_INTERVAL_MS` (30 s) and finalises at most
   `GAIA_KAIROS_MAX_CLUSTERS_PER_RUN` (120) clusters per run. Turned on without a

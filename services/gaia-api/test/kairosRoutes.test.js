@@ -213,6 +213,24 @@ test('POST /kairos/digest asks the writer for that day and returns the stored ro
   }
 });
 
+test('POST /kairos/digest reports a too-thin day as 422 with the count', async () => {
+  const digestWriter = { generate: async () => ({ skipped: 'too-few-episodes', date: '2026-11-10', episodeCount: 3 }) };
+  const ctx = startTestServer({ cognition: fakeCognition(), digestWriter });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-11-10' }),
+    });
+    assert.equal(res.status, 422);
+    const body = await res.json();
+    assert.equal(body.date, '2026-11-10');
+    assert.equal(body.episodeCount, 3);
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('POST /kairos/digest reports an empty day as 404, not as a written overview', async () => {
   const digestWriter = { generate: async () => ({ skipped: 'no-episodes', date: '2026-11-09', episodeCount: 0 }) };
   const ctx = startTestServer({ cognition: fakeCognition(), digestWriter });

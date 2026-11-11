@@ -813,6 +813,11 @@ function createApp(env = process.env) {
     resolveConfig: () => resolveRoleConfig('kairos', providerStore, env),
     emit: emitDigest,
     timeZone: env.GAIA_KAIROS_DIGEST_TIMEZONE || 'Europe/Amsterdam',
+    // A day with only a few episodes stays empty; 5 is the default here and
+    // the knob exists so a quiet period can be tuned without a deploy.
+    minEpisodes: Number(env.GAIA_KAIROS_DIGEST_MIN_EPISODES) > 0
+      ? Number(env.GAIA_KAIROS_DIGEST_MIN_EPISODES)
+      : 5,
   });
   app.use('/kairos', createKairosRouter({ cognition, foundation, auth, digestWriter }));
 
