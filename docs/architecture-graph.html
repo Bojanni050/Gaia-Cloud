@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gaia-Cloud — how everything is connected</title>
+<style>
+  :root {
+    --bg: #16130E;
+    --surface: #1C1811;
+    --surface-2: #221D15;
+    --surface-3: #2A241B;
+    --border: rgba(236, 230, 218, 0.08);
+    --border-strong: rgba(236, 230, 218, 0.14);
+    --text: #ECE6DA;
+    --text-muted: #A79E8E;
+    --text-faint: #6F675A;
+    --accent: #CBA36A;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'Spline Sans', -apple-system, Segoe UI, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    padding: 18px 24px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-family: var(--serif); font-weight: 500; font-size: 1.3rem; margin: 0; letter-spacing: 0.01em; }
+  header .sub { color: var(--text-faint); font-size: 0.82rem; }
+  nav {
+    display: flex; gap: 6px; padding: 10px 24px; border-bottom: 1px solid var(--border);
+    overflow-x: auto; flex-wrap: wrap;
+  }
+  nav button {
+    background: none; border: 1px solid transparent; color: var(--text-muted);
+    font-family: var(--sans); font-size: 0.82rem; padding: 6px 12px; border-radius: 8px;
+    cursor: pointer; white-space: nowrap; transition: color .2s, background .2s, border-color .2s;
+  }
+  nav button:hover { color: var(--text); background: var(--surface-2); }
+  nav button.active { color: var(--accent); border-color: var(--border-strong); background: var(--surface-2); }
+  main { flex: 1; overflow: auto; padding: 24px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .panel h2 { font-family: var(--serif); font-weight: 500; font-size: 1.05rem; margin: 0 0 4px; }
+  .panel p.cap { color: var(--text-faint); font-size: 0.82rem; margin: 0 0 18px; }
+  .mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; overflow-x: auto; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  .boundaries { max-width: 760px; line-height: 1.6; }
+  .boundaries li { margin-bottom: 10px; color: var(--text-muted); }
+  .boundaries strong { color: var(--text); }
+  footer { padding: 10px 24px; border-top: 1px solid var(--border); color: var(--text-faint); font-size: 0.75rem; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Gaia-Cloud — how everything is connected</h1>
+    <span class="sub">three stores · one cognition owner · one human confirmation</span>
+  </header>
+
+  <nav id="tabs"></nav>
+
+  <main>
+    <section class="panel" data-title="Whole system">
+      <h2>The whole system</h2>
+      <p class="cap">Clients talk only to the Harness; the Harness owns raw (Foundation), derived lifecycle (Cognition) and derived store (Hindsight).</p>
+      <pre class="mermaid">
+flowchart TB
+    subgraph clients["GaiaChat clients"]
+        web["Gaia Web<br/>(browser)"]
+        desktop["Gaia Desktop<br/>(Tauri)"]
+    end
+    subgraph cloud["GAIA-API  :8891 — the Harness"]
+        api["uniform Gaia API<br/>/conversation/turn · /cognition/*<br/>/library · /conversations · /speech · /admin/*"]
+    end
+    subgraph stores["Stores"]
+        foundation["FOUNDATION  :4577 (external)<br/>RAW REALITY<br/>observations · /api/ingest/* · MCP"]
+        cognition["COGNITION  :8890 (repo)<br/>DERIVED OWNER<br/>hypothesis · pattern · model<br/>question · relationship (Postgres)"]
+        hindsight["HINDSIGHT  :8888 (external)<br/>DERIVED STORE<br/>gaia:* tags · semantic recall"]
+    end
+    hermes["HERMES  :8642 (hermes_net)<br/>capability — NOT in the live turn"]
+    web -->|"HTTPS + Bearer"| api
+    desktop -->|"HTTPS + Bearer"| api
+    api -->|"submit observation"| foundation
+    api -->|"write derived (lifecycle)"| cognition
+    cognition -->|"cognitionSync mirror"| hindsight
+    api -->|"recall / mental models / pages"| hindsight
+    api -->|"archive asks only"| foundation
+    api -.->|"never called live"| hermes
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Live turn">
+      <h2>The live turn — direct generation</h2>
+      <p class="cap">validate → SOUL prompt → gated recall → one inference call → Response Engine. No planning layer; Hermes never a fallback.</p>
+      <pre class="mermaid">
+flowchart TB
+    A["client → POST /conversation/turn"] --> B["1. validate + auth<br/>fail-closed 503 / 401"]
+    B --> C["2. resolve attachments<br/>library → text / vision"]
+    C --> D["3. gated recall (parallel)"]
+    D --> D1["Hindsight: reflections +<br/>mental models + knowledge pages"]
+    D --> D2["Hindsight: patterns (gaia:pattern)"]
+    D --> D3["Foundation: archive asks only"]
+    D1 --> E
+    D2 --> E
+    D3 --> E["4. SOUL prompt + recall blocks +<br/>capability awareness"]
+    E --> F["5. ONE inference call<br/>primary → backup (429/5xx/timeout, pre-output)"]
+    F --> G["6. Response Engine<br/>only writer of the wire format"]
+    G --> H["reply delivered ({ reply } or SSE)"]
+    H --> I["7. runDeferredCognition<br/>fire-and-forget · never awaited"]
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Deferred cognition">
+      <h2>Deferred cognition — where writing happens</h2>
+      <p class="cap">After the reply: the turn becomes a raw observation; Logos proposes derived knowledge into Cognition, which mirrors to Hindsight.</p>
+      <pre class="mermaid">
+flowchart TB
+    D["runDeferredCognition (after reply, never awaited)"]
+    D --> S1["1. Foundation.submitObservation<br/>the turn as a RAW observation"]
+    D --> S2["2. Memoryworthiness (deterministic gate)"]
+    D --> S3["3. Logos reflection (one model call, deep only)"]
+    D --> S4["4. Hindsight reflectOnTurn (gated)"]
+    S3 --> K1["hypotheses"]
+    S3 --> K2["patterns"]
+    S3 --> K3["open questions"]
+    S3 --> K4["relationships"]
+    K1 --> SINK
+    K2 --> SINK
+    K3 --> SINK
+    K4 --> SINK["cognitionSink"] --> COG["COGNITION<br/>(lifecycle owner)"]
+    COG --> SYNC["cognitionSync"] --> HS["HINDSIGHT<br/>(gaia:* mirror)"]
+    S1 --> FND["FOUNDATION"]
+    S4 --> HS
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Human override">
+      <h2>Human Absolute Override — the only path to confirmed</h2>
+      <p class="cap">GaiaChat lists the derived statements Logos is still weighing and moves one forward or lets it go. Confirm may supersede older statements.</p>
+      <pre class="mermaid">
+sequenceDiagram
+    participant Chat as GaiaChat (Web/Desktop)
+    participant API as gaia-api /cognition/*
+    participant Cog as Cognition
+    participant HS as Hindsight
+    Chat->>API: GET /cognition/hypotheses
+    API->>Cog: list (proposed / testing)
+    Cog-->>Chat: pending statements
+    Chat->>API: POST .../:id/test
+    API->>Cog: → testing
+    Chat->>API: POST .../:id/reject { reason }
+    API->>Cog: → rejected (verwerp_bron "mens")
+    Chat->>API: POST .../:id/confirm { supersedes[], rationale }
+    API->>Cog: → confirmed
+    API->>Cog: supersede(old ids) → rejected (consolidatie)
+    API->>HS: mirror (gaia:confirmed_fact)
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Lifecycle">
+      <h2>The lifecycle</h2>
+      <p class="cap">Corroborated is a machine tier; confirmed is human-only.</p>
+      <pre class="mermaid">
+stateDiagram-v2
+    [*] --> proposed
+    proposed --> testing: first evidence
+    proposed --> rejected: let go
+    testing --> corroborated: machine soft-promotion (C ≥ 0.80)
+    testing --> confirmed: HUMAN ONLY
+    testing --> rejected: let go
+    corroborated --> confirmed: HUMAN ONLY
+    corroborated --> testing: refine / contradiction
+    corroborated --> rejected: let go
+    confirmed --> testing: contradicting evidence
+    confirmed --> rejected: superseded (consolidatie)
+    rejected --> [*]
+    confirmed --> [*]
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Lives where">
+      <h2>What lives where</h2>
+      <p class="cap">Raw reality → derived lifecycle → derived store → recall.</p>
+      <pre class="mermaid">
+flowchart LR
+    obs["FOUNDATION<br/>observation (immutable)"]
+    hyp["COGNITION<br/>hypothesis · pattern · model<br/>open question · relationship"]
+    g["HINDSIGHT<br/>gaia:hypothesis · gaia:pattern<br/>gaia:confirmed_fact<br/>gaia:open_question · gaia:relationship"]
+    hist["conversationStore<br/>raw transcript"]
+    obs -->|"derive"| hyp
+    hyp -->|"mirror"| g
+    g -->|"semantic recall"| gaia(("Gaia"))
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Boundaries">
+      <h2>The three boundaries</h2>
+      <p class="cap">These are load-bearing; a change that breaks one is a bug.</p>
+      <ol class="boundaries">
+        <li><strong>Foundation = raw reality.</strong> A client that claims a <code>status</code> is refused (422). Observations only.</li>
+        <li><strong>Cognition = the lifecycle owner.</strong> It stores and books transitions; it never reasons. Logos proposes, the human confirms.</li>
+        <li><strong>Hindsight = the derived store.</strong> Rebuildable from Cognition with provenance; recall lives here because Cognition has no vector search.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer>Gaia-Cloud · docs/architecture-graph.md · this file is standalone (Mermaid via CDN)</footer>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        darkMode: true,
+        background: '#1C1811',
+        primaryColor: '#221D15',
+        primaryTextColor: '#ECE6DA',
+        primaryBorderColor: '#CBA36A',
+        lineColor: '#6F675A',
+        secondaryColor: '#2A241B',
+        tertiaryColor: '#2A241B',
+        fontFamily: 'Spline Sans, sans-serif',
+        fontSize: '14px',
+        clusterBkg: '#1C1811',
+        clusterBorder: '#3a3328',
+        edgeLabelBackground: '#221D15',
+        actorBkg: '#221D15',
+        actorBorder: '#CBA36A',
+        actorTextColor: '#ECE6DA',
+        signalColor: '#A79E8E',
+        signalTextColor: '#ECE6DA',
+        labelBoxBkgColor: '#221D15',
+        labelBoxBorderColor: '#3a3328',
+        noteBkgColor: '#2A241B',
+        noteTextColor: '#ECE6DA',
+      },
+    });
+
+    const panels = [...document.querySelectorAll('.panel')];
+    const tabs = document.getElementById('tabs');
+
+    panels.forEach((panel, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = panel.dataset.title;
+      btn.addEventListener('click', () => select(i));
+      tabs.appendChild(btn);
+      panel.dataset.index = i;
+    });
+
+    const nodes = panels.map((p) => p.querySelector('.mermaid'));
+    let rendered = new Array(panels.length).fill(false);
+
+    async function render(i) {
+      if (rendered[i]) return;
+      const el = nodes[i];
+      const { svg } = await mermaid.render('m' + i, el.textContent.trim());
+      el.innerHTML = svg;
+      rendered[i] = true;
+    }
+
+    async function select(i) {
+      panels.forEach((p, j) => p.classList.toggle('active', j === i));
+      [...tabs.children].forEach((b, j) => b.classList.toggle('active', j === i));
+      await render(i);
+    }
+
+    select(0);
+  </script>
+</body>
+</html>

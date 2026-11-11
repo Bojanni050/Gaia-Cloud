@@ -1,0 +1,77 @@
+# Epistemic Memory & Execution Rules
+
+## The one-way rule
+
+Knowledge moves in exactly **one direction**: from raw reality to derived
+understanding. Raw records are never rewritten by anything derived from them.
+That is the whole rule; everything below is which layer does what.
+
+The common mis-drawing puts it as *Chronicle → Hindsight → Logos*. That is
+wrong in three ways: Hindsight is a **store, not a stage**; the raw store is
+**Foundation**, not Chronicle; and **Logos is not the endpoint** — it reasons
+and writes its proposals back into the system. The corrected version follows.
+
+## The pipeline
+
+**1. Foundation — raw reality.**
+Foundation holds immutable observations: the unfiltered record of what was
+actually captured (screen text, windows, events). Everything entering it is
+stamped `observation`. It never holds a derived statement, and nothing derived
+may overwrite it. This is the source of truth, not a processing step.
+
+**2. Cognition — the derived lifecycle owner.**
+Cognition owns everything *derived from* that raw reality: hypotheses,
+patterns, open questions, relationships, and Kairos episodes. It is the
+**lifecycle owner**: a derived statement moves through
+`proposed → testing → corroborated → confirmed | rejected`. Cognition only
+stores records and books those transitions. It **never reasons** — it does not
+invent, weigh evidence, or judge.
+
+**3. Hindsight — the derived store.**
+Hindsight is where the derived records are **mirrored** for recall, tagged in
+one canonical `gaia:*` namespace. It is a *store*, not a pipeline stage:
+records are written into it from Cognition, and it is fully **rebuildable from
+Cognition**. Its job is to persist and to make derived knowledge findable —
+not to sit between raw input and reasoning.
+
+**4. Logos — the reasoning faculty.**
+Logos is where understanding is formed: it interprets intent, weighs evidence,
+and **proposes** hypotheses and patterns. Crucially, Logos is **not an
+endpoint that receives hypotheses**. It is a faculty that runs (reflection
+happens *after* a reply is delivered) and writes its proposals **into
+Cognition** — the lifecycle owner. Logos proposes; it owns no truth.
+
+## Who confirms — the Absolute Override
+
+Only a **human** moves a statement to `confirmed`. No model confidence, no
+corroboration, and no automation ever reaches it. This is the Absolute
+Override, and it lives in the human review surface (GaiaChat). Confirmation is
+the one act that no part of the pipeline can perform on its own.
+
+## The corrected shape, in words
+
+Reality flows forward and never loops back:
+
+    Foundation (raw, "observation")
+          ↓  is interpreted, never overwritten
+    Cognition (owns the derived lifecycle: hypotheses · patterns · episodes)
+          ↓  is mirrored into
+    Hindsight (derived store, gaia:*, rebuildable from Cognition)
+
+    Logos runs alongside this, reasoning and forming proposals,
+    and writes them back into Cognition.
+    Only a human confirms.
+
+## Corollary: the popular diagram, corrected
+
+| The mis-drawing says | What is actually true |
+| --- | --- |
+| Chronicle → Hindsight → Logos | Foundation → Cognition (mirrored to Hindsight); Logos writes back into Cognition |
+| "Chronicle (Observations)" is the raw store | Foundation is the raw store; Chronicle is the capture client that feeds it |
+| Hindsight sits in the middle of the flow | Hindsight is a derived *store* on the side, not a stage between raw and reasoning |
+| Logos is the final consumer of "hypotheses" | Logos *forms proposals*; Cognition owns them; only a human confirms |
+| "Interpretations" live at Hindsight | Derivations live in Cognition; Hindsight mirrors them for recall |
+
+The kernel of truth the original diagram was reaching for: there **is** a
+strict epistemic reduction from raw to derived, and it runs one way only. The
+correction is in the *entities*, not in that principle.
