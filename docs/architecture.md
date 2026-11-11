@@ -323,6 +323,16 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   Cognition or Foundation directly.
 - **Auditable.** `GET /kairos/episodes/:id/evidence` walks `sources` back to
   Foundation and returns the raw observations an interpretation was built from.
+- **Day digest.** `digest.js` folds one **closed** day's episodes into a short
+  Dutch overview (`kairos_digests` in Cognition, one row per bank per day,
+  `episode_ids` back to the episodes). The scheduler writes yesterday's after
+  `GAIA_KAIROS_DIGEST_HOUR` (07:00) in `GAIA_KAIROS_DIGEST_TIMEZONE`
+  (`Europe/Amsterdam`); `POST /kairos/digest` writes any closed day on demand,
+  and `GET /kairos/digests` / `GET /kairos/digest?date=` read it back. Before
+  the model sees them, low-signal episodes (no quote and under ~200 chars) are
+  dropped and a busy day is sampled evenly rather than truncated; a day with no
+  episodes writes no row and spends no tokens. The Command Center shows the
+  latest overview at the top of the Kairos tab.
 - Off by default. `GAIA_KAIROS_ENABLED=true` starts the worker, which polls every
   `GAIA_KAIROS_INTERVAL_MS` (30 s) and finalises at most
   `GAIA_KAIROS_MAX_CLUSTERS_PER_RUN` (120) clusters per run. Turned on without a

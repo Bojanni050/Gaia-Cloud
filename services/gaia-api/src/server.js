@@ -59,6 +59,8 @@ const { createLogosModelClient, readLogosTimeoutMs } = require('./logos/logosMod
 const { createCognitionRouter } = require('./cognitionRoutes');
 const { createKairosRouter } = require('./kairosRoutes');
 const { createKairosRuntime } = require('./kairos/runtime');
+const { createDigestWriter, createDigestScheduler } = require('./kairos/digest');
+const { emitDigest } = require('./kairos/emitter');
 const { createPatternManager } = require('./reasoning/patternManager');
 const { createFromEnv: createNativeGeneratorFromEnv } = require('./generation/gaiaGenerator');
 const mimoTts = require('./speech/mimoTts');
@@ -802,7 +804,17 @@ function createApp(env = process.env) {
   // never Cognition/Foundation directly. Mounted unconditionally so the read
   // + stream work even when the worker is disabled; the worker itself is
   // created below behind GAIA_KAIROS_ENABLED.
-  app.use('/kairos', createKairosRouter({ cognition, foundation, auth }));
+  //
+  // The day-digest writer is built here rather than further down because the
+  // router needs it for the manual "write this day now" route; both the writer
+  // and the scheduler stay best-effort and never touch a turn.
+  const digestWriter = createDigestWriter({
+    cognition,
+    resolveConfig: () => resolveRoleConfig('kairos', providerStore, env),
+    emit: emitDigest,
+    timeZone: env.GAIA_KAIROS_DIGEST_TIMEZONE || 'Europe/Amsterdam',
+  });
+  app.use('/kairos', createKairosRouter({ cognition, foundation, auth, digestWriter }));
 
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
@@ -1238,6 +1250,22 @@ function createApp(env = process.env) {
     env,
   });
   if (kairosRuntime) kairosRuntime.start();
+
+  // The day digest — yesterday's episodes folded into one short overview.
+  // Same posture as the worker: best-effort, off when Kairos itself is off,
+  // and separately switchable with GAIA_KAIROS_DIGEST_ENABLED=false.
+  let digestScheduler = null;
+  if (kairosRuntime && env.GAIA_KAIROS_DIGEST_ENABLED !== 'false') {
+    digestScheduler = createDigestScheduler({
+      writer: digestWriter,
+      timeZone: env.GAIA_KAIROS_DIGEST_TIMEZONE || 'Europe/Amsterdam',
+      hour: Number(env.GAIA_KAIROS_DIGEST_HOUR) >= 0 ? Number(env.GAIA_KAIROS_DIGEST_HOUR) : 7,
+      intervalMs: Number(env.GAIA_KAIROS_DIGEST_INTERVAL_MS) > 0
+        ? Number(env.GAIA_KAIROS_DIGEST_INTERVAL_MS)
+        : undefined,
+    });
+    digestScheduler.start();
+  }
   // Hypothesis soft-promotion scan — same posture as Kairos: best-effort,
   // never blocks startup and never affects a turn.
   if (softPromotionScan) softPromotionScan.start();

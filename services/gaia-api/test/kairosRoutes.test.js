@@ -4,14 +4,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const { createKairosRouter } = require('../src/kairosRoutes');
-const { emitEpisode } = require('../src/kairos/emitter');
+const { emitEpisode, emitDigest } = require('../src/kairos/emitter');
 const { parseTokens, createAuthMiddleware } = require('../src/auth');
 
-function startTestServer({ cognition, foundation } = {}) {
+function startTestServer({ cognition, foundation, digestWriter } = {}) {
   const auth = createAuthMiddleware(parseTokens('test-token'));
   const app = express();
   app.use(express.json());
-  app.use('/kairos', createKairosRouter({ cognition, foundation, auth }));
+  app.use('/kairos', createKairosRouter({ cognition, foundation, auth, digestWriter }));
   const server = app.listen(0);
   const port = server.address().port;
   return { baseUrl: `http://127.0.0.1:${port}`, close: () => new Promise((r) => server.close(r)) };
@@ -26,6 +26,10 @@ function fakeCognition(overrides = {}) {
       pagination: { page: 1, limit: 20, total_records: 1, has_more: false },
     }),
     getKairosEpisode: async (id) => ({ id, sources: ['foundation:obs1'], epistemic_status: 'interpretation' }),
+    listKairosDigests: async () => ([
+      { digest_date: '2026-11-06', summary: 'Je werkte aan Gaia.', episode_count: 2 },
+    ]),
+    getKairosDigest: async (date) => ({ digest_date: date, summary: 'Je werkte aan Gaia.', episode_count: 2 }),
     ...overrides,
   };
 }
@@ -136,6 +140,125 @@ test('GET /kairos/episodes/stream relays emitted episodes as SSE and cleans up o
     const chunk = decoder.decode(value);
     assert.match(chunk, /event: episode/);
     assert.match(chunk, /kei_live/);
+
+    controller.abort();
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /kairos/digests returns the stored day overviews', async () => {
+  const ctx = startTestServer({ cognition: fakeCognition() });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digests`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.data[0].digest_date, '2026-11-06');
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /kairos/digest defaults to the latest and 404s when there is none', async () => {
+  const ctx = startTestServer({ cognition: fakeCognition() });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest`, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.digest_date, '2026-11-06');
+  } finally {
+    await ctx.close();
+  }
+
+  const empty = startTestServer({ cognition: fakeCognition({ listKairosDigests: async () => [] }) });
+  try {
+    const res = await fetch(`${empty.baseUrl}/kairos/digest`, { headers: authHeaders() });
+    assert.equal(res.status, 404);
+  } finally {
+    await empty.close();
+  }
+});
+
+test('GET /kairos/digest rejects a date that is not a calendar day', async () => {
+  const ctx = startTestServer({ cognition: fakeCognition() });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest?date=2026-02-31`, { headers: authHeaders() });
+    assert.equal(res.status, 400);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /kairos/digest asks the writer for that day and returns the stored row', async () => {
+  const calls = [];
+  const digestWriter = {
+    generate: async (opts) => {
+      calls.push(opts);
+      return { digest: { digest_date: opts.date, summary: 'Je werkte aan Gaia.', episode_count: 3 } };
+    },
+  };
+  const ctx = startTestServer({ cognition: fakeCognition(), digestWriter });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-11-05' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.digest_date, '2026-11-05');
+    assert.deepEqual(calls, [{ date: '2026-11-05', force: false }]);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /kairos/digest reports an empty day as 404, not as a written overview', async () => {
+  const digestWriter = { generate: async () => ({ skipped: 'no-episodes', date: '2026-11-09', episodeCount: 0 }) };
+  const ctx = startTestServer({ cognition: fakeCognition(), digestWriter });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-11-09' }),
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('POST /kairos/digest is unavailable when no writer is wired', async () => {
+  const ctx = startTestServer({ cognition: fakeCognition() });
+  try {
+    const res = await fetch(`${ctx.baseUrl}/kairos/digest`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: '2026-11-09' }),
+    });
+    assert.equal(res.status, 503);
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('the SSE stream relays a written digest as its own event', async () => {
+  const ctx = startTestServer({ cognition: fakeCognition() });
+  try {
+    const controller = new AbortController();
+    const res = await fetch(`${ctx.baseUrl}/kairos/episodes/stream`, {
+      headers: authHeaders(),
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    await reader.read(); // ':ok'
+
+    emitDigest({ digest_date: '2026-11-06', summary: 'Je werkte aan Gaia.' });
+    const { value } = await reader.read();
+    const chunk = decoder.decode(value);
+    assert.match(chunk, /event: digest/);
+    assert.match(chunk, /2026-11-06/);
 
     controller.abort();
   } finally {

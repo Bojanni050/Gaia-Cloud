@@ -55,6 +55,7 @@ router.get('/', asyncRoute(async (req, res) => {
     page: req.query.page,
     limit: req.query.limit,
     since: req.query.since,
+    until: req.query.until,
   });
   res.json(result);
 }));

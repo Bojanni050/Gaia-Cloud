@@ -67,10 +67,12 @@ async function create(bankId, {
 }
 
 /**
- * Paged listing, newest first. `since` filters on start_time >= since.
+ * Paged listing, newest first. `since` filters on start_time >= since,
+ * `until` on start_time < until (the digest reads one closed day, and the
+ * half-open window is what makes "yesterday" exact).
  * @returns {{ data: object[], pagination: { page, limit, total_records, has_more } }}
  */
-async function list(bankId, { page = 1, limit = DEFAULT_LIMIT, since } = {}) {
+async function list(bankId, { page = 1, limit = DEFAULT_LIMIT, since, until } = {}) {
   const pageNum = Math.max(1, Math.floor(Number(page) || 1));
   const limitNum = clampLimit(limit);
   const offset = (pageNum - 1) * limitNum;
@@ -80,6 +82,10 @@ async function list(bankId, { page = 1, limit = DEFAULT_LIMIT, since } = {}) {
   if (since) {
     values.push(since);
     where.push(`start_time >= $${values.length}`);
+  }
+  if (until) {
+    values.push(until);
+    where.push(`start_time < $${values.length}`);
   }
   const whereSql = where.join(' AND ');
 

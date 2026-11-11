@@ -13,6 +13,7 @@ const episodeEvents = new EventEmitter();
 episodeEvents.setMaxListeners(0); // one listener per connected SSE client
 
 const EPISODE_EVENT = 'kairos:episode';
+const DIGEST_EVENT = 'kairos:digest';
 
 function emitEpisode(episode) {
   if (episode) episodeEvents.emit(EPISODE_EVENT, episode);
@@ -23,4 +24,26 @@ function onEpisode(handler) {
   return () => episodeEvents.off(EPISODE_EVENT, handler);
 }
 
-module.exports = { episodeEvents, EPISODE_EVENT, emitEpisode, onEpisode };
+/**
+ * A freshly written day overview goes over the same stream as the episodes, so
+ * an open Command Center shows it without a reload. Separate event name: the
+ * client must not mistake an overview for a card.
+ */
+function emitDigest(digest) {
+  if (digest) episodeEvents.emit(DIGEST_EVENT, digest);
+}
+
+function onDigest(handler) {
+  episodeEvents.on(DIGEST_EVENT, handler);
+  return () => episodeEvents.off(DIGEST_EVENT, handler);
+}
+
+module.exports = {
+  episodeEvents,
+  EPISODE_EVENT,
+  DIGEST_EVENT,
+  emitEpisode,
+  onEpisode,
+  emitDigest,
+  onDigest,
+};

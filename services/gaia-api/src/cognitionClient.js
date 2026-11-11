@@ -157,6 +157,8 @@ function createCognitionClient({
     if (query.page) params.set('page', String(query.page));
     if (query.limit) params.set('limit', String(query.limit));
     if (query.since) params.set('since', query.since);
+    // Half-open upper bound: the digest reads exactly one closed day.
+    if (query.until) params.set('until', query.until);
     const suffix = params.toString() ? `?${params}` : '';
     return request('GET', `/episodes${suffix}`);
   };
@@ -164,6 +166,25 @@ function createCognitionClient({
   const createKairosEpisode = (record) => request('POST', '/episodes', record);
   const getKairosState = () => request('GET', '/episodes/state').then((r) => (r ? r.last_captured_at : null));
   const setKairosState = (lastCapturedAt) => request('PUT', '/episodes/state', { last_captured_at: lastCapturedAt });
+
+  // --- Kairos day digests (one overview per closed day) ---
+  const listKairosDigests = (query = {}) => {
+    const params = new URLSearchParams();
+    if (query.limit) params.set('limit', String(query.limit));
+    const suffix = params.toString() ? `?${params}` : '';
+    return request('GET', `/digests${suffix}`).then((r) => (r && r.data) || []);
+  };
+  const getKairosDigest = (date) => request('GET', `/digests/${encodeURIComponent(date)}`);
+  // A missing day is the normal state before the writer ran, not an error.
+  const findKairosDigest = async (date) => {
+    try {
+      return await getKairosDigest(date);
+    } catch (err) {
+      if (err && err.status === 404) return null;
+      throw err;
+    }
+  };
+  const createKairosDigest = (record) => request('POST', '/digests', record);
 
   return {
     bankId: bank,
@@ -196,6 +217,10 @@ function createCognitionClient({
     createKairosEpisode,
     getKairosState,
     setKairosState,
+    listKairosDigests,
+    getKairosDigest,
+    findKairosDigest,
+    createKairosDigest,
   };
 }
 
