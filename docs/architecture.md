@@ -455,6 +455,31 @@ Cognition's own service speaks
 and is unauthenticated, bound to the tailnet — the same posture as Hindsight and
 Foundation. Clients never reach it directly.
 
+## These documents are runtime content
+
+Five documents in this repo are not only read by people. `scripts/build-foundation-artifact.js`
+bundles `services/gaia-api/identity/soul.md` with `docs/principles.md`, `docs/lexicon.md`,
+`docs/architecture.md` and `docs/evolution.md` into `foundation-artifact.json`;
+`publish-foundation.yml` publishes that file as the `foundation-latest` release on every push
+touching `docs/**` or `soul.md` (and then triggers a Gaia-Web rebuild), and `deploy.yml`
+materializes it into `services/gaia-api/` so the container bakes it in. gaia-api refuses to
+start without it (`foundation.js`).
+
+Per turn, `src/foundation.js` classifies the last three user messages and picks the set —
+joined with `\n\n---\n\n` in selection order, silently skipping a document the artifact does
+not carry:
+
+| Intent | Documents in the system prompt |
+| --- | --- |
+| technical (`implement`, `refactor`, `architecture`, `code`, `bug`, `api`, `database`, `deploy`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`architecture.md`** |
+| gaia (`who are you`, `how do you think`, `wat zijn je principes`, `evolutie`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`evolution.md`** |
+| conversation (everything else) | `soul.md` + `principles.md` + `lexicon.md` |
+
+So a change under `docs/` is a change in what Gaia reads about herself — and deleting one of
+those five documents breaks the publish workflow outright
+(`Error: Could not find document at …/docs/principles.md`). The document list is
+`DOCUMENTS` in `build-foundation-artifact.js`; change it in the same commit as the file.
+
 ## Clients, and what this repo does not contain
 
 Clients reach Gaia only through the uniform Gaia API: turns, the file library,

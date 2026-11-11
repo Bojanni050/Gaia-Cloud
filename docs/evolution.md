@@ -2,8 +2,9 @@
 title: Gaia — Evolution
 document: evolution
 version: 1.0.1
-status: active
-last_updated: 2026-09-30
+status: frozen
+last_updated: 2026-10-14
+frozen_at: 2026-11-11
 owner: Gaia Product Foundation
 framing: "Gaia is a lifelong personal intelligence designed to grow through understanding."
 ---
@@ -13,6 +14,14 @@ framing: "Gaia is a lifelong personal intelligence designed to grow through unde
 > **Gaia is a lifelong personal intelligence designed to grow through understanding.**
 >
 > Evolution is the story of how Gaia grows. Not a changelog — a record of intent, the trade-offs considered, and the path forward.
+
+> **Frozen on 2026-11-11, at content of 2026-10-14 (SOUL 1.8.0).** This document
+> is deliberately closed: it records how Gaia got here, not where she is now.
+> Everything after that date lives in the dated progress log — `walkthrough.md`,
+> continued in `walkthrough2.md` — and in the commit messages themselves, and the
+> current architecture, including the derived-knowledge lifecycle as the code
+> actually enforces it, is `architecture.md`. Update this file only to correct
+> what it says about the past.
 
 ---
 
