@@ -70,17 +70,25 @@ function deriveIntent(messages, windowSize = 3) {
   return gaiaScore >= technicalScore ? { type: 'gaia' } : { type: 'technical' };
 }
 
-// Kept identical to gaia-web/src/gaia/foundation/rules.js.
+// The classifier above is still gaia-web's. The document SETS are not: through
+// 2026-11-11 they were kept identical to gaia-web/src/gaia/foundation/rules.js, which
+// sent the two heaviest documents with a turn — `architecture.md` (~33 kB, on any turn
+// whose last three user messages mentioned code, api, fout, bug, database, …) and
+// `evolution.md` (~131 kB, on any turn asking "wie ben je" or mentioning "evolutie").
+// Both are the archive: code-level detail and engineering history. A turn now gets
+// `identity.md` instead — the short self-knowledge document — while both full documents
+// stay in the artifact for clients and for anyone reading the repo. Gaia-Web's own copy
+// of these rules lives in its repository and is not changed by this.
 const RULES = [
   {
     name: 'Technical',
     condition: (context) => context.type === 'technical',
-    documents: ['soul.md', 'principles.md', 'lexicon.md', 'architecture.md'],
+    documents: ['soul.md', 'principles.md', 'lexicon.md', 'identity.md'],
   },
   {
     name: 'Gaia',
     condition: (context) => context.type === 'gaia',
-    documents: ['soul.md', 'principles.md', 'lexicon.md', 'evolution.md'],
+    documents: ['soul.md', 'principles.md', 'lexicon.md', 'identity.md'],
   },
   {
     name: 'Conversation',

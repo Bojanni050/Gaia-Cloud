@@ -20,7 +20,7 @@ const DOCS_DIR = path.join(REPO_ROOT, 'docs');
 const SOUL_PATH = path.join(REPO_ROOT, 'services', 'gaia-api', 'identity', 'soul.md');
 const OUTPUT_PATH = path.join(REPO_ROOT, 'foundation-artifact.json');
 
-const DOCUMENTS = ['soul.md', 'principles.md', 'lexicon.md', 'architecture.md', 'evolution.md'];
+const DOCUMENTS = ['soul.md', 'principles.md', 'lexicon.md', 'identity.md', 'architecture.md', 'evolution.md'];
 
 function loadDocument(filename) {
   const filePath = filename === 'soul.md' ? SOUL_PATH : path.join(DOCS_DIR, filename);

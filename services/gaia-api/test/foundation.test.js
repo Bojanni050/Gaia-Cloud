@@ -20,10 +20,23 @@ test('deriveIntent classifies technical, gaia and plain conversation turns', () 
 });
 
 test('selectDocuments matches each rule branch, falling back to the base three', () => {
-  assert.deepEqual(selectDocuments({ type: 'technical' }), ['soul.md', 'principles.md', 'lexicon.md', 'architecture.md']);
-  assert.deepEqual(selectDocuments({ type: 'gaia' }), ['soul.md', 'principles.md', 'lexicon.md', 'evolution.md']);
+  assert.deepEqual(selectDocuments({ type: 'technical' }), ['soul.md', 'principles.md', 'lexicon.md', 'identity.md']);
+  assert.deepEqual(selectDocuments({ type: 'gaia' }), ['soul.md', 'principles.md', 'lexicon.md', 'identity.md']);
   assert.deepEqual(selectDocuments({ type: 'conversation' }), ['soul.md', 'principles.md', 'lexicon.md']);
   assert.deepEqual(selectDocuments({ type: 'unknown' }), ['soul.md', 'principles.md', 'lexicon.md']);
+});
+
+test('the archive documents are never sent with a turn', () => {
+  // architecture.md (~33 kB) and evolution.md (~131 kB) are the reference, not the
+  // prompt: they carry code-level detail and engineering history that a live turn
+  // never needs, and until 2026-11-11 they rode along on every technical and
+  // gaia-shaped turn respectively. identity.md is what replaced them.
+  for (const type of ['technical', 'gaia', 'conversation', 'unknown']) {
+    const selected = selectDocuments({ type });
+    assert.ok(!selected.includes('architecture.md'), `${type} must not carry the full architecture`);
+    assert.ok(!selected.includes('evolution.md'), `${type} must not carry the frozen history`);
+    assert.ok(!selected.includes('identity.md') || type !== 'conversation', 'plain conversation stays on the base three');
+  }
 });
 
 test('buildSystemPrompt joins selected documents with the exact separator, skipping missing ones', () => {

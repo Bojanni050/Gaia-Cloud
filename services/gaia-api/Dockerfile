@@ -5,7 +5,7 @@
 # container start. A Gaia API without SOUL refuses to start.
 #
 # foundation-artifact.json (the other foundation documents — principles,
-# lexicon, architecture, evolution — used for docs/web-migration-plan.md's
+# lexicon, identity, architecture, evolution — used for docs/web-migration-plan.md's
 # Phase B context-aware document selection) is NOT built here: it's
 # materialized into this directory by the deploy step, before `docker
 # build` runs (see .github/workflows/deploy.yml), by running

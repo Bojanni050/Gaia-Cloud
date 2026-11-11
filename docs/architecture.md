@@ -457,13 +457,13 @@ Foundation. Clients never reach it directly.
 
 ## These documents are runtime content
 
-Five documents in this repo are not only read by people. `scripts/build-foundation-artifact.js`
+Six documents in this repo are not only read by people. `scripts/build-foundation-artifact.js`
 bundles `services/gaia-api/identity/soul.md` with `docs/principles.md`, `docs/lexicon.md`,
-`docs/architecture.md` and `docs/evolution.md` into `foundation-artifact.json`;
-`publish-foundation.yml` publishes that file as the `foundation-latest` release on every push
-touching `docs/**` or `soul.md` (and then triggers a Gaia-Web rebuild), and `deploy.yml`
-materializes it into `services/gaia-api/` so the container bakes it in. gaia-api refuses to
-start without it (`foundation.js`).
+`docs/identity.md`, `docs/architecture.md` and `docs/evolution.md` into
+`foundation-artifact.json`; `publish-foundation.yml` publishes that file as the
+`foundation-latest` release on every push touching `docs/**` or `soul.md` (and then triggers a
+Gaia-Web rebuild), and `deploy.yml` materializes it into `services/gaia-api/` so the container
+bakes it in. gaia-api refuses to start without it (`foundation.js`).
 
 Per turn, `src/foundation.js` classifies the last three user messages and picks the set —
 joined with `\n\n---\n\n` in selection order, silently skipping a document the artifact does
@@ -471,13 +471,21 @@ not carry:
 
 | Intent | Documents in the system prompt |
 | --- | --- |
-| technical (`implement`, `refactor`, `architecture`, `code`, `bug`, `api`, `database`, `deploy`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`architecture.md`** |
-| gaia (`who are you`, `how do you think`, `wat zijn je principes`, `evolutie`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`evolution.md`** |
+| technical (`implement`, `refactor`, `architecture`, `code`, `bug`, `api`, `database`, `deploy`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`identity.md`** |
+| gaia (`who are you`, `how do you think`, `wat zijn je principes`, `evolutie`, …) | `soul.md` + `principles.md` + `lexicon.md` + **`identity.md`** |
 | conversation (everything else) | `soul.md` + `principles.md` + `lexicon.md` |
 
+**Narrowed on 2026-11-11.** Until then the technical branch carried `architecture.md`
+(~33 kB ≈ 8k tokens) and the gaia branch `evolution.md` (~131 kB ≈ 33k tokens) — the two
+heaviest documents in the repo, on any turn that happened to contain words like `code`,
+`api`, `fout` or `evolutie`. A turn now carries `identity.md` instead: the self-knowledge
+those two had in common, ~7 kB. Both full documents stay in the artifact — they are the
+reference, and Gaia-Web's own copy of the selection rules is in that repository, unchanged
+by this.
+
 So a change under `docs/` is a change in what Gaia reads about herself — and deleting one of
-those five documents breaks the publish workflow outright
-(`Error: Could not find document at …/docs/principles.md`). The document list is
+those six documents breaks the publish workflow outright
+(`Error: Could not find document at …/principles.md`). The document list is
 `DOCUMENTS` in `build-foundation-artifact.js`; change it in the same commit as the file.
 
 ## Clients, and what this repo does not contain
