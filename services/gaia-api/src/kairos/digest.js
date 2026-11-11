@@ -27,7 +27,10 @@ const { logLlmCall } = require('../logos/llmCallLog');
 
 const DEFAULT_TIMEZONE = 'Europe/Amsterdam';
 const DEFAULT_TIMEOUT_MS = 90000;
-const MAX_EPISODE_CHARS = 400;
+// Each episode keeps enough text that the digest can say what was DONE, not
+// just which window was open: 400 characters cut the outcome off the longer
+// episodes, so the day summary fell back to naming apps.
+const MAX_EPISODE_CHARS = 600;
 const MAX_TITLE_CHARS = 120;
 const MAX_EPISODES_IN_PROMPT = 120;
 const MIN_SUMMARY_CHARS = 200;
@@ -57,16 +60,28 @@ const DIGEST_SYSTEM_PROMPT = [
   'INSTRUCTIES:',
   '1. TITEL: maximaal 8 woorden, concreet. Waar ging de dag over? Geen',
   '   applicatienaam en geen vage woorden ("werkzaamheden", "bezigheden").',
-  '2. INHOUD: 3 tot 6 zinnen, lopend verhaal in het Nederlands. Wat deed hij,',
-  '   welke gesprekken, bestanden, bedragen, afspraken en fouten kwamen voorbij?',
-  '3. Alleen wat in de episodes staat. Vul niets aan, gok geen stemming of',
-  '   bedoeling, en noem geen app als er niets inhoudelijks gebeurde.',
-  '4. Geen opsomming per applicatie en geen meta-taal ("de gebruiker",',
+  '2. WAT HIJ DEED, NIET WAT HIJ OPENDE. Het onderwerp is het werk: wat is er',
+  '   gebouwd, geschreven, verstuurd, besloten, uitgezocht of opgelost, en met',
+  '   welk resultaat. "Je opende Excel en bekeek een sheet" is geen inhoud;',
+  '   "je zette de omzet per klant in een sheet en vond twee dubbele facturen"',
+  '   wel. Noem een applicatie alleen als de app zelf het onderwerp is, nooit',
+  '   als opsomming van wat er open stond. Openen, klikken, scrollen, wisselen',
+  '   en navigeren mogen hooguit de aanloop zijn, nooit de kern van een zin.',
+  '3. CONCREET: mensen, projecten, bestanden, bedragen, datums, foutmeldingen,',
+  '   beslissingen. Citeer korte stukken letterlijk tussen dubbele',
+  '   aanhalingstekens als ze het punt maken. Laat weg wat niets betekent (een',
+  '   lege map, een teller, een menu).',
+  '4. VORM: twee tot vier korte alinea\'s, samen 90 tot 220 woorden, gescheiden',
+  '   door een lege regel. Elke alinea is één lijn van de dag — een project,',
+  '   een gesprek, een klus die afkwam — in chronologische volgorde. Geen',
+  '   bulletpoints, geen opsomming per applicatie, geen tijdlijn van elk uur.',
+  '5. Alleen wat in de episodes staat. Vul niets aan, gok geen stemming of',
+  '   bedoeling. Was de dag vooral schermgebruik zonder inhoud, zeg dat dan in',
+  '   één of twee zinnen eerlijk en verzin niets bij.',
+  '6. Geen opsomming per applicatie en geen meta-taal ("de gebruiker",',
   '   "episodes", "de data"). Schrijf in de tweede persoon tegen hem:',
   '   "Je begon de dag met…", "Rond het middaguur…". Houd één stem vast.',
-  '5. Is de dag inhoudelijk mager, zeg dat dan in één of twee zinnen en verzin',
-  '   niets bij. Een korte, eerlijke alinea is beter dan een opgevulde.',
-  '6. Antwoord met uitsluitend een JSON-object, geen markdown, geen extra tekst.',
+  '7. Antwoord met uitsluitend een JSON-object, geen markdown, geen extra tekst.',
   '',
   'VEREIST JSON-FORMAAT:',
   '{ "title": "korte concrete kop", "summary": "het dagoverzicht" }',
@@ -237,6 +252,9 @@ function tidy(text) {
     .replace(/[\u00a0\u2007\u2009\u202f]/g, ' ')
     .replace(/\u2011/g, '-')
     .replace(/[ \t]{2,}/g, ' ')
+    // Paragraphs are separated by a blank line; anything beyond that is the
+    // model clearing its throat, and the panel renders every newline literally.
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

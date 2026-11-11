@@ -323,14 +323,18 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   Cognition or Foundation directly.
 - **Auditable.** `GET /kairos/episodes/:id/evidence` walks `sources` back to
   Foundation and returns the raw observations an interpretation was built from.
-- **Day digest.** `digest.js` folds one **closed** day's episodes into a short
-  Dutch overview (`kairos_digests` in Cognition, one row per bank per day,
-  `episode_ids` back to the episodes). The scheduler writes yesterday's after
+- **Day digest.** `digest.js` folds one **closed** day's episodes into a Dutch
+  overview of 90–220 words in 2–4 paragraphs (`kairos_digests` in Cognition, one
+  row per bank per day, `episode_ids` back to the episodes). The prompt is
+  explicitly about *what was done* — the work, its outcome, names, amounts and
+  decisions — not which window was opened; an app is named only when the app is
+  the subject. The scheduler writes yesterday's after
   `GAIA_KAIROS_DIGEST_HOUR` (07:00) in `GAIA_KAIROS_DIGEST_TIMEZONE`
   (`Europe/Amsterdam`); `POST /kairos/digest` writes any closed day on demand,
   and `GET /kairos/digests` / `GET /kairos/digest?date=` read it back. Before
   the model sees them, low-signal episodes (no quote and under ~200 chars) are
-  dropped and a busy day is sampled evenly rather than truncated; a day with no
+  dropped, each keeps up to 600 characters, and a busy day is sampled evenly
+  rather than truncated; a day with no
   episodes — or fewer than `GAIA_KAIROS_DIGEST_MIN_EPISODES` (5) — writes no row
   and spends no tokens, so a quiet day stays honestly empty instead of becoming
   a one-line "je keek wat rond". A forced write (`POST … {"force": true}`, the

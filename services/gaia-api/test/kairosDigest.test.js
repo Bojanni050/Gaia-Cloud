@@ -125,6 +125,16 @@ test('validateDigest() accepts JSON and a fenced block, rejects the rest', () =>
   assert.throws(() => validateDigest('{"title":"Dag"}'), /non-empty 'summary'/);
 });
 
+test('validateDigest() keeps paragraph breaks but not runs of them', () => {
+  // The panel renders newlines literally, so a model that clears its throat
+  // between paragraphs must not leave a column of white space in the card.
+  const { summary } = validateDigest(JSON.stringify({
+    title: 'Dag',
+    summary: '  Je begon met de Castborg-rollout.\n\n\n\nDaarna de back-up.  ',
+  }));
+  assert.equal(summary, 'Je begon met de Castborg-rollout.\n\nDaarna de back-up.');
+});
+
 test('collectApps() counts and caps by frequency', () => {
   const apps = collectApps([
     episode({ involved_apps: ['msedge', 'explorer'] }),
