@@ -1,179 +1,286 @@
 # Gaia — Architecture (Cloud)
 
+> **Verified against code: commit `5a9e1d9` (2026-11-05).** Every path, route, flag
+> and literal in this document was read from the tree on that commit. Everything
+> that lives outside this repository is marked *(external)* or *(deployment)* —
+> those are precisely the places this document can drift while nothing here
+> changes. A claim about Foundation, Hindsight, Gaia-Web or Gaia-Desktop cannot be
+> checked from this repo and is worded as such.
+
 Gaia is a lifelong personal intelligence. This document is the architecture of
 **Gaia-Cloud**, her server side: identity, cognition and memory. Her clients —
 Gaia-Web and Gaia-Desktop — are *representations* of her, never a second place
 she runs. They speak only the uniform Gaia API and never see a model, a provider
-or a store address. Gaia-Web completed its move onto `gaia-api` (its direct
-Hermes, Hindsight and cognition routes are retired), so both clients now meet
-that contract.
+or a store address.
 
 ## The core model
 
 | Facet | What it is | Where it lives |
 | --- | --- | --- |
 | **Gaia** | the agency — who she is | everywhere she is reached |
-| **SOUL** | her constitution, loaded every turn | `services/gaia-api/identity/soul.md` |
-| **Logos** | her cognitive faculty — interpretation, meaning & evidence, DecisionIQ | `services/gaia-api/src/logos/` + the deferred pass |
-| **Cognition** | the store of everything *derived* (hypotheses, patterns, candidate models, open questions, relationships) and the lifecycle owner | `services/cognition` (Postgres) |
-| **Hindsight** | long-term memory / the **derived knowledge store** — semantically indexable | external (Tailscale) |
-| **Foundation** | **raw reality** — immutable observations, the ingestion gateway, MCP | external (`Bojanni050/Foundation`) |
-| **Capabilities** | things Gaia reaches for, never defaults (Hermes, Melodiq, MCP, …) | optional, invoked explicitly |
+| **SOUL** | her constitution, loaded every turn (`loadSoul`, `SOUL_PATH`) | `services/gaia-api/identity/soul.md` |
+| **Logos** | her cognitive faculty — interpretation, meaning & evidence, DecisionIQ: a prompt-level faculty plus one asynchronous background reflection | `services/gaia-api/src/logos/` |
+| **Cognition** | the store of everything *derived* — hypotheses (kinds: hypothesis, mental model, relationship, open question), patterns, observations, Kairos episodes — and the lifecycle owner | `services/cognition` (Postgres) |
+| **Hindsight** | long-term memory / the derived store — semantically indexable, three banks | *(external, Tailscale)* |
+| **Foundation** | raw reality — immutable observations, the ingestion gateway, MCP | *(external, `Bojanni050/Foundation`)* |
+| **Capabilities** | things Gaia reaches for, never defaults | optional, derived per turn |
 
 Capabilities are the only optional layer. **Hindsight, SOUL, Logos and Cognition
 are load-bearing** and are never folded into the capability set.
 
+The set of capabilities and the skills they expose is recorded in one place,
+`services/gaia-api/src/capabilityRegistry.js` — frozen metadata plus pure lookup
+helpers, zero requires and zero I/O. Its ids are `hermes`, `native`, `research`,
+`web_search`, `conversation_search`, `hindsight`, `memory`, `memory_retraction`,
+`memory_forgetting`, `own_memory`, `foundation`, `desktop` and `tool`. The
+registry also carries `routing: true` flags on a few Hermes skills; those are
+*data* (read by `researchReach.js`), not routing logic. The only routing decision
+in the codebase is whether to submit a research run.
+
+Which capabilities Gaia may claim is derived **per turn** in `turn.js`'s
+`generationCapabilities`: an entry appears only when its tool or client is
+actually wired *this* turn (the tool's presence is what makes the claim honest).
+She is never told she can do something she cannot.
+
 **`desktop`** (Desktop Commander) is a capability of the *person's own computer*,
 not of the server: Gaia-Cloud never executes anything on it. Gaia-Desktop runs
-Desktop Commander locally and is the executor; Gaia claims `desktop` on a turn
-only when such an executor is connected (`turn.js` `generationCapabilities`).
-Reads may run freely; writes and commands need the person's confirmation in the
-client. Both halves exist: the server side is `desktopBroker.js` (policy and
-lifecycle) and `desktopRoutes.js`; the executor is Gaia-Desktop
-(`desktop/src/state/desktopActions.js`, with the person's own allowed folders and
-command blocklist, and the Tauri MCP client in `src-tauri/src/mcp/`). The server
-sets the policy and the client may only tighten it. Off unless
-`GAIA_DESKTOP=true`; see `desktop-capability.md` for the full flow.
-
-The set of capabilities and the skills they expose is recorded in one place,
-`src/capabilityRegistry.js` — pure metadata, no routing logic.
+Desktop Commander locally and is the executor. Gaia claims `desktop` only on a
+**streamed** turn whose client sent `desktop: true` *and* when the broker is up.
+Reads and searches run freely; writes and commands need the person's confirmation
+in the client; `open-url` is policy-free. The server sets the policy
+(`desktopBroker.js`'s `SKILL_POLICY`) and the client may only tighten it. Off
+unless `GAIA_DESKTOP=true`; see `desktop-capability.md` for the full flow.
+*(The executor half — `desktop/src/state/desktopActions.js`, the Tauri MCP client
+in `src-tauri/src/mcp/` — lives in the Gaia-Desktop repo, not here.)*
 
 ## Boundaries that are load-bearing
 
-- **Foundation holds raw reality.** Everything entering it is an `observation`,
-  stamped server-side; a client that claims a status is refused. Gaia-Cloud never
-  writes a derived statement into it. (Foundation's own epistemic tables and
-  routes still exist, but its automatic layer is switched off; derived knowledge
-  is Cognition's.)
-- **Logos reasons.** Intent interpretation, meaning & evidence, and DecisionIQ
-  are prompt-level faculties of one faculty plus an asynchronous background
-  reflection — not separate code subsystems. Logos emits *proposals*; it owns no
-  truth.
+- **Foundation holds raw reality.** Everything entering it is an `observation`:
+  Gaia-Cloud's write seam (`foundationClient.submitObservation`) sends no status
+  field at all, and Foundation refuses a client that claims one. Gaia-Cloud never
+  writes a derived statement into it. *(Foundation's own epistemic tables and its
+  switched-off automatic layer are external and not verifiable from here.)*
+- **Logos reasons.** Intent interpretation, meaning & evidence, and DecisionIQ are
+  prompt-level faculties of one faculty plus an asynchronous background reflection
+  — not separate code subsystems. Logos emits *proposals*; it owns no truth and
+  writes to no database itself.
 - **Cognition owns the derived lifecycle.** A derived statement moves
-  `proposed → testing → corroborated → confirmed | rejected`. Cognition only
-  stores and books transitions; it never reasons.
+  `proposed → testing → corroborated → confirmed | rejected | expired`. Cognition
+  only stores and books transitions; it never reasons.
 - **Hindsight persists** the derived knowledge Gaia recalls. It is a *derived*
   store, rebuildable from Cognition with provenance.
 - **Only a human confirms** — the Absolute Override. No model confidence, no
-  corroboration, no automation reaches `confirmed`. That act lives in GaiaChat
-  (`POST /cognition/hypotheses/:id/confirm`).
+  corroboration, no automation reaches `confirmed`. That act is reached from
+  GaiaChat at `POST /cognition/hypotheses/:id/confirm`, which calls Cognition's
+  own `POST /v1/banks/:bankId/hypotheses/:id/confirm`.
 
 ## The turn
 
-A live turn is **direct generation**: `validate → SOUL/context prompt → gated
-recall → one inference call (primary, backup on a retryable failure) → Response
-Engine`. No synchronous Logos pre-flight, no planning/routing layer. Hermes is
-never a fallback and never the generator. The single exception is the
-**research reach**: on a research-with-sources turn Gaia submits a `run` at
-Hermes naming the `grounded-citations` skill and does **not** wait for it. The
-turn answers immediately; the findings are polled up later, written into the
-conversation, and announced on `GET /research/jobs`. The answer stays Gaia's
-(`src/researchReach.js`, `src/researchJob.js`, `src/researchRoutes.js`). A
-research turn therefore requires a `conversationId` — the findings need a
-conversation to land in; without one the turn simply answers.
+A live turn is **direct generation**:
 
-The **Response Engine** (`src/responseEngine.js`) is the only place a reply
-reaches a client: capabilities never write to the HTTP response themselves, and
-no provider name, model name, transport detail or stack trace crosses that seam
-(`toCalmError`). Tools offered to the generator (such as `remember`, `search_memory`,
-`conversation_search`, and `desktop` when available) run inside the one inference
-call, bounded by `maxToolRounds` (default 3), so a turn can chain at most three
-tool calls.
+```
+validate + auth → resolve attachments (library → text | vision OCR)
+  → gated recall (parallel) → prompt assembly (SOUL + recall blocks + capability awareness)
+  → ONE inference call (primary; backup on a retryable, pre-output failure)
+  → Response Engine
+```
 
-After the reply is delivered, `runDeferredCognition` runs fire-and-forget and
-never touches the reply:
+Note the order: **recall runs before the prompt is assembled** — `turn.js` calls
+`recallForTurn` and only then builds the system prompt out of what came back.
+There is no synchronous Logos pre-flight, no planner, no router and no decision
+engine: the intent classifier that once produced a decision was removed, so
+`intentDecision` is deliberately `null` on the live path and every gate runs on
+the one `shape` reading of the turn.
 
-1. **Observation registration** — the completed turn is registered in Foundation
-   (raw).
-2. **Memoryworthiness** — a cheap, deterministic gate for what deserves memory.
-3. **Logos reflection** — over the turn (and, later, the Foundation observation
-   delta): proposes hypotheses, patterns, open questions and relationships.
-4. **Cognition writes** — proposals land in Cognition; confirmed statements
-   mirror to Hindsight (`gaia:*`).
-5. **Hindsight reflection** — gated, best-effort.
+Recall is a parallel fan-out, every leg best-effort (a failed leg returns
+nothing and never fails the turn): Hindsight reflections, the seven standing
+mental models, patterns (only on a retrieval signal), knowledge pages, Foundation
+archive asks (only when the turn asks what is *recorded*), conversation search
+(only on a lookup / archive signal), the open-question raise, and the research
+reach.
+
+The reply is delivered either as one JSON `{ reply }` or, with `{ stream: true }`,
+as an SSE frame family (`step`, `research`, `memory`, `desktop`, `title`,
+`error`). The **Response Engine** (`src/responseEngine.js`) owns both wire
+formats and is the only place a reply reaches a client: no provider name, model
+name, transport detail or stack trace crosses that seam (`toCalmError`).
+
+**Hermes is never a fallback and, in the live server path, never the
+generator**: `server.js` does not hand `hermes` into a turn at all. A legacy
+`adaptHermesToGenerator` early-return still exists in `resolveLiveGenerators`
+for non-server callers, and is the one way Hermes could become the primary — dead
+code in production, not a design decision.
+
+**Tools inside the one inference call.** The generator may call tools within the
+single inference call, bounded by `maxToolRounds`
+(`generation/gaiaGenerator.js`, `DEFAULT_MAX_TOOL_ROUNDS = 3`). That is three
+*rounds*, and every call inside a round runs — so the bound is not "three tool
+calls". The real tool names:
+
+| Tool | Where | Gated by |
+| --- | --- | --- |
+| `remember` (→ `bojan`), `keep` (→ `gaia`), `search_memory`, `retract_memory`, `forget_memory` | `reasoning/memoryTool.js` | `GAIA_MEMORY_TOOL` (one flag for all five) |
+| `web_search` | `reasoning/webSearchTool.js` | presence of `GAIA_WEB_SEARCH_API_KEY` |
+| `read_back` | `reasoning/conversationTool.js` | the transcript seam being wired |
+| `desktop` | `desktopBroker.js` | `GAIA_DESKTOP` + client `desktop: true` + streamed turn |
+
+There is no tool named `conversation_search` — that is the *capability* id, and
+`read_back` is the tool behind it.
+
+## Deferred cognition (after the reply)
+
+`runDeferredCognition` runs fire-and-forget and never touches the delivered
+reply. The code numbers its own steps 1–8, with two side tasks that start as soon
+as their input exists and are awaited together at the end:
+
+```
+side tasks (concurrent, awaited last)
+  1   Foundation.submitObservation — the completed turn as a RAW observation
+  7b  Aion — Gaia's own bank (`gaia`), ungated, at her own discretion
+  7c  Eleos — the check-in faculty: gate now, deliver hours later
+
+sequential chain
+  2   Memoryworthiness — cheap deterministic gate (six dimensions)
+  3a  hypothesis lifecycle preparation (manager + Hindsight recall seeding)
+  3b  background Logos reflection — the depth gate decides whether ONE model
+      call happens at all
+  4   applyReasoningResult — the structured result into the manager
+  5   gated pattern formation (needs ≥1 durable hypothesis changed by this turn,
+      and a non-discarded turn)
+  6   Cognition retention of observations, open questions and relationships
+      (deliberately ignores the Memoryworthiness gate: Gaia-knowledge, not
+      conversational memory)
+  7   post-turn Hindsight reflection — gated by Memoryworthiness
+  8   DecisionIQ review — post-turn observability only
+```
+
+Nothing in this phase can reach the user: the reply was delivered before it
+started, and the transport never awaits it.
 
 ## Memory: what is stored where
 
 ```
-Foundation (raw)            Cognition (derived lifecycle)          Hindsight (derived store)
-observation · ingest ─────▶ hypothesis · pattern ·              ──▶ gaia:hypothesis
-· MCP                       candidate model · open_question ·       gaia:pattern · gaia:confirmed_fact
-                            relationship                          gaia:open_question · gaia:relationship
-                            sources: ["foundation:<id>"]             status + provenance
+Foundation (raw)            Cognition (derived lifecycle)        Hindsight (derived store)
+observation · ingest ─────▶ hypothesis (kind: hypothesis ·       ──▶ gaia:hypothesis
+· MCP                       mental_model · relationship ·             gaia:mental_model
+                            open_question) · pattern ·               gaia:pattern
+                            observation · kairos_episode             gaia:confirmed_fact
+                            sources: ["foundation:<uuid>"]           gaia:open_question
+                                                                     gaia:relationship
+                                                                     gaia:kairos_episode
 ```
 
 - **Notebook ≠ memory.** Conversation history (`conversationStore`) saves every
   turn verbatim; it is not Hindsight and not Cognition.
-- **The transcript is readable, literally.** Hindsight holds only what was
-  judged worth remembering, so a lookup that asks what was *actually* said
+- **The transcript is readable, literally.** Hindsight holds only what was judged
+  worth remembering, so a lookup that asks what was *actually* said
   (`conversation_search`, `src/conversationSearch.js`) reads the raw transcripts
-  instead. The turn reaches for it only on a lookup / past-reference signal, and
-  never for the in-flight conversation (already in the prompt verbatim); clients
-  reach the same seam at `GET /conversations/search`. It is the honest
-  counterpart to reflection: the words, not the memory of them. A past-facing
-  turn opens Hindsight recall too (`recallRelevantContext`'s `pastReference`),
-  so what she understands and what was actually said are consulted together.
-- **Provenance points back.** Every derived record carries the raw observation
-  ids it was derived from.
-- **Hindsight is derivable.** Sync is Cognition → Hindsight only; the mirror is
-  rebuildable, and `npm run reconcile:hindsight` re-pushes it.
-- **Three banks, split by origin.** `bojan` is the system-memory bank — the
-  memoryworthiness-gated conversation reflection writes there, unchanged
-  (the gate lives in `turn.js`). `gaia` is Gaia's own bank — her memories,
-  her human side; hers alone, no gate. A background Aion pass
-  (`reasoning/aion.js`, scheduled every few turns and when a session
-  ends) asks her whether anything is hers to keep and writes what she answers
-  there, tagged `gaia:aion`. The
-  derived mirror above lives in its own `gaia-logos` bank. Per-turn recall
-  spans all three, so a derived statement or one of her own memories is as
-  surfaceable as a raw memory of Bo's. When the person asks her to remember
-  something, the `remember` tool (`reasoning/memoryTool.js`) writes it to the
-  system bank (`bojan`) — the explicit, in-conversation counterpart to Aion.
-  The tools also read back: `search_memory` opens an **ungated** lookup through
-  the same cross-bank recall client the turn uses, so a phrasing that missed the
-  lexical recall gate is no longer a dead end — she can reach for her memory
-  herself instead of answering "I cannot look that up".
-- **Recall reranks via a remote API, with an RRF fallback.** Hindsight's
-  cross-encoder is pluggable; set to `local`/`flashrank` it scored 300
-  candidates in 10–18 s on the VPS CPU — far past `hindsightClient.js`'s 4 s
-  timeout, so the richest bank (`bojan`) was dropped on every turn (measured
-  live 2026-10-12). It now uses Jina's rerank API (Cohere-compatible:
-  `HINDSIGHT_API_RERANKER_PROVIDER=cohere`,
-  `..._COHERE_BASE_URL=https://api.jina.ai/v1/rerank`, model
-  `jina-reranker-v3.5`) with **`HINDSIGHT_API_RERANKER_1_PROVIDER=rrf`** as a
-  second chain member — a reranker failure (Jina rate-limits: `429`) degrades to
-  RRF order instead of failing the recall, which a bare 429 otherwise does
-  (HTTP 500 for the whole bank). Config lives in Hindsight's own deploy env on
-  the host (`/opt/hindsight/.env`) — **not in git**; the key lives there, file
-  mode 600. After the switch: rerank ~0.3–1.1 s; `bojan` ~1.9 s, `gaia` ~0.7 s,
-  `gaia-logos` ~1.8 s. `enable_reranking` stays `true` per bank. Sanity check on
-  startup: `Reranker: provider=cohere` then `RRF passthrough provider initialized`.
-  The per-call cap is configurable — `HINDSIGHT_TIMEOUT_MS` (default 4000 ms;
-  8000 ms on the VPS) — a safety cap, not a latency target. A failed or
-  timed-out Hindsight call logs a content-free `hindsight.call_failed` line
-  (bank, op, reason `timeout`/`unreachable`, ms) to the container log, so a
-  dropped call is visible instead of silently swallowed by the best-effort
-  recall path.
+  instead — saved conversations only; searching the in-flight one would only
+  duplicate what is already in the prompt verbatim. The turn reaches for it only
+  on a lookup / past-reference signal; clients reach the same seam at
+  `GET /conversations/search`. A past-facing turn also opens Hindsight recall
+  (via `recallRelevantContext`'s `pastReference`), so what she understands and
+  what was actually said are consulted together.
+- **Provenance points back.** Every derived record carries the raw observation ids
+  it was derived from, and `reasoning/evidenceRecall.js` +
+  `reasoning/evidenceAssembler.js` walk them back to the literal Foundation
+  records for the turn they were cited in.
+- **Hindsight is derivable.** Sync is Cognition → Hindsight only;
+  `reasoning/cognitionSync.js` owns the `gaia:*` namespace. The mirror is
+  rebuildable, and `npm run reconcile:hindsight` re-pushes it — **dry-run unless
+  `--apply` is passed** (`--apply --clear` invalidates `gaia:*` first).
+- **Three banks — and per-turn recall does *not* span all three.** Since
+  2026-10-23, measured that day (`server.js`, and the comment there is the
+  argument):
+  - `bojan` — the system-memory bank. The memoryworthiness-gated conversation
+    reflection writes there (the gate lives in `turn.js`), and it is the *only*
+    bank that fills the nine recall lines on an ordinary turn.
+  - `gaia` — Gaia's own bank, hers alone, no gate. Two writers: the background
+    Aion pass (`reasoning/aion.js`, tagged `gaia:aion`) and the on-demand `keep`
+    tool. It joins recall **only when the turn asks about her**.
+  - `gaia-logos` — the derived mirror (`gaia:*`). It takes **no lines of its own**
+    in a turn; it is put back only by setting `HINDSIGHT_RECALL_BANK_IDS`.
+    The *full* three-bank client is what `search_memory` uses: when she looks
+    something up herself, her own notes and the derived knowledge are memory too.
+    So a derived statement is reachable — just not as surfaceable on an ordinary
+    turn as a raw memory of Bo's, deliberately.
+- **Reading back, and taking back, are first-class verbs on both sides.**
+  `search_memory` opens an ungated cross-bank lookup, so a phrasing that missed
+  the lexical recall gate is no longer a dead end. `retract_memory` /
+  `forget_memory` — and `POST /memory/retract` / `POST /memory/forget` for clients
+  — are the person's own way to take something back: retracting judges the
+  statement false, forgetting says only that it should not be recalled.
+- **Recall reranking and the call cap.** `HINDSIGHT_TIMEOUT_MS` caps every
+  Hindsight call (client default 4000 ms, `hindsightClient.js`) — a safety cap,
+  not a latency target. A failed or timed-out call logs a content-free
+  `hindsight.call_failed` line (bank, op, reason `timeout`/`unreachable`, ms)
+  instead of being silently swallowed by the best-effort recall path.
+  *(The reranker chain itself — `HINDSIGHT_API_RERANKER_*`, the Jina/Cohere
+  endpoint, the RRF second chain member, per-bank `enable_reranking` and
+  `enable_auto_consolidation` — lives in Hindsight's own deploy env on the host,
+  not in git, and cannot be verified from this repository.)*
 
 ## Derived lifecycle
 
 ```
-proposed ──▶ testing ──▶ corroborated (machine, C ≥ 0.80) ──▶ confirmed (HUMAN ONLY)
-    │           │                    │
-    └───────────┴────────────────────┴──▶ rejected  ({ verwerp_bron: 'mens' | 'consolidatie' })
+                            ┌──────────── verlopen: machine, no evidence, 14 days ─────────┐
+                            ▼                                                             │
+proposed ──▶ testing ──▶ corroborated ──▶ confirmed (HUMAN ONLY)                          │
+    │           │        (micro + testing + C ≥ 0.80 + no counter-evidence)               │
+    │           │                 │                                                       │
+    └───────────┴─────────────────┴──────────▶ rejected  ({ verwerp_bron: 'mens' | 'consolidatie' })
+                                                                                          │
+    expired is NOT a quarantine: later evidence revives it (expired → testing) ◀───────────┘
 ```
 
-- `corroborated` may inform retrieval/behaviour; it is never presented as settled.
-- Supersession: confirming a newer statement rejects the older contradicting one
-  with `verwerp_bron: 'consolidatie'` and a pointer to the winner.
+- Six statuses, enforced by Cognition's transition table
+  (`services/cognition/src/hypotheses.js`): `proposed`, `testing`,
+  `corroborated`, `confirmed`, `rejected`, `expired`.
+- `verwerp_bron` has **three** values: `mens` (a person dismissed it),
+  `consolidatie` (a newer statement superseded it), `verlopen` (the machine's own
+  lapse reason — kept apart from the other two because nothing was judged).
+- **`corroborated` is the machine tier and it is narrow.** `isSoftPromotable`
+  (`hypothesisManager.js`) requires `scope === 'micro'` (a `macro` claim — the
+  safe default — always waits for the person), `status === 'testing'`, confidence
+  ≥ `softPromoteConfidence` (0.8) and no contradicting evidence. It may inform
+  retrieval and behaviour; it is never presented as settled, and a contradiction
+  demotes a corroborated micro back to `testing` — the same rule a confirmed
+  statement gets.
+- **`expired` is a lapse, not a judgement.** Only an evidence-less `proposed`
+  statement can lapse; nothing is deleted and nothing is quarantined, so evidence
+  arriving later revives it (`expired → testing`, `reasoning/expiryScan.js`).
+- **Supersession** rejects the older contradicting statement with
+  `verwerp_bron: 'consolidatie'` and a `superseded_by_id` pointer to the winner.
+- **Human verbs**, all reachable from the review surface: `test`, `reject`,
+  `reopen` (the only exit from the `rejected` quarantine), `correct` (rewording a
+  settled statement), `answer` (an open question) and `confirm`. `reject` and
+  `reopen` require a stated reason; a `macro` confirmation requires a `rationale`
+  and a quarantined counter-hypothesis.
+
+## Background passes
+
+Loops that change the store with no turn involved, and therefore need their own
+description:
+
+| Pass | File | Default | What it does |
+| --- | --- | --- | --- |
+| Soft-promotion scan | `reasoning/softPromotionScan.js` | on | promotes stranded `micro` hypotheses stuck in `testing` to `corroborated` |
+| Expiry pass | `reasoning/expiryScan.js` | on | lapses evidence-less `proposed` hypotheses after `GAIA_HYPOTHESIS_EXPIRY_DAYS` (14) |
+| Belief formation | `reasoning/beliefFormationScan.js` | on | the ONLY thing that forms a statement from observations — it needs repeated ground (the same `sourceRef` in more than one conversation, or overlapping Hindsight recall ground) |
+| Aion | `reasoning/aion.js` + `aionScheduler.js` | on | when the scheduler says so (every few turns, on a session change, and when a session goes idle), asks Gaia whether anything is hers to keep and writes her answer to her own bank |
+| Logos depth gate | `logos/logos.js` | social filter | a social turn (greeting, thanks, ack, farewell) is shallow and costs nothing; every other turn gets one deep background reflection |
+
+Per-turn hypothesis formation is **off** by default (Optie 2): a claim must rest
+on repeated ground, not on one turn's recall slice.
+`GAIA_HYPOTHESIS_FORMATION=per_turn` restores the old behaviour.
 
 ## Kairos — raw observations into narrative episodes
 
 Chronos (raw clock time) and Kairos (narrative time) are kept apart. The raw
-stream is Foundation's observations; **Kairos** folds a *cluster* of them into
-one narrative episode — a derived statement, never a raw one, so it is always
+stream is Foundation's observations; **Kairos** folds a *cluster* of them into one
+narrative episode — a derived statement, never a raw one, so it is always
 `epistemic_status = 'interpretation'` and always carries `sources` back to its
-observations (`['foundation:<uuid>']`).
+observations (`['foundation:<uuid>']`, `foundationRef.js`).
 
 ```
 Foundation (raw)                    services/gaia-api (Kairos)              Cognition (derived)
@@ -185,51 +292,50 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
 
 - **Deterministic first.** `clusterer.js` groups observations on a >5 min
   inactivity gap, an app switch, or a 30 min cap, spending zero LLM tokens. The
-  trailing, still-open run is never finalized on a poll — it keeps growing into
-  one episode instead of fragmenting.
+  trailing run is *not* finalised while it is still recent — but once it has been
+  quiet longer than the inactivity window (measured against *now*) or hits the
+  30 min cap, it **is** finalised on that poll. A session therefore ends in one
+  closed episode instead of an open one nobody ever closes.
 - **Satellite synthesis.** `synthesizer.js` runs one cheap inference call under
-  the admin-selected **Kairos** role (Logos's "younger sibling"). The model only
-  returns a summary and an app name; the epistemic literals are set in code, and
-  the model cannot name an app the cluster never saw.
+  the admin-selected **Kairos** role (Logos's "younger sibling"). The model
+  returns a **title**, a summary and an app name; the epistemic literals are set
+  in code, and the model cannot name an app the cluster never saw. A messaging
+  app gets a higher fragment cap — the content under the header is the point.
 - **Watermark is burst-safe.** The cursor (`captured_at`) advances only past the
   last cluster that actually completed; a failed cluster stops the batch so its
-  observations are retried, never skipped. Mirrors Foundation's own reflection
-  job.
+  observations are retried, never skipped, and the cursor never moves backwards
+  (`computeSafeWatermark`). The worker clusters on `observed_at` (event time)
+  while Foundation's read seam filters on `captured_at` (ingest time) — for a
+  backfill those diverge (capture-rs ingests a year of events over a few days),
+  which is exactly why the watermark is conservative. A cluster whose episode
+  already exists is skipped (no second model call), so the conservative re-fetch
+  costs nothing.
+- **Only activity observations are clustered.** `source_type ===
+  'system-observation'` (what capture-rs feeds). `chat-import` (Chronicle-Gaia
+  already summarises those) and `document` are filtered out *before* clustering —
+  one owner per job — and a missing or unknown `source_type` is skipped too, never
+  silently kept; the per-source counts are logged. Skipped observations count as
+  done for the watermark, so a chat-only batch still advances.
 - **Cognition only stores.** The worker writes episodes through
   `cognitionClient.createKairosEpisode`; `cognitionSync` mirrors them into
-  Hindsight under `gaia:kairos_episode`. Clients reach episodes **only** through
-  `/kairos/*` on Gaia API — never Cognition or Foundation directly.
+  Hindsight under `gaia:kairos_episode` (versioned) in the `gaia-logos` bank.
+  Clients reach episodes **only** through `/kairos/*` on Gaia API — never
+  Cognition or Foundation directly.
 - **Auditable.** `GET /kairos/episodes/:id/evidence` walks `sources` back to
   Foundation and returns the raw observations an interpretation was built from.
-- Off by default: `GAIA_KAIROS_ENABLED=true` starts the worker.
-- When on, each episode is also mirrored into Hindsight's `gaia-logos` bank
-  (`gaia:kairos_episode`, versioned) so it is recallable. **Auto-consolidation is
-  off for that bank** (`enable_auto_consolidation=false` — a Hindsight bank
-  setting, not in git): the mirror keeps working, but a backfill episode no
-  longer also triggers a consolidation round on top of its retain. Live evidence
-  (2026-10-12, backfill running): Hindsight CPU ~48% → ~32% after the change.
-- **The watermark is `captured_at`-safe.** The worker clusters on `observed_at`
-  (event time) but Foundation's read seam filters on `captured_at` (ingest
-  time); for a backfill those diverge (capture-rs ingests a year of events over
-  a few days). `computeSafeWatermark` may only name a `captured_at` below which
-  every observation is finalized, and never moves backwards — so a mid-run
-  failure can never skip observations. A cluster whose episode already exists is
-  skipped (no second model call), so the conservative re-fetch costs nothing.
-- **Only activity observations are clustered.** Kairos folds
-  `source_type === 'system-observation'` (what capture-rs feeds). `chat-import`
-  (Chronicle-Gaia already summarizes those) and `document` are filtered out
-  *before* clustering — one owner per job. A missing or unknown `source_type` is
-  skipped too, never silently kept, and the per-source counts are logged. The
-  skipped observations count as done for the watermark (a chat-only batch still
-  advances), but chats are re-seen next poll when an open capture-run keeps the
-  watermark back — cheap, and deliberately accepted.
+- Off by default. `GAIA_KAIROS_ENABLED=true` starts the worker, which polls every
+  `GAIA_KAIROS_INTERVAL_MS` (30 s) and finalises at most
+  `GAIA_KAIROS_MAX_CLUSTERS_PER_RUN` (120) clusters per run. Turned on without a
+  Kairos model, reads and the stream still serve whatever already exists.
+  *(The `gaia-logos` bank's `enable_auto_consolidation=false` is a Hindsight bank
+  setting on the host, not in git.)*
 
 ## Eleos — coming back to a moment, unprompted
 
 Kairos builds narrative time; **Eleos** acts in it. When someone says they are
-having a hard time (or names something hard that is happening), Eleos notes it
-as an open loop and — about a day later, outside the conversation — starts a
-**new conversation** to ask how they are doing.
+having a hard time (or names something hard that is happening), Eleos notes it as
+an open loop and — about a day later, outside the conversation — starts a **new
+conversation** to ask how they are doing.
 
 ```
 turn (deferred, never awaited)                later (background tick)
@@ -241,53 +347,133 @@ gate (free, bilingual)  ─ signal ─▶  model     due loop ─▶ politeness 
 
 - **Gate-then-call.** Same shape as Logos: a free lexical gate
   (`reasoning/eleosSignals.js`) must fire before one model call
-  (`reasoning/eleos.js`, role `eleos`; env fallback the reasoning role) is
-  spent. The model returns one grounded loop (a short summary + the person's
-  own quote) or an honest nothing, and can let a resolved loop go.
+  (`reasoning/eleos.js`, role `eleos`; env fallback the reasoning role) is spent.
+  The model returns one grounded loop (a short summary + the person's own quote)
+  or an honest nothing, and can let a resolved loop go. A new moment in the same
+  conversation *updates* the open loop instead of creating a second one.
 - **She speaks first.** The opening is generated by her own voice (the
   `generation` role) with the same constitution-first prompt a turn uses, and
-  written into a NEW conversation (`eleos-<loopId>`) — so the check-in
-  literally is Gaia starting a conversation. The message is grounded only in
-  the loop's summary and quote; nothing is invented.
-- **Never noisy (PRD's proactivity ceiling).** One check-in per rolling 24h; a
-  recent turn defers delivery; quiet hours (default 22:00–08:00) defer unless
-  the person is active then; delays are 20–28h. Off by default:
-  `GAIA_ELEOS=true`.
+  written into a NEW conversation (`eleos-<loopId>`) — so the check-in literally
+  is Gaia starting a conversation. The message is grounded only in the loop's
+  summary and quote; nothing is invented.
+- **Never noisy (the PRD's proactivity ceiling).** One check-in per rolling 24h
+  (`GAIA_ELEOS_MAX_PER_DAY`); a recent turn defers delivery
+  (`GAIA_ELEOS_ACTIVE_MS`); quiet hours (22:00–08:00, local to
+  `GAIA_ELEOS_TIMEZONE`) defer *unless the person is active then*; delays are
+  20–28h, with the model's proposal clamped to those bounds. Off by default;
+  `GAIA_ELEOS=true` enables it.
 - **Delivered like research.** The check-in is an ordinary assistant message in
   the conversation; `GET /eleos/checkins` (Bearer) lists `pending` and
-  `delivered` metadata so a client can open `deliveredConversationId` and ack,
-  surviving a closed window or a reconnect. `conversationStore`'s
-  `/conversations/events` ping fires too.
+  `delivered` metadata (with `deliveredConversationId`) so a client can open the
+  conversation and `POST /eleos/checkins/:id/ack`, surviving a closed window or a
+  reconnect. The conversation-list SSE ping fires too.
+
+## Research reach, web search, open-question reach
+
+Three narrow, explicitly-opted-in ways Gaia reaches outside a turn — deliberately
+different things with deliberately separate switches:
+
+- **Research reach** (`GAIA_RESEARCH_REACH=on`): on a research-with-sources turn
+  Gaia submits a `run` at Hermes naming the `grounded-citations` skill and does
+  **not** wait for it. The turn answers immediately; the findings are polled up
+  later, written into the conversation, and announced on `GET /research/jobs`. A
+  research turn therefore requires a `conversationId` — the findings need a
+  conversation to land in; without one the turn simply answers. A long run
+  checks in in the conversation itself, and a parked run can be answered at
+  `POST /research/jobs/:id/approval`. Off by default.
+- **Web search** (needs `GAIA_WEB_SEARCH_API_KEY`): one HTTP call inside the turn,
+  a handful of results with their URLs, seconds. No agent, no job, no outbox. No
+  key means no tool — so the capability is not claimed at all.
+- **Open-question reach** (`GAIA_OPEN_QUESTION_REACH=on`): the one place Gaia may
+  bring one of her own unanswered questions up herself — at most one per turn, in
+  the conversation the question came from or a new one about the same subject,
+  never more than three times in total, and only once the retry term has passed.
+  Raising changes nothing: the question stays open until the person answers it.
 
 ## Switches
 
-Behaviour that is optional is controlled by environment flags (read in
-`services/gaia-api/src/server.js`):
+Optional behaviour is controlled by environment flags, read through
+`createApp(env = process.env)`; a module that owns a subsystem reads its own flag
+(Kairos reads its own in `src/kairos/runtime.js`). **The idiom is not uniform** —
+some flags are `'true'`, some `'on'`, some disable only on an exact `'false'` —
+so the table states the real semantics per flag.
 
-| Flag | Default | Turns on / off |
-| --- | --- | --- |
-| `GAIA_KAIROS_ENABLED` | off | the Kairos episode worker |
-| `GAIA_ELEOS` | off | Eleos check-ins (`true` to enable) |
-| `GAIA_DESKTOP` | off | the `desktop` capability and its broker (`true` to enable) |
-| `GAIA_RESEARCH_REACH` | off | research jobs at Hermes (`on` to enable) |
-| `GAIA_AION` | on | the Aion pass (`false` to disable) |
-| `GAIA_MEMORY_TOOL` | on | the `remember` tool (`false` to disable) |
-| `GAIA_HYPOTHESIS_PERSISTENCE` | on | writing hypotheses to Cognition (`false` to disable) |
+| Flag | Default | Where read | Turns on / off |
+| --- | --- | --- | --- |
+| `GAIA_KAIROS_ENABLED` | off | `kairos/runtime.js` | the Kairos episode worker (`'true'` enables) |
+| `GAIA_ELEOS` | off | `server.js` | Eleos check-ins (`'true'` enables) |
+| `GAIA_DESKTOP` | off | `server.js` | the `desktop` capability, its broker and `/desktop/*` (`'true'` enables) |
+| `GAIA_RESEARCH_REACH` | off | `server.js` | research jobs at Hermes (only the literal `'on'` enables) |
+| `GAIA_OPEN_QUESTION_REACH` | off | `server.js` | Gaia re-raising her own open question (`'on'` enables) |
+| `GAIA_AION` | on | `server.js` | the Aion pass (`'false'` disables) |
+| `GAIA_MEMORY_TOOL` | on | `server.js` | **all five** memory tools (`'false'` disables); the `/memory/*` routes are independent of it |
+| `GAIA_HYPOTHESIS_PERSISTENCE` | on | `server.js` | the whole derived-knowledge runtime: manager, pattern manager, knowledge adapter, open-question reach and the three scans (`'false'` disables) |
+| `GAIA_HYPOTHESIS_FORMATION` | `'beliefs'` | `server.js` | per-turn hypothesis formation — off unless `'per_turn'` |
+| `GAIA_HYPOTHESIS_SCAN` | on | `softPromotionScan.js` | only the literal `'true'` (or unset) keeps it on |
+| `GAIA_HYPOTHESIS_EXPIRY` | on | `expiryScan.js` | same shape; `GAIA_HYPOTHESIS_EXPIRY_DAYS` = 14 |
+| `GAIA_BELIEF_FORMATION` | on | `beliefFormationScan.js` | same shape; `GAIA_BELIEF_RECALL_GROUND` on unless `'false'` |
+| `GAIA_LOGOS_SOCIAL_GATE` | social filter | `logos/logos.js` | `'off'` restores the legacy depth gate |
+| `GAIA_NATIVE_SUPPORTS_VISION` | `false` | `server.js` | whether image bytes go to the generator or are OCR-described first |
+| `GAIA_WEB_SEARCH_API_KEY` | unset | `webSearchClient.js` | presence gate: no key ⇒ no `web_search` tool and no capability |
+| `HINDSIGHT_RECALL_BANK_IDS` | unset | `server.js` | puts `gaia-logos` back into the passive recall set |
+| `MEMORY_MAX_LINES` | 9 | `server.js` | how many recall lines may reach the prompt |
+| `HINDSIGHT_TIMEOUT_MS` | 4000 | `hindsightClient.js` | the per-Hindsight-call cap, not a latency target |
+| `GAIA_API_TOKEN` | unset | `auth.js` | comma-separated client tokens; **unset means fail closed** |
 
-Models, speech (STT/TTS) and storage paths are configured per role through
-further `GAIA_*` variables and the admin provider settings; they are deployment
-detail and deliberately not listed here.
+Subsystems wired by *presence* rather than a boolean: `GAIA_NATIVE_BASE_URL` /
+`GAIA_NATIVE_MODEL` (no generator ⇒ a calm 503), `GAIA_BACKUP_*` (no failover),
+`FOUNDATION_URL` (no Foundation seam), `COGNITION_URL`, `GAIA_TTS_*` and
+`GAIA_STT_*` (503 when unset), and every provider key (`<PROVIDER>_API_KEY`, plus
+`HOPSCOTCH_KEY`).
 
-## Clients
+Models and storage paths are configured per role through further `GAIA_*`
+variables and the admin provider settings; the full annotated list lives in
+`services/gaia-api/.env.example`.
 
-Clients reach Gaia only through the uniform Gaia API (`services/gaia-api`):
-turns, the file library, chat history, speech, and the **GaiaChat review
-surface** (`/cognition/*`) where the human confirms. `/admin/*` is operator-only
-and never part of any client's contract.
-Clients read live Kairos episodes at `GET /kairos/episodes` and stream them at
-`GET /kairos/episodes/stream` (SSE) — both on Gaia API.
-Clients discover Gaia-initiated check-ins at `GET /eleos/checkins` (poll) and
-read the message itself as an ordinary turn in the new conversation it names.
-Clients search the saved transcripts at `GET /conversations/search?q=`.
-Gaia-Desktop answers confirmation prompts and reports results at
-`POST /desktop/actions/:id/decision` and `/result` (see `desktop-capability.md`).
+## HTTP surface
+
+All client routes require the Bearer token. `/admin` is operator-only and never
+part of a client's contract — but note it shares the *same* Bearer token, and its
+HTML shell (`GET /admin`) is unauthenticated.
+
+| Mount | Routes |
+| --- | --- |
+| inline | `GET /health`, `GET /`, `GET /soul`, `POST /conversation/turn` (JSON or SSE), `GET /speech/info`, `GET /speech/stt-info`, `POST /speech`, `POST /speech/stream`, `POST /speech/transcribe` |
+| `/library` | `POST /files`, `GET /files`, `GET /files/:id`, `DELETE /files/:id` |
+| `/conversations` | `GET /`, `GET /events` (SSE), `GET /search?q=`, `GET /:id`, `GET /:id/export/:format`, `DELETE /:id` |
+| `/cognition` | `GET /hypotheses`, `POST /hypotheses/:id/{test,reject,reopen,correct,answer,confirm}` |
+| `/memory` | `POST /retract`, `POST /forget` |
+| `/kairos` | `GET /episodes`, `GET /episodes/stream` (SSE), `GET /episodes/:id/evidence` |
+| `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
+| `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
+| `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — mounted only when `GAIA_DESKTOP=true` |
+| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, activity logs |
+| `/api` | `GET /version` — **public, no auth** |
+
+Cognition's own service speaks
+`POST|GET|PATCH|DELETE /v1/banks/:bankId/{hypotheses,patterns,episodes,observations}`
+and is unauthenticated, bound to the tailnet — the same posture as Hindsight and
+Foundation. Clients never reach it directly.
+
+## Clients, and what this repo does not contain
+
+Clients reach Gaia only through the uniform Gaia API: turns, the file library,
+chat history, speech, the **GaiaChat review surface** (`/cognition/*`) where the
+human confirms, memory retraction, Kairos episodes (read and stream), Eleos
+check-ins, research jobs and desktop decisions. A client discovers Gaia-initiated
+messages by polling and then reads the message itself as an ordinary turn in the
+conversation it names. *(That Gaia-Web's direct Hermes, Hindsight and Cognition
+routes are retired is a claim about the Gaia-Web repository — external, not
+verifiable here.)*
+
+Not in this repository, and therefore not verifiable here: Gaia-Web, Gaia-Desktop
+(including Desktop Commander), Foundation, Hindsight, and every deployment fact
+(VPS paths such as `/root/gaia`, Tailscale addresses, container names, and the
+Hindsight bank settings). `proxy/` — an nginx front for hermes-agent that injects
+its auth token so clients never hold it — is in this repo but is not part of
+Gaia's own architecture.
+
+Handover to the host: `.github/workflows/deploy.yml` tests both services on every
+push and pull request, then deploys by resetting `/root/gaia` to `origin/main`,
+rebuilding the Cognition stack first (whose external network gaia-api joins),
+applying migrations, and rebuilding gaia-api last.
