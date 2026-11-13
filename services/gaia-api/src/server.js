@@ -1155,10 +1155,13 @@ function createApp(env = process.env) {
   // client can start speaking while the rest of the reply is still being
   // made — the only reason this exists next to POST /speech.
   //
-  // A provider that cannot stream (ElevenLabs, Mistral, Fish Audio) answers
-  // here too, with the whole clip in one write and its own content type:
-  // same request body, same auth, one sound, just no earlier first byte. A
-  // client can therefore always ask this route, whatever voice is behind it.
+  // Every streaming provider (MiMo, Mistral) yields PCM16LE 24 kHz mono, so
+  // the headers below are a property of this route, not of one provider.
+  //
+  // A provider that cannot stream (ElevenLabs, Fish Audio) answers here too,
+  // with the whole clip in one write and its own content type: same request
+  // body, same auth, one sound, just no earlier first byte. A client can
+  // therefore always ask this route, whatever voice is behind it.
   app.post('/speech/stream', auth, async (req, res) => {
     const prepared = prepareSpeech(req.body);
     if (prepared.error) return res.status(prepared.error.status).json({ error: prepared.error.message });

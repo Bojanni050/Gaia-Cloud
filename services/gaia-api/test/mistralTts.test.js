@@ -347,3 +347,139 @@ test('mistralTts.js has no code-level dependency on Hermes, the native generator
     assert.ok(!codeOnly.includes(name), `mistralTts.js must not reference ${name}`);
   }
 });
+
+// --- Streaming --------------------------------------------------------------
+
+/** @param {number[]} samples float32 samples, in [-1, 1] */
+function float32Buffer(samples) {
+  const buffer = Buffer.alloc(samples.length * 4);
+  samples.forEach((sample, index) => buffer.writeFloatLE(sample, index * 4));
+  return buffer;
+}
+
+/** One SSE event line, exactly as Mistral frames it. */
+function sseEvent(payload) {
+  return `data: ${typeof payload === 'string' ? payload : JSON.stringify(payload)}\n\n`;
+}
+
+/** A response whose body is the given SSE text, split into `parts`. */
+function sseResponse(text, parts = 1, extra = {}) {
+  const size = Math.ceil(text.length / parts);
+  const pieces = [];
+  for (let offset = 0; offset < text.length; offset += size) pieces.push(Buffer.from(text.slice(offset, offset + size)));
+  return {
+    ok: true,
+    body: (async function* () { for (const piece of pieces) yield piece; })(),
+    ...extra,
+  };
+}
+
+function mistralClient(fetchImpl, extra = {}) {
+  return createMistralTts({ baseUrl: 'http://test:1234/v1', model: 'voxtral-mini-tts-2603', fetchImpl, ...extra });
+}
+
+async function collect(generator) {
+  const chunks = [];
+  for await (const chunk of generator) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+test('stream() asks for raw streaming pcm and the configured voice', async () => {
+  let seen;
+  const fetchImpl = async (url, init) => {
+    seen = { url, init };
+    return sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }) + sseEvent({ type: 'speech.audio.done', usage: {} }));
+  };
+  await collect(mistralClient(fetchImpl, { voiceId: 'voice-1' }).stream('Hi there'));
+
+  assert.equal(seen.url, 'http://test:1234/v1/audio/speech');
+  assert.equal(seen.init.headers.Authorization, undefined);
+  assert.equal(seen.init.headers.Accept, 'text/event-stream');
+  assert.deepEqual(JSON.parse(seen.init.body), {
+    model: 'voxtral-mini-tts-2603',
+    input: 'Hi there',
+    response_format: 'pcm',
+    stream: true,
+    voice_id: 'voice-1',
+  });
+});
+
+test('stream() converts float32 samples to PCM16LE', async () => {
+  const samples = [0, 0.5, -0.5, 1, -1, 2, -2, Number.NaN];
+  const fetchImpl = async () => sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer(samples).toString('base64') }));
+  const pcm = await collect(mistralClient(fetchImpl).stream('x'));
+
+  assert.equal(pcm.length, samples.length * 2);
+  assert.deepEqual(
+    Array.from({ length: samples.length }, (_, index) => pcm.readInt16LE(index * 2)),
+    [0, 16384, -16383, 32767, -32767, 32767, -32767, 0],
+  );
+});
+
+test('stream() keeps a sample that is split across two events intact', async () => {
+  const raw = float32Buffer([0.25, 0.75]);
+  // Split mid-sample: the first event ends after two bytes of the first float.
+  const first = raw.subarray(0, 2).toString('base64');
+  const second = raw.subarray(2).toString('base64');
+  const fetchImpl = async () => sseResponse(
+    sseEvent({ type: 'speech.audio.delta', audio_data: first }) + sseEvent({ type: 'speech.audio.delta', audio_data: second }),
+  );
+  const pcm = await collect(mistralClient(fetchImpl).stream('x'));
+  assert.equal(pcm.length, 4);
+  assert.equal(pcm.readInt16LE(0), 8192);
+  assert.equal(pcm.readInt16LE(2), 24575);
+});
+
+test('stream() also reads the SDK shape with the payload nested under data', async () => {
+  const fetchImpl = async () => sseResponse(
+    sseEvent({ event: 'speech.audio.delta', data: { audio_data: float32Buffer([-0.25]).toString('base64') } }),
+  );
+  const pcm = await collect(mistralClient(fetchImpl).stream('x'));
+  assert.equal(pcm.readInt16LE(0), -8192);
+});
+
+test('stream() stops at speech.audio.done and skips framing it cannot read', async () => {
+  const fetchImpl = async () => sseResponse(
+    ': keepalive\n\n'
+    + 'data: not json\n\n'
+    + sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') })
+    + sseEvent({ type: 'speech.audio.done', usage: { total_tokens: 1 } })
+    + sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.1]).toString('base64') }),
+    5,
+  );
+  const pcm = await collect(mistralClient(fetchImpl).stream('x'));
+  assert.equal(pcm.length, 2);
+  assert.equal(pcm.readInt16LE(0), 16384);
+});
+
+test('stream() answers a provider error as one calm message', async () => {
+  const fetchImpl = async () => sseResponse(sseEvent({ type: 'speech.audio.delta', error: { message: 'quota for org-123' } }));
+  await assert.rejects(() => collect(mistralClient(fetchImpl).stream('x')), (err) => {
+    assert.match(err.message, /speech synthesis responded with an error/);
+    assert.ok(!err.message.includes('quota'));
+    return true;
+  });
+});
+
+test('stream() is calm about an HTTP failure, an empty stream and a missing body', async () => {
+  await assert.rejects(() => collect(mistralClient(async () => ({ ok: false, status: 429 })).stream('x')), /speech synthesis responded with an error/);
+  await assert.rejects(() => collect(mistralClient(async () => sseResponse(sseEvent({ type: 'speech.audio.done' }))).stream('x')), /speech synthesis returned no audio/);
+  await assert.rejects(() => collect(mistralClient(async () => ({ ok: true, body: null })).stream('x')), /speech synthesis returned no audio/);
+});
+
+test('stream() reports an abort as cancelled, not as an outage', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const fetchImpl = async () => {
+    const error = new Error('aborted');
+    throw error;
+  };
+  await assert.rejects(() => collect(mistralClient(fetchImpl).stream('x', { signal: controller.signal })), /speech synthesis was cancelled/);
+});
+
+test('stream() advertises the PCM shape server.js announces to the desktop', () => {
+  const { STREAM_FORMAT, STREAM_SAMPLE_RATE, STREAM_CHANNELS } = require('../src/speech/mistralTts');
+  assert.equal(STREAM_FORMAT, 'pcm16');
+  assert.equal(STREAM_SAMPLE_RATE, 24000);
+  assert.equal(STREAM_CHANNELS, 1);
+});

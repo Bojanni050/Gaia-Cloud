@@ -1,5 +1,7 @@
 'use strict';
 
+const { sseData, parseStreamPayload } = require('./sse');
+
 /**
  * Gaia's voice channel — text-to-speech via Xiaomi's MiMo TTS
  * (mimo-v2.5-tts-voicedesign), an OpenAI-compatible `/chat/completions`
@@ -412,49 +414,6 @@ function createMimoTts(options = {}) {
   }
 
   return { synthesize, stream, voice };
-}
-
-/**
- * Reads server-sent events out of a response body (a web `ReadableStream`,
- * or anything else async-iterable over byte/string chunks) and yields each
- * `data:` payload. Everything else — blank keep-alive lines, comments,
- * other event fields — is framing, not audio, and is skipped. A final line
- * without a trailing newline still counts.
- *
- * @param {AsyncIterable<Uint8Array|string>} body
- * @returns {AsyncGenerator<string, void, void>}
- */
-async function* sseData(body) {
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for await (const part of body) {
-    buffer += typeof part === 'string' ? part : decoder.decode(part, { stream: true });
-    let newline;
-    while ((newline = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, newline).replace(/\r$/, '');
-      buffer = buffer.slice(newline + 1);
-      if (line.startsWith('data:')) yield line.slice(5).trim();
-    }
-  }
-  const tail = buffer.replace(/\r$/, '').trim();
-  if (tail.startsWith('data:')) yield tail.slice(5).trim();
-}
-
-/**
- * One streamed chunk's JSON. `[DONE]` (OpenAI's end marker) and anything
- * that will not parse — a provider's keep-alive or a half-written line —
- * are not audio and yield nothing rather than breaking the reply.
- * @param {string} payload
- * @returns {object|null}
- */
-function parseStreamPayload(payload) {
-  if (!payload || payload === '[DONE]') return null;
-  try {
-    const event = JSON.parse(payload);
-    return event && typeof event === 'object' ? event : null;
-  } catch (_) {
-    return null;
-  }
 }
 
 /**

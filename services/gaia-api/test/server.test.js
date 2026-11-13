@@ -794,29 +794,24 @@ test('POST /speech/stream maps a provider failure to a calm 502 while nothing ha
 });
 
 test('POST /speech/stream answers with the whole clip for a provider that cannot stream', async () => {
-  await withMockedFetch(
-    mockMistralTtsFetch(),
-    async (originalFetch) => {
-      const storePath = writeTtsProviderConfig({
-        provider: 'mistral',
-        baseUrl: TTS_BASE,
-        apiKey: 'mistral-key',
-        model: 'voxtral-mini-tts-2603',
-        voiceId: 'gaia-voice-1',
-      });
-      const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
-      await withServer(app, async (port) => {
-        const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
-        const buf = Buffer.from(await res.arrayBuffer());
+  const storePath = writeTtsProviderConfig({ provider: 'fishaudio', baseUrl: '', apiKey: 'fish-key', model: 's2.1-pro', voiceId: 'fish-voice' });
+  const fake = async () => {
+    const bytes = Buffer.from('ID3-fake-mp3-bytes');
+    return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length) };
+  };
+  await withMockedFetch(fake, async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech/stream`, streamRequest(port, { text: 'hi' }));
+      const buf = Buffer.from(await res.arrayBuffer());
 
-        // Same route, same request, one write — a client never has to know
-        // which voice is behind it.
-        assert.equal(res.status, 200);
-        assert.equal(res.headers.get('content-type'), 'audio/mpeg');
-        assert.equal(buf.toString(), 'ID3-fake-mp3-bytes');
-      });
-    }
-  );
+      // Same route, same request, one write — a client never has to know
+      // which voice is behind it.
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+      assert.equal(buf.toString(), 'ID3-fake-mp3-bytes');
+    });
+  });
 });
 
 test('POST /speech/stream records the attempt, the first byte and the size in the voice-activity log', async () => {
