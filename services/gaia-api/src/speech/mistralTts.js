@@ -48,6 +48,14 @@
  * whole reason it exists — a long reply used to be one request that only
  * came back after a minute of silence, and the level of that one long clip
  * drifted; chunk by chunk it starts in under a second.
+ *
+ * Streaming alone did not cure the drift: the same 36 s reply measured
+ * −6.8 dB from start to end as a stream, against −16.6 dB as one clip.
+ * `stream()` therefore asks for one *segment* at a time (a couple of
+ * sentences; see `splitForSynthesis`), because a short request starts at
+ * full level again — each segment drifts only −1 to −2 dB, which is not
+ * heard as a fade. The segments are yielded back to back, so the reply
+ * sounds like one continuous voice.
  */
 
 const { sseData, parseStreamPayload } = require('./sse');
@@ -269,9 +277,67 @@ function createMistralTts(options = {}) {
   }
 
   /**
+   * One provider request for one segment, yielded as it arrives. No ceiling
+   * of its own: the caller owns the signal that covers the whole reply.
+   */
+  async function* streamSegment(segment, signal) {
+    const body = {
+      model,
+      input: segment,
+      response_format: 'pcm',
+      stream: true,
+    };
+    const effectiveVoiceId = defaultVoiceId;
+    if (effectiveVoiceId) body.voice_id = effectiveVoiceId;
+
+    const response = await openStream(body, signal);
+
+    // Float32 fragments are cut wherever the provider cuts them, so a
+    // sample may straddle two events; the converter carries the leftover
+    // bytes into the next chunk instead of dropping half a sample.
+    const pcm = createPcmFloat32ToS16();
+    try {
+      for await (const payload of sseData(response.body)) {
+        const event = parseStreamPayload(payload);
+        if (!event) continue;
+        if (event.type === 'speech.audio.done') break;
+        if (event.error) {
+          console.error(`[gaia:tts] stream error at ${baseUrl}: ${JSON.stringify(event.error).slice(0, 200)}`);
+          throw new Error('speech synthesis responded with an error');
+        }
+        // The documented shape is a flat event ({ type, audio_data });
+        // the SDK's streamed form nests it under `data`. Accept both —
+        // the cost of being wrong either way is silence.
+        const encoded = typeof event.audio_data === 'string'
+          ? event.audio_data
+          : event.data && typeof event.data.audio_data === 'string' ? event.data.audio_data : undefined;
+        if (!encoded) continue;
+        const chunk = pcm.push(Buffer.from(encoded, 'base64'));
+        if (chunk.length === 0) continue;
+        yield chunk;
+      }
+    } catch (error) {
+      // A calm error already says why; anything else is the transport
+      // breaking under a reply that may already be playing elsewhere.
+      if (error && typeof error.message === 'string' && error.message.startsWith('speech synthesis')) throw error;
+      console.error(`[gaia:tts] stream broke at ${baseUrl}: ${error && error.message}`);
+      throw new Error(signal && signal.aborted ? 'speech synthesis was cancelled' : 'speech synthesis was interrupted');
+    }
+  }
+
+  /**
    * Streams speech for `text`: an async generator of raw PCM16LE chunks at
    * 24 kHz mono (`STREAM_SAMPLE_RATE`/`STREAM_CHANNELS`) in the order they
    * arrive, so a caller can start speaking before the reply is finished.
+   *
+   * `text` is spoken in segments rather than as one provider request: within
+   * a single long synthesis the voice loses level as it goes — measured
+   * against the live account at −16.6 dB over a 36 s clip, and still −6.8 dB
+   * when that same clip is streamed. Each shorter request starts at full
+   * level again, so a reply assembled from sentence-sized segments stays
+   * even (each one drifts only −1 to −2 dB, which is not audible as a fade).
+   * The segments are concatenated in order, which is why a caller cannot
+   * hear where one request ends and the next begins.
    *
    * The same calm-error posture as `synthesize()`: every failure surfaces
    * as one generic message, with the provider, its URL and any key kept in
@@ -283,18 +349,9 @@ function createMistralTts(options = {}) {
    * @returns {AsyncGenerator<Buffer, void, void>}
    */
   async function* stream(text, { signal } = {}) {
-    const body = {
-      model,
-      input: text,
-      response_format: 'pcm',
-      stream: true,
-    };
-    const effectiveVoiceId = defaultVoiceId;
-    if (effectiveVoiceId) body.voice_id = effectiveVoiceId;
-
-    // The caller's signal and the timeout cover the *whole* stream, not just
-    // the request: a listener that goes away mid-reply must stop the
-    // provider from synthesizing the rest of a sentence nobody will hear.
+    // The caller's signal and the timeout cover the *whole* reply, not just
+    // one request: a listener that goes away mid-reply must stop the
+    // provider from synthesizing the sentences nobody will hear.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), streamTimeoutMs);
     const relay = () => controller.abort();
@@ -304,42 +361,13 @@ function createMistralTts(options = {}) {
     }
 
     try {
-      const response = await openStream(body, controller.signal);
-
-      // Float32 fragments are cut wherever the provider cuts them, so a
-      // sample may straddle two events; the converter carries the leftover
-      // bytes into the next chunk instead of dropping half a sample.
-      const pcm = createPcmFloat32ToS16();
       let yielded = false;
-      try {
-        for await (const payload of sseData(response.body)) {
-          const event = parseStreamPayload(payload);
-          if (!event) continue;
-          if (event.type === 'speech.audio.done') break;
-          if (event.error) {
-            console.error(`[gaia:tts] stream error at ${baseUrl}: ${JSON.stringify(event.error).slice(0, 200)}`);
-            throw new Error('speech synthesis responded with an error');
-          }
-          // The documented shape is a flat event ({ type, audio_data });
-          // the SDK's streamed form nests it under `data`. Accept both —
-          // the cost of being wrong either way is silence.
-          const encoded = typeof event.audio_data === 'string'
-            ? event.audio_data
-            : event.data && typeof event.data.audio_data === 'string' ? event.data.audio_data : undefined;
-          if (!encoded) continue;
-          const chunk = pcm.push(Buffer.from(encoded, 'base64'));
-          if (chunk.length === 0) continue;
+      for (const segment of splitForSynthesis(text)) {
+        for await (const chunk of streamSegment(segment, controller.signal)) {
           yielded = true;
           yield chunk;
         }
-      } catch (error) {
-        // A calm error already says why; anything else is the transport
-        // breaking under a reply that may already be playing elsewhere.
-        if (error && typeof error.message === 'string' && error.message.startsWith('speech synthesis')) throw error;
-        console.error(`[gaia:tts] stream broke at ${baseUrl}: ${error && error.message}`);
-        throw new Error(controller.signal.aborted ? 'speech synthesis was cancelled' : 'speech synthesis was interrupted');
       }
-
       if (!yielded) {
         console.error(`[gaia:tts] stream carried no audio at ${baseUrl}`);
         throw new Error('speech synthesis returned no audio');
@@ -351,6 +379,142 @@ function createMistralTts(options = {}) {
   }
 
   return { synthesize, stream };
+}
+
+/**
+ * How long one provider request may speak: sentence-sized, a few to a dozen
+ * seconds of audio. Pasting two sentences together keeps the round trips down
+ * without giving the level drift time to become audible.
+ */
+const SEGMENT_MAX_CHARS = 240;
+const SEGMENT_MAX_SENTENCES = 2;
+
+/**
+ * Where one sentence ends. Terminators are only `.` `!` `?` and `…` followed by
+ * whitespace or the end of the text, with guards for what merely looks like
+ * one: decimals and version numbers (`3.14`, `v2.0`), initials and known
+ * abbreviations (`J. Smith`, `Dr.`, `bijv.`), and numbered list markers
+ * (`1. First`).
+ */
+const SENTENCE_END = /[.!?…]+["'”’»)\]*_`]*(?=\s|$)/gu;
+
+const ABBREVIATIONS = new Set([
+  'bijv', 'bijz', 'bv', 'ca', 'dhr', 'dr', 'ds', 'e.g', 'enz', 'etc', 'i.e',
+  'jr', 'mevr', 'mr', 'nr', 'prof', 'sr', 'st', 'vs', 'zgn',
+]);
+
+// A chain of single letters with dots: `U.S`, `J.R.R`.
+const INITIALISM = /^(?:\p{L}\.)+\p{L}?$/u;
+
+/**
+ * Whether the terminator starting at `index` really ends a sentence.
+ * `text` is the whole string; `index` points at the first `.`/`!`/`?`/`…`.
+ */
+function endsSentence(text, index) {
+  const before = text.slice(0, index);
+  const word = before.match(/(\p{L}[\p{L}.]*|\d+)$/u);
+  if (!word) return true;
+  const token = word[1];
+  // A single letter is an initial: "J. Smith", not the end of a sentence.
+  if (/^\p{L}$/u.test(token)) return false;
+  // A number directly after the start of a line is a list marker ("1. Eerst"),
+  // while a year or count inside a sentence ("in 2020.") is a real ending.
+  if (/^\d+$/u.test(token)) {
+    const lineStart = before.lastIndexOf('\n') + 1;
+    return !/^\s*$/u.test(before.slice(lineStart, before.length - token.length));
+  }
+  return !(ABBREVIATIONS.has(token.toLowerCase()) || INITIALISM.test(token));
+}
+
+/** The sentences of `text`, in order, each with its closing punctuation. */
+function sentences(text) {
+  const value = String(text ?? '').trim();
+  if (!value) return [];
+  const pattern = new RegExp(SENTENCE_END.source, 'gu');
+  const found = [];
+  let start = 0;
+  let match;
+  while ((match = pattern.exec(value)) !== null) {
+    if (!endsSentence(value, match.index)) continue;
+    const end = match.index + match[0].length;
+    const sentence = value.slice(start, end).trim();
+    if (sentence) found.push(sentence);
+    start = end;
+  }
+  const rest = value.slice(start).trim();
+  if (rest) found.push(rest);
+  return found;
+}
+
+/** Greedy packing of `parts` into pieces of at most `SEGMENT_MAX_CHARS`. */
+function packParts(parts) {
+  const out = [];
+  let current = '';
+  for (const part of parts) {
+    if (current && current.length + 1 + part.length > SEGMENT_MAX_CHARS) {
+      out.push(current);
+      current = '';
+    }
+    current = current ? `${current} ${part}` : part;
+  }
+  if (current) out.push(current);
+  return out;
+}
+
+/**
+ * A sentence that is longer than one request may speak, cut where a speaker
+ * would breathe (a comma, semicolon, colon or dash) and otherwise between
+ * words. Nothing is dropped: the pieces keep their own punctuation.
+ */
+function splitLongSentence(sentence) {
+  if (sentence.length <= SEGMENT_MAX_CHARS) return [sentence];
+  const out = [];
+  for (const clause of sentence.split(/(?<=[,;:—–])\s+/u)) {
+    if (clause.length <= SEGMENT_MAX_CHARS) {
+      out.push(clause);
+      continue;
+    }
+    const words = clause.split(/\s+/u);
+    let current = '';
+    for (const word of words) {
+      if (current && current.length + 1 + word.length > SEGMENT_MAX_CHARS) {
+        out.push(current);
+        current = '';
+      }
+      current = current ? `${current} ${word}` : word;
+    }
+    if (current) out.push(current);
+  }
+  return packParts(out);
+}
+
+/**
+ * The pieces `stream()` asks the provider for, in speaking order: a couple of
+ * sentences each, never longer than `SEGMENT_MAX_CHARS`, so no single request
+ * runs long enough for its level to sink audibly.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function splitForSynthesis(text) {
+  const segments = [];
+  let current = '';
+  let count = 0;
+  const flush = () => {
+    if (current) segments.push(current);
+    current = '';
+    count = 0;
+  };
+  for (const sentence of sentences(text)) {
+    for (const piece of splitLongSentence(sentence)) {
+      const tooLong = current.length + 1 + piece.length > SEGMENT_MAX_CHARS;
+      if (count > 0 && (count >= SEGMENT_MAX_SENTENCES || tooLong)) flush();
+      current = current ? `${current} ${piece}` : piece;
+      count += 1;
+    }
+  }
+  flush();
+  return segments;
 }
 
 /**
@@ -490,6 +654,7 @@ module.exports = {
   createFromEnv,
   normalizeFormat,
   mimeTypeFor,
+  splitForSynthesis,
   LANGUAGES,
   STREAM_FORMAT,
   STREAM_SAMPLE_RATE,
