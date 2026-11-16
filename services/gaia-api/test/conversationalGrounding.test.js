@@ -1,19 +1,27 @@
 'use strict';
 
 /**
- * Regression tests for the architectural fix documented in
- * docs/architecture-conversational-guidance.md and
- * CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md.
+ * Regression tests for the conversational-grounding incident (2026-09-02).
  *
- * The incident: a hardcoded "good example" narrative (Thijs, his parents,
- * a parrot, Ireland) baked into logos/conversationalOpportunity.js's
- * "quality bar" leaked into the live system prompt on every turn, and the
- * model echoed it as if it were a fact about the current user when someone
- * merely mentioned an unfamiliar name ("Anton heeft van zich laten horen.").
+ * The incident: a hardcoded "good example" narrative (Thijs, his parents, a
+ * parrot, Ireland) sat in the "quality bar" of
+ * logos/conversationalOpportunity.js. renderQualityBarLines() fed it into the
+ * system messages on every turn — below SOUL, where its principles do not reach
+ * — and the model echoed it as a fact about the current user when someone merely
+ * mentioned an unfamiliar name ("Anton heeft van zich laten horen.").
+ *
+ * The rule that came out of it, and that this file guards: never put a concrete
+ * personal example in a prompt. An example with names is read as guidance and
+ * comes back as an assertion. SOUL's "Factual Grounding & Relational Context"
+ * section carries the behavioural half of that rule; this is the architectural
+ * half, and it is why the fix removed the mechanism instead of narrowing it.
  *
  * The fix does not add a narrower rule to avoid that one name — it removes
  * the whole per-turn conversational classification + example-injection
  * system (logos/conversationalOpportunity.js, logos/conversationalState.js).
+ * (The point-in-time report that recorded this was removed on 2026-11-16 once
+ * the files it described were gone; the reasoning lives here and in
+ * walkthrough2.md.)
  * Conversational tone, empathy, and follow-up judgment are left to the LLM,
  * guided only by SOUL's existing "Factual Grounding & Relational Context"
  * section (identity/soul.md) — which already says, in the model's own
