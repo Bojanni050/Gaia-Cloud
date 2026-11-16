@@ -51,11 +51,19 @@
  *
  * Streaming alone did not cure the drift: the same 36 s reply measured
  * −6.8 dB from start to end as a stream, against −16.6 dB as one clip.
- * `stream()` therefore asks for one *segment* at a time (a couple of
- * sentences; see `splitForSynthesis`), because a short request starts at
- * full level again — each segment drifts only −1 to −2 dB, which is not
- * heard as a fade. The segments are yielded back to back, so the reply
- * sounds like one continuous voice.
+ * `stream()` therefore asks for one *paragraph* at a time (see
+ * `splitForSynthesis`), because a fresh request starts at full level again.
+ * A first attempt cut the text per two sentences; the level was flat but the
+ * reply hiccupped and its sentences ran into each other, because every seam
+ * is a place where the voice starts over and where no pause was ever put.
+ * Paragraphs are the boundaries a speaker pauses at anyway, so a reply of a
+ * paragraph or two — nearly all of them — is still one request, and where two
+ * requests do meet, a short silence stands in for the breath.
+ *
+ * Measured against the provider directly (one request per text): 1.9 s of
+ * audio drifts 0 dB, 8 s and 16 s show no downward trend at all. The fade is
+ * a property of long requests only (36 s and up), which is where the split
+ * earns its keep.
  */
 
 const { sseData, parseStreamPayload } = require('./sse');
@@ -362,8 +370,13 @@ function createMistralTts(options = {}) {
 
     try {
       let yielded = false;
-      for (const segment of splitForSynthesis(text)) {
-        for await (const chunk of streamSegment(segment, controller.signal)) {
+      const segments = splitForSynthesis(text);
+      for (let index = 0; index < segments.length; index += 1) {
+        // The provider starts a request immediately where its text starts, so
+        // without this the next paragraph lands on the previous one's last
+        // syllable. A paragraph break deserves the pause a speaker takes.
+        if (index > 0) yield segmentGap();
+        for await (const chunk of streamSegment(segments[index], controller.signal)) {
           yielded = true;
           yield chunk;
         }
@@ -382,12 +395,24 @@ function createMistralTts(options = {}) {
 }
 
 /**
- * How long one provider request may speak: sentence-sized, a few to a dozen
- * seconds of audio. Pasting two sentences together keeps the round trips down
- * without giving the level drift time to become audible.
+ * The longest text one provider request may speak: a long paragraph, roughly
+ * twelve seconds of audio. Anything longer is cut, because one long request is
+ * exactly where the level sinks; anything shorter is left whole, because every
+ * extra request is a seam.
  */
-const SEGMENT_MAX_CHARS = 240;
-const SEGMENT_MAX_SENTENCES = 2;
+const SEGMENT_MAX_CHARS = 600;
+
+/**
+ * Silence where two requests meet, in milliseconds. A single synthesis put a
+ * breath at a paragraph break; two requests back to back do not, so this is
+ * that breath — short enough not to sound like a pause for thought.
+ */
+const SEGMENT_GAP_MS = 400;
+
+/** The silence above, as PCM16LE mono — two bytes a sample. */
+function segmentGap() {
+  return Buffer.alloc(Math.round((STREAM_SAMPLE_RATE * SEGMENT_GAP_MS) / 1000) * 2);
+}
 
 /**
  * Where one sentence ends. Terminators are only `.` `!` `?` and `…` followed by
@@ -489,31 +514,45 @@ function splitLongSentence(sentence) {
 }
 
 /**
- * The pieces `stream()` asks the provider for, in speaking order: a couple of
- * sentences each, never longer than `SEGMENT_MAX_CHARS`, so no single request
- * runs long enough for its level to sink audibly.
+ * The paragraphs of `text`, whitespace normalised. A blank line is the only
+ * break a reader hears as a pause; a single newline is a line wrap in a list
+ * or a quote and speaks on.
+ */
+function paragraphs(text) {
+  return String(text ?? '')
+    .split(/\n\s*\n+/u)
+    .map((paragraph) => paragraph.replace(/\s+/gu, ' ').trim())
+    .filter(Boolean);
+}
+
+/**
+ * The pieces `stream()` asks the provider for, in speaking order: one per
+ * paragraph, and only a paragraph longer than `SEGMENT_MAX_CHARS` is cut
+ * further (at its sentence ends), so no single request runs long enough for
+ * its level to sink audibly.
  *
  * @param {string} text
  * @returns {string[]}
  */
 function splitForSynthesis(text) {
   const segments = [];
-  let current = '';
-  let count = 0;
-  const flush = () => {
-    if (current) segments.push(current);
-    current = '';
-    count = 0;
-  };
-  for (const sentence of sentences(text)) {
-    for (const piece of splitLongSentence(sentence)) {
-      const tooLong = current.length + 1 + piece.length > SEGMENT_MAX_CHARS;
-      if (count > 0 && (count >= SEGMENT_MAX_SENTENCES || tooLong)) flush();
-      current = current ? `${current} ${piece}` : piece;
-      count += 1;
+  for (const paragraph of paragraphs(text)) {
+    if (paragraph.length <= SEGMENT_MAX_CHARS) {
+      segments.push(paragraph);
+      continue;
     }
+    let current = '';
+    for (const sentence of sentences(paragraph)) {
+      for (const piece of splitLongSentence(sentence)) {
+        if (current && current.length + 1 + piece.length > SEGMENT_MAX_CHARS) {
+          segments.push(current);
+          current = '';
+        }
+        current = current ? `${current} ${piece}` : piece;
+      }
+    }
+    if (current) segments.push(current);
   }
-  flush();
   return segments;
 }
 

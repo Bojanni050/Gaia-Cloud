@@ -484,43 +484,49 @@ test('stream() advertises the PCM shape server.js announces to the desktop', () 
   assert.equal(STREAM_CHANNELS, 1);
 });
 
-// --- Segmenting: one provider request per couple of sentences ----------------
+// --- Segmenting: one provider request per paragraph --------------------------
 
 const { splitForSynthesis } = require('../src/speech/mistralTts');
 
-test('splitForSynthesis keeps a short reply in one request', () => {
+test('splitForSynthesis keeps a reply in one request as long as it is one paragraph', () => {
   assert.deepEqual(splitForSynthesis('Hi there'), ['Hi there']);
   assert.deepEqual(
-    splitForSynthesis('The wind turned west. The rain came early.'),
-    ['The wind turned west. The rain came early.'],
+    splitForSynthesis('The wind turned west. The rain came early. Nobody minded.'),
+    ['The wind turned west. The rain came early. Nobody minded.'],
   );
 });
 
-test('splitForSynthesis asks for a couple of sentences per request', () => {
+test('splitForSynthesis asks once per paragraph', () => {
   const text = [
-    'One sentence goes here.',
-    'Two follows it.',
-    'Three comes next.',
-    'Four closes the answer.',
-  ].join(' ');
+    'One sentence goes here. Two follows it.',
+    '',
+    'Three comes next. Four closes the answer.',
+  ].join('\n');
   assert.deepEqual(splitForSynthesis(text), [
     'One sentence goes here. Two follows it.',
     'Three comes next. Four closes the answer.',
   ]);
 });
 
+test('splitForSynthesis treats a single newline as a wrap, not a pause', () => {
+  const text = 'The first line\ncontinues on the second\nand ends here.';
+  assert.deepEqual(splitForSynthesis(text), ['The first line continues on the second and ends here.']);
+});
+
 test('splitForSynthesis does not cut at an abbreviation, an initial or a decimal', () => {
-  assert.deepEqual(
-    splitForSynthesis('Dr. J. Smith arrived at 3.14 sharp. He stayed.'),
-    ['Dr. J. Smith arrived at 3.14 sharp. He stayed.'],
+  const filler = 'Filler words go here. '.repeat(30);
+  const segments = splitForSynthesis(`${filler}Dr. J. Smith arrived at 3.14 sharp. He stayed.`);
+  assert.ok(
+    segments.some((segment) => segment.includes('Dr. J. Smith arrived at 3.14 sharp. He stayed.')),
+    'the guarded sentence survives whole',
   );
 });
 
-test('splitForSynthesis keeps every request under the character ceiling', () => {
+test('splitForSynthesis cuts a paragraph that is too long for one request', () => {
   const long = `${'a word that goes on '.repeat(40)}and ends here.`;
   const segments = splitForSynthesis(long);
-  assert.ok(segments.length > 1, 'a sentence that long must be cut');
-  for (const segment of segments) assert.ok(segment.length <= 240, `too long: ${segment.length}`);
+  assert.ok(segments.length > 1, 'a paragraph that long must be cut');
+  for (const segment of segments) assert.ok(segment.length <= 600, `too long: ${segment.length}`);
   assert.ok(segments.join(' ').includes('and ends here.'), 'nothing is dropped');
 });
 
@@ -528,20 +534,25 @@ test('splitForSynthesis is empty for empty text', () => {
   assert.deepEqual(splitForSynthesis('   '), []);
 });
 
-test('stream() asks the provider once per segment, in order', async () => {
+test('stream() asks the provider once per paragraph, in order, with a breath between', async () => {
   const asked = [];
   const fetchImpl = async (url, init) => {
     asked.push(JSON.parse(init.body).input);
     return sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }));
   };
-  const text = 'First sentence here. Second one follows. Third one ends it.';
+  const text = 'First paragraph here.\n\nSecond paragraph ends it.';
   const pcm = await collect(mistralClient(fetchImpl).stream(text));
 
-  assert.deepEqual(asked, [
-    'First sentence here. Second one follows.',
-    'Third one ends it.',
-  ]);
-  assert.equal(pcm.length, 4, 'both segments arrive, back to back');
+  assert.deepEqual(asked, ['First paragraph here.', 'Second paragraph ends it.']);
+  // Two samples of audio, the 400 ms breath between them, and nothing after.
+  assert.equal(pcm.length, 2 + 19_200 + 2);
+  assert.ok(pcm.subarray(2, 2 + 19_200).every((byte) => byte === 0), 'the gap is silence');
+});
+
+test('stream() puts no silence after the last paragraph', async () => {
+  const fetchImpl = async () => sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }));
+  const pcm = await collect(mistralClient(fetchImpl).stream('Only one paragraph. Nothing else.'));
+  assert.equal(pcm.length, 2);
 });
 
 test('stream() still answers a reply that produced nothing at all', async () => {
