@@ -50,10 +50,8 @@ Two kinds of document are deliberately **not** here: the dated log (`walkthrough
 `walkthrough2.md`) lives in the repository root, and the client-side documents live in the
 client repositories (`gaia-desktop`, `gaia-web`).
 
-## Loose ends in the root
-
-`AGENTS.md` is the agent-facing entry and is maintained. Two files are leftovers from August
-and September that belong to nothing current: `test_result.md` (a testing protocol for a
-two-agent setup that no longer exists, 2026-08-06) and
-`CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md` (2026-09-02). Removing them is Bo's decision, not a
-side effect of this index.
+In the root itself: `README.md`, `AGENTS.md` (the agent entry) and the two walkthrough
+volumes. Nothing loose — the two leftovers from August and September (`test_result.md`, a
+testing protocol for a two-agent setup that no longer exists, and
+`CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md`) were removed on 2026-11-16, with the one lesson
+in them rescued into the test that guards it.
