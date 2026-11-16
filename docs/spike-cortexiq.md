@@ -37,10 +37,11 @@ Voor Gaia moet de recall dus altijd `namespaces: [...]` gebruiken, en nooit de e
 
 ## 3. Wat `remember` accepteert — en wat het laat vallen
 
-Geaccepteerd en bewaard: `content`, `namespace`, `tags`, `occurred_at`.
+Geaccepteerd en bewaard: `content`, `namespace`, `tags`, `occurred_at`, `external_key`, `external_refs`, `importance`.
 
-- **`metadata` wordt stil weggegooid.** Ik schreef `{gaia_kairos_episode_id, gaia_kairos_episode_primary_app, sources}` mee; het kwam terug als `{}`. De koppeling met Cognition moet dus in Cognitions eigen kolommen blijven (daar staat hij al) of in tags worden gecodeerd.
-- **Geen dedupe.** Dezelfde payload twee keer versturen geeft twee rijen (986 en 987). Een spiegel die bij elke update opnieuw schrijft, loopt daarmee vol — precies de drift die we in `gaia-logos` vonden. Idempotentie moet van de schrijver komen.
+- **`external_key` geeft echte idempotentie.** Twee keer schrijven met dezelfde sleutel en dezelfde inhoud geeft de tweede keer `{"id":988,"message":"Memory already up to date","unchanged":true}` — zelfde rij, geen duplicaat. Andere inhoud onder een bestaande sleutel wordt geweigerd, tenzij `supersedes: true`, en dan wordt de oude rij met de nieuwe verbonden en sluiten de facts die alleen daarop rustten. Dat is precies de seam die een spiegel nodig heeft: `external_key = gaia:kairos:<episode_id>`.
+- **`external_refs` overleeft en komt terug.** `["commit:9243fbe","foundation:abc-123"]` kwam letterlijk terug bij recall; facts die eruit volgen erven de refs. Let op: de REST-API wil een **array**, de MCP-tool een kommagescheiden string — een string naar REST geeft `cannot unmarshal string into Go struct field .external_refs of type []string`.
+- **`metadata` wordt stil weggegooid.** Vrije metadata (`{gaia_kairos_episode_primary_app, sources}`) kwam terug als `{}`; gebruik daarvoor `external_refs` of een tag. Zonder `external_key` dedupliceert CortexIQ niet: dezelfde payload twee keer gaf twee rijen (986 en 987).
 
 ## 4. Consolidatie is snel, en dun
 
@@ -69,7 +70,7 @@ Beide zijn dus matig, om verschillende redenen. CortexIQ's probleem is presentat
 
 De tijdas alleen al rechtvaardigt de overstap: Hindsight kan een datum niet selecteren, en elke terugkijk-vraag heeft dat nodig. Verder is de API klein en voorspelbaar, de latency gelijkwaardig, en is de consolidatie instelbaar in plaats van een zwarte doos.
 
-Twee dingen om vooraf te regelen: **koppeling** (metadata overleeft `remember` niet, dus Cognition blijft de bron van id's en sources) en **idempotentie** (geen dedupe, dus de spiegel moet zelf bijhouden wat hij al schreef).
+Twee dingen om vooraf te regelen: **koppeling** (vrije `metadata` overleeft `remember` niet, dus de episode-id en de Foundation-refs gaan in `external_key` en `external_refs`) en **idempotentie** (die zit er, maar alleen als je `external_key` meegeeft — zonder sleutel schrijft elke ronde een nieuwe rij).
 
 De kwaliteit van de recall is vandaag geen argument vóór of tegen: beide stores geven op deze twintig vragen vaak iets naasts. Wat verandert is dat de knoppen straks van Bo zijn.
 
