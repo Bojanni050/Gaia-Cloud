@@ -127,10 +127,11 @@ function createApp(env = process.env) {
   // The system-memory bank: the memoryworthiness-gated conversation
   // reflection still writes here, unchanged. The gate lives in turn.js.
   const hindsightBankId = env.HINDSIGHT_BANK_ID || 'bojan';
-  // Gaia's OWN bank — her memories, her human side. Hers alone, no gate; the
-  // write path for her own curation is not built yet, so today it is a
-  // recall-only source. Read here so a memory she later places there is
-  // surfaceable from the start.
+  // Gaia's OWN bank — her memories, her human side. Hers alone: the only
+  // writers are the `keep` tool and the background Aion pass, and there is
+  // deliberately no user write path (see reasoning/memoryTool.js). It joins a
+  // turn's recall when the turn asks about her, and is always read here so a
+  // memory she places there is surfaceable from the start.
   const hindsightOwnBankId = env.HINDSIGHT_OWN_BANK_ID || 'gaia';
   // The derived-knowledge bank: the Cognition → Hindsight mirror (hypotheses,
   // patterns, Kairos episodes) that Logos forms.
@@ -824,8 +825,11 @@ function createApp(env = process.env) {
   // Version endpoint - public, no auth required
   app.use('/api', createVersionRouter());
 
-  // v3.0: no live tools. The turn is direct generation with
-  // policy-gated Hindsight recall only; nothing routes to a tool.
+  // The turn: direct generation (primary → backup failover) with gated recall,
+  // plus whatever tools the generator was handed — `remember`/`keep`,
+  // `retract_memory`/`forget_memory`, `read_back`, `web_search`, and `desktop`
+  // on a streamed turn with `desktop:true`. The list is assembled per turn in
+  // turn.js (`combineTurnTools`); Hermes is never the generator here.
 
   app.post('/conversation/turn', auth, async (req, res) => {
     const messages = req.body && req.body.messages;

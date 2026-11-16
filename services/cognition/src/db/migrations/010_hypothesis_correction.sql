@@ -1,3 +1,9 @@
+-- NUMBERING: this file and 010_normalize_sources_prefix.sql are the one
+-- historical pair that shares a number. Do not rename either of them:
+-- schema_migrations records the FULL FILENAME, so a rename makes the migration
+-- apply again on every existing database. New migrations take the next free
+-- ascending number. See src/db/migrate.js and test/migrations.test.js.
+--
 -- A human correction: the person says what is true instead of what was
 -- recorded.
 --

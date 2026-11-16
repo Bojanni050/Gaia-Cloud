@@ -1,3 +1,9 @@
+-- NUMBERING: this file and 010_hypothesis_correction.sql are the one
+-- historical pair that shares a number. Do not rename either of them:
+-- schema_migrations records the FULL FILENAME, so a rename makes the migration
+-- apply again on every existing database. New migrations take the next free
+-- ascending number. See src/db/migrate.js and test/migrations.test.js.
+--
 -- Normalise the provenance prefix on derived `sources` arrays:
 --   chronicle:ingest:<uuid>  ->  foundation:<uuid>
 --   chronicle:<uuid>         ->  foundation:<uuid>

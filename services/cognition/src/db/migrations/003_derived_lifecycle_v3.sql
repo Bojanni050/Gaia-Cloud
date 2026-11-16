@@ -4,7 +4,9 @@
 --   * the machine tier 'corroborated' (soft-promotion, C >= 0.80) BELOW the
 --     human-only 'confirmed' tier — Absolute Override stays intact;
 --   * verwerp_bron — who/why a statement was rejected ('mens' | 'consolidatie');
---   * sources — provenance back to the raw record (['chronicle:<id>']);
+--   * sources — provenance back to the raw record (['chronicle:<id>'] at the
+--     time; renamed to ['foundation:<uuid>'] by migration 010 — see
+--     010_normalize_sources_prefix.sql);
 --   * kind — hypothesis | mental_model | relationship (candidate derived
 --     records share this table and lifecycle);
 --   * supersedes_id / superseded_by_id — consolidation links between statements.
