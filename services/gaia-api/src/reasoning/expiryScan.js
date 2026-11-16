@@ -33,6 +33,7 @@
 
 const { isExpirable, DEFAULT_EXPIRY_DAYS } = require('./hypothesisManager');
 const { fromStoreRecord } = require('./softPromotionScan');
+const { flag } = require('../flags');
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -57,7 +58,7 @@ function createExpiryScan({
   now = Date.now,
   logger = console,
 } = {}) {
-  if ((env.GAIA_HYPOTHESIS_EXPIRY || 'true') !== 'true') return null;
+  if (!flag(env, 'GAIA_HYPOTHESIS_EXPIRY', { default: true })) return null;
   if (!cognition || typeof cognition.listHypotheses !== 'function') {
     logger.warn?.('[hypotheses] expiry pass not started: Cognition client unavailable');
     return null;

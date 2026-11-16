@@ -165,6 +165,33 @@ test('the pass is off when the environment says so', () => {
   assert.equal(scan, null);
 });
 
+test('the pass starts for every documented "on" spelling, and stops for every "off" one', () => {
+  // A store and a sink, so the flag is the only thing under test: the flag
+  // check runs first, but a pass without dependencies would return null for
+  // the wrong reason and the assertion would prove nothing.
+  const cognition = { listObservations: async () => [], listHypotheses: async () => [] };
+  const sink = { save: async () => ({ id: 'h1' }) };
+
+  // `on` and `1` used to switch this default-on pass OFF silently (C4).
+  for (const token of ['true', 'on', '1', 'yes']) {
+    const scan = createBeliefFormationScan({ cognition, sink, env: { GAIA_BELIEF_FORMATION: token } });
+    assert.ok(scan, `GAIA_BELIEF_FORMATION=${token} must start the pass`);
+    assert.equal(scan.enabled, true);
+  }
+  for (const token of ['false', 'off', '0', 'no']) {
+    assert.equal(
+      createBeliefFormationScan({ cognition, sink, env: { GAIA_BELIEF_FORMATION: token } }),
+      null,
+      token,
+    );
+  }
+  // And the second axis reads the same way: recall ground is on by default.
+  for (const token of ['false', 'off', '0', 'no']) {
+    const scan = createBeliefFormationScan({ cognition, sink, env: { GAIA_BELIEF_RECALL_GROUND: token } });
+    assert.ok(scan, 'the pass itself stays on');
+  }
+});
+
 // --- Recall ground: the second axis for observations without a sourceRef ---
 
 function harnessWithRecall({ observations = [], hypotheses = [], recall } = {}) {

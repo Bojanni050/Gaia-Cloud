@@ -59,6 +59,7 @@ const { isSocialTurn } = require('./socialFilter');
 const { parseAndValidateReasoningOutput, MalformedReasoningOutputError } = require('./logosValidate');
 const { createLogosModelClient, readLogosTimeoutMs } = require('./logosModelClient');
 const { resolveRoleConfig } = require('../providerConfigResolver');
+const { flag } = require('../flags');
 const { createProviderStore } = require('../providerStore');
 const { SCHEMA_VERSION, REASONER_VERSION } = require('./logosSchema');
 const { logLogosResult } = require('./logosLog');
@@ -112,7 +113,7 @@ const CONTEXT_ONLY_INTENTS = new Set([
  * @param {{ text?: string }} input
  * @returns {'shallow'|'deep'}
  */
-function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' } = {}) {
+function decideLogosDepth(input, { socialGate = flag(process.env, 'GAIA_LOGOS_SOCIAL_GATE', { default: true }) } = {}) {
   if (socialGate) return isSocialTurn(input && input.text) ? 'shallow' : 'deep';
 
   // LEGACY GATE (opt-out, GAIA_LOGOS_SOCIAL_GATE=off): skipped on "no evidence"
@@ -135,7 +136,7 @@ function decideLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GA
  * @param {{ text?: string }} input
  * @returns {'social_turn'|'deep'}
  */
-function explainLogosDepth(input, { socialGate = process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' } = {}) {
+function explainLogosDepth(input, { socialGate = flag(process.env, 'GAIA_LOGOS_SOCIAL_GATE', { default: true }) } = {}) {
   if (socialGate) return isSocialTurn(input && input.text) ? 'social_turn' : 'deep';
 
   // LEGACY GATE (opt-out): the old reasons, kept so the comparison is legible.

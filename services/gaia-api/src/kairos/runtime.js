@@ -16,6 +16,7 @@ const { createKairosWorker } = require('./worker');
 const { createSynthesizer, episodeIdFor } = require('./synthesizer');
 const { emitEpisode } = require('./emitter');
 const { resolveRoleConfig } = require('../providerConfigResolver');
+const { flag } = require('../flags');
 
 const DEFAULT_INTERVAL_MS = 30000;
 // One run processes at most this many clusters before it writes the watermark
@@ -47,7 +48,7 @@ function createKairosRuntime({
   logger = console,
   fetchImpl = fetch,
 } = {}) {
-  if ((env.GAIA_KAIROS_ENABLED || 'false') !== 'true') return null;
+  if (!flag(env, 'GAIA_KAIROS_ENABLED', { default: false })) return null;
   if (!foundation || typeof foundation.listObservationsSince !== 'function') {
     logger.warn?.('[kairos] not started: Foundation read seam unavailable');
     return null;

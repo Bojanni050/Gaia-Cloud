@@ -1442,8 +1442,21 @@ test('legacy gate (opt-out, socialGate: false): the old reasons still apply for 
   assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'converse', status: 'accepted' } }, legacy), 'context_only_intent');
   assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: null, status: 'unknown' } }, legacy), 'unknown_intent');
   assert.equal(explainReasoningDepth({ text: 'hi', evidence: [{ id: 'e1', source: 'conversation', content: 'c' }], intentDecision: { intent: 'inform.explain', status: 'accepted' } }, legacy), 'deep');
-  // The env opt-out selects the legacy gate for callers that read process.env.
-  assert.equal(decideLogosDepth({ text: 'de planning loopt vast', evidence: [] }, { socialGate: process.env.GAIA_LOGOS_SOCIAL_GATE !== 'off' }), 'deep');
+  // The env opt-out selects the legacy gate for callers that read process.env
+  // (the default parameter in logos.js, read at call time — hence set/unset
+  // around the call). Both spellings of "off" work: `false` used to be ignored.
+  const before = process.env.GAIA_LOGOS_SOCIAL_GATE;
+  try {
+    delete process.env.GAIA_LOGOS_SOCIAL_GATE;
+    assert.equal(decideLogosDepth({ text: 'de planning loopt vast', evidence: [] }), 'deep'); // the social gate
+    for (const token of ['off', 'false', '0', 'no']) {
+      process.env.GAIA_LOGOS_SOCIAL_GATE = token;
+      assert.equal(decideLogosDepth({ text: 'de planning loopt vast', evidence: [] }), 'shallow', token);
+    }
+  } finally {
+    if (before === undefined) delete process.env.GAIA_LOGOS_SOCIAL_GATE;
+    else process.env.GAIA_LOGOS_SOCIAL_GATE = before;
+  }
 });
 
 test('social gate (the default): only a greeting is skipped, everything else is looked at', () => {
