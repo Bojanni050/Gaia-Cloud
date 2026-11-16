@@ -342,10 +342,15 @@ function createMistralTts(options = {}) {
    * a single long synthesis the voice loses level as it goes — measured
    * against the live account at −16.6 dB over a 36 s clip, and still −6.8 dB
    * when that same clip is streamed. Each shorter request starts at full
-   * level again, so a reply assembled from sentence-sized segments stays
-   * even (each one drifts only −1 to −2 dB, which is not audible as a fade).
-   * The segments are concatenated in order, which is why a caller cannot
-   * hear where one request ends and the next begins.
+   * level again.
+   *
+   * A segment is a paragraph, because that is where a reader pauses anyway;
+   * nearly every reply is one request (see `splitForSynthesis`). Where two
+   * requests do meet, the provider's own padding at either end is trimmed
+   * back to a sliver and one deliberate pause stands in for the breath, so
+   * the seam sounds like a paragraph break and not like a gap. The next
+   * request is started while the current one is still playing — waiting for
+   * it to finish cost a whole provider round trip (1.4 s) of nothing.
    *
    * The same calm-error posture as `synthesize()`: every failure surfaces
    * as one generic message, with the provider, its URL and any key kept in
@@ -371,15 +376,29 @@ function createMistralTts(options = {}) {
     try {
       let yielded = false;
       const segments = splitForSynthesis(text);
+      const start = (index) => (index < segments.length
+        ? bufferSegment(streamSegment(segments[index], controller.signal))
+        : null);
+      let current = start(0);
+      let next = start(1);
       for (let index = 0; index < segments.length; index += 1) {
-        // The provider starts a request immediately where its text starts, so
-        // without this the next paragraph lands on the previous one's last
-        // syllable. A paragraph break deserves the pause a speaker takes.
+        // A paragraph break is a pause the speaker takes; two requests back to
+        // back would put her next word on the last syllable of the one before.
         if (index > 0) yield segmentGap();
-        for await (const chunk of streamSegment(segments[index], controller.signal)) {
+        const trimmer = createPcmTrimmer();
+        for await (const chunk of current) {
+          const trimmed = trimmer.push(chunk);
+          if (trimmed.length === 0) continue;
           yielded = true;
-          yield chunk;
+          yield trimmed;
         }
+        const tail = trimmer.flush();
+        if (tail.length > 0) {
+          yielded = true;
+          yield tail;
+        }
+        current = next;
+        next = start(index + 2);
       }
       if (!yielded) {
         console.error(`[gaia:tts] stream carried no audio at ${baseUrl}`);
@@ -405,13 +424,141 @@ const SEGMENT_MAX_CHARS = 600;
 /**
  * Silence where two requests meet, in milliseconds. A single synthesis put a
  * breath at a paragraph break; two requests back to back do not, so this is
- * that breath — short enough not to sound like a pause for thought.
+ * that breath. With the trimmed slivers at either side (see `createPcmTrimmer`)
+ * a seam comes out at roughly the 0.8 s a reader takes between paragraphs —
+ * measured on a live reply, an internal pause at a sentence end was 0.9 s.
  */
-const SEGMENT_GAP_MS = 400;
+const SEGMENT_GAP_MS = 600;
 
 /** The silence above, as PCM16LE mono — two bytes a sample. */
 function segmentGap() {
   return Buffer.alloc(Math.round((STREAM_SAMPLE_RATE * SEGMENT_GAP_MS) / 1000) * 2);
+}
+
+/**
+ * What counts as silence in a segment: |sample| below this (of 32768) is
+ * padding, not speech. −60 dBFS, quieter than a breath and far below a word.
+ */
+const SILENCE_FLOOR = 64;
+
+/**
+ * How much of the provider's own leading and trailing silence a segment keeps,
+ * in ms. It pads both ends of every request (measured: about 0.8 s at each
+ * side), so concatenating two of them produced a two-second hole at the seam.
+ */
+const LEAD_KEEP_MS = 60;
+const TAIL_KEEP_MS = 150;
+
+/**
+ * Trims a segment's padding without touching what is inside it: a pause in the
+ * middle of a segment is the speaker's, and is passed on in full. Only the
+ * silence before the first word and after the last one is cut back to a
+ * sliver, so that the deliberate gap between two requests is the only pause at
+ * a seam.
+ *
+ * Stateful across chunks; `flush()` ends one segment.
+ *
+ * @returns {{ push: (bytes: Buffer) => Buffer, flush: () => Buffer }}
+ */
+function createPcmTrimmer() {
+  const leadKeep = Math.round((STREAM_SAMPLE_RATE * LEAD_KEEP_MS) / 1000);
+  const tailKeep = Math.round((STREAM_SAMPLE_RATE * TAIL_KEEP_MS) / 1000);
+  let started = false;
+  let held = []; // quiet samples since the last loud one, as int16 values
+
+  const render = (samples) => {
+    const out = Buffer.allocUnsafe(samples.length * 2);
+    for (let i = 0; i < samples.length; i += 1) out.writeInt16LE(samples[i], i * 2);
+    return out;
+  };
+
+  return {
+    push(bytes) {
+      const out = [];
+      const count = Math.floor(bytes.length / 2);
+      for (let index = 0; index < count; index += 1) {
+        const sample = bytes.readInt16LE(index * 2);
+        const quiet = Math.abs(sample) < SILENCE_FLOOR;
+        if (!started) {
+          if (quiet) {
+            // Keep a sliver in front of the first word, drop the rest.
+            held.push(sample);
+            if (held.length > leadKeep) held.shift();
+            continue;
+          }
+          started = true;
+          out.push(...held, sample);
+          held = [];
+          continue;
+        }
+        if (quiet) {
+          held.push(sample);
+          continue;
+        }
+        // Speech again: a pause inside the segment, kept as it was.
+        out.push(...held, sample);
+        held = [];
+      }
+      return render(out);
+    },
+    flush() {
+      const keep = held.length > tailKeep ? held.slice(held.length - tailKeep) : held;
+      const tail = started ? render(keep) : Buffer.alloc(0);
+      started = false;
+      held = [];
+      return tail;
+    },
+  };
+}
+
+/**
+ * Starts reading `iterator` now and queues what it yields, so a caller can
+ * consume it later without the provider's first byte arriving late. One
+ * segment is buffered at a time (a few hundred kB), which is what makes the
+ * next request's round trip invisible: it happens while the current one plays.
+ *
+ * @param {AsyncIterable<Buffer>} iterator
+ * @returns {AsyncIterable<Buffer>}
+ */
+function bufferSegment(iterator) {
+  const queue = [];
+  let finished = false;
+  let failure = null;
+  let wake = null;
+  const wakeUp = () => {
+    if (!wake) return;
+    const resolve = wake;
+    wake = null;
+    resolve();
+  };
+  (async () => {
+    try {
+      for await (const chunk of iterator) {
+        queue.push(chunk);
+        wakeUp();
+      }
+    } catch (error) {
+      failure = error;
+    }
+    finished = true;
+    wakeUp();
+  })();
+
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next() {
+          for (;;) {
+            if (queue.length > 0) return { value: queue.shift(), done: false };
+            if (failure) throw failure;
+            if (finished) return { value: undefined, done: true };
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((resolve) => { wake = resolve; });
+          }
+        },
+      };
+    },
+  };
 }
 
 /**
@@ -694,6 +841,7 @@ module.exports = {
   normalizeFormat,
   mimeTypeFor,
   splitForSynthesis,
+  createPcmTrimmer,
   LANGUAGES,
   STREAM_FORMAT,
   STREAM_SAMPLE_RATE,

@@ -486,7 +486,7 @@ test('stream() advertises the PCM shape server.js announces to the desktop', () 
 
 // --- Segmenting: one provider request per paragraph --------------------------
 
-const { splitForSynthesis } = require('../src/speech/mistralTts');
+const { splitForSynthesis, createPcmTrimmer } = require('../src/speech/mistralTts');
 
 test('splitForSynthesis keeps a reply in one request as long as it is one paragraph', () => {
   assert.deepEqual(splitForSynthesis('Hi there'), ['Hi there']);
@@ -544,15 +544,63 @@ test('stream() asks the provider once per paragraph, in order, with a breath bet
   const pcm = await collect(mistralClient(fetchImpl).stream(text));
 
   assert.deepEqual(asked, ['First paragraph here.', 'Second paragraph ends it.']);
-  // Two samples of audio, the 400 ms breath between them, and nothing after.
-  assert.equal(pcm.length, 2 + 19_200 + 2);
-  assert.ok(pcm.subarray(2, 2 + 19_200).every((byte) => byte === 0), 'the gap is silence');
+  // Two samples of audio, the 600 ms breath between them, and nothing after.
+  assert.equal(pcm.length, 2 + 28_800 + 2);
+  assert.ok(pcm.subarray(2, 2 + 28_800).every((byte) => byte === 0), 'the gap is silence');
+});
+
+test('stream() starts the next paragraph before the first one has played out', async () => {
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    asked.push(JSON.parse(init.body).input);
+    return sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }));
+  };
+  const text = 'First paragraph here.\n\nSecond paragraph ends it.';
+  const generator = mistralClient(fetchImpl).stream(text);
+  await generator.next();
+
+  // Waiting for the first request to finish cost a full provider round trip (1.4 s) of silence.
+  assert.equal(asked.length, 2, 'both requests are already in flight');
 });
 
 test('stream() puts no silence after the last paragraph', async () => {
   const fetchImpl = async () => sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }));
   const pcm = await collect(mistralClient(fetchImpl).stream('Only one paragraph. Nothing else.'));
   assert.equal(pcm.length, 2);
+});
+
+test('the trimmer keeps a sliver of padding and the pauses inside a segment', () => {
+  const trimmer = createPcmTrimmer();
+  const silence = (samples) => {
+    const out = Buffer.alloc(samples * 2);
+    return out;
+  };
+  const loud = (samples) => {
+    const out = Buffer.allocUnsafe(samples * 2);
+    for (let i = 0; i < samples; i += 1) out.writeInt16LE(12_000, i * 2);
+    return out;
+  };
+
+  // 2 s of padding, a word, a 0.5 s pause, another word, 2 s of padding.
+  const trimmed = Buffer.concat([
+    trimmer.push(silence(48_000)),
+    trimmer.push(loud(2_400)),
+    trimmer.push(silence(12_000)),
+    trimmer.push(loud(2_400)),
+    trimmer.push(silence(48_000)),
+    trimmer.flush(),
+  ]);
+
+  const samples = trimmed.length / 2;
+  const lead = 60 / 1000 * 24_000;
+  const tail = 150 / 1000 * 24_000;
+  assert.equal(samples, lead + 2_400 + 12_000 + 2_400 + tail, 'padding cut back, pause kept whole');
+});
+
+test('the trimmer drops a segment that is nothing but silence', () => {
+  const trimmer = createPcmTrimmer();
+  assert.equal(trimmer.push(Buffer.alloc(24_000 * 2)).length, 0);
+  assert.equal(trimmer.flush().length, 0);
 });
 
 test('stream() still answers a reply that produced nothing at all', async () => {
