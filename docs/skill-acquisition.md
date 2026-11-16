@@ -13,9 +13,31 @@ verschillend risico:
    afwijzing en er bleef geen spoor achter, dus dezelfde leemte kon elke week
    opnieuw worden geraakt zonder ooit zichtbaar te worden.
 2. **Samenstellen.** Een nieuwe vaardigheid als geordend recept over primitieven
-   die er al zijn: `web_search` → `file-write`, `file-search` → `open-url`,
-   `hindsight.recall` → `hermes` → `write`.
+   die er al zijn: `web_search` → `desktop(file-write)`,
+   `desktop(file-search)` → `desktop(open-url)`.
 3. **Schrijven.** Ze genereert code die op de machine van de persoon draait.
+
+## Wat een primitieve is
+
+De atomen van een recept zijn **tool-calls**, niet capabilities en niet skills.
+Er zijn er acht: `remember`, `keep`, `search_memory`, `retract_memory`,
+`forget_memory`, `read_back`, `web_search` en `desktop` — waarbij `desktop` zijn
+skill als argument draagt (`desktop(file-write)`).
+
+De andere capabilities kunnen geen stap zijn, en dat is geen detail:
+
+- `hermes` en `native` *zijn* de engine van de beurt; een recept draait binnen een
+  beurt en kan zijn eigen engine niet aanroepen;
+- `hindsight` recall gebeurt per beurt automatisch, niet op verzoek van het model;
+- `foundation` en `own_memory` zijn achtergrond of eigendom, `research` is een job
+  die later antwoordt;
+- `tool` wordt door `generationCapabilities()` nooit aangeboden.
+
+Een skill uit de registry is dus geen bouwsteen: `memory-retrieval` is een label,
+`systematic-debugging` draait binnen Hermes, en alleen de desktop-skills zijn
+uitvoerbaar. Het voorstel noemt de **capability** waaronder de nieuwe vaardigheid
+komt te hangen — zonder die kapstok kan `capabilityAwareness` hem later niet tonen
+en bestaat hij voor Gaia niet.
 
 ## De grens die we gekozen hebben
 
@@ -66,11 +88,17 @@ laten zeggen, dus een zin landt hier nooit.
 
 `skillFormationScan`, naar het model van `beliefFormationScan`:
 
-- groepeer open gap-records per `skill` of per `capability`;
+- groepeer open gap-records per `skill` of per `capability`, maar laat
+  `not-carried` buiten beschouwing: dat is een eigenschap van de machine aan de
+  andere kant, geen leemte die Gaia zich kan toe-eigenen, en een voorstel
+  daarvoor kan op die client nooit worden uitgevoerd;
 - eis herhaling over **meerdere gesprekken** — één keer iets missen is geen
   vaardigheid, net zoals één observatie geen stelling is;
-- eis dat het voorgestelde recept **alleen bestaande primitieven** gebruikt, en
-  dat elke stap een skill is die het register kent (`validateCapabilitySkill`);
+- eis dat het voorgestelde recept **alleen bestaande tools** gebruikt (de acht
+  hierboven), en dat een `desktop`-stap een skill noemt die het register kent
+  (`validateCapabilitySkill`);
+- noem de capability waaronder de vaardigheid komt te hangen, zodat de awareness
+  hem later kan tonen;
 - resultaat is een **voorstel**, geen actieve vaardigheid: dezelfde reviewkaart
   die de hypotheses al gebruiken, en de mens settle't.
 
@@ -111,7 +139,8 @@ stap — en geen stille zelfaanpassing. Bewijs draagt, niet het voorstel.
 - `src/generation/gaiaGenerator.js` — `appendToolRound` logt het gat naast
   `tool.call`, want daar komt het resultaat terug en daar is de gevraagde skill
   bekend (uit de argumenten van de `desktop`-tool).
-- `src/capabilityRegistry.js` — blijft voorlopig de bron van wat bestaat.
+- `src/capabilityRegistry.js` — blijft voorlopig de bron van wat bestaat; de
+  aanroepbare atomen zijn de tools uit `turn.js`, niet de registry-ids.
 - `src/capabilityAwareness.js` — toont per beurt wat ze echt heeft; een
   goedgekeurde vaardigheid hoort daar later bij te komen.
 - `src/desktopBroker.js` — de machinerie die fase 2 hergebruikt.

@@ -37,6 +37,41 @@ registry also carries `routing: true` flags on a few Hermes skills; those are
 *data* (read by `researchReach.js`), not routing logic. The only routing decision
 in the codebase is whether to submit a research run.
 
+### Tool, capability, skill
+
+Three layers, one direction. A **tool** is the only thing the model can call
+(8 verbs: `remember`, `keep`, `search_memory`, `retract_memory`,
+`forget_memory`, `read_back`, `web_search`, `desktop`). A **capability** is a
+thing Gaia *has* this turn and may claim in her voice. A **skill** is a
+specialized way that capability works. The registry holds capability → skills,
+never the other way round.
+
+Only **6 of the 13** capabilities carry a callable tool (`memory`,
+`memory_retraction`, `memory_forgetting`, `conversation_search`, `web_search`,
+`desktop`). The other seven — `hermes`, `native`, `research`, `hindsight`,
+`foundation`, `own_memory`, `tool` — are load-bearing or background: the
+generation engine, the per-turn recall, a job that answers later. They can be
+*claimed* but never *invoked*, so nothing can use them as a step. (`tool` is not
+pushed by `generationCapabilities` at all; it sits in the registry as a
+placeholder.)
+
+"Skill" covers three species, and they are not interchangeable:
+
+- **Hermes skills** (`systematic-debugging`, `grounded-citations`) live inside
+  another agent. Hermes loads and runs them; Gaia only uses the `routing: true`
+  ones as data for `researchReach.js`.
+- **Desktop skills** (`file-read`, `open-url`, `run-command`) are carried out by
+  the client on the person's machine, each with its own `SKILL_POLICY`. These
+  are the only skills that are actions in their own right.
+- **Retrieval skills** (`memory-retrieval`, `saved-conversation-search`,
+  `foundation-memory-search`) are labels with `routing: false`. Nothing reads
+  them; they are sub-variants of one capability, not abilities.
+
+The rule that follows: **tools compose, skills do not.** A learned recipe is a
+sequence of tool calls with each step's existing policy unchanged; it never names
+a capability or a skill as a step, and it is never itself a step in another
+recipe (see `skill-acquisition.md`).
+
 Which capabilities Gaia may claim is derived **per turn** in `turn.js`'s
 `generationCapabilities`: an entry appears only when its tool or client is
 actually wired *this* turn (the tool's presence is what makes the claim honest).
