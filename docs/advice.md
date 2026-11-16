@@ -104,18 +104,22 @@ in de code), de Kairos-synthesizer, de switches-tabel (7 van ~16 vlaggen) en het
 
 ## 5. Quick wins vs. groter werk
 
-**Vandaag te doen (< 1 uur totaal):** A6 (README-statusblok), C9 (registry-comment).
-(C1, C5 en C6 zijn gedaan op 2026-11-16; A5 was al gedaan op 2026-11-11.)
+**Vandaag te doen (< 1 uur totaal):** A6 (README-statusblok), C9 (registry-comment),
+A7 (de walkthrough-afspraak opschrijven), A8 (`docs/README.md` als index).
 
-**Een halve dag:** C4 (vlag-helper), C7 (`/admin/api/scans`), C2 (netwerknaam pinnen en op de
-VPS verifiëren), C3 (operator-token).
+**Een halve dag:** C7 (`/admin/api/scans`), C3 (eigen operator-token voor `/admin`).
 
 **Een dag of meer:** A3 (`deployment.md` splitsen), A4 (graph regenereren), C8 (gedragstest
-voor de bankregel), C10/C11 (opruimen + scriptdocs). (A2 is gedaan op 2026-11-16.)
+voor de bankregel), C10/C11 (opruimen + scriptdocs), C12 (workflow-guard op de
+runtime-documenten).
 
-**Volgorde die ik zou kiezen:** C4 → C2 → C7 → C3. C1, C5 en A2 zijn gedaan; C4 is de
-volgende omdat een stille pas de duurste soort fout is, en C2 daarna omdat een verkeerde
-netwerknaam de deploy zelf raakt.
+**Doorlopend:** A1 — het commit-anker in `architecture.md` bijwerken; `scripts/verify-architecture.js`
+leest het voor, maar bijwerken blijft handwerk.
+
+**Volgorde die ik zou kiezen:** C7 → C3 → C10/C11 → A4 → A3 → C8 → C12 → A6 → C9 → A7 → A8.
+Gedaan op 2026-11-16: C1, C5, C6, A2, C4, C2 (en A5 op 2026-11-11) — 7 van de 20 items.
+C7 eerst omdat een stil uitgezette pas de duurste fout is en de passen hun data al hebben;
+C3 daarna omdat de operatorpagina op de tailnet staat zonder eigen token.
 
 ---
 
