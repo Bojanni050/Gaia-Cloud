@@ -87,7 +87,7 @@ in de code), de Kairos-synthesizer, de switches-tabel (7 van ~16 vlaggen) en het
 
 | | Bevinding | Risico | Advies |
 | --- | --- | --- | --- |
-| **C1** | `services/cognition/data/` (de Postgres-datadir die `services/cognition/docker-compose.yml` mount) is **nergens** in `.gitignore` opgenomen; `services/gaia-api/.gitignore` heeft wél `data/`. | Eén `git add -A` na een lokale `docker compose up` commit een compleet databasecluster in een publieke repo. | `data/` toevoegen aan `services/cognition/.gitignore` (of één regel in de root). 2 min. |
+| **C1** | `services/cognition/data/` (de Postgres-datadir die `services/cognition/docker-compose.yml` mount) is **nergens** in `.gitignore` opgenomen; `services/gaia-api/.gitignore` heeft wél `data/`. | Eén `git add -A` na een lokale `docker compose up` commit een compleet databasecluster in een publieke repo. | `data/` toevoegen aan `services/cognition/.gitignore` (of één regel in de root). 2 min. **Uitgevoerd 2026-11-16:** `services/cognition/.gitignore` met een verankerde `/data/` (precies het mountpunt, zodat een toekomstige `src/data/` niet stil verdwijnt). Bewijs: `git check-ignore -v` matcht de datadir én een genest bestand, en een nagemaakte datadir levert bij `git add -A --dry-run` niets op. |
 | **C2** | De netwerknaam van de Cognition-stack is **tegenstrijdig binnen één bestand**: `services/gaia-api/docker-compose.yml` zegt bij de service "project *gaia-cognition*, dus netwerk `gaia-cognition_default`" en in de netwerksectie "project *cognition*, netwerk `cognition_gaia_cognition_default`" (`name:` op regel 56). `deploy.yml:121` herhaalt de eerste lezing. | Een verkeerde `name:` laat de deploy falen op "network not found" — of, erger, laat gaia-api op een oud netwerk naar een verkeerde `COGNITION_URL` kijken. | Pin de projectnaam expliciet met een top-level `name: gaia-cognition` in `services/cognition/docker-compose.yml`, zet de daaruit volgende netwerknaam in gaia-api, en verifieer één keer met `docker network ls | grep -i cognition` op de VPS. 30 min. |
 | **C3** | `GET /admin` (de HTML-shell) is **ongeauthenticeerd** en `/admin/api/*` gebruikt hetzelfde Bearer-token als clients. | De operatorpagina — inclusief provider-config, key-hints en modelkeuzes — is op de tailnet voor iedereen met het client-token (of zonder token, de pagina zelf) bereikbaar. | Geef de adminroutes een eigen operator-token (`GAIA_ADMIN_TOKEN`) of zet minimaal `auth` op de pagina-route. 30 min. |
 | **C4** | Vlag-idioom is inconsistent: `GAIA_HYPOTHESIS_SCAN`, `GAIA_HYPOTHESIS_EXPIRY` en `GAIA_BELIEF_FORMATION` gaan **uit** bij élke waarde die niet exact `'true'` is (`(env.X \|\| 'true') !== 'true'`), terwijl `GAIA_OPEN_QUESTION_REACH` en `GAIA_RESEARCH_REACH` alleen `'on'` accepteren en `GAIA_DESKTOP`/`GAIA_ELEOS` alleen `'true'`. | `GAIA_HYPOTHESIS_EXPIRY=on` of `=1` zet de pas **stil** uit; `GAIA_RESEARCH_REACH=true` zet research stil uit. Dat is precies het soort fout dat je pas weken later ziet aan een lege store. | Eén helper (`flag(env, 'GAIA_X', { default: true, truthy: ['true','on','1'] })`) en alle lezers daarop; documenteer per vlag de default in één tabel (staat nu in `architecture.md`). Half dag. |
@@ -104,8 +104,9 @@ in de code), de Kairos-synthesizer, de switches-tabel (7 van ~16 vlaggen) en het
 
 ## 5. Quick wins vs. groter werk
 
-**Vandaag te doen (< 1 uur totaal):** C1 (gitignore), C5 (vier comments), C6 (migratienummer),
+**Vandaag te doen (< 1 uur totaal):** C5 (vier comments), C6 (migratienummer),
 A6 (README-statusblok), C9 (registry-comment), A5 (evolution bevriezen of bijwerken).
+(C1 is gedaan op 2026-11-16; A5 was al gedaan op 2026-11-11.)
 
 **Een halve dag:** C4 (vlag-helper), C7 (`/admin/api/scans`), C2 (netwerknaam pinnen en op de
 VPS verifiëren), C3 (operator-token).
