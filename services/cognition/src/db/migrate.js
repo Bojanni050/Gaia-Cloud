@@ -3,6 +3,15 @@
  * filename order, exactly once, tracked in schema_migrations. No down
  * migrations — this is a small sidecar, not a product needing rollback
  * tooling.
+ *
+ * Two rules follow from that, and test/migrations.test.js enforces them:
+ *   * the numeric prefix is the order — a new migration takes the next free
+ *     ascending number, never a number that is already in use;
+ *   * an applied filename is immutable. schema_migrations keys on the FULL
+ *     filename, so renaming a migration re-applies it on every existing store.
+ *     `010_` is shared by two historical files on purpose
+ *     (010_hypothesis_correction, 010_normalize_sources_prefix); their own
+ *     headers say so as well.
  */
 const fs = require('fs');
 const path = require('path');

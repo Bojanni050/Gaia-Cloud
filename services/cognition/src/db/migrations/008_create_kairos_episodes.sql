@@ -7,7 +7,9 @@
 -- conversation.
 --
 -- `sources` is provenance back to the raw records, in the house convention
--- (['chronicle:<ingest_object-id>']) — mirrors patterns.sources / hypotheses
+-- (['chronicle:<ingest_object-id>'] when this migration was written; migration
+-- 010 renamed the prefix to ['foundation:<uuid>'] — see
+-- 010_normalize_sources_prefix.sql) — mirrors patterns.sources / hypotheses
 -- .sources. The id is assigned by the writer (Kairos worker) so re-processing
 -- the same cluster is an idempotent upsert, not a duplicate row.
 CREATE TABLE IF NOT EXISTS kairos_episodes (

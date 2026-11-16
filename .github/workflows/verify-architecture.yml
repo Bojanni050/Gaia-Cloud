@@ -1,0 +1,32 @@
+name: verify-architecture
+
+# Drift guard for docs/architecture.md (scripts/verify-architecture.js).
+# Deliberately its own workflow: deploy.yml's path filter excludes docs/** on
+# purpose (nothing under docs/ is baked into an image), so a docs-only change
+# would otherwise get no signal at all — which is exactly how the document went
+# a month stale while 117 commits moved the code underneath it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'services/**'
+      - 'scripts/**'
+      - '.github/workflows/verify-architecture.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'services/**'
+      - 'scripts/**'
+      - '.github/workflows/verify-architecture.yml'
+
+jobs:
+  anchors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Every anchor in docs/architecture.md still exists
+        run: node scripts/verify-architecture.js

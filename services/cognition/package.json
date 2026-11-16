@@ -2,7 +2,7 @@
   "name": "gaia-cognition",
   "version": "1.0.0",
   "private": true,
-  "description": "Gaia's derived-knowledge store — hypotheses, patterns and candidate models with a storage-only lifecycle (proposed → testing → corroborated → confirmed/rejected).",
+  "description": "Gaia's derived-knowledge store — hypotheses, patterns and candidate models with a storage-only lifecycle: proposed → testing → corroborated → confirmed | rejected, plus the sixth status expired (a lapse, not a judgement — revivable via expired → testing).",
   "type": "commonjs",
   "main": "src/server.js",
   "scripts": {

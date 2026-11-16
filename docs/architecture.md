@@ -556,6 +556,19 @@ those six documents breaks the publish workflow outright
 (`Error: Could not find document at …/principles.md`). The document list is
 `DOCUMENTS` in `build-foundation-artifact.js`; change it in the same commit as the file.
 
+This document is also the one place where drift stayed invisible for a month: it described
+a state of the code that 117 commits had moved past, and nothing noticed it
+(`docs/advice.md` §1). `scripts/verify-architecture.js` closes that. It re-reads the
+anchors *out of this file* — repo paths, environment flags, capability ids, lifecycle
+terms and routes — and exits non-zero when one of them is gone from the tree. It runs on
+every push and pull request touching `docs/`, `services/` or `scripts/`
+(`.github/workflows/verify-architecture.yml`) and again inside the gaia-api suite
+(`test/verifyArchitecture.test.js`).
+
+That is what the `*(external)*` and `*(deployment)*` markers are for: a claim this
+repository cannot check has to be marked as such, or the guard fails on it. A line carrying
+one of those markers is skipped — everything else in this document is machine-checked.
+
 ## Clients, and what this repo does not contain
 
 Clients reach Gaia only through the uniform Gaia API: turns, the file library,
