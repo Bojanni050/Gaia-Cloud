@@ -80,9 +80,10 @@ vaardigheid. Daarom telt alleen de vier vaste weigerzinnen hierboven.
 
 De records zijn inhoudsloos, zoals `tool.call` en `recall.measure`: tool,
 capability, skill, reden, gesprek, ronde. Geen prompt, geen gebruikerswoorden,
-geen argumenten. `skill` overleeft alleen als het op een registertoken lijkt —
-een model kan in dat veld van alles zetten en een pagina kan het model van alles
-laten zeggen, dus een zin landt hier nooit.
+geen argumenten. `skill` en `tool` overleven alleen als ze op een token lijken —
+een model kan in die velden van alles zetten en een pagina kan het model van
+alles laten zeggen, dus een zin landt hier nooit. Dat geldt juist voor `tool`:
+`unknown-tool` is het signaal waarbij ze zélf een naam bedenkt.
 
 ### Fase 1 — de formatie-pass (nog niet gebouwd)
 
@@ -94,9 +95,17 @@ laten zeggen, dus een zin landt hier nooit.
   daarvoor kan op die client nooit worden uitgevoerd;
 - eis herhaling over **meerdere gesprekken** — één keer iets missen is geen
   vaardigheid, net zoals één observatie geen stelling is;
-- eis dat het voorgestelde recept **alleen bestaande tools** gebruikt (de acht
-  hierboven), en dat een `desktop`-stap een skill noemt die het register kent
-  (`validateCapabilitySkill`);
+- laat het voorstel door `validateSkillRecipe` (`src/skillRecipe.js`) gaan, en
+  toon de bezwaren op de kaart in plaats van ze weg te poetsen. Die eist dat
+  elke stap een bestaande tool is, dat een `desktop`-stap een skill noemt die het
+  register kent (`validateCapabilitySkill`), en dat het recept onder een
+  bestaande capability hangt;
+- en die kent de regel die je aan een stapnaam niet ziet: een prompt-vrije
+  lezing van de schijf (`file-read`, `file-search`) mag niet in één recept staan
+  met een prompt-vrije zending naar buiten (`web_search`, `open-url`). Beide zijn
+  `auto`, dus de inhoud zou vertrekken zonder dat de mens iets ziet bewegen.
+  `file-write` en `run-command` zijn `confirm` — hun argumenten staan elke run op
+  het scherm — en blijven daarom toegestaan;
 - noem de capability waaronder de vaardigheid komt te hangen, zodat de awareness
   hem later kan tonen;
 - resultaat is een **voorstel**, geen actieve vaardigheid: dezelfde reviewkaart
@@ -114,7 +123,8 @@ recht: een recept is een herinnering aan een volgorde, niet een nieuwe macht.
 
 Hier wordt het pas nuttig, en hier hoort ook de grens: een recept heeft een
 maximum aantal stappen en een maximum totaal tijd, anders kan een verkeerd
-recept de beurt laten rondtollen.
+recept de beurt laten rondtollen. Het stappenmaximum ligt al vast in de validator
+(`MAX_STEPS`, 8); de tijdgrens hoort bij de executor.
 
 ### Fase 3 — verbeteren (nog niet gebouwd)
 
@@ -136,6 +146,8 @@ stap — en geen stille zelfaanpassing. Bewijs draagt, niet het voorstel.
 ## Waar het aanhaakt
 
 - `src/skillGap.js` — het vocabulaire en het record (fase 0).
+- `src/skillRecipe.js` — de validator: wat een recept mag zijn en welke twee
+  stappen niet samen mogen. Puur, geen I/O, geen uitvoering.
 - `src/generation/gaiaGenerator.js` — `appendToolRound` logt het gat naast
   `tool.call`, want daar komt het resultaat terug en daar is de gevraagde skill
   bekend (uit de argumenten van de `desktop`-tool).

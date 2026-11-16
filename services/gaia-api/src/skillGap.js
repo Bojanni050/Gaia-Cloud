@@ -70,6 +70,23 @@ function skillToken(value) {
 }
 
 /**
+ * A tool name is kept under the same rule, with underscores allowed because the
+ * real verbs carry them (`search_memory`). This matters: it is the field
+ * `unknown-tool` groups on, so it is exactly where an invented name arrives —
+ * and a name the model made up after reading a page can be a sentence. Anything
+ * that is not a token becomes null: the gap still counts, the text never lands.
+ * @param {*} value
+ * @returns {string|null}
+ */
+function toolToken(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_SKILL_CHARS) return null;
+  if (!/^[a-z][a-z0-9_-]*$/i.test(trimmed)) return null;
+  return trimmed.toLowerCase();
+}
+
+/**
  * Classify one tool result as a gap, or null when it is an ordinary result.
  * @param {{ tool?: string, input?: object, resultText?: string }} entry
  * @returns {{ reason: string, capability: string|null, skill: string|null }|null}
@@ -118,7 +135,7 @@ function logSkillGap(entry = {}, sink = (line) => console.log(line)) {
     reason: gap.reason,
     capability: gap.capability,
     skill: gap.skill,
-    tool: typeof entry.tool === 'string' ? entry.tool : null,
+    tool: toolToken(entry.tool),
     round: Number.isFinite(entry.round) ? entry.round : null,
     conversationId: entry.conversationId || null,
   };
@@ -133,6 +150,7 @@ module.exports = {
   logSkillGap,
   classifyGap,
   skillToken,
+  toolToken,
   TOOL_CAPABILITY,
   UNKNOWN_ACTION,
   UNKNOWN_SKILL,

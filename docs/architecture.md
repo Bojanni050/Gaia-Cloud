@@ -72,6 +72,15 @@ sequence of tool calls with each step's existing policy unchanged; it never name
 a capability or a skill as a step, and it is never itself a step in another
 recipe (see `skill-acquisition.md`).
 
+`src/skillRecipe.js` is that rule as code: at most 8 steps, every step a tool,
+`desktop` steps naming a registry skill, and the capability it hangs under must
+exist and own one of the steps. The rule that is not about naming: a recipe may
+not combine a prompt-free local read (`file-read`, `file-search`) with a
+prompt-free external send (`web_search`, `open-url`). Both sides are `auto`, so
+local content would leave the machine without the person ever seeing it move.
+`file-write` and `run-command` are `confirm` — their arguments are shown every
+run — so a composition through those stays allowed.
+
 Which capabilities Gaia may claim is derived **per turn** in `turn.js`'s
 `generationCapabilities`: an entry appears only when its tool or client is
 actually wired *this* turn (the tool's presence is what makes the claim honest).
