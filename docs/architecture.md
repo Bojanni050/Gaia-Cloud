@@ -580,6 +580,9 @@ That is what the `*(external)*` and `*(deployment)*` markers are for: a claim th
 repository cannot check has to be marked as such, or the guard fails on it. A line carrying
 one of those markers is skipped — everything else in this document is machine-checked.
 
+What each document in `docs/` is, whether it is active or frozen, and which one is
+authoritative for which question: `docs/README.md`.
+
 ## Clients, and what this repo does not contain
 
 Clients reach Gaia only through the uniform Gaia API: turns, the file library,

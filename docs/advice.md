@@ -79,7 +79,7 @@ in de code), de Kairos-synthesizer, de switches-tabel (7 van ~16 vlaggen) en het
 | **A5** | Kies voor `evolution.md`: bijwerken **of** expliciet bevriezen met een regel ("historie tot 2026-10-14; daarna `walkthrough*.md`"). Ook daar staat de lifecycle nog met vier statussen. | Half-bijgehouden geschiedenis is erger dan een duidelijk afgesloten boek. | 15 min. **Uitgevoerd 2026-11-11:** bevroren — frontmatter `status: frozen` + `frozen_at`, een regel bovenaan het document, en beide verwijzingen in `README.md` zeggen het nu ook. |
 | **A6** | Herschrijf het *Status*-blok in `README.md`: het verwijst naar een Switches-tabel met vier flags; het zijn er inmiddels ~16 gedragsvlaggen + presence-gates. | De README is het eerste wat iemand leest. | 10 min. **Uitgevoerd 2026-11-16:** het blok verwijst nu naar de echte switches-tabel (met de helper `src/flags.js` en de presence-gates erbij), noemt waar de openstaande dingen staan (`docs/advice.md`, `docs/CONVENTIONS.md`), zegt dat de walkthroughs in de **root** staan en niet in `docs/`, en noemt de drift-guard — want wie hier binnenkomt hoort te weten dat het architectuurdocument machinaal gecontroleerd wordt. |
 | **A7** | Schrijf de walkthrough-afspraak op (`>1000 regels` → nieuw bestand, chronologisch, oudste bovenaan, Findings/Conclusions/Actions) in bv. `docs/CONVENTIONS.md`. | De afspraak bestaat nu alleen in de praktijk; `walkthrough.md` zit op 1043 regels. | 15 min. **Uitgevoerd 2026-11-16:** `docs/CONVENTIONS.md` nieuw, met de log-afspraak als eerste sectie (inclusief de twee dingen die in de praktijk misgingen: de bestanden staan in de **root**, niet in `docs/`, en een entry eindigt met zijn `- Open punt:` als er iets open is). In plaats van een tweede kopie van de regels die al een huis hebben, wijst dat document ze aan: de migratie-regel staat in de kop van `migrate.js` en in `test/migrations.test.js`, de vlaggenregel in `src/flags.js` en de switches-tabel, de doc-waarheid in de guard zelf. Nieuw vastgelegd is wat nergens stond: de taalafspraak (docs Nederlands, code en commit-body Engels), de runtime-documenten en hun bundel, de advies-boekhouding (in place bijwerken, afwijkingen met reden), en de paden van de drie workflows met wat een merge op de VPS doet. |
-| **A8** | Voeg `docs/README.md` toe als index met per document een statusregel (actief/bevroren + verified-against). | Vijf documenten beschrijven nu overlappende delen van hetzelfde systeem zonder eigenaarschap. | 30 min |
+| **A8** | Voeg `docs/README.md` toe als index met per document een statusregel (actief/bevroren + verified-against). | Vijf documenten beschrijven nu overlappende delen van hetzelfde systeem zonder eigenaarschap. | 30 min. **Uitgevoerd 2026-11-16:** `docs/README.md` met bovenaan de autoriteitsvraag ("welk document wint waarvoor"), daarna een regel per document met wat het **zelf** over zijn status zegt. Twee dingen die het natrekken opleverde en die in de index staan: de laatste-wijzigingsdatums zijn hier misleidend (alles staat op 2026-11-11 omdat `docs/` die dag verwijderd en teruggedraaid is, dus de status komt uit het document zelf), en `architecture-graph.md` staat er expliciet als **niet te vertrouwen** tot A4 gedaan is. Ook vastgelegd: een conflict met het vandaag toegevoegde `AGENTS.md`, waarvan de uit andere projecten aangeplakte blokken een ouder drie-bullet-formaat voor de walkthrough herhalen — `CONVENTIONS.md` wint, want dat is de onderhouden versie. Twee resten in de root (`test_result.md` van 2026-08-06, `CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md` van 2026-09-02) zijn geflagd, niet verwijderd: dat is een beslissing van Bo. `architecture.md` verwijst nu naar de index, zodat je hem vindt vanuit het document dat de autoriteit is. |
 
 ---
 
@@ -104,7 +104,8 @@ in de code), de Kairos-synthesizer, de switches-tabel (7 van ~16 vlaggen) en het
 
 ## 5. Quick wins vs. groter werk
 
-**Vandaag te doen (< 1 uur totaal):** A8 (`docs/README.md` als index).
+**Vandaag te doen (< 1 uur totaal):** niets — de quick wins zijn op (A5, C1, A2, C5, C6, C4,
+C2, A6, A7, C9 en A8 zijn gedaan; zie de teller onderaan).
 
 **Een halve dag:** C7 (`/admin/api/scans`), C3 (eigen operator-token voor `/admin`).
 
@@ -115,10 +116,12 @@ runtime-documenten).
 **Doorlopend:** A1 — het commit-anker in `architecture.md` bijwerken; `scripts/verify-architecture.js`
 leest het voor, maar bijwerken blijft handwerk.
 
-**Volgorde die ik zou kiezen:** C7 → C3 → C10/C11 → A4 → A3 → C8 → C12 → A8.
-Gedaan op 2026-11-16: C1, C5, C6, A2, C4, C2, A6, A7, C9 (en A5 op 2026-11-11) — 10 van
+**Volgorde die ik zou kiezen:** C7 → C3 → C10/C11 → A4 → A3 → C8 → C12.
+Gedaan op 2026-11-16: C1, C5, C6, A2, C4, C2, A6, A7, C9, A8 (en A5 op 2026-11-11) — 11 van
 de 20 items. C7 eerst omdat een stil uitgezette pas de duurste fout is en de passen hun data
-al hebben; C3 daarna omdat de operatorpagina op de tailnet staat zonder eigen token.
+al hebben; C3 daarna omdat de operatorpagina op de tailnet staat zonder eigen token. A4
+(grafiek) springt eruit als snelste echte winst daarna: de index noemt hem nu eerlijk
+verouderd, en dat is precies zolang niemand hem regenereert.
 
 ---
 
