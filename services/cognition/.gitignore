@@ -1,0 +1,6 @@
+# Local Postgres data directory — the datadir services/cognition/docker-compose.yml
+# mounts (./data:/var/lib/postgresql/data). This must never be committed: one
+# `git add -A` after a local `docker compose up` would put a whole database
+# cluster in a public repository. Anchored on purpose, so it covers exactly the
+# mount point and a future src/data/ would not be swallowed silently.
+/data/
