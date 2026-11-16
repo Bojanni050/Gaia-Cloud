@@ -195,6 +195,25 @@ test('scan does not start when it is switched off or a dependency is missing', (
   assert.equal(Number(process.env.GAIA_HYPOTHESIS_SCAN_INTERVAL_MS) || DEFAULT_INTERVAL_MS, DEFAULT_INTERVAL_MS);
 });
 
+test('scan starts for every documented "on" spelling and stops for every "off" one', () => {
+  const cognition = fakeStore([]);
+  const sink = { update: async () => {} };
+
+  for (const token of ['true', 'on', '1', 'yes']) {
+    const scan = createSoftPromotionScan({ cognition, sink, env: { GAIA_HYPOTHESIS_SCAN: token }, logger: silent });
+    assert.ok(scan, `GAIA_HYPOTHESIS_SCAN=${token} must start the scan, not silence it`);
+    assert.equal(scan.enabled, true);
+  }
+
+  for (const token of ['false', 'off', '0', 'no']) {
+    assert.equal(
+      createSoftPromotionScan({ cognition, sink, env: { GAIA_HYPOTHESIS_SCAN: token }, logger: silent }),
+      null,
+      token,
+    );
+  }
+});
+
 test('scan starts once, runs immediately, and stops cleanly', async () => {
   const cognition = fakeStore([micro()]);
   const sink = createCognitionSink({ cognition, sync: null }).hypothesis;

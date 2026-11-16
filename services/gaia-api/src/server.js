@@ -38,6 +38,7 @@ const express = require('express');
 const { parseTokens, createAuthMiddleware } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient, createCrossBankRecallClient } = require('./hindsightClient');
+const { flag } = require('./flags');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
 const { createHindsightPatternAdapter } = require('./reasoning/hindsightPatternAdapter');
@@ -238,7 +239,7 @@ function createApp(env = process.env) {
     { name: hindsightOwnBankId, client: hindsightOwn },
   ];
   const memoryHome = { name: hindsightBankId, client: hindsightApp };
-  const memoryTool = env.GAIA_MEMORY_TOOL === 'false'
+  const memoryTool = !flag(env, 'GAIA_MEMORY_TOOL', { default: true })
     ? null
     : createMemoryTool({
       hindsight: hindsightApp,
@@ -279,7 +280,7 @@ function createApp(env = process.env) {
   let softPromotionScan = null;
   let expiryScan = null;
   let beliefFormationScan = null;
-  if ((env.GAIA_HYPOTHESIS_PERSISTENCE || 'true') !== 'false') {
+  if (flag(env, 'GAIA_HYPOTHESIS_PERSISTENCE', { default: true })) {
     const cognitionSink = createCognitionSink({ cognition, sync: cognitionSync });
 
     // Read adapters (Hindsight) — recall/load only; their sinks are retired.
@@ -333,7 +334,7 @@ function createApp(env = process.env) {
     // the seam carries the restraint (one per turn, its own conversation first,
     // never more than three times, a retry term in between) so a turn that is
     // switched off costs nothing and behaves exactly as before.
-    if (env.GAIA_OPEN_QUESTION_REACH === 'on') {
+    if (flag(env, 'GAIA_OPEN_QUESTION_REACH', { default: false })) {
       hypothesisRuntime.openQuestions = {
         list: () => cognition.listHypotheses({ kind: 'open_question' }),
         markRaised: (id) => cognition.markQuestionRaised(id),
@@ -512,7 +513,7 @@ function createApp(env = process.env) {
   // Uses the `aion` provider role (env fallback: the reasoning role),
   // so it can be pointed at its own model. Off with GAIA_AION=false.
   function getEffectiveAionWriter() {
-    if (env.GAIA_AION === 'false') return undefined;
+    if (!flag(env, 'GAIA_AION', { default: true })) return undefined;
     const roleConfig = resolveRoleConfig('aion', providerStore, env);
     if (!roleConfig || !roleConfig.baseUrl || !roleConfig.model) return undefined;
     const model = createLogosModelClient({ ...roleConfig, timeoutMs: readLogosTimeoutMs(env), logSystem: 'aion', logPurpose: 'aion' });
@@ -522,7 +523,7 @@ function createApp(env = process.env) {
   // The scheduler owns WHEN it runs: every GAIA_AION_EVERY_TURNS
   // turns, plus a flush when the conversation changes or goes idle (the
   // closest thing to an end-of-session signal this service has).
-  const aion = env.GAIA_AION === 'false'
+  const aion = !flag(env, 'GAIA_AION', { default: true })
     ? undefined
     : createAionScheduler({
         getWriter: getEffectiveAionWriter,
@@ -687,7 +688,7 @@ function createApp(env = process.env) {
     maxPerDay: Number.isFinite(Number(env.GAIA_ELEOS_MAX_PER_DAY)) ? Number(env.GAIA_ELEOS_MAX_PER_DAY) : undefined,
     tickMs: Number(env.GAIA_ELEOS_TICK_MS) || undefined,
   });
-  const eleos = env.GAIA_ELEOS === 'true'
+  const eleos = flag(env, 'GAIA_ELEOS', { default: false })
     ? createEleos({
         pass: createEleosPass({
           getModel: getEffectiveEleosModel,
@@ -706,7 +707,7 @@ function createApp(env = process.env) {
   // carries out, and reads run freely while writes and commands wait for the person's confirmation
   // (src/desktopBroker.js, docs/desktop-capability.md). Off unless a deployment opts in
   // (GAIA_DESKTOP=true); even then a turn offers it only when the client declares `desktop: true`.
-  const desktopBroker = env.GAIA_DESKTOP === 'true'
+  const desktopBroker = flag(env, 'GAIA_DESKTOP', { default: false })
     ? createDesktopBroker({
       confirmTimeoutMs: Number(env.GAIA_DESKTOP_CONFIRM_TIMEOUT_MS) || undefined,
       resultTimeoutMs: Number(env.GAIA_DESKTOP_RESULT_TIMEOUT_MS) || undefined,
@@ -730,7 +731,7 @@ function createApp(env = process.env) {
     env.GAIA_RESEARCH_JOBS_PATH !== undefined ? { jobsDir: env.GAIA_RESEARCH_JOBS_PATH } : {}
   );
   const researchOutboxDir = resolveOutboxDir(env);
-  const researchJobs = env.GAIA_RESEARCH_REACH === 'on'
+  const researchJobs = flag(env, 'GAIA_RESEARCH_REACH', { default: false })
     ? {
         start: async ({ question, skillId, conversationId }) => startResearchJob({
           question,
@@ -863,7 +864,7 @@ function createApp(env = process.env) {
       });
 
       // PATCH: Resolve attachments for streaming path too
-      const modelSupportsVision = env.GAIA_NATIVE_SUPPORTS_VISION === 'true' || false;
+      const modelSupportsVision = flag(env, 'GAIA_NATIVE_SUPPORTS_VISION', { default: false });
       const resolvedAttachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
       
       // STAGE 2: Log resolved attachments for streaming
@@ -921,7 +922,7 @@ function createApp(env = process.env) {
     // PATCH: Determine if model supports vision
     // Option 1: Explicit env var GAIA_NATIVE_SUPPORTS_VISION
     // Option 2: Auto-detect from native generator presence (fallback to false)
-    const modelSupportsVision = env.GAIA_NATIVE_SUPPORTS_VISION === 'true' || false;
+    const modelSupportsVision = flag(env, 'GAIA_NATIVE_SUPPORTS_VISION', { default: false });
     
     const attachments = await resolveAttachmentsForPrompt(libraryStore, attachmentIds, { modelSupportsVision });
     
@@ -1267,7 +1268,7 @@ function createApp(env = process.env) {
   // Same posture as the worker: best-effort, off when Kairos itself is off,
   // and separately switchable with GAIA_KAIROS_DIGEST_ENABLED=false.
   let digestScheduler = null;
-  if (kairosRuntime && env.GAIA_KAIROS_DIGEST_ENABLED !== 'false') {
+  if (kairosRuntime && flag(env, 'GAIA_KAIROS_DIGEST_ENABLED', { default: true })) {
     digestScheduler = createDigestScheduler({
       writer: digestWriter,
       timeZone: env.GAIA_KAIROS_DIGEST_TIMEZONE || 'Europe/Amsterdam',

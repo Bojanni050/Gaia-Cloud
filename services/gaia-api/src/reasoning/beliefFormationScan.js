@@ -1,5 +1,7 @@
 'use strict';
 
+const { flag } = require('../flags');
+
 /**
  * Belief formation — the periodic pass that turns observations into a statement.
  *
@@ -161,14 +163,14 @@ function createBeliefFormationScan({
   minObservations = Number(env.GAIA_BELIEF_MIN_OBSERVATIONS) || DEFAULT_MIN_OBSERVATIONS,
   maxAgeDays = Number(env.GAIA_BELIEF_MAX_AGE_DAYS) || DEFAULT_MAX_AGE_DAYS,
   lookback = Number(env.GAIA_BELIEF_LOOKBACK) || DEFAULT_LOOKBACK,
-  recallGround = (env.GAIA_BELIEF_RECALL_GROUND || 'true') !== 'false',
+  recallGround = flag(env, 'GAIA_BELIEF_RECALL_GROUND', { default: true }),
   recallGroundMaxPerPass = Number(env.GAIA_BELIEF_RECALL_GROUND_MAX_PER_PASS) || DEFAULT_RECALL_GROUND_MAX_PER_PASS,
   recallGroundTop = Number(env.GAIA_BELIEF_RECALL_GROUND_TOP) || DEFAULT_RECALL_GROUND_TOP,
   now = Date.now,
   logger = console,
   onFormed = null,
 } = {}) {
-  if ((env.GAIA_BELIEF_FORMATION || 'true') !== 'true') return null;
+  if (!flag(env, 'GAIA_BELIEF_FORMATION', { default: true })) return null;
   if (!cognition || typeof cognition.listObservations !== 'function') {
     logger.warn?.('[beliefs] formation pass not started: observation store unavailable');
     return null;

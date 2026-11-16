@@ -25,6 +25,7 @@
  */
 
 const { isSoftPromotable } = require('./hypothesisManager');
+const { flag } = require('../flags');
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -69,7 +70,7 @@ function createSoftPromotionScan({
   policy,
   logger = console,
 } = {}) {
-  if ((env.GAIA_HYPOTHESIS_SCAN || 'true') !== 'true') return null;
+  if (!flag(env, 'GAIA_HYPOTHESIS_SCAN', { default: true })) return null;
   if (!cognition || typeof cognition.listHypotheses !== 'function') {
     logger.warn?.('[hypotheses] soft-promotion scan not started: Cognition client unavailable');
     return null;

@@ -179,6 +179,27 @@ test('expiry: the term comes from the environment, and the pass can be turned of
   assert.equal(cognition.state.get('h-old').status, 'expired');
 });
 
+test('expiry: the spellings that used to silence it now start it, and every "off" really stops it', () => {
+  const cognition = fakeStore([row({ updated_at: daysAgo(10) })]);
+  const sink = createCognitionSink({ cognition }).hypothesis;
+
+  // `on`, `1` and `yes` used to switch this default-on pass OFF without a word
+  // (docs/advice.md C4). All four spellings now mean the same thing.
+  for (const token of ['true', 'on', '1', 'yes']) {
+    const scan = createExpiryScan({ cognition, sink, env: { GAIA_HYPOTHESIS_EXPIRY: token }, logger: silent });
+    assert.ok(scan, `GAIA_HYPOTHESIS_EXPIRY=${token} must start the pass, not stop it`);
+    assert.equal(scan.enabled, true);
+  }
+
+  for (const token of ['false', 'off', '0', 'no']) {
+    assert.equal(
+      createExpiryScan({ cognition, sink, env: { GAIA_HYPOTHESIS_EXPIRY: token }, logger: silent }),
+      null,
+      `GAIA_HYPOTHESIS_EXPIRY=${token} must stop the pass`,
+    );
+  }
+});
+
 test('expiry: it never starts without Cognition or a sink', () => {
   assert.equal(createExpiryScan({ env: {}, logger: silent }), null);
   assert.equal(createExpiryScan({ cognition: fakeStore([]), env: {}, logger: silent }), null);

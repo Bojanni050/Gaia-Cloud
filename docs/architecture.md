@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `0ac3e45` (2026-11-11).** Every path, route, flag
+> **Verified against code: commit `d11abca` (2026-11-16).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -462,25 +462,36 @@ different things with deliberately separate switches:
 
 Optional behaviour is controlled by environment flags, read through
 `createApp(env = process.env)`; a module that owns a subsystem reads its own flag
-(Kairos reads its own in `src/kairos/runtime.js`). **The idiom is not uniform** —
-some flags are `'true'`, some `'on'`, some disable only on an exact `'false'` —
-so the table states the real semantics per flag.
+(Kairos reads its own in `src/kairos/runtime.js`). **Every boolean flag goes
+through one helper** — `src/flags.js` — so the contract is identical everywhere:
+
+- unset or empty takes the default in the table;
+- `true`, `on`, `1` or `yes` turn it on; `false`, `off`, `0` or `no` turn it off;
+- any other value takes the default *and says so on the log*.
+
+That last line is the point of the helper. The same intent used to be written
+four ways, and three of them turned a documented value into a silent *disable*:
+`GAIA_HYPOTHESIS_EXPIRY=on` and `GAIA_RESEARCH_REACH=true` switched a pass off
+without a word, and a quiet background pass is invisible until its store is empty
+weeks later (`docs/advice.md` C4). Reading one flag, one way, is what makes the
+defaults below worth writing down.
 
 | Flag | Default | Where read | Turns on / off |
 | --- | --- | --- | --- |
-| `GAIA_KAIROS_ENABLED` | off | `kairos/runtime.js` | the Kairos episode worker (`'true'` enables) |
-| `GAIA_ELEOS` | off | `server.js` | Eleos check-ins (`'true'` enables) |
-| `GAIA_DESKTOP` | off | `server.js` | the `desktop` capability, its broker and `/desktop/*` (`'true'` enables) |
-| `GAIA_RESEARCH_REACH` | off | `server.js` | research jobs at Hermes (only the literal `'on'` enables) |
-| `GAIA_OPEN_QUESTION_REACH` | off | `server.js` | Gaia re-raising her own open question (`'on'` enables) |
-| `GAIA_AION` | on | `server.js` | the Aion pass (`'false'` disables) |
-| `GAIA_MEMORY_TOOL` | on | `server.js` | **all five** memory tools (`'false'` disables); the `/memory/*` routes are independent of it |
-| `GAIA_HYPOTHESIS_PERSISTENCE` | on | `server.js` | the whole derived-knowledge runtime: manager, pattern manager, knowledge adapter, open-question reach and the three scans (`'false'` disables) |
-| `GAIA_HYPOTHESIS_FORMATION` | `'beliefs'` | `server.js` | per-turn hypothesis formation — off unless `'per_turn'` |
-| `GAIA_HYPOTHESIS_SCAN` | on | `softPromotionScan.js` | only the literal `'true'` (or unset) keeps it on |
-| `GAIA_HYPOTHESIS_EXPIRY` | on | `expiryScan.js` | same shape; `GAIA_HYPOTHESIS_EXPIRY_DAYS` = 14 |
-| `GAIA_BELIEF_FORMATION` | on | `beliefFormationScan.js` | same shape; `GAIA_BELIEF_RECALL_GROUND` on unless `'false'` |
-| `GAIA_LOGOS_SOCIAL_GATE` | social filter | `logos/logos.js` | `'off'` restores the legacy depth gate |
+| `GAIA_KAIROS_ENABLED` | off | `kairos/runtime.js` | the Kairos episode worker |
+| `GAIA_KAIROS_DIGEST_ENABLED` | on | `server.js` | the day-digest scheduler — only when Kairos itself is on; `GAIA_KAIROS_DIGEST_HOUR` (07:00), `GAIA_KAIROS_DIGEST_TIMEZONE`, `GAIA_KAIROS_DIGEST_INTERVAL_MS` and `GAIA_KAIROS_DIGEST_MIN_EPISODES` (5) are values, not flags |
+| `GAIA_ELEOS` | off | `server.js` | Eleos check-ins |
+| `GAIA_DESKTOP` | off | `server.js` | the `desktop` capability, its broker and `/desktop/*` |
+| `GAIA_RESEARCH_REACH` | off | `server.js` | research jobs at Hermes |
+| `GAIA_OPEN_QUESTION_REACH` | off | `server.js` | Gaia re-raising her own open question |
+| `GAIA_AION` | on | `server.js` | the Aion pass |
+| `GAIA_MEMORY_TOOL` | on | `server.js` | **all five** memory tools; the `/memory/*` routes are independent of it |
+| `GAIA_HYPOTHESIS_PERSISTENCE` | on | `server.js` | the whole derived-knowledge runtime: manager, pattern manager, knowledge adapter, open-question reach and the three scans |
+| `GAIA_HYPOTHESIS_FORMATION` | `'beliefs'` | `server.js` | not a flag but an enum (`'beliefs'` \| `'per_turn'`): per-turn formation is off unless `'per_turn'` |
+| `GAIA_HYPOTHESIS_SCAN` | on | `softPromotionScan.js` | the soft-promotion scan (`GAIA_HYPOTHESIS_SCAN_INTERVAL_MS`, 15 min) |
+| `GAIA_HYPOTHESIS_EXPIRY` | on | `expiryScan.js` | the expiry pass (`GAIA_HYPOTHESIS_EXPIRY_DAYS` = 14) |
+| `GAIA_BELIEF_FORMATION` | on | `beliefFormationScan.js` | the belief-formation pass (`GAIA_BELIEF_RECALL_GROUND` is a flag of its own, on by default) |
+| `GAIA_LOGOS_SOCIAL_GATE` | social filter | `logos/logos.js` | off restores the legacy depth gate |
 | `GAIA_NATIVE_SUPPORTS_VISION` | `false` | `server.js` | whether image bytes go to the generator or are OCR-described first |
 | `GAIA_WEB_SEARCH_API_KEY` | unset | `webSearchClient.js` | presence gate: no key ⇒ no `web_search` tool and no capability |
 | `HINDSIGHT_RECALL_BANK_IDS` | unset | `server.js` | puts `gaia-logos` back into the passive recall set |
