@@ -97,7 +97,10 @@ credentials.json
 *.key
 .credentials
 .opencode
+# Template leftover: an AGENTS.md at the root is the agent instruction file and
+# must stay tracked (Windows ignores case, so this pattern would hide it).
 agents.md
+!AGENTS.md
 
 # Tauri (desktop shell)
 src-tauri/target/
