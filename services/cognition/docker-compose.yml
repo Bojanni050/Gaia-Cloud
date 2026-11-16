@@ -1,3 +1,4 @@
+name: cognition
 services:
   gaia-cognition-db:
     image: postgres:16-alpine
@@ -24,6 +25,23 @@ services:
     networks:
       - gaia_cognition_default
 
+# The project name is pinned so the network gaia-api joins cannot shift
+# silently: compose derives a stack's network from <project>_<network key>, and
+# without this line the project is the directory name (services/cognition →
+# "cognition"). Pinned to the same value it already resolves to, so the real
+# network stays cognition_gaia_cognition_default — which is what
+# services/gaia-api/docker-compose.yml declares as external. Renaming the
+# directory used to change that name; now it cannot.
+#
+# Verified with `docker compose config` on both files (2026-11-16): this stack
+# resolves its network to cognition_gaia_cognition_default, and gaia-api's
+# cognition_net is external with exactly that name.
 networks:
   gaia_cognition_default:
+    # Named explicitly as well as derived: compose resolves <project>_<key> to
+    # cognition_gaia_cognition_default, but `-p` or COMPOSE_PROJECT_NAME
+    # overrides the project and would rename the network — and gaia-api joins it
+    # by this exact name as an external network (services/gaia-api/docker-compose.yml,
+    # cognition_net). Pinning both keeps the join one fact instead of two.
+    name: cognition_gaia_cognition_default
     driver: bridge
