@@ -818,6 +818,7 @@ function buildTurnPrompt({
 async function runGeneration({
   assembled, buildAssembled, textAttachments, multimodalAttachments, messages,
   primary, backup, desktop, onDelta, conversationId, traceId, signal, describeImage, timing,
+  decisionLogger,
 }) {
   // Direct generation with primary/backup failover. Hermes is never
   // involved unless a legacy caller adapted it as the primary above.
@@ -843,6 +844,22 @@ async function runGeneration({
     desktop && Array.isArray(desktop.tools) ? { tools: desktop.tools, onToolCall: desktop.onToolCall } : null,
     { tools: conversationTool.TOOLS, onToolCall: conversationTool.onToolCall },
   );
+  // Which verbs this turn actually put on the table — the denominator the skill
+  // telemetry needs. Without it "never called" and "never offered" read the same,
+  // and every conclusion about an unused ability would be a guess. The
+  // conversation tool rides the streamed path only, so it is offered only there.
+  const offeredTools = [...new Set([
+    ...(primary && Array.isArray(primary.toolNames) ? primary.toolNames : []),
+    ...(trackedDelta && turnTools
+      ? turnTools.tools.map((entry) => entry && entry.function && entry.function.name).filter(Boolean)
+      : []),
+  ])];
+  logEvent(decisionLogger, {
+    kind: 'tool.offered',
+    traceId: traceId || null,
+    conversationId: conversationId || null,
+    tools: offeredTools,
+  });
   const generate = (messagesForModel) => (trackedDelta
     ? streamWithFailover(messagesForModel, {
       primary, backup, onDelta: trackedDelta,
@@ -984,6 +1001,7 @@ async function runTurnCore({
   const { output, notConfigured } = await runGeneration({
     assembled, buildAssembled, textAttachments, multimodalAttachments, messages,
     primary, backup, desktop, onDelta, conversationId, traceId, signal, describeImage, timing,
+    decisionLogger,
   });
 
   // Response Engine seam: the one judgment of what generation output

@@ -515,7 +515,7 @@ HTML shell (`GET /admin`) is unauthenticated.
 | `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
 | `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
 | `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — mounted only when `GAIA_DESKTOP=true` |
-| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, activity logs |
+| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, skill telemetry (`/admin/api/skills/telemetry`), activity logs |
 | `/api` | `GET /version` — **public, no auth** |
 
 Cognition's own service speaks

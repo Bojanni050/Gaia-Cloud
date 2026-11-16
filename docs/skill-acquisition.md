@@ -85,6 +85,24 @@ een model kan in die velden van alles zetten en een pagina kan het model van
 alles laten zeggen, dus een zin landt hier nooit. Dat geldt juist voor `tool`:
 `unknown-tool` is het signaal waarbij ze zélf een naam bedenkt.
 
+### Meten — de meetbasis onder fase 1 (gebouwd)
+
+`GET /admin/api/skills/telemetry` (`src/skillTelemetry.js`) telt per tool drie
+dingen die tot nu toe door elkaar liepen: **aangeboden** (`tool.offered`, één
+regel per beurt), **gebruikt** (`tool.call`) en **bruikbaar** (`answered` /
+`empty` / `failed`), met de gaps per capability ernaast.
+
+Die drie zijn drie verschillende reparaties. Aangeboden en nooit gebruikt is een
+beschrijvingsprobleem — de awareness-regel deugt niet. Gebruikt en leeg is een
+bedradings- of queryprobleem. Een naam die niet bestaat is een ontbrekende
+vaardigheid. Zonder die scheiding lijkt elk van de drie op "het werkt niet".
+
+Alleen `unknown-tool` en `unknown-skill` zijn `learnable`; de telemetrie zet die
+vlag er zelf bij, zodat fase 1 hem niet opnieuw hoeft af te leiden en
+`not-carried` er niet per ongeluk in loopt. Een venster zonder aangeboden-regels
+is geen bewijs van afwezigheid: `unreached` zegt alleen dat er geen regel is, en
+`tool.offered` bestaat pas sinds deze stap.
+
 ### Fase 1 — de formatie-pass (nog niet gebouwd)
 
 `skillFormationScan`, naar het model van `beliefFormationScan`:
@@ -148,6 +166,10 @@ stap — en geen stille zelfaanpassing. Bewijs draagt, niet het voorstel.
 - `src/skillGap.js` — het vocabulaire en het record (fase 0).
 - `src/skillRecipe.js` — de validator: wat een recept mag zijn en welke twee
   stappen niet samen mogen. Puur, geen I/O, geen uitvoering.
+- `src/skillTelemetry.js` — de meetbasis (`/admin/api/skills/telemetry`):
+  aangeboden, gebruikt en bruikbaar per tool, plus de gaps met hun `learnable`-vlag.
+- `src/turn.js` — logt `tool.offered` naast de tools die de beurt werkelijk
+  aanbiedt; dat is de noemer die "nooit gebruikt" van "nooit aangeboden" scheidt.
 - `src/generation/gaiaGenerator.js` — `appendToolRound` logt het gat naast
   `tool.call`, want daar komt het resultaat terug en daar is de gevraagde skill
   bekend (uit de argumenten van de `desktop`-tool).

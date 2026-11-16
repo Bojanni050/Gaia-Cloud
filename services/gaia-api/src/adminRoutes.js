@@ -36,6 +36,9 @@
  *
  *   Logos:
  *   GET  /admin/api/logos/decisions   -> durable Logos decision log
+ *
+ *   Skills:
+ *   GET  /admin/api/skills/telemetry  -> offered / used / usable per tool, plus the gaps she hit
  */
 const express = require('express');
 const path = require('path');
@@ -49,6 +52,7 @@ const { CUSTOM_PROVIDER_ROLES } = require('./providerStore');
 const { resolveRoleConfig } = require('./providerConfigResolver');
 const { probeChatCompletion } = require('./providerProbe');
 const { keyEnvNameFor, providerKeyFromEnv, baseEnvNameFor, providerBaseFromEnv, envProviderHints } = require('./providerKeys');
+const { buildSkillTelemetry, DEFAULT_LIMIT: SKILL_TELEMETRY_LIMIT } = require('./skillTelemetry');
 
 const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'eleos'];
 
@@ -114,6 +118,17 @@ function createAdminRouter({
     const limit = Number(req.query.limit);
     const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
     res.json({ decisions: decisionStore.list({ limit: Number.isFinite(limit) ? limit : undefined, kind }) });
+  });
+
+  // Offered, used and usable per tool — the baseline a learned skill has to
+  // improve on. Read-only, and it never fails a request: an unreadable store
+  // returns an empty window instead of an error, because an observability
+  // reader that breaks is worse than one that says nothing.
+  router.get('/api/skills/telemetry', auth, (req, res) => {
+    const limit = Number(req.query.limit);
+    res.json(buildSkillTelemetry(decisionStore, {
+      limit: Number.isFinite(limit) && limit > 0 ? limit : SKILL_TELEMETRY_LIMIT,
+    }));
   });
 
   // --- Provider Settings routes ---
