@@ -90,6 +90,10 @@ const CAPABILITY_REGISTRY = Object.freeze({
     ]),
   }),
 
+  // The capability is called `conversation_search`, but the tool the model
+  // actually calls is `read_back` (src/reasoning/conversationTool.js). Two names
+  // for one faculty, and nothing in the registry said so — a reader who does not
+  // know it reads the architecture document as wrong (docs/advice.md C9).
   conversation_search: Object.freeze({
     id: 'conversation_search',
     type: 'retrieval',

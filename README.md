@@ -44,4 +44,20 @@ Clients depend only on contracts, never on a concrete provider — see `docs/arc
 
 ## Status
 
-See `docs/evolution.md` for the history — what's built, what's deliberately not, and why (frozen at 2026-10-14; the dated log since then is `walkthrough.md` and `walkthrough2.md`). `services/gaia-api` is the single backend for both clients: Desktop and Web speak only to it, and Logos, Hindsight and Hermes run server-side. Optional behaviour (Kairos, Eleos, desktop actions, research reach) is switched by environment flags, listed in `docs/architecture.md` under *Switches*.
+See `docs/evolution.md` for the history — what's built, what's deliberately not, and why
+(frozen at 2026-10-14). The dated log since then is `walkthrough.md` and `walkthrough2.md`,
+both in this repository's root. Where the open work lives: `docs/advice.md` (the audit's
+findings with their per-item status) and `docs/CONVENTIONS.md` (the rules a change here
+follows).
+
+`services/gaia-api` is the single backend for both clients: Desktop and Web speak only to
+it, and Logos, Hindsight and Hermes run server-side. Optional behaviour is switched by
+environment flags — every boolean flag is read through one helper
+(`services/gaia-api/src/flags.js`), and the full set, with each flag's default and its read
+site, is the *Switches* table in `docs/architecture.md`. That table also lists the
+subsystems wired by *presence* rather than a flag (no URL or key ⇒ no Hermes, no Foundation,
+no web search).
+
+`docs/architecture.md` is machine-checked: `scripts/verify-architecture.js` re-reads its
+paths, flags, capability ids, lifecycle terms and routes on every push that touches `docs/`,
+`services/` or `scripts/`, so a claim that drifts is a red build instead of a surprise.
