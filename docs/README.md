@@ -50,8 +50,10 @@ Two kinds of document are deliberately **not** here: the dated log (`walkthrough
 `walkthrough2.md`) lives in the repository root, and the client-side documents live in the
 client repositories (`gaia-desktop`, `gaia-web`).
 
-In the root itself: `README.md`, `AGENTS.md` (the agent entry) and the two walkthrough
-volumes. Nothing loose — the two leftovers from August and September (`test_result.md`, a
-testing protocol for a two-agent setup that no longer exists, and
-`CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md`) were removed on 2026-11-16, with the one lesson
-in them rescued into the test that guards it.
+In the root itself: `README.md`, `AGENTS.md` and the two walkthrough volumes. `AGENTS.md` is
+the thin agent entry — the layout, the commands and the rules that bite, and it points at this
+file for how a change is made; the blocks appended to it from other projects, which duplicated
+the log format in an older shape, are gone (2026-11-16). Nothing loose — the two leftovers from
+August and September (`test_result.md`, a testing protocol for a two-agent setup that no longer
+exists, and `CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md`) were removed on 2026-11-16 as well, with
+the one lesson in them rescued into the test that guards it.
