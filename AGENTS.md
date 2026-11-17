@@ -77,7 +77,9 @@ the deploy. A change that touches only the root (e.g. `walkthrough2.md`) trigger
   `GAIA_TTS_*`, `GAIA_NATIVE_*` and friends in `.env` changes nothing while the store has a
   value. `get /speech/info` and `/speech/stt-info` tell you which provider is actually live.
 - Auth is the bearer token from `GAIA_API_TOKEN` (503 when unset, so a misconfigured container
-  looks like an outage). Everything is tailnet-only by design.
+  looks like an outage), and `/admin` has its own `GAIA_ADMIN_TOKEN` — a client token does not
+  open the operator page, and no admin token means those routes answer 503. Everything is
+  tailnet-only by design.
 - `.env` files are gitignored and survive the deploy; `.env.example` per service documents every
   variable. Never commit real values or read them into the conversation.
 

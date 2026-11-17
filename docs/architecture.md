@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `a1a485e` (2026-11-16).** Every path, route, flag
+> **Verified against code: commit `8ae427a` (2026-11-16).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -505,6 +505,7 @@ neither has an interval to be late on.
 | `MEMORY_MAX_LINES` | 9 | `server.js` | how many recall lines may reach the prompt |
 | `HINDSIGHT_TIMEOUT_MS` | 4000 | `hindsightClient.js` | the per-Hindsight-call cap, not a latency target |
 | `GAIA_API_TOKEN` | unset | `auth.js` | comma-separated client tokens; **unset means fail closed** |
+| `GAIA_ADMIN_TOKEN` | unset | `auth.js` | the operator token for `/admin` — its own variable, not another entry in the list above; **unset means `/admin/api/*` answers 503** |
 
 Subsystems wired by *presence* rather than a boolean: `GAIA_NATIVE_BASE_URL` /
 `GAIA_NATIVE_MODEL` (no generator ⇒ a calm 503), `GAIA_BACKUP_*` (no failover),
@@ -518,9 +519,16 @@ variables and the admin provider settings; the full annotated list lives in
 
 ## HTTP surface
 
-All client routes require the Bearer token. `/admin` is operator-only and never
-part of a client's contract — but note it shares the *same* Bearer token, and its
-HTML shell (`GET /admin`) is unauthenticated.
+All client routes require the Bearer token (`GAIA_API_TOKEN`). `/admin` is
+operator-only and never part of a client's contract, and since 2026-11-16 it has
+**its own token** (`GAIA_ADMIN_TOKEN`): every client and device holds the API
+token, so that token cannot be the thing that opens the provider config, the
+decision log or the pass surface. Unset is a real state — `/admin/api/*` then
+answers 503 and names the variable rather than falling back to the token every
+client already has. The HTML shell (`GET /admin`) stays unauthenticated on
+purpose: a browser cannot send a Bearer header on a plain navigation, the page
+carries no data itself, and every call it makes carries the operator token from
+its own input field (`docs/advice.md` C3).
 
 | Mount | Routes |
 | --- | --- |
@@ -533,7 +541,7 @@ HTML shell (`GET /admin`) is unauthenticated.
 | `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
 | `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
 | `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — mounted only when `GAIA_DESKTOP=true` |
-| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, skill telemetry (`/admin/api/skills/telemetry`), the background-pass surface (`/admin/api/scans`), activity logs |
+| `/admin` | operator-only, behind `GAIA_ADMIN_TOKEN`: ~30 API routes — provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, skill telemetry (`/admin/api/skills/telemetry`), the background-pass surface (`/admin/api/scans`), activity logs; the HTML shell (`GET /admin`) itself is unauthenticated and carries no data |
 | `/api` | `GET /version` — **public, no auth** |
 
 Cognition's own service speaks

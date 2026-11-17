@@ -249,7 +249,7 @@ cross-bank client is what `search_memory` uses.
 | `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
 | `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
 | `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — only when `GAIA_DESKTOP` is on |
-| `/admin` | operator-only, ~30 API routes; its HTML shell (`GET /admin`) is unauthenticated |
+| `/admin` | operator-only, behind `GAIA_ADMIN_TOKEN`: ~30 API routes; the HTML shell (`GET /admin`) is unauthenticated and carries no data |
 | `/api` | `GET /version` — public, no auth |
 
 Cognition's own service speaks

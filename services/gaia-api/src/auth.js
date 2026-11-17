@@ -50,4 +50,40 @@ function createAuthMiddleware(tokens) {
   };
 }
 
-module.exports = { parseTokens, createAuthMiddleware };
+/**
+ * The operator surface's own token — deliberately **not** `GAIA_API_TOKEN`.
+ *
+ * Every client and every device holds an API token, so that token cannot be the
+ * thing that opens `/admin`: provider keys, model choices, the durable Logos
+ * decision log, skill telemetry and the background-pass surface all sit behind
+ * those routes, and one leaked client configuration would then be operator
+ * access (`docs/advice.md` C3).
+ *
+ * Unset is a real state and not something to paper over by falling back to the
+ * token every client already has: no `GAIA_ADMIN_TOKEN` means nobody is the
+ * operator, so `/admin/api/*` answers 503 and names the missing variable. That
+ * is louder — and more useful — than a 401 that reads as "wrong token". The log
+ * line fires the first time somebody actually needs admin, not at every boot,
+ * so a deployment that never uses the operator surface stays quiet.
+ *
+ * The HTML shell (`GET /admin`) stays unauthenticated on purpose: a browser
+ * cannot send a Bearer header on a plain navigation, the page holds no data by
+ * itself, and every call it makes carries the operator token from its own input.
+ */
+function createOperatorAuth(raw, { logger = console } = {}) {
+  const tokens = parseTokens(raw);
+  const check = createAuthMiddleware(tokens);
+  let warned = false;
+  return function operatorAuth(req, res, next) {
+    if (tokens.size === 0) {
+      if (!warned) {
+        warned = true;
+        logger.warn?.('[admin] GAIA_ADMIN_TOKEN is unset — /admin/api/* answers 503 until it is');
+      }
+      return res.status(503).json({ error: 'no admin token configured' });
+    }
+    return check(req, res, next);
+  };
+}
+
+module.exports = { parseTokens, createAuthMiddleware, createOperatorAuth };

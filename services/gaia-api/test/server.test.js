@@ -43,6 +43,11 @@ fs.writeFileSync(FOUNDATION_ARTIFACT_PATH, JSON.stringify({
 function baseEnv(overrides = {}) {
   return {
     GAIA_API_TOKEN: TOKEN,
+    // /admin has its own token since C3 (docs/advice.md). These tests are about
+    // the turn, the tools and the stores, not about that split, so both token
+    // variables carry the same value here; test/adminToken.test.js is where the
+    // separation is proven.
+    GAIA_ADMIN_TOKEN: TOKEN,
     HERMES_BASE_URL: HERMES_BASE,
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,
