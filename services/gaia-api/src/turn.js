@@ -1661,4 +1661,8 @@ module.exports = {
   performStreamingTurn,
   renderAttachmentContext,
   renderTextAttachmentContext,
+  // Exported so the bank rule can be tested where it is decided — which client
+  // fills the recall lines — instead of by reading this file's text
+  // (docs/advice.md C8).
+  recallForTurn,
 };

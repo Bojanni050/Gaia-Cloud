@@ -38,7 +38,7 @@
 const express = require('express');
 const { parseTokens, createAuthMiddleware, createOperatorAuth } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
-const { createHindsightClient, createCrossBankRecallClient } = require('./hindsightClient');
+const { createHindsightClient, createCrossBankRecallClient, createTurnRecallClients } = require('./hindsightClient');
 const { flag } = require('./flags');
 const { createHindsightHypothesisAdapter } = require('./reasoning/hindsightHypothesisAdapter');
 const { createHypothesisManager } = require('./reasoning/hypothesisManager');
@@ -196,10 +196,10 @@ function createApp(env = process.env) {
   // that asks about her ("wat vind jij", "wat houdt je bezig"). The full client
   // above stays the one `search_memory` uses: when she looks something up
   // herself, the derived knowledge and her own notes are memory too.
-  const hindsightPassive = createCrossBankRecallClient(hindsightApp);
-  const hindsightSelf = hindsightOwn
-    ? createCrossBankRecallClient(hindsightApp, hindsightOwn)
-    : hindsightPassive;
+  const { passive: hindsightPassive, self: hindsightSelf } = createTurnRecallClients({
+    app: hindsightApp,
+    own: hindsightOwn,
+  });
   // The SHALLOW live lookup — a sibling of the research job, never a
   // replacement for it. Configured provider or no tool at all: the
   // `web_search` capability is derived from the tool's presence, so she is
