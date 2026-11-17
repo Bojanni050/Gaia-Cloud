@@ -41,7 +41,7 @@ maintained version and wins — four bullets plus `Open punt:`.
 | `desktop-client-task.md` | a task description for a session in the Gaia-Desktop repo | handoff to that repository |
 | `background-voice-cloud-spec.md` | the cloud half of background voice | carries its own status line: C1 implemented on a branch, C2/C3 proposed |
 | `skill-acquisition.md` | what Gaia may learn, and the phases of it | active — phase 0 and the measurement are built; phases 1 and 2 are not |
-| `spike-cortexiq.md` | the CortexIQ spike: measurements, conclusion, order of steps | active decision material; nothing of it is built |
+| `spike-cortexiq.md` | the CortexIQ spike: measurements, conclusion, decision, order of steps | active decision material; nothing of it is built, but its §3 rule already binds new code — a marker that must outlive the memory layer goes in a tag, not in a `metadata` key |
 | `handover-2026-10-23-optie2.md` | the optie-2 handover with its open items | mostly executed; item 4's survey tool landed 2026-11-16 |
 | `foundation ingestion capture-rs.md` | what does *not* happen between Foundation and Gaia | constraints and reference |
 | `Epistemic Memory & Execution Rules .txt` | the one-way rule and the execution rules behind the derived store | principle text, reference |
