@@ -39,4 +39,9 @@ function build() {
   console.log(`Wrote ${OUTPUT_PATH}`);
 }
 
-build();
+// Only when run as a program: the drift guard and the suites read `DOCUMENTS` and
+// `loadDocument` from this file, and requiring it must not rewrite the artifact as
+// a side effect of asking what is in it.
+if (require.main === module) build();
+
+module.exports = { DOCUMENTS, loadDocument, build };
