@@ -1418,6 +1418,7 @@
 
   function summarizeTtsEntry(e) {
     return [
+      e.route ? 'route: ' + e.route : null,
       'provider: ' + (e.provider || '—'),
       'model: ' + (e.model || '—'),
       e.voiceId ? 'voice: ' + e.voiceId : null,

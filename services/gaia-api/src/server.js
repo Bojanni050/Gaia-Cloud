@@ -18,7 +18,8 @@
  *                              message in a server-started conversation
  *   POST /speech             → audio/*             (auth required; { text } → Gaia's voice, src/speech/mimoTts.js or
  *                              src/speech/mistralTts.js per the TTS provider — presentation-only, always *after* a text
- *                              reply exists, never a turn decision)
+ *                              reply exists, never a turn decision; a reply too long for one synthesis request comes back
+ *                              as one audio/wav instead of one mp3 clip, because it is spoken segment by segment)
  *   POST /speech/transcribe  → { text, language }  (auth required; one utterance of audio in the request body -> text,
  *                              src/speech/mistralStt.js — an input transport only: the client sends the text as an ordinary turn)
  *   GET  /speech/stt-info    → { configured, provider, languages, maxBytes }  (auth required)
@@ -599,6 +600,7 @@ function createApp(env = process.env) {
           authToken: providerTtsConfig.apiKey,
           voiceId: providerTtsConfig.voiceId,
           format: env.GAIA_TTS_FORMAT,
+          env,
         }),
         config: providerTtsConfig,
       };
@@ -1142,7 +1144,7 @@ function createApp(env = process.env) {
    *
    * @returns {{ error: { status: number, message: string } } | { text: string, language: string|undefined, effectiveTts: object, logBase: object }}
    */
-  function prepareSpeech(body) {
+  function prepareSpeech(body, route) {
     const text = body && body.text;
     if (typeof text !== 'string' || text.trim() === '') {
       return { error: { status: 400, message: 'text must be a non-empty string' } };
@@ -1152,6 +1154,10 @@ function createApp(env = process.env) {
     const language = body.language === 'en' || body.language === 'nl' ? body.language : undefined;
     const { tts: effectiveTts, config: ttsConfig } = getEffectiveTts(language);
     const logBase = {
+      // Which route was called — `speech` (one complete clip) or `stream` (PCM
+      // as it is synthesized). Without it the tail cannot answer the one
+      // question it exists for: "is what I heard even what I think was called?"
+      route: route || null,
       provider: ttsConfig ? ttsConfig.provider : null,
       model: ttsConfig ? ttsConfig.model : null,
       voiceId: (ttsConfig && ttsConfig.voiceId) || '',
@@ -1172,7 +1178,7 @@ function createApp(env = process.env) {
   }
 
   app.post('/speech', auth, async (req, res) => {
-    const prepared = prepareSpeech(req.body);
+    const prepared = prepareSpeech(req.body, 'speech');
     if (prepared.error) return res.status(prepared.error.status).json({ error: prepared.error.message });
     const { text, effectiveTts, logBase } = prepared;
     const ttsStart = process.hrtime.bigint();
@@ -1211,7 +1217,7 @@ function createApp(env = process.env) {
   // body, same auth, one sound, just no earlier first byte. A client can
   // therefore always ask this route, whatever voice is behind it.
   app.post('/speech/stream', auth, async (req, res) => {
-    const prepared = prepareSpeech(req.body);
+    const prepared = prepareSpeech(req.body, 'stream');
     if (prepared.error) return res.status(prepared.error.status).json({ error: prepared.error.message });
     const { text, effectiveTts, logBase } = prepared;
     const ttsStart = process.hrtime.bigint();

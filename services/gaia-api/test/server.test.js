@@ -627,6 +627,7 @@ test('POST /speech records each attempt in the admin voice-activity log', async 
         assert.equal(entries.length, 1);
         assert.equal(entries[0].outcome, 'ok');
         assert.equal(entries[0].status, 200);
+        assert.equal(entries[0].route, 'speech');
         assert.equal(entries[0].provider, 'env');
         assert.equal(entries[0].model, 'mimo-v2.5-tts-voicedesign');
         assert.match(entries[0].preview, /It feels good/);
@@ -837,6 +838,7 @@ test('POST /speech/stream records the attempt, the first byte and the size in th
       assert.equal(entries.length, 1);
       assert.equal(entries[0].outcome, 'ok');
       assert.equal(entries[0].status, 200);
+      assert.equal(entries[0].route, 'stream');
       assert.equal(entries[0].provider, 'env');
       assert.equal(entries[0].model, 'mimo-v2.5-tts');
       assert.equal(entries[0].voiceId, 'Chloe');
@@ -988,6 +990,58 @@ test('POST /speech picks the English voice for language=en and the default voice
       const info = await (await originalFetch(`http://127.0.0.1:${port}/speech/info`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
       assert.equal(info.provider, 'mistral');
       assert.ok(info.languages.includes('nl') && info.languages.includes('en'));
+    });
+  });
+});
+
+test('POST /speech speaks a long Mistral reply segment by segment and answers it as one WAV', async () => {
+  const storePath = writeTtsProviderConfig({
+    provider: 'mistral',
+    baseUrl: TTS_BASE,
+    apiKey: 'mistral-key',
+    model: 'voxtral-mini-tts-2603',
+  });
+  const asked = [];
+  const fake = async (url, options = {}) => {
+    const href = String(url);
+    if (!href.startsWith(`${TTS_BASE}/audio/speech`)) throw new Error(`unexpected fetch in test to ${href}`);
+    asked.push(options.body ? JSON.parse(options.body) : {});
+    // Two samples of "speech" per segment, in the streaming shape Mistral uses.
+    const samples = Buffer.from(new Float32Array([0.5, -0.5]).buffer).toString('base64');
+    const sse = `data: ${JSON.stringify({ type: 'speech.audio.delta', audio_data: samples })}\n\n`
+      + `data: ${JSON.stringify({ type: 'speech.audio.done', usage: {} })}\n\n`;
+    return { ok: true, body: (async function* () { yield Buffer.from(sse); })() };
+  };
+
+  await withMockedFetch(fake, async (originalFetch) => {
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath, GAIA_TTS_FORMAT: 'mp3' }));
+    await withServer(app, async (port) => {
+      const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({ text: 'Eerste alinea hier.\n\nTweede alinea daar.' }),
+      });
+      const buf = Buffer.from(await res.arrayBuffer());
+
+      assert.equal(res.status, 200);
+      // One request per paragraph — never one long request, which is the shape
+      // that fades as it goes (measured −16.6 dB over 36 s).
+      assert.equal(asked.length, 2);
+      assert.deepEqual(asked.map((body) => body.input), ['Eerste alinea hier.', 'Tweede alinea daar.']);
+      assert.ok(asked.every((body) => body.stream === true && body.response_format === 'pcm'));
+      // ...and the client still receives one playable file, not a stream.
+      assert.equal(res.headers.get('content-type'), 'audio/wav');
+      assert.equal(buf.subarray(0, 4).toString('ascii'), 'RIFF');
+      assert.equal(buf.readUInt32LE(40), buf.length - 44, 'the data chunk covers everything after the header');
+
+      const logRes = await originalFetch(`http://127.0.0.1:${port}/admin/api/tts/log`, {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      const entries = (await logRes.json()).entries;
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].route, 'speech');
+      assert.equal(entries[0].outcome, 'ok');
+      assert.equal(entries[0].provider, 'mistral');
     });
   });
 });
