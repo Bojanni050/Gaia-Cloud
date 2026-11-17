@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `2e30de1` (2026-11-17).** Every path, route, flag
+> **Verified against code: commit `561a7ad` (2026-11-17).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -245,11 +245,18 @@ observation · ingest ─────▶ hypothesis (kind: hypothesis ·       �
     Aion pass (`reasoning/aion.js`, tagged `gaia:aion`) and the on-demand `keep`
     tool. It joins recall **only when the turn asks about her**.
   - `gaia-logos` — the derived mirror (`gaia:*`). It takes **no lines of its own**
-    in a turn; it is put back only by setting `HINDSIGHT_RECALL_BANK_IDS`.
-    The *full* three-bank client is what `search_memory` uses: when she looks
-    something up herself, her own notes and the derived knowledge are memory too.
-    So a derived statement is reachable — just not as surfaceable on an ordinary
-    turn as a raw memory of Bo's, deliberately.
+    in a turn; it is put back only by setting `HINDSIGHT_RECALL_BANK_IDS`. It *is*
+    recalled during a turn, but never as a line: the adapters load its own records
+    — hypotheses and patterns — with `tags` set
+    (`reasoning/hindsightHypothesisAdapter.js`, `hindsightPatternAdapter.js`), and
+    a *line* recall is the one **without** tags (`hindsightClient.recall`).
+    Measured at the traffic level rather than read off the source
+    (`test/recallBanksEndToEnd.test.js`, 2026-11-17): an ordinary turn recalls
+    `bojan` untagged, and `gaia-logos` only tagged. The *full* three-bank client is
+    what `search_memory` uses: when she looks something up herself, her own notes
+    and the derived knowledge are memory too. So a derived statement is reachable —
+    just not as surfaceable on an ordinary turn as a raw memory of Bo's,
+    deliberately.
 - **Reading back, and taking back, are first-class verbs on both sides.**
   `search_memory` opens an ungated cross-bank lookup, so a phrasing that missed
   the lexical recall gate is no longer a dead end. `retract_memory` /

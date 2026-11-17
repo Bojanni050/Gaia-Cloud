@@ -595,4 +595,29 @@ function createCrossBankRecallClient(primary, ...others) {
   };
 }
 
-module.exports = { createHindsightClient, createCrossBankRecallClient, mergeBankSlices, CROSS_BANK_QUOTA, quotaForBankCount, resolveLineBudget };
+/**
+ * The two per-turn recall clients, built together because the rule is about the
+ * **difference** between them rather than about either one alone:
+ *
+ *   - `passive` fills the nine recall lines from Bo's own bank (`app`) and
+ *     nothing else. He put it as "van de 9 moeten er 9 uit de bojan bank komen":
+ *     before this, the derived bank's introspection and her own bank's episodes
+ *     claimed three of the nine each, and they carried the highest scores.
+ *   - `self` adds HER bank (`own`) on a turn that asks about her ("wat houdt je
+ *     bezig"). With no second bank to add it *is* the passive client, so a caller
+ *     that only has one still gets the documented behaviour instead of a failure.
+ *
+ * The derived bank (`gaia-logos`) is in neither, deliberately — there is no third
+ * slot: it is what `search_memory` spans when she looks something up herself, and
+ * what she may read when a turn asks about her *through* her own bank.
+ *
+ * Building both here is what makes the rule testable as behaviour instead of as
+ * the arguments a caller happens to pass, which is all a source-reading test could
+ * see (`docs/advice.md` C8).
+ */
+function createTurnRecallClients({ app, own } = {}) {
+  const passive = createCrossBankRecallClient(app);
+  return { passive, self: own ? createCrossBankRecallClient(app, own) : passive };
+}
+
+module.exports = { createHindsightClient, createCrossBankRecallClient, createTurnRecallClients, mergeBankSlices, CROSS_BANK_QUOTA, quotaForBankCount, resolveLineBudget };
