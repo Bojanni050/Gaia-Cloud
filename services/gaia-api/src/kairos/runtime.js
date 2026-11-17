@@ -37,6 +37,8 @@ const DEFAULT_MAX_CLUSTERS_PER_RUN = 120;
  * }} deps
  * @returns {{ start: () => void, stop: () => void, runOnce: () => Promise<object>, enabled: boolean }|null}
  */
+const PASS = 'kairos-worker'; // the name it answers to in GET /admin/api/scans
+
 function createKairosRuntime({
   bankId,
   foundation,
@@ -47,16 +49,24 @@ function createKairosRuntime({
   intervalMs = Number(env.GAIA_KAIROS_INTERVAL_MS) || DEFAULT_INTERVAL_MS,
   logger = console,
   fetchImpl = fetch,
+  now = Date.now,
+  registry = null,
 } = {}) {
-  if (!flag(env, 'GAIA_KAIROS_ENABLED', { default: false })) return null;
+  if (!flag(env, 'GAIA_KAIROS_ENABLED', { default: false })) {
+    registry?.declare(PASS, { enabled: false, reason: 'GAIA_KAIROS_ENABLED is off (default)' });
+    return null;
+  }
   if (!foundation || typeof foundation.listObservationsSince !== 'function') {
     logger.warn?.('[kairos] not started: Foundation read seam unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'Foundation read seam unavailable' });
     return null;
   }
   if (!cognition || typeof cognition.createKairosEpisode !== 'function') {
     logger.warn?.('[kairos] not started: Cognition client unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'Cognition client unavailable' });
     return null;
   }
+  registry?.declare(PASS, { enabled: true, intervalMs });
 
   const synthesizer = createSynthesizer({
     resolveConfig: () => resolveRoleConfig('kairos', providerStore, env),
@@ -115,11 +125,23 @@ function createKairosRuntime({
     }
   }
 
+  /**
+   * One run, recorded — the timer and a hand-asked run both go through here, so
+   * `GET /admin/api/scans` can show what this pass last did. The re-entrancy
+   * answer (`{ skipped: true }`) is not a run and is not recorded.
+   */
+  async function pass() {
+    const at = now();
+    const result = await runOnce();
+    if (!(result && result.skipped === true)) registry?.record(PASS, { at, durationMs: now() - at, result });
+    return result;
+  }
+
   function start() {
     if (timer) return;
-    timer = setInterval(() => { void runOnce(); }, intervalMs);
+    timer = setInterval(() => { void pass(); }, intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
-    void runOnce();
+    void pass();
     logger.info?.(`[kairos] worker started for bank ${bankId} (every ${intervalMs}ms)`);
   }
 
@@ -128,7 +150,7 @@ function createKairosRuntime({
     timer = null;
   }
 
-  return { start, stop, runOnce, enabled: true };
+  return { start, stop, runOnce: pass, enabled: true };
 }
 
 module.exports = { createKairosRuntime, DEFAULT_INTERVAL_MS };

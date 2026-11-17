@@ -451,6 +451,8 @@ const DEFAULT_DIGEST_INTERVAL_MS = 15 * 60 * 1000;
  * Missing episodes are logged once per day, not every tick — an empty day is a
  * fact about capture, not an error to repeat 96 times.
  */
+const PASS = 'kairos-digest'; // the name it answers to in GET /admin/api/scans
+
 function createDigestScheduler({
   writer,
   timeZone = DEFAULT_TIMEZONE,
@@ -460,6 +462,7 @@ function createDigestScheduler({
   logger = console,
   setTimer = setInterval,
   clearTimer = clearInterval,
+  registry = null,
 } = {}) {
   if (!writer || typeof writer.generate !== 'function') {
     throw new Error('createDigestScheduler requires a digest writer');
@@ -500,11 +503,24 @@ function createDigestScheduler({
     }
   }
 
+  /**
+   * One tick, recorded. `{ skipped: 'too-early' }` is a real answer — the loop
+   * is alive and it is simply not the hour yet — so it is recorded too, and the
+   * counts of the last day that actually produced something are kept alongside
+   * `lastError` rather than being overwritten by it.
+   */
+  async function pass() {
+    const at = now().getTime();
+    const result = await tick();
+    registry?.record(PASS, { at, durationMs: now().getTime() - at, result });
+    return result;
+  }
+
   function start() {
     if (timer) return;
-    timer = setTimer(() => { void tick(); }, intervalMs);
+    timer = setTimer(() => { void pass(); }, intervalMs);
     if (timer && typeof timer.unref === 'function') timer.unref();
-    void tick();
+    void pass();
     logger.info?.(`[kairos] digest scheduler started (after ${String(hour).padStart(2, '0')}:00 ${timeZone}, every ${intervalMs}ms)`);
   }
 
@@ -513,7 +529,7 @@ function createDigestScheduler({
     timer = null;
   }
 
-  return { start, stop, tick };
+  return { start, stop, tick: pass };
 }
 
 module.exports = {

@@ -474,7 +474,14 @@ four ways, and three of them turned a documented value into a silent *disable*:
 `GAIA_HYPOTHESIS_EXPIRY=on` and `GAIA_RESEARCH_REACH=true` switched a pass off
 without a word, and a quiet background pass is invisible until its store is empty
 weeks later (`docs/advice.md` C4). Reading one flag, one way, is what makes the
-defaults below worth writing down.
+defaults below worth writing down — and every pass named below reports into one
+registry, so `GET /admin/api/scans` can answer what the flags cannot: per pass
+whether it is `enabled`, the `reason` when it is not, when it last ran, what it
+last found and its last error (`docs/advice.md` C7). "The pass is off" and "the
+pass found nothing" stop looking identical. Two things that resemble passes are
+deliberately absent from that list: the background Logos reflection runs inside a
+turn's deferred chain and the Cognition→Hindsight mirror runs on a write, so
+neither has an interval to be late on.
 
 | Flag | Default | Where read | Turns on / off |
 | --- | --- | --- | --- |
@@ -526,7 +533,7 @@ HTML shell (`GET /admin`) is unauthenticated.
 | `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
 | `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
 | `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — mounted only when `GAIA_DESKTOP=true` |
-| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, skill telemetry (`/admin/api/skills/telemetry`), activity logs |
+| `/admin` | ~30 API routes: provider config / roles / keys / models, backup, TTS (default and English), STT, the durable Logos decision log, skill telemetry (`/admin/api/skills/telemetry`), the background-pass surface (`/admin/api/scans`), activity logs |
 | `/api` | `GET /version` — **public, no auth** |
 
 Cognition's own service speaks

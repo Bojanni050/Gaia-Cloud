@@ -154,6 +154,8 @@ function groupBySharedGround(rows) {
   return [...groups.values()];
 }
 
+const PASS = 'belief-formation'; // the name it answers to in GET /admin/api/scans
+
 function createBeliefFormationScan({
   cognition,
   sink,
@@ -169,16 +171,23 @@ function createBeliefFormationScan({
   now = Date.now,
   logger = console,
   onFormed = null,
+  registry = null,
 } = {}) {
-  if (!flag(env, 'GAIA_BELIEF_FORMATION', { default: true })) return null;
+  if (!flag(env, 'GAIA_BELIEF_FORMATION', { default: true })) {
+    registry?.declare(PASS, { enabled: false, reason: 'GAIA_BELIEF_FORMATION is off' });
+    return null;
+  }
   if (!cognition || typeof cognition.listObservations !== 'function') {
     logger.warn?.('[beliefs] formation pass not started: observation store unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'observation store unavailable' });
     return null;
   }
   if (!sink || typeof sink.save !== 'function') {
     logger.warn?.('[beliefs] formation pass not started: hypothesis sink unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'hypothesis sink unavailable' });
     return null;
   }
+  registry?.declare(PASS, { enabled: true, intervalMs });
 
   let running = false;
   let timer = null;
@@ -331,11 +340,24 @@ function createBeliefFormationScan({
     }
   }
 
+  /**
+   * One run, recorded. The timer and a hand-asked run both go through here, so
+   * `GET /admin/api/scans` can show what this pass last did. The re-entrancy
+   * answer (`{ skipped: true }`) is not a run and is not recorded: it would
+   * overwrite the counts of the run that is still going.
+   */
+  async function pass() {
+    const at = now();
+    const result = await runOnce();
+    if (!(result && result.skipped === true)) registry?.record(PASS, { at, durationMs: now() - at, result });
+    return result;
+  }
+
   function start() {
     if (timer) return;
-    timer = setInterval(() => { void runOnce(); }, intervalMs);
+    timer = setInterval(() => { void pass(); }, intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
-    void runOnce();
+    void pass();
     logger.info?.(`[beliefs] formation pass started (every ${intervalMs}ms, min ${minObservations} observations from 2 conversations)`);
   }
 
@@ -344,7 +366,7 @@ function createBeliefFormationScan({
     timer = null;
   }
 
-  return { start, stop, runOnce, enabled: true };
+  return { start, stop, runOnce: pass, enabled: true };
 }
 
 module.exports = {

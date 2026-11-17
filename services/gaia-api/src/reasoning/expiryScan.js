@@ -49,6 +49,8 @@ const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
  * }} deps
  * @returns {{ start: () => void, stop: () => void, runOnce: () => Promise<object>, enabled: boolean }|null}
  */
+const PASS = 'expiry'; // the name it answers to in GET /admin/api/scans
+
 function createExpiryScan({
   cognition,
   sink,
@@ -57,16 +59,23 @@ function createExpiryScan({
   days = Number(env.GAIA_HYPOTHESIS_EXPIRY_DAYS) || DEFAULT_EXPIRY_DAYS,
   now = Date.now,
   logger = console,
+  registry = null,
 } = {}) {
-  if (!flag(env, 'GAIA_HYPOTHESIS_EXPIRY', { default: true })) return null;
+  if (!flag(env, 'GAIA_HYPOTHESIS_EXPIRY', { default: true })) {
+    registry?.declare(PASS, { enabled: false, reason: 'GAIA_HYPOTHESIS_EXPIRY is off' });
+    return null;
+  }
   if (!cognition || typeof cognition.listHypotheses !== 'function') {
     logger.warn?.('[hypotheses] expiry pass not started: Cognition client unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'Cognition client unavailable' });
     return null;
   }
   if (!sink || typeof sink.update !== 'function') {
     logger.warn?.('[hypotheses] expiry pass not started: hypothesis sink unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'hypothesis sink unavailable' });
     return null;
   }
+  registry?.declare(PASS, { enabled: true, intervalMs });
 
   let running = false;
   let timer = null;
@@ -110,11 +119,24 @@ function createExpiryScan({
     }
   }
 
+  /**
+   * One run, recorded. The timer and a hand-asked run both go through here, so
+   * `GET /admin/api/scans` can show what this pass last did. The re-entrancy
+   * answer (`{ skipped: true }`) is not a run and is not recorded: it would
+   * overwrite the counts of the run that is still going.
+   */
+  async function pass() {
+    const at = now();
+    const result = await runOnce();
+    if (!(result && result.skipped === true)) registry?.record(PASS, { at, durationMs: now() - at, result });
+    return result;
+  }
+
   function start() {
     if (timer) return;
-    timer = setInterval(() => { void runOnce(); }, intervalMs);
+    timer = setInterval(() => { void pass(); }, intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
-    void runOnce();
+    void pass();
     logger.info?.(`[hypotheses] expiry pass started (every ${intervalMs}ms, term ${days} days)`);
   }
 
@@ -123,7 +145,7 @@ function createExpiryScan({
     timer = null;
   }
 
-  return { start, stop, runOnce, enabled: true };
+  return { start, stop, runOnce: pass, enabled: true };
 }
 
 module.exports = { createExpiryScan, DEFAULT_INTERVAL_MS };

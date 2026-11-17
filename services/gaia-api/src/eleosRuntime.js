@@ -78,6 +78,8 @@ function titleFromLoop(loop) {
  *   clearTimer?: Function,
  * }} [options]
  */
+const PASS = 'eleos-tick'; // the name it answers to in GET /admin/api/scans
+
 function createEleosRuntime({
   store,
   voice,
@@ -92,6 +94,7 @@ function createEleosRuntime({
   deferMs = DEFAULT_DEFER_MS,
   setTimer = setInterval,
   clearTimer = clearInterval,
+  registry = null,
 } = {}) {
   let lastActivityAt = null;
   let timer = null;
@@ -191,10 +194,26 @@ function createEleosRuntime({
     return results;
   }
 
+  /**
+   * One tick, recorded. The tick returns one outcome per due loop (delivered,
+   * deferred with a reason), and an empty array when nothing was due — which is
+   * itself worth seeing: it says the loop is alive and there was nothing to do.
+   *
+   * Arguments are forwarded: the tick takes an optional "now", which is how the
+   * tests drive it with a simulated clock.
+   */
+  async function pass(...args) {
+    const at = now().getTime();
+    const result = await tick(...args);
+    registry?.record(PASS, { at, durationMs: now().getTime() - at, result });
+    return result;
+  }
+
   /** Starts the tick. Returns a stop() function. */
   function start() {
     if (!(tickMs > 0) || timer) return () => {};
-    timer = setTimer(() => { void tick(); }, tickMs);
+    registry?.declare(PASS, { enabled: true, intervalMs: tickMs, note: 'gates now, delivers hours later' });
+    timer = setTimer(() => { void pass(); }, tickMs);
     if (timer && typeof timer.unref === 'function') timer.unref();
     return stop;
   }
@@ -207,7 +226,7 @@ function createEleosRuntime({
   }
 
   return {
-    recordActivity, isRecentActivity, evaluate, tick, deliver, start, stop,
+    recordActivity, isRecentActivity, evaluate, tick: pass, deliver, start, stop,
     isQuiet: () => isQuiet(now()),
     lastActivityAt: () => lastActivityAt,
   };
