@@ -117,6 +117,15 @@ function buildIndex(root) {
  * (`/checkins/:id/ack`), so the check walks the tails from longest to shortest
  * and accepts the first that is a literal in the source.
  */
+/**
+ * Every diagram in a file, in document order. The markdown and the standalone
+ * page keep the same pictures in the same order — that is the whole point of
+ * the comparison in check 6.
+ */
+function diagramsIn(text, pattern) {
+  return [...text.matchAll(pattern)].map((m) => m[1].trim());
+}
+
 function routePresent(route, haystack) {
   const cleaned = route.replace(/\{([^}]+)\}/g, ':$1').replace(/\/+$/, '');
   const segments = cleaned.split('/').filter(Boolean);
@@ -230,6 +239,36 @@ function verify({ root = path.join(__dirname, '..'), docPath = 'docs/architectur
   }
 
   const docCommit = /Verified against code: commit `([0-9a-f]{7,40})`/.exec(text);
+
+  // 6. The visual map has a standalone twin. Both render the same diagrams, so
+  //    two copies of one picture drift apart silently — which is how the map
+  //    ended up describing a system that no longer existed. A lone half is a
+  //    failure too: an .html without its .md is a page nobody can check.
+  const graphFiles = ['docs/architecture-graph.md', 'docs/architecture-graph.html'];
+  const present = graphFiles.filter((rel) => fs.existsSync(path.join(root, rel)));
+  if (present.length) {
+    const missing = graphFiles.filter((rel) => !present.includes(rel));
+    if (missing.length) {
+      addFailure('graph', missing[0], 0, `${missing[0]} is missing while its twin is present`);
+    } else {
+      const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n');
+      const mdDiagrams = diagramsIn(read(graphFiles[0]), /```mermaid\n([\s\S]*?)```/g);
+      const htmlDiagrams = diagramsIn(read(graphFiles[1]), /<pre class="mermaid">\n([\s\S]*?)<\/pre>/g);
+      checked.diagrams = mdDiagrams.length;
+      if (mdDiagrams.length !== htmlDiagrams.length) {
+        addFailure('graph', graphFiles[1], 0,
+          `${graphFiles[0]} carries ${mdDiagrams.length} diagrams, ${graphFiles[1]} carries ${htmlDiagrams.length}`);
+      }
+      const pairs = Math.min(mdDiagrams.length, htmlDiagrams.length);
+      for (let i = 0; i < pairs; i += 1) {
+        if (mdDiagrams[i] !== htmlDiagrams[i]) {
+          addFailure('graph', `${graphFiles[1]} #${i + 1}`, 0,
+            `diagram ${i + 1} differs from the same diagram in ${graphFiles[0]}`);
+        }
+      }
+    }
+  }
+
   return {
     ok: failures.length === 0,
     failures,
@@ -253,7 +292,8 @@ function main() {
   console.log(
     `verify-architecture: ${checked.paths} paths, ${checked.flags} flags, `
     + `${checked.identifiers} capability/tool names, ${checked.statuses} lifecycle terms, `
-    + `${checked.routes} routes checked against the tree`,
+    + `${checked.routes} routes checked against the tree, `
+    + `${checked.diagrams ?? 0} diagrams checked against their twin`,
   );
   if (result.ok) {
     console.log(`ok — every anchor in docs/architecture.md exists (doc verified against ${result.docCommit || 'an unrecorded commit'})`);
