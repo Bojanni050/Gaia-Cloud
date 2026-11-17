@@ -1,11 +1,13 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `8ae427a` (2026-11-16).** Every path, route, flag
+> **Verified against code: commit `2e30de1` (2026-11-17).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
 > changes. A claim about Foundation, Hindsight, Gaia-Web or Gaia-Desktop cannot be
-> checked from this repo and is worded as such.
+> checked from this repo and is worded as such. The *(deployment)* half has its own
+> home: `docs/deployment.md` carries the host, the containers, the environment files
+> and the measured numbers, re-read on the box rather than here.
 
 Gaia is a lifelong personal intelligence. This document is the architecture of
 **Gaia-Cloud**, her server side: identity, cognition and memory. Her clients —
@@ -262,7 +264,8 @@ observation · ingest ─────▶ hypothesis (kind: hypothesis ·       �
   *(The reranker chain itself — `HINDSIGHT_API_RERANKER_*`, the Jina/Cohere
   endpoint, the RRF second chain member, per-bank `enable_reranking` and
   `enable_auto_consolidation` — lives in Hindsight's own deploy env on the host,
-  not in git, and cannot be verified from this repository.)*
+  not in git, and cannot be verified from this repository: `docs/deployment.md`
+  records what is configured there and when it was measured.)*
 
 ## Derived lifecycle
 
@@ -611,15 +614,19 @@ routes are retired is a claim about the Gaia-Web repository — external, not
 verifiable here.)*
 
 Not in this repository, and therefore not verifiable here: Gaia-Web, Gaia-Desktop
-(including Desktop Commander), Foundation, Hindsight, and every deployment fact
-(VPS paths such as `/root/gaia`, Tailscale addresses, container names, and the
-Hindsight bank settings). `proxy/` — an nginx front for hermes-agent that injects
-its auth token so clients never hold it — is in this repo but is not part of
-Gaia's own architecture: `proxy/README.md` is where it explains itself, and
-`proxy/templates/default.conf.template` with `proxy/.env.example` are what a
-token or upstream change touches.
+(including Desktop Commander), Foundation, Hindsight. **The deployment side has
+its own document**: `docs/deployment.md` carries the host, the containers and
+their ports, the environment files, the switches as they stand in production, the
+reranker chain and the measured numbers — each with the command that re-measures
+it, because nothing here can check a VPS. `proxy/` — an nginx front for
+hermes-agent that injects its auth token so clients never hold it — is in this
+repo but is not part of Gaia's own architecture: `proxy/README.md` is where it
+explains itself, and `proxy/templates/default.conf.template` with
+`proxy/.env.example` are what a token or upstream change touches.
 
 Handover to the host: `.github/workflows/deploy.yml` tests both services on every
 push and pull request, then deploys by resetting `/root/gaia` to `origin/main`,
 rebuilding the Cognition stack first (whose external network gaia-api joins),
-applying migrations, and rebuilding gaia-api last.
+applying migrations, and rebuilding gaia-api last. What that reset means for the
+files on that host — what survives, what disappears, and why a variable added
+after a deploy needs a restart — is in `docs/deployment.md`.

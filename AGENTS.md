@@ -69,6 +69,9 @@ the deploy. A change that touches only the root (e.g. `walkthrough2.md`) trigger
 
 ## Live system
 
+The short version, for an agent working in this repo; the measured version with the containers,
+ports, environment files and re-verify commands is `docs/deployment.md`.
+
 - VPS: `ssh contabo` (100.65.0.15, Tailscale; public SSH is closed). Deploy directory
   `/root/gaia` — **the deploy does `reset --hard`, so a hand edit there disappears on the next
   merge**; change it in the repo.
