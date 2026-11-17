@@ -46,19 +46,24 @@
   .panel { display: none; }
   .panel.active { display: block; }
   .panel h2 { font-family: var(--serif); font-weight: 500; font-size: 1.05rem; margin: 0 0 4px; }
-  .panel p.cap { color: var(--text-faint); font-size: 0.82rem; margin: 0 0 18px; }
+  .panel p.cap { color: var(--text-faint); font-size: 0.82rem; margin: 0 0 18px; max-width: 900px; line-height: 1.55; }
   .mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; overflow-x: auto; }
   .mermaid svg { max-width: 100%; height: auto; }
   .boundaries { max-width: 760px; line-height: 1.6; }
   .boundaries li { margin-bottom: 10px; color: var(--text-muted); }
   .boundaries strong { color: var(--text); }
+  table.map { border-collapse: collapse; width: 100%; max-width: 1100px; font-size: 0.84rem; }
+  table.map th, table.map td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.map thead th { color: var(--text); font-weight: 500; border-bottom: 1px solid var(--border-strong); }
+  table.map td { color: var(--text-muted); line-height: 1.5; }
+  table.map code { color: var(--accent); font-size: 0.82rem; }
   footer { padding: 10px 24px; border-top: 1px solid var(--border); color: var(--text-faint); font-size: 0.75rem; }
 </style>
 </head>
 <body>
   <header>
     <h1>Gaia-Cloud — how everything is connected</h1>
-    <span class="sub">three stores · one cognition owner · one human confirmation</span>
+    <span class="sub">three stores · one cognition owner · one human confirmation · regenerated 2026-11-16 against a1a485e</span>
   </header>
 
   <nav id="tabs"></nav>
@@ -66,149 +71,264 @@
   <main>
     <section class="panel" data-title="Whole system">
       <h2>The whole system</h2>
-      <p class="cap">Clients talk only to the Harness; the Harness owns raw (Foundation), derived lifecycle (Cognition) and derived store (Hindsight).</p>
+      <p class="cap">Clients talk only to gaia-api; it owns raw (Foundation, external), derived lifecycle (Cognition, this repo) and derived store (Hindsight, external). Hermes runs research jobs and is never the generator.</p>
       <pre class="mermaid">
 flowchart TB
-    subgraph clients["GaiaChat clients"]
+    subgraph clients["Clients — separate repositories"]
         web["Gaia Web<br/>(browser)"]
         desktop["Gaia Desktop<br/>(Tauri)"]
     end
-    subgraph cloud["GAIA-API  :8891 — the Harness"]
-        api["uniform Gaia API<br/>/conversation/turn · /cognition/*<br/>/library · /conversations · /speech · /admin/*"]
+
+    subgraph cloud["GAIA-API  :8891 — the one backend"]
+        api["/conversation/turn — the turn<br/>/cognition · /conversations · /library<br/>/memory · /kairos · /eleos · /research<br/>/desktop (conditional) · /admin · /api"]
     end
+
     subgraph stores["Stores"]
-        foundation["FOUNDATION  :4577 (external)<br/>RAW REALITY<br/>observations · /api/ingest/* · MCP"]
-        cognition["COGNITION  :8890 (repo)<br/>DERIVED OWNER<br/>hypothesis · pattern · model<br/>question · relationship (Postgres)"]
-        hindsight["HINDSIGHT  :8888 (external)<br/>DERIVED STORE<br/>gaia:* tags · semantic recall"]
+        foundation["FOUNDATION — RAW REALITY<br/>observations · ingest · MCP<br/>(external; promotes nothing on its own)"]
+        cognition["COGNITION — DERIVED OWNER<br/>hypotheses (4 kinds) · patterns<br/>observations · kairos episodes + digests<br/>Postgres, lifecycle transitions"]
+        hindsight["HINDSIGHT — DERIVED STORE<br/>gaia:* tags · semantic recall<br/>three banks: bojan · gaia · gaia-logos"]
     end
-    hermes["HERMES  :8642 (hermes_net)<br/>capability — NOT in the live turn"]
-    web -->|"HTTPS + Bearer"| api
-    desktop -->|"HTTPS + Bearer"| api
-    api -->|"submit observation"| foundation
-    api -->|"write derived (lifecycle)"| cognition
+
+    hermes["HERMES  (hermes_net)<br/>research jobs only — submit, poll later"]
+
+    web -->|"Bearer"| api
+    desktop -->|"Bearer"| api
+    api -->|"the turn, as a raw observation"| foundation
+    api -->|"derived records (lifecycle)"| cognition
     cognition -->|"cognitionSync mirror"| hindsight
-    api -->|"recall / mental models / pages"| hindsight
+    api -->|"recall · reflect · her own bank"| hindsight
     api -->|"archive asks only"| foundation
-    api -.->|"never called live"| hermes
+    api -.->|"research run submitted, never awaited"| hermes
+
+    classDef ext fill:#2A241B,stroke:#CBA36A,color:#ECE6DA
+    classDef own fill:#221D15,stroke:#CBA36A,color:#ECE6DA
+    class foundation,hindsight,hermes ext
+    class cognition own
       </pre>
     </section>
 
     <section class="panel" data-title="Live turn">
       <h2>The live turn — direct generation</h2>
-      <p class="cap">validate → SOUL prompt → gated recall → one inference call → Response Engine. No planning layer; Hermes never a fallback.</p>
+      <p class="cap">Validate → attachments → gated recall (parallel, every leg best-effort) → prompt assembly → ONE inference call with tools → Response Engine. No planning layer; the deferred chain starts only after the reply.</p>
       <pre class="mermaid">
 flowchart TB
-    A["client → POST /conversation/turn"] --> B["1. validate + auth<br/>fail-closed 503 / 401"]
-    B --> C["2. resolve attachments<br/>library → text / vision"]
-    C --> D["3. gated recall (parallel)"]
-    D --> D1["Hindsight: reflections +<br/>mental models + knowledge pages"]
-    D --> D2["Hindsight: patterns (gaia:pattern)"]
-    D --> D3["Foundation: archive asks only"]
-    D1 --> E
-    D2 --> E
-    D3 --> E["4. SOUL prompt + recall blocks +<br/>capability awareness"]
-    E --> F["5. ONE inference call<br/>primary → backup (429/5xx/timeout, pre-output)"]
-    F --> G["6. Response Engine<br/>only writer of the wire format"]
-    G --> H["reply delivered ({ reply } or SSE)"]
-    H --> I["7. runDeferredCognition<br/>fire-and-forget · never awaited"]
+    A["client → POST /conversation/turn"] --> B["1. validate + auth<br/>token unset ⇒ fail closed (503)"]
+    B --> C["2. resolve attachments<br/>library → text, or vision OCR"]
+    C --> R["3. gated recall — parallel fan-out,<br/>every leg best-effort"]
+
+    subgraph recall["one call per leg, none can fail the turn"]
+        R1["Hindsight: reflections +<br/>the seven standing mental models"]
+        R2["Hindsight: patterns —<br/>only on a retrieval signal"]
+        R3["knowledge pages"]
+        R4["Foundation: archive asks only<br/>('what is recorded')"]
+        R5["conversation search — only on a<br/>lookup / past-reference signal"]
+        R6["open-question raise"]
+        R7["research reach — submits a run,<br/>does not wait"]
+    end
+    R --> R1 & R2 & R3 & R4 & R5 & R6 & R7
+
+    R1 & R2 & R3 & R4 & R5 & R6 & R7 --> E["4. prompt assembly<br/>SOUL + recall blocks +<br/>capability awareness"]
+    E --> F["5. ONE inference call<br/>primary → backup on a retryable,<br/>pre-output failure<br/>+ tools, at most 3 rounds"]
+    F --> G["6. Response Engine<br/>src/responseEngine.js — the only<br/>writer of the wire format"]
+    G --> H["reply delivered<br/>{ reply } or SSE frames"]
+    H --> I["7. runDeferredCognition<br/>fire-and-forget, never awaited"]
+    H --> J["research poll — a separate cycle<br/>findings → conversation · GET /research/jobs"]
+
+    F -.->|"Hermes is never a fallback and,<br/>in the live path, never the generator"| H
+    J -.->|"run status only"| HS["HERMES"]
+
+    classDef nope fill:#2A241B,stroke:#6F675A,color:#A79E8E
+    class HS nope
       </pre>
+    </section>
+
+    <section class="panel" data-title="Tools in the call">
+      <h2>The tools inside that one call</h2>
+      <p class="cap">Three <em>rounds</em> is the bound, not three calls: every call inside a round runs. There is no tool named <code>conversation_search</code> — that is the capability id, and <code>read_back</code> is the tool behind it.</p>
+      <table class="map">
+        <thead><tr><th>Tool</th><th>Where</th><th>Gated by</th></tr></thead>
+        <tbody>
+          <tr><td><code>remember</code> → <code>bojan</code>, <code>keep</code> → <code>gaia</code>, <code>search_memory</code>, <code>retract_memory</code>, <code>forget_memory</code></td><td><code>reasoning/memoryTool.js</code></td><td><code>GAIA_MEMORY_TOOL</code> — one flag for all five</td></tr>
+          <tr><td><code>web_search</code></td><td><code>reasoning/webSearchTool.js</code></td><td>presence of <code>GAIA_WEB_SEARCH_API_KEY</code></td></tr>
+          <tr><td><code>read_back</code></td><td><code>reasoning/conversationTool.js</code></td><td>the transcript seam being wired</td></tr>
+          <tr><td><code>desktop</code></td><td><code>desktopBroker.js</code></td><td><code>GAIA_DESKTOP</code> + client <code>desktop: true</code> + streamed turn</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section class="panel" data-title="Deferred cognition">
       <h2>Deferred cognition — where writing happens</h2>
-      <p class="cap">After the reply: the turn becomes a raw observation; Logos proposes derived knowledge into Cognition, which mirrors to Hindsight.</p>
+      <p class="cap">After the reply: three side tasks run concurrently while the sequential chain walks 2 → 8. The turn becomes a raw observation; background Logos proposes derived knowledge into Cognition, which mirrors to Hindsight.</p>
       <pre class="mermaid">
 flowchart TB
-    D["runDeferredCognition (after reply, never awaited)"]
-    D --> S1["1. Foundation.submitObservation<br/>the turn as a RAW observation"]
-    D --> S2["2. Memoryworthiness (deterministic gate)"]
-    D --> S3["3. Logos reflection (one model call, deep only)"]
-    D --> S4["4. Hindsight reflectOnTurn (gated)"]
-    S3 --> K1["hypotheses"]
-    S3 --> K2["patterns"]
-    S3 --> K3["open questions"]
-    S3 --> K4["relationships"]
-    K1 --> SINK
-    K2 --> SINK
-    K3 --> SINK
-    K4 --> SINK["cognitionSink"] --> COG["COGNITION<br/>(lifecycle owner)"]
-    COG --> SYNC["cognitionSync"] --> HS["HINDSIGHT<br/>(gaia:* mirror)"]
+    D["runDeferredCognition — after the reply, never awaited"]
+
+    subgraph side["side tasks — concurrent, awaited at the end"]
+        S1["1. Foundation.submitObservation<br/>the completed turn as a raw record"]
+        S7b["7b. Aion — Gaia's own bank (gaia)<br/>ungated, at her own discretion"]
+        S7c["7c. Eleos — the check-in faculty<br/>gates now, delivers hours later"]
+    end
+
+    subgraph chain["sequential chain"]
+        S2["2. Memoryworthiness — six cheap dimensions"]
+        S3["3a/3b. hypothesis lifecycle prep, then<br/>background Logos: the depth gate decides<br/>whether ONE model call happens"]
+        S4["4. applyReasoningResult —<br/>the structured result into the manager"]
+        S5["5. pattern formation — needs a durable<br/>hypothesis changed and a non-discarded turn"]
+        S6["6. Cognition retention: observations,<br/>open questions, relationships<br/>(deliberately not gated)"]
+        S7["7. post-turn Hindsight reflection — gated"]
+        S8["8. DecisionIQ review — observability only"]
+    end
+
+    D --> S1 & S7b & S7c
+    D --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+
+    S3 -->|"proposes"| K["hypotheses · patterns ·<br/>open questions · relationships"]
+    K --> SINK["cognitionSink"] --> COG["COGNITION<br/>owning the lifecycle"]
+    COG --> SYNC["cognitionSync"] --> HS["HINDSIGHT<br/>gaia:* mirror"]
     S1 --> FND["FOUNDATION"]
-    S4 --> HS
+    S7 --> HS
+    S7b --> OWN["HINDSIGHT — the gaia bank"]
+      </pre>
+    </section>
+
+    <section class="panel" data-title="Faculties">
+      <h2>The faculties — loops with no turn involved</h2>
+      <p class="cap">Belief formation is the only thing that forms a statement from observations, and it needs repeated ground. Per-turn hypothesis formation is off by default (Optie 2); <code>GAIA_HYPOTHESIS_FORMATION=per_turn</code> restores the old behaviour.</p>
+      <pre class="mermaid">
+flowchart LR
+    LOGOS["Logos — background reflection<br/>logos/logos.js<br/>a social turn is shallow and free,<br/>everything else gets one deep call"]
+    KAIROS["Kairos — observations into narrative<br/>kairos/runtime.js + worker,<br/>then the day digest at 07:00"]
+    ELEOS["Eleos — coming back to a moment<br/>reasoning/eleos.js + tick<br/>gate now, deliver hours later"]
+    AION["Aion — Gaia's own bank<br/>reasoning/aion.js + scheduler<br/>every few turns, on session change,<br/>when the session goes idle"]
+    SCANS["Three scans on a timer<br/>soft-promotion · expiry (14 days)<br/>belief formation"]
+    REACH["Reach<br/>research jobs (Hermes) · web_search<br/>open-question raise"]
+
+    LOGOS --> COG["COGNITION"]
+    KAIROS --> COG
+    SCANS --> COG
+    AION --> OWN["HINDSIGHT — gaia"]
+    ELEOS --> CHECK["eleos store<br/>check-ins"]
+    REACH --> EXT["HERMES · a search provider<br/>the turn's own wording"]
+
+    classDef ext fill:#2A241B,stroke:#CBA36A,color:#ECE6DA
+    class EXT,OWN ext
       </pre>
     </section>
 
     <section class="panel" data-title="Human override">
       <h2>Human Absolute Override — the only path to confirmed</h2>
-      <p class="cap">GaiaChat lists the derived statements Logos is still weighing and moves one forward or lets it go. Confirm may supersede older statements.</p>
+      <p class="cap">GaiaChat lists the derived statements the machine is still weighing and moves one forward or lets it go. Confirm may supersede older statements; correct rewrites a settled one.</p>
       <pre class="mermaid">
 sequenceDiagram
     participant Chat as GaiaChat (Web/Desktop)
     participant API as gaia-api /cognition/*
     participant Cog as Cognition
     participant HS as Hindsight
+
     Chat->>API: GET /cognition/hypotheses
-    API->>Cog: list (proposed / testing)
+    API->>Cog: list (proposed / testing / corroborated)
     Cog-->>Chat: pending statements
-    Chat->>API: POST .../:id/test
-    API->>Cog: → testing
-    Chat->>API: POST .../:id/reject { reason }
-    API->>Cog: → rejected (verwerp_bron "mens")
+    Chat->>API: POST .../:id/test · /reject { reason } · /reopen { reason }
+    API->>Cog: → testing · → rejected (verwerp_bron "mens")
+    Chat->>API: POST .../:id/correct { reason }
+    API->>Cog: reword a settled statement
+    Chat->>API: POST .../:id/answer — an open question
     Chat->>API: POST .../:id/confirm { supersedes[], rationale }
     API->>Cog: → confirmed
-    API->>Cog: supersede(old ids) → rejected (consolidatie)
+    API->>Cog: supersede(old ids) → rejected (verwerp_bron "consolidatie")
     API->>HS: mirror (gaia:confirmed_fact)
       </pre>
     </section>
 
     <section class="panel" data-title="Lifecycle">
-      <h2>The lifecycle</h2>
-      <p class="cap">Corroborated is a machine tier; confirmed is human-only.</p>
+      <h2>The lifecycle — six statuses</h2>
+      <p class="cap">Corroborated is a machine tier; confirmed is human-only. Expired deletes nothing and quarantines nothing — a lapse is not a judgement, and evidence brings it back.</p>
       <pre class="mermaid">
 stateDiagram-v2
     [*] --> proposed
     proposed --> testing: first evidence
-    proposed --> rejected: let go
-    testing --> corroborated: machine soft-promotion (C ≥ 0.80)
+    proposed --> confirmed: a person settles it directly
+    proposed --> rejected: let go (verwerp_bron mens)
+    proposed --> expired: nothing arrived, 14 days (verwerp_bron verlopen)
+    testing --> corroborated: soft-promotion — micro, C ≥ 0.80, no counter-evidence
     testing --> confirmed: HUMAN ONLY
     testing --> rejected: let go
+    testing --> proposed: a person rewrites it
     corroborated --> confirmed: HUMAN ONLY
     corroborated --> testing: refine / contradiction
     corroborated --> rejected: let go
-    confirmed --> testing: contradicting evidence
-    confirmed --> rejected: superseded (consolidatie)
-    rejected --> [*]
+    expired --> testing: evidence arrives — a lapse is not a judgement
+    expired --> confirmed: a person settles it
+    expired --> rejected: let go
+    expired --> proposed: a person rewrites it
+    rejected --> testing: reopen — the only exit from that quarantine
     confirmed --> [*]
+    rejected --> [*]
       </pre>
     </section>
 
     <section class="panel" data-title="Lives where">
       <h2>What lives where</h2>
-      <p class="cap">Raw reality → derived lifecycle → derived store → recall.</p>
+      <p class="cap">Raw reality → derived lifecycle → derived store → recall. Two rules that are easy to get wrong: the notebook is not memory, and per-turn recall does not span all three banks.</p>
       <pre class="mermaid">
 flowchart LR
-    obs["FOUNDATION<br/>observation (immutable)"]
-    hyp["COGNITION<br/>hypothesis · pattern · model<br/>open question · relationship"]
-    g["HINDSIGHT<br/>gaia:hypothesis · gaia:pattern<br/>gaia:confirmed_fact<br/>gaia:open_question · gaia:relationship"]
-    hist["conversationStore<br/>raw transcript"]
-    obs -->|"derive"| hyp
-    hyp -->|"mirror"| g
-    g -->|"semantic recall"| gaia(("Gaia"))
+    subgraph raw["FOUNDATION — raw reality"]
+        obs["observation · ingest · MCP<br/>(immutable)"]
+    end
+    subgraph derived["COGNITION — derived, lifecycle owner"]
+        hyp["hypothesis (kind: hypothesis ·<br/>mental_model · relationship ·<br/>open_question)"]
+        pat["pattern"]
+        ob2["observation"]
+        kai["kairos_episode · kairos_digest"]
+    end
+    subgraph store["HINDSIGHT — derived store, three banks"]
+        g["gaia:hypothesis · gaia:mental_model<br/>gaia:pattern · gaia:confirmed_fact<br/>gaia:open_question · gaia:relationship<br/>gaia:kairos_episode · gaia:aion"]
+    end
+    hist["conversationStore<br/>the raw transcript, every turn verbatim"]
+    eleos["eleos check-ins"]
+
+    obs -->|"derive — belief formation"| derived
+    derived -->|"mirror, rebuildable"| store
+    store -->|"semantic recall"| Gaia(("Gaia"))
+    hist -->|"literal search: read_back"| Gaia
+    eleos -->|"a moment worth returning to"| Gaia
       </pre>
+    </section>
+
+    <section class="panel" data-title="HTTP surface">
+      <h2>The HTTP surface</h2>
+      <p class="cap">All client routes require the Bearer token. Admin is operator-only and never part of a client's contract — note it shares the same token, and its HTML shell is unauthenticated.</p>
+      <table class="map">
+        <thead><tr><th>Mount</th><th>Routes</th></tr></thead>
+        <tbody>
+          <tr><td>inline</td><td><code>GET /health</code>, <code>GET /</code>, <code>GET /soul</code>, <code>POST /conversation/turn</code> (JSON or SSE), <code>GET /speech/info</code>, <code>GET /speech/stt-info</code>, <code>POST /speech</code>, <code>POST /speech/stream</code>, <code>POST /speech/transcribe</code></td></tr>
+          <tr><td><code>/library</code></td><td><code>POST /files</code>, <code>GET /files</code>, <code>GET /files/:id</code>, <code>DELETE /files/:id</code></td></tr>
+          <tr><td><code>/conversations</code></td><td><code>GET /</code>, <code>GET /events</code> (SSE), <code>GET /search?q=</code>, <code>GET /:id</code>, <code>GET /:id/export/:format</code>, <code>DELETE /:id</code></td></tr>
+          <tr><td><code>/cognition</code></td><td><code>GET /hypotheses</code>, <code>POST /hypotheses/:id/{test,reject,reopen,correct,answer,confirm}</code></td></tr>
+          <tr><td><code>/memory</code></td><td><code>POST /retract</code>, <code>POST /forget</code></td></tr>
+          <tr><td><code>/kairos</code></td><td><code>GET /episodes</code>, <code>GET /episodes/stream</code> (SSE), <code>GET /episodes/:id/evidence</code>, <code>GET /digests</code>, <code>GET /digest?date=</code>, <code>POST /digest</code></td></tr>
+          <tr><td><code>/eleos</code></td><td><code>GET /checkins</code>, <code>POST /checkins/:id/ack</code></td></tr>
+          <tr><td><code>/research</code></td><td><code>GET /jobs</code>, <code>POST /jobs/:id/ack</code>, <code>POST /jobs/:id/approval</code></td></tr>
+          <tr><td><code>/desktop</code></td><td><code>POST /actions/:id/decision</code>, <code>POST /actions/:id/result</code> — only when <code>GAIA_DESKTOP</code> is on</td></tr>
+          <tr><td><code>/admin</code></td><td>operator-only, ~30 API routes; its HTML shell (<code>GET /admin</code>) is unauthenticated</td></tr>
+          <tr><td><code>/api</code></td><td><code>GET /version</code> — public, no auth</td></tr>
+        </tbody>
+      </table>
+      <p class="cap" style="margin-top:16px">Cognition's own service speaks <code>POST|GET|PATCH|DELETE /v1/banks/:bankId/{hypotheses,patterns,episodes,observations}</code>, on the tailnet and unauthenticated. Clients never reach it directly.</p>
     </section>
 
     <section class="panel" data-title="Boundaries">
       <h2>The three boundaries</h2>
       <p class="cap">These are load-bearing; a change that breaks one is a bug.</p>
       <ol class="boundaries">
-        <li><strong>Foundation = raw reality.</strong> A client that claims a <code>status</code> is refused (422). Observations only.</li>
-        <li><strong>Cognition = the lifecycle owner.</strong> It stores and books transitions; it never reasons. Logos proposes, the human confirms.</li>
-        <li><strong>Hindsight = the derived store.</strong> Rebuildable from Cognition with provenance; recall lives here because Cognition has no vector search.</li>
+        <li><strong>Foundation = raw reality.</strong> A client that claims a <code>status</code> is refused (422). Observations only, and the store promotes nothing to fact by itself.</li>
+        <li><strong>Cognition = the lifecycle owner.</strong> It stores and books transitions; it never reasons. Logos proposes, belief formation forms statements from repeated ground, and the person settles them.</li>
+        <li><strong>Hindsight = the derived store.</strong> Rebuildable from Cognition with provenance, and recall lives there because Cognition has no vector search.</li>
       </ol>
     </section>
   </main>
 
-  <footer>Gaia-Cloud · docs/architecture-graph.md · this file is standalone (Mermaid via CDN)</footer>
+  <footer>Gaia-Cloud · docs/architecture-graph.md · regenerated 2026-11-16 against a1a485e · Mermaid via CDN, so this page needs network access</footer>
 
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
@@ -259,7 +379,11 @@ flowchart LR
     async function render(i) {
       if (rendered[i]) return;
       const el = nodes[i];
+      if (!el) { rendered[i] = true; return; } // table-only panels have nothing to draw
       const { svg } = await mermaid.render('m' + i, el.textContent.trim());
+      // Safe by construction: the markup comes from mermaid rendering the static
+      // diagram source that sits in this file. No user input, no fetched data —
+      // the only external thing is the mermaid library itself.
       el.innerHTML = svg;
       rendered[i] = true;
     }

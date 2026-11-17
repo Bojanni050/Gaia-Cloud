@@ -136,3 +136,52 @@ test('the guard reports the document it read and finds nothing hidden', () => {
   assert.ok(result.checked.identifiers >= 2, `expected tool and capability anchors, got ${result.checked.identifiers}`);
   assert.ok(result.checked.statuses >= 6, `expected six statuses, got ${result.checked.statuses}`);
 });
+
+// The visual map has a standalone twin, and both carry the same diagrams. Check
+// 6 compares them. Its failure path is proven here: a diagram that differs, a
+// count that differs, and a pair with one half missing.
+const MAP_MD = '# map\n\n```mermaid\nflowchart TB\n  a["x"] --> b["y"]\n```\n';
+const MAP_HTML = '<pre class="mermaid">\nflowchart TB\n  a["x"] --> b["y"]\n</pre>\n';
+
+test('two agreeing halves of the map are fine, and the guard counts the diagrams', () => {
+  const root = fixture({
+    doc: DOC,
+    code: { 'docs/architecture-graph.md': MAP_MD, 'docs/architecture-graph.html': MAP_HTML },
+  });
+  const result = verify({ root });
+  assert.equal(result.ok, true, JSON.stringify(result.failures));
+  assert.equal(result.checked.diagrams, 1);
+});
+
+test('a diagram that differs between the map and its twin is reported', () => {
+  const root = fixture({
+    doc: DOC,
+    code: {
+      'docs/architecture-graph.md': MAP_MD,
+      'docs/architecture-graph.html': '<pre class="mermaid">\nflowchart TB\n  a["x"] --> c["z"]\n</pre>\n',
+    },
+  });
+  const result = verify({ root });
+  assert.equal(result.ok, false);
+  const graph = result.failures.filter((f) => f.kind === 'graph');
+  assert.equal(graph.length, 1, `expected one graph finding, got ${JSON.stringify(result.failures)}`);
+  assert.match(graph[0].detail, /diagram 1 differs/);
+});
+
+test('a missing half of the pair, or a different number of diagrams, is reported', () => {
+  const lonely = fixture({ doc: DOC, code: { 'docs/architecture-graph.html': MAP_HTML } });
+  const loneResult = verify({ root: lonely });
+  assert.equal(loneResult.ok, false);
+  assert.match(loneResult.failures.find((f) => f.kind === 'graph').detail, /is missing while its twin/);
+
+  const uneven = fixture({
+    doc: DOC,
+    code: {
+      'docs/architecture-graph.md': `${MAP_MD}\n\`\`\`mermaid\nflowchart LR\n  p["1"] --> q["2"]\n\`\`\`\n`,
+      'docs/architecture-graph.html': MAP_HTML,
+    },
+  });
+  const unevenResult = verify({ root: uneven });
+  assert.equal(unevenResult.ok, false);
+  assert.match(unevenResult.failures.find((f) => f.kind === 'graph').detail, /carries 2 diagrams, .* carries 1/);
+});

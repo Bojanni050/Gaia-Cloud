@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `d11abca` (2026-11-16).** Every path, route, flag
+> **Verified against code: commit `a1a485e` (2026-11-16).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -522,7 +522,7 @@ HTML shell (`GET /admin`) is unauthenticated.
 | `/conversations` | `GET /`, `GET /events` (SSE), `GET /search?q=`, `GET /:id`, `GET /:id/export/:format`, `DELETE /:id` |
 | `/cognition` | `GET /hypotheses`, `POST /hypotheses/:id/{test,reject,reopen,correct,answer,confirm}` |
 | `/memory` | `POST /retract`, `POST /forget` |
-| `/kairos` | `GET /episodes`, `GET /episodes/stream` (SSE), `GET /episodes/:id/evidence` |
+| `/kairos` | `GET /episodes`, `GET /episodes/stream` (SSE), `GET /episodes/:id/evidence`, `GET /digests`, `GET /digest?date=`, `POST /digest` |
 | `/eleos` | `GET /checkins`, `POST /checkins/:id/ack` |
 | `/research` | `GET /jobs`, `POST /jobs/:id/ack`, `POST /jobs/:id/approval` |
 | `/desktop` | `POST /actions/:id/decision`, `POST /actions/:id/result` — mounted only when `GAIA_DESKTOP=true` |
