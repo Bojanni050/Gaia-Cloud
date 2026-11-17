@@ -29,6 +29,10 @@ fs.writeFileSync(FOUNDATION_ARTIFACT_PATH, JSON.stringify({
 function baseEnv(overrides = {}) {
   return {
     GAIA_API_TOKEN: TOKEN,
+    // /admin has its own token since C3. This suite is about the speech and STT
+    // plumbing, not about that split, so it uses one value for both and lets
+    // test/adminToken.test.js prove the separation.
+    GAIA_ADMIN_TOKEN: TOKEN,
     HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH,

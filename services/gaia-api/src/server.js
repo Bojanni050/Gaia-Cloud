@@ -35,7 +35,7 @@
  * (server.js only constructs and hands over what is available).
  */
 const express = require('express');
-const { parseTokens, createAuthMiddleware } = require('./auth');
+const { parseTokens, createAuthMiddleware, createOperatorAuth } = require('./auth');
 const { createHermesClient } = require('./hermesClient');
 const { createHindsightClient, createCrossBankRecallClient } = require('./hindsightClient');
 const { flag } = require('./flags');
@@ -441,6 +441,11 @@ function createApp(env = process.env) {
   // says, only how an already-decided reply sounds.
   const tts = createTtsFromEnv(env);
   const auth = createAuthMiddleware(parseTokens(env.GAIA_API_TOKEN));
+  // The operator surface has its own token (docs/advice.md C3). Every client and
+  // device holds the API token above, so it cannot be what opens `/admin`:
+  // provider keys, model choices, the decision log and the pass surface live
+  // behind those routes. Unset means nobody is the operator — see auth.js.
+  const adminAuth = createOperatorAuth(env.GAIA_ADMIN_TOKEN, { logger: console });
 
   const app = express();
   app.use(express.json());
@@ -471,7 +476,7 @@ function createApp(env = process.env) {
   const ttsLog = createTtsLog();
   // Listening activity tail (GET /admin/api/stt/log) — never carries audio or text.
   const sttLog = createSttLog();
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog, sttLog, passRegistry }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth: adminAuth, ttsLog, sttLog, passRegistry }));
 
   // v3.0: no live IntentIQ pre-flight — Logos reflects after delivery.
 

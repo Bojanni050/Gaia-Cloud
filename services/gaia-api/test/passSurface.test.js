@@ -272,6 +272,10 @@ test('createApp puts every pass on the surface, and the off ones carry their rea
 
   const app = createApp({
     GAIA_API_TOKEN: 'test-token',
+    // /admin has its own token since C3; this test asks about the pass surface,
+    // so it simply has one. The separation itself is proven in
+    // test/adminToken.test.js.
+    GAIA_ADMIN_TOKEN: 'test-token',
     HERMES_BASE_URL: 'http://fake-hermes.internal/v1',
     HERMES_MODEL: 'hermes-agent',
     FOUNDATION_ARTIFACT_PATH: artifactPath,

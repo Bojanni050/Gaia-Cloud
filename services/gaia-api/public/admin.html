@@ -263,9 +263,9 @@
 
   <div class="panel">
     <h2>Gaia API access</h2>
-    <label for="token">Bearer token</label>
-    <input id="token" type="password" placeholder="one of GAIA_API_TOKEN's values" autocomplete="off">
-    <p class="hint">Stored only in this browser's local storage, sent as an Authorization header.</p>
+    <label for="token">Operator token</label>
+    <input id="token" type="password" placeholder="GAIA_ADMIN_TOKEN's value — not a client token" autocomplete="off">
+    <p class="hint">Stored only in this browser's local storage, sent as an Authorization header. Since 2026-11-16 <code>/admin</code> has its own token: a client token does not open this page's data.</p>
   </div>
 
   <!-- Capabilities Overview -->
@@ -1075,8 +1075,12 @@
 
   // --- Auth ---
   // Storage can be blocked or cleared; the page must work without it.
-  function readSavedToken() { try { return localStorage.getItem('gaia_admin_token') || ''; } catch (_) { return ''; } }
-  function saveToken(value) { try { localStorage.setItem('gaia_admin_token', value); } catch (_) { /* ignore */ } }
+  // The operator token, and deliberately a different local-storage key from any
+  // client token: since /admin has its own token (docs/advice.md C3), a value
+  // saved here before that change is the wrong one, and silently sending it
+  // would look like a broken page instead of "paste the operator token".
+  function readSavedToken() { try { return localStorage.getItem('gaia_operator_token') || ''; } catch (_) { return ''; } }
+  function saveToken(value) { try { localStorage.setItem('gaia_operator_token', value); } catch (_) { /* ignore */ } }
   tokenEl.value = readSavedToken();
   // A bookmark like /admin#token=... fills the token in (and is removed from the address bar).
   // The fragment is never sent to the server.

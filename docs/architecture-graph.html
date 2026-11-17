@@ -310,7 +310,7 @@ flowchart LR
           <tr><td><code>/eleos</code></td><td><code>GET /checkins</code>, <code>POST /checkins/:id/ack</code></td></tr>
           <tr><td><code>/research</code></td><td><code>GET /jobs</code>, <code>POST /jobs/:id/ack</code>, <code>POST /jobs/:id/approval</code></td></tr>
           <tr><td><code>/desktop</code></td><td><code>POST /actions/:id/decision</code>, <code>POST /actions/:id/result</code> — only when <code>GAIA_DESKTOP</code> is on</td></tr>
-          <tr><td><code>/admin</code></td><td>operator-only, ~30 API routes; its HTML shell (<code>GET /admin</code>) is unauthenticated</td></tr>
+          <tr><td><code>/admin</code></td><td>operator-only, behind <code>GAIA_ADMIN_TOKEN</code>: ~30 API routes; the HTML shell (<code>GET /admin</code>) is unauthenticated and carries no data</td></tr>
           <tr><td><code>/api</code></td><td><code>GET /version</code> — public, no auth</td></tr>
         </tbody>
       </table>
