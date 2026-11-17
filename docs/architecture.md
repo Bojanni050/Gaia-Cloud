@@ -500,6 +500,7 @@ neither has an interval to be late on.
 | `GAIA_BELIEF_FORMATION` | on | `beliefFormationScan.js` | the belief-formation pass (`GAIA_BELIEF_RECALL_GROUND` is a flag of its own, on by default) |
 | `GAIA_LOGOS_SOCIAL_GATE` | social filter | `logos/logos.js` | off restores the legacy depth gate |
 | `GAIA_NATIVE_SUPPORTS_VISION` | `false` | `server.js` | whether image bytes go to the generator or are OCR-described first |
+| `GAIA_TTS_LEVEL_MATCH` | on | `speech/mistralTts.js` | per-segment level matching in `POST /speech/stream` and in a long `POST /speech` reply: every segment after the first is brought back to the level the reply's opening measured (one constant gain, clamped to ±12 dB; the first segment is never touched) |
 | `GAIA_WEB_SEARCH_API_KEY` | unset | `webSearchClient.js` | presence gate: no key ⇒ no `web_search` tool and no capability |
 | `HINDSIGHT_RECALL_BANK_IDS` | unset | `server.js` | puts `gaia-logos` back into the passive recall set |
 | `MEMORY_MAX_LINES` | 9 | `server.js` | how many recall lines may reach the prompt |

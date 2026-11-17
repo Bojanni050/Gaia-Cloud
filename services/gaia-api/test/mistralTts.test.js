@@ -10,7 +10,13 @@ const {
   createFromEnv,
   normalizeFormat,
   mimeTypeFor,
+  createPcmMeter,
+  matchSegmentGain,
+  applyPcmGain,
+  wrapPcm16Wav,
   LANGUAGES,
+  LEVEL_MIN_SPEECH_SAMPLES,
+  STREAM_SAMPLE_RATE,
 } = require('../src/speech/mistralTts');
 
 function okAudioResponse(base64 = Buffer.from('ID3...fake mp3').toString('base64')) {
@@ -561,6 +567,11 @@ test('stream() starts the next paragraph before the first one has played out', a
 
   // Waiting for the first request to finish cost a full provider round trip (1.4 s) of silence.
   assert.equal(asked.length, 2, 'both requests are already in flight');
+
+  // Close the generator so its `finally` runs: an abandoned one keeps the
+  // whole-reply timeout (120 s) pending and holds the test process open long
+  // after the suite has finished.
+  await generator.return();
 });
 
 test('stream() puts no silence after the last paragraph', async () => {
@@ -609,4 +620,185 @@ test('stream() still answers a reply that produced nothing at all', async () => 
     () => collect(mistralClient(fetchImpl).stream('One sentence. And another one.')),
     /speech synthesis returned no audio/,
   );
+});
+
+// --- POST /speech: a long reply is spoken in segments, returned as one WAV ---
+
+/** PCM16LE at a constant amplitude — a stand-in for a segment of speech. */
+function pcm16(samples, amplitude) {
+  const out = Buffer.allocUnsafe(samples * 2);
+  for (let index = 0; index < samples; index += 1) out.writeInt16LE(Math.round(amplitude * 32767), index * 2);
+  return out;
+}
+
+/** A provider that answers the streaming shape, and records what it was asked. */
+function streamingProvider(samples, amplitude) {
+  const asked = [];
+  const fetchImpl = async (url, init = {}) => {
+    asked.push(JSON.parse(init.body));
+    return sseResponse(
+      sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer(Array(samples).fill(amplitude)).toString('base64') })
+      + sseEvent({ type: 'speech.audio.done', usage: {} }),
+    );
+  };
+  return { fetchImpl, asked };
+}
+
+const TWO_PARAGRAPHS = 'Eerste alinea hier.\n\nTweede alinea daar.';
+
+test('synthesize() speaks a multi-paragraph reply as one request per segment', async () => {
+  const { fetchImpl, asked } = streamingProvider(1, 0.5);
+  const { audio, mimeType } = await mistralClient(fetchImpl).synthesize(TWO_PARAGRAPHS);
+
+  assert.equal(asked.length, 2, 'one provider request per paragraph');
+  for (const body of asked) {
+    assert.equal(body.stream, true);
+    assert.equal(body.response_format, 'pcm');
+  }
+  assert.deepEqual(asked.map((body) => body.input), ['Eerste alinea hier.', 'Tweede alinea daar.']);
+  assert.equal(mimeType, 'audio/wav');
+  assert.equal(audio.subarray(0, 4).toString('ascii'), 'RIFF');
+  assert.equal(audio.subarray(8, 12).toString('ascii'), 'WAVE');
+});
+
+test('synthesize() still answers one mp3 request for a reply that fits in one segment', async () => {
+  let asked = 0;
+  const fetchImpl = async () => {
+    asked += 1;
+    return okAudioResponse(Buffer.from('one clip').toString('base64'));
+  };
+  const { audio, mimeType } = await mistralClient(fetchImpl).synthesize('Eén korte zin.');
+
+  assert.equal(asked, 1);
+  assert.equal(mimeType, 'audio/mpeg');
+  assert.equal(audio.toString(), 'one clip');
+});
+
+test('the WAV wrapper writes a canonical PCM16 header around the concatenated stream', () => {
+  // 0.6 s of deliberate silence between two one-sample segments, as stream() yields it.
+  const gap = Buffer.alloc(Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2);
+  const body = Buffer.concat([Buffer.from([1, 0]), gap, Buffer.from([2, 0])]);
+  const wav = wrapPcm16Wav([Buffer.from([1, 0]), gap, Buffer.from([2, 0])]);
+
+  assert.equal(wav.length, 44 + body.length);
+  assert.equal(wav.subarray(0, 4).toString('ascii'), 'RIFF');
+  assert.equal(wav.readUInt32LE(4), 36 + body.length);
+  assert.equal(wav.subarray(8, 16).toString('ascii'), 'WAVEfmt ');
+  assert.equal(wav.readUInt32LE(16), 16, 'fmt chunk length');
+  assert.equal(wav.readUInt16LE(20), 1, 'PCM');
+  assert.equal(wav.readUInt16LE(22), 1, 'mono');
+  assert.equal(wav.readUInt32LE(24), 24_000);
+  assert.equal(wav.readUInt32LE(28), 24_000 * 2, 'byte rate');
+  assert.equal(wav.readUInt16LE(32), 2, 'block align');
+  assert.equal(wav.readUInt16LE(34), 16, 'bits per sample');
+  assert.equal(wav.subarray(36, 40).toString('ascii'), 'data');
+  assert.equal(wav.readUInt32LE(40), body.length);
+  assert.deepEqual(wav.subarray(44), body);
+});
+
+// --- Per-segment level matching ----------------------------------------------
+
+/** A provider answering each streaming request with its own constant amplitude. */
+function pcmProvider(amplitudes, samples = LEVEL_MIN_SPEECH_SAMPLES) {
+  const asked = [];
+  const fetchImpl = async (url, init = {}) => {
+    asked.push(JSON.parse(init.body));
+    const amplitude = amplitudes[Math.min(asked.length - 1, amplitudes.length - 1)];
+    return sseResponse(
+      sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer(Array(samples).fill(amplitude)).toString('base64') })
+      + sseEvent({ type: 'speech.audio.done', usage: {} }),
+    );
+  };
+  return { fetchImpl, asked };
+}
+
+/** RMS of PCM16LE, normalised to −1..1. */
+function rmsOf(buffer) {
+  const samples = Math.floor(buffer.length / 2);
+  let sumSquares = 0;
+  for (let index = 0; index < samples; index += 1) {
+    const sample = buffer.readInt16LE(index * 2) / 32768;
+    sumSquares += sample * sample;
+  }
+  return Math.sqrt(sumSquares / samples);
+}
+
+test('stream() brings a quiet second paragraph back to the level of the first, and leaves the first alone', async () => {
+  const { fetchImpl } = pcmProvider([0.5, 0.25]);
+  const pcm = await collect(mistralClient(fetchImpl).stream(TWO_PARAGRAPHS));
+  const gap = Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2;
+  const perSegment = LEVEL_MIN_SPEECH_SAMPLES * 2;
+  assert.equal(pcm.length, perSegment * 2 + gap, 'two segments and one paragraph pause');
+
+  const first = rmsOf(pcm.subarray(0, perSegment));
+  const second = rmsOf(pcm.subarray(perSegment + gap));
+  assert.ok(Math.abs(first - 0.5) < 0.005, `the reference segment is untouched (was ${first})`);
+  assert.ok(Math.abs(second - first) < 0.005, `the quiet segment was lifted to it (was ${second})`);
+});
+
+test('stream() stops matching at 12 dB rather than amplifying a near-silent segment without limit', async () => {
+  const { fetchImpl } = pcmProvider([0.5, 0.02]);
+  const pcm = await collect(mistralClient(fetchImpl).stream(TWO_PARAGRAPHS));
+  const gap = Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2;
+  const perSegment = LEVEL_MIN_SPEECH_SAMPLES * 2;
+
+  const first = rmsOf(pcm.subarray(0, perSegment));
+  const second = rmsOf(pcm.subarray(perSegment + gap));
+  // 0.02 is 28 dB below the reference: only 12 dB of that is corrected.
+  assert.ok(Math.abs(second - 0.02 * 10 ** (12 / 20)) < 0.01, `clamped lift (was ${second})`);
+  assert.ok(second < first, 'still quieter than the reference — the clamp held');
+});
+
+test('stream() leaves a segment exactly as the provider sent it when GAIA_TTS_LEVEL_MATCH is off', async () => {
+  const { fetchImpl } = pcmProvider([0.5, 0.25]);
+  const pcm = await collect(mistralClient(fetchImpl, { levelMatch: false }).stream(TWO_PARAGRAPHS));
+  const gap = Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2;
+  const perSegment = LEVEL_MIN_SPEECH_SAMPLES * 2;
+
+  assert.ok(Math.abs(rmsOf(pcm.subarray(perSegment + gap)) - 0.25) < 0.005, 'untouched');
+});
+
+test('level matching reads GAIA_TTS_LEVEL_MATCH through flags.js, defaulting to on', async () => {
+  const gap = Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2;
+  const perSegment = LEVEL_MIN_SPEECH_SAMPLES * 2;
+
+  const withFlag = async (env) => {
+    const { fetchImpl } = pcmProvider([0.5, 0.25]);
+    const tts = createMistralTts({
+      baseUrl: 'http://test:1234/v1',
+      model: 'voxtral-mini-tts-2603',
+      fetchImpl,
+      env,
+    });
+    const pcm = await collect(tts.stream(TWO_PARAGRAPHS));
+    return rmsOf(pcm.subarray(perSegment + gap));
+  };
+
+  assert.ok(Math.abs(await withFlag({ GAIA_TTS_LEVEL_MATCH: 'off' }) - 0.25) < 0.005, 'off: untouched');
+  assert.ok(Math.abs(await withFlag({}) - 0.5) < 0.005, 'unset: on by default');
+  assert.ok(Math.abs(await withFlag({ GAIA_TTS_LEVEL_MATCH: 'on' }) - 0.5) < 0.005, 'on');
+});
+
+test('matchSegmentGain answers 1 for anything it cannot measure', () => {
+  const quiet = createPcmMeter();
+  quiet.push(pcm16(10, 0.4));
+  assert.equal(quiet.isMeasurable(), false, 'ten samples are not a measurement');
+  assert.equal(matchSegmentGain(0.5, quiet), 1);
+  assert.equal(matchSegmentGain(null, quiet), 1);
+
+  const loud = createPcmMeter();
+  loud.push(pcm16(LEVEL_MIN_SPEECH_SAMPLES, 0.5));
+  assert.equal(matchSegmentGain(0, loud), 1, 'no reference, no gain');
+  assert.ok(Math.abs(matchSegmentGain(0.25, loud) - 0.5) < 0.01);
+});
+
+test('applyPcmGain clamps at the int16 bounds instead of wrapping around', () => {
+  const source = Buffer.allocUnsafe(4);
+  source.writeInt16LE(30_000, 0);
+  source.writeInt16LE(-30_000, 2);
+  const out = applyPcmGain(source, 2);
+
+  assert.equal(out.readInt16LE(0), 32_767);
+  assert.equal(out.readInt16LE(2), -32_768);
+  assert.equal(applyPcmGain(source, 1), source, 'a gain of 1 passes the buffer through');
 });

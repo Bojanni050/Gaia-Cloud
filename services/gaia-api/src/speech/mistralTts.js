@@ -64,9 +64,24 @@
  * audio drifts 0 dB, 8 s and 16 s show no downward trend at all. The fade is
  * a property of long requests only (36 s and up), which is where the split
  * earns its keep.
+ *
+ * Two consequences of that split, both here rather than in a client:
+ *
+ *   - `synthesize()` (POST /speech, one complete clip) used to send a whole
+ *     reply as one request — the −16.6 dB path, untouched by the split. A
+ *     reply that needs more than one segment is now spoken segment by segment
+ *     and returned as one WAV; a reply of one segment is still one mp3, byte
+ *     for byte as before.
+ *   - What is left of the drift is a *difference between* segments, so each
+ *     segment after the first is brought back to the level the reply's own
+ *     opening measured (`matchSegmentGain`, one constant gain, ±12 dB, on by
+ *     default and switchable with GAIA_TTS_LEVEL_MATCH). The first segment is
+ *     never touched: it must start speaking before it has finished arriving,
+ *     and it is the reference the rest is matched to.
  */
 
 const { sseData, parseStreamPayload } = require('./sse');
+const { flag } = require('../flags');
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_STREAM_TIMEOUT_MS = 120000;
@@ -163,6 +178,8 @@ function mimeTypeFor(format) {
  *   format?: string,
  *   fetchImpl?: Function,
  *   timeoutMs?: number,
+ *   levelMatch?: boolean,
+ *   env?: Record<string, string|undefined>,
  * }} options
  * @returns {{ synthesize: (text: string, options?: { voiceId?: string }) => Promise<{ audio: Buffer, mimeType: string }> }}
  */
@@ -175,6 +192,12 @@ function createMistralTts(options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
   const streamTimeoutMs = options.streamTimeoutMs || DEFAULT_STREAM_TIMEOUT_MS;
+  // Per-segment level matching (see `matchSegmentGain`): a switch, not a
+  // constant, because it changes what is heard and a deployment may want the
+  // provider's own dynamics back without a code change.
+  const levelMatch = options.levelMatch !== undefined
+    ? Boolean(options.levelMatch)
+    : flag(options.env || process.env, 'GAIA_TTS_LEVEL_MATCH', { default: true });
 
   if (!baseUrl) {
     throw new Error('GAIA_TTS_BASE_URL is required for speech synthesis');
@@ -188,15 +211,31 @@ function createMistralTts(options = {}) {
 
   /**
    * Synthesizes speech for `text`. Never called with anything other than
-   * an already-finalized Gaia reply (see server.js's `/speech` route) —
-   * this module has no say in what text reaches it. Mistral moderates TTS
-   * input server-side: rejected text surfaces here as a generic error,
-   * never the moderation verdict.
+   * an already-finalized Gaia reply (see server.js's `/speech` route) — this
+   * module has no say in what text reaches it. Mistral moderates TTS input
+   * server-side: rejected text surfaces here as a generic error, never the
+   * moderation verdict.
+   *
+   * A reply that fits in one segment (nearly all of them) is one request for
+   * one mp3 clip, exactly as before. A longer one is spoken the way the
+   * streaming route speaks it — a request per segment, each starting at full
+   * level, because a single long request is where the level sinks (−16.6 dB
+   * over 36 s, measured) — and comes back as one WAV (`audio/wav`), since PCM
+   * is the only thing that concatenates without a seam or an encoder's
+   * padding. That is the one visible difference: a long reply on this route
+   * is a WAV, a short one is still an mp3.
+   *
    * @param {string} text
    * @param {{ voiceId?: string }} [callOptions]
    * @returns {Promise<{ audio: Buffer, mimeType: string }>}
    */
   async function synthesize(text, { voiceId } = {}) {
+    if (splitForSynthesis(text).length > 1) {
+      const chunks = [];
+      for await (const chunk of stream(text, { voiceId })) chunks.push(chunk);
+      return { audio: wrapPcm16Wav(chunks), mimeType: mimeTypeFor('wav') };
+    }
+
     const body = {
       model,
       input: text,
@@ -288,14 +327,14 @@ function createMistralTts(options = {}) {
    * One provider request for one segment, yielded as it arrives. No ceiling
    * of its own: the caller owns the signal that covers the whole reply.
    */
-  async function* streamSegment(segment, signal) {
+  async function* streamSegment(segment, signal, voiceId) {
     const body = {
       model,
       input: segment,
       response_format: 'pcm',
       stream: true,
     };
-    const effectiveVoiceId = defaultVoiceId;
+    const effectiveVoiceId = voiceId || defaultVoiceId;
     if (effectiveVoiceId) body.voice_id = effectiveVoiceId;
 
     const response = await openStream(body, signal);
@@ -352,16 +391,24 @@ function createMistralTts(options = {}) {
    * request is started while the current one is still playing — waiting for
    * it to finish cost a whole provider round trip (1.4 s) of nothing.
    *
+   * What the split cannot remove is a level difference *between* segments, so
+   * each segment after the first is scaled by one constant gain back to the
+   * level the first one measured (`matchSegmentGain`, `GAIA_TTS_LEVEL_MATCH`).
+   * The first segment is never touched — it is both the reference and the one
+   * that must start speaking before it has fully arrived — and a later segment
+   * is measured whole before it is spoken, which costs nothing because it was
+   * already being fetched while the previous one played.
+   *
    * The same calm-error posture as `synthesize()`: every failure surfaces
    * as one generic message, with the provider, its URL and any key kept in
    * the operator log only. `signal` lets the caller hang the whole provider
    * request up (a client that stopped listening mid-reply).
    *
    * @param {string} text
-   * @param {{ signal?: AbortSignal }} [options]
+   * @param {{ signal?: AbortSignal, voiceId?: string }} [options]
    * @returns {AsyncGenerator<Buffer, void, void>}
    */
-  async function* stream(text, { signal } = {}) {
+  async function* stream(text, { signal, voiceId } = {}) {
     // The caller's signal and the timeout cover the *whole* reply, not just
     // one request: a listener that goes away mid-reply must stop the
     // provider from synthesizing the sentences nobody will hear.
@@ -377,26 +424,60 @@ function createMistralTts(options = {}) {
       let yielded = false;
       const segments = splitForSynthesis(text);
       const start = (index) => (index < segments.length
-        ? bufferSegment(streamSegment(segments[index], controller.signal))
+        ? bufferSegment(streamSegment(segments[index], controller.signal, voiceId))
         : null);
       let current = start(0);
       let next = start(1);
+      // The reply's own opening sets the level everything after it is brought
+      // back to (see `matchSegmentGain`); null means there is nothing to match
+      // against — too little speech to measure, or a single segment.
+      let referenceRms = null;
       for (let index = 0; index < segments.length; index += 1) {
         // A paragraph break is a pause the speaker takes; two requests back to
         // back would put her next word on the last syllable of the one before.
         if (index > 0) yield segmentGap();
         const trimmer = createPcmTrimmer();
-        for await (const chunk of current) {
-          const trimmed = trimmer.push(chunk);
-          if (trimmed.length === 0) continue;
-          yielded = true;
-          yield trimmed;
+        const meter = createPcmMeter();
+        if (index === 0 || !levelMatch || referenceRms === null) {
+          // Streamed as it arrives: the first segment must start speaking
+          // before the provider has finished it, and every later one has
+          // nothing to be matched against.
+          for await (const chunk of current) {
+            const trimmed = trimmer.push(chunk);
+            if (trimmed.length === 0) continue;
+            meter.push(trimmed);
+            yielded = true;
+            yield trimmed;
+          }
+          const tail = trimmer.flush();
+          if (tail.length > 0) {
+            meter.push(tail);
+            yielded = true;
+            yield tail;
+          }
+        } else {
+          // A whole segment is a few hundred kB and is already being fetched
+          // ahead, so measuring all of it before speaking it costs no provider
+          // round trip: it stays silent until the segment before it has
+          // finished playing, which is its turn anyway. One constant gain over
+          // the whole segment — never a per-chunk one, which would pump.
+          const spoken = [];
+          for await (const chunk of current) {
+            const trimmed = trimmer.push(chunk);
+            if (trimmed.length > 0) spoken.push(trimmed);
+          }
+          const tail = trimmer.flush();
+          if (tail.length > 0) spoken.push(tail);
+          for (const piece of spoken) meter.push(piece);
+          const gain = matchSegmentGain(referenceRms, meter);
+          for (const piece of spoken) {
+            const matched = applyPcmGain(piece, gain);
+            if (matched.length === 0) continue;
+            yielded = true;
+            yield matched;
+          }
         }
-        const tail = trimmer.flush();
-        if (tail.length > 0) {
-          yielded = true;
-          yield tail;
-        }
+        if (index === 0 && meter.isMeasurable()) referenceRms = meter.rms();
         current = next;
         next = start(index + 2);
       }
@@ -509,6 +590,125 @@ function createPcmTrimmer() {
       return tail;
     },
   };
+}
+
+/**
+ * Measures how loud a segment actually *speaks*: RMS over the samples above
+ * `SILENCE_FLOOR`, normalised to −1..1. Padding and breaths are therefore not
+ * part of the measurement, and a long pause at the end of a paragraph cannot
+ * make a loud segment look quiet.
+ *
+ * Stateful across chunks; `rms()` may be asked at any point.
+ *
+ * @returns {{ push: (bytes: Buffer) => void, rms: () => number|null, isMeasurable: () => boolean }}
+ */
+function createPcmMeter() {
+  let sumSquares = 0;
+  let count = 0;
+  return {
+    push(bytes) {
+      const samples = Math.floor(bytes.length / 2);
+      for (let index = 0; index < samples; index += 1) {
+        const sample = bytes.readInt16LE(index * 2);
+        if (Math.abs(sample) < SILENCE_FLOOR) continue;
+        sumSquares += sample * sample;
+        count += 1;
+      }
+    },
+    rms() {
+      return count > 0 ? Math.sqrt(sumSquares / count) / 32768 : null;
+    },
+    isMeasurable() {
+      return count >= LEVEL_MIN_SPEECH_SAMPLES;
+    },
+  };
+}
+
+/**
+ * The least speech a segment must carry before its level means anything:
+ * 100 ms. Below it the measurement is noise, and the segment is passed through
+ * untouched rather than guessed at — which is also what keeps a tiny fixture
+ * sounding like the fixture.
+ */
+const LEVEL_MIN_SPEECH_SAMPLES = Math.round(STREAM_SAMPLE_RATE * 0.1);
+
+/**
+ * How far matching may move a segment, either way. A seam that needs more than
+ * 12 dB is not a level problem any more; pushing further only amplifies the
+ * provider's noise floor instead of making the reply right.
+ */
+const LEVEL_GAIN_CEILING_DB = 12;
+const LEVEL_GAIN_FLOOR_DB = -12;
+
+/**
+ * The one constant gain that brings a segment back to `referenceRms` — the
+ * level the reply's own opening measured — clamped to ±12 dB. Returns 1 (no
+ * change) whenever either side is unmeasurable: that is what lets a single
+ * segment, a silent one, or a deployment with `GAIA_TTS_LEVEL_MATCH=off` come
+ * out exactly as the provider sent it.
+ *
+ * One gain for a whole segment, never one per chunk: a per-chunk gain would
+ * chase every syllable and pump, which is worse than the drift it cures.
+ *
+ * @param {number|null} referenceRms
+ * @param {{ isMeasurable: () => boolean, rms: () => number|null }} meter
+ * @returns {number} a linear gain
+ */
+function matchSegmentGain(referenceRms, meter) {
+  if (!(referenceRms > 0) || !meter.isMeasurable()) return 1;
+  const measured = meter.rms();
+  if (!(measured > 0)) return 1;
+  const ceiling = 10 ** (LEVEL_GAIN_CEILING_DB / 20);
+  const floor = 10 ** (LEVEL_GAIN_FLOOR_DB / 20);
+  return Math.min(ceiling, Math.max(floor, referenceRms / measured));
+}
+
+/**
+ * Applies one constant gain to PCM16LE, clamping rather than wrapping.
+ *
+ * @param {Buffer} bytes
+ * @param {number} gain linear, 1 = untouched
+ * @returns {Buffer}
+ */
+function applyPcmGain(bytes, gain) {
+  if (!(gain > 0) || gain === 1) return bytes;
+  const samples = Math.floor(bytes.length / 2);
+  const out = Buffer.allocUnsafe(samples * 2);
+  for (let index = 0; index < samples; index += 1) {
+    const scaled = Math.round(bytes.readInt16LE(index * 2) * gain);
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, scaled)), index * 2);
+  }
+  return out;
+}
+
+/**
+ * Wraps PCM16LE chunks in one canonical 44-byte RIFF/WAVE header, at the
+ * stream's own format (24 kHz mono, 16 bit). This is what lets a long reply on
+ * `POST /speech` come back as *one* playable file after being spoken in
+ * several requests: PCM concatenates sample-exactly, an encoder's output does
+ * not (every clip carries its own padding).
+ *
+ * @param {Buffer[]} chunks
+ * @returns {Buffer}
+ */
+function wrapPcm16Wav(chunks) {
+  const body = Buffer.concat(chunks);
+  const header = Buffer.alloc(44);
+  const blockAlign = STREAM_CHANNELS * 2;
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + body.length, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16); // PCM fmt chunk length
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(STREAM_CHANNELS, 22);
+  header.writeUInt32LE(STREAM_SAMPLE_RATE, 24);
+  header.writeUInt32LE(STREAM_SAMPLE_RATE * blockAlign, 28); // byte rate
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34); // bits per sample
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(body.length, 40);
+  return Buffer.concat([header, body]);
 }
 
 /**
@@ -829,7 +1029,9 @@ async function listVoices(options = {}) {
  */
 function createFromEnv(env = process.env) {
   const config = readTtsConfig(env);
-  return isConfigured(config) ? createMistralTts(config) : undefined;
+  // `env` goes along so the client reads its own flags from the environment it
+  // was built for, not from process.env.
+  return isConfigured(config) ? createMistralTts({ ...config, env }) : undefined;
 }
 
 module.exports = {
@@ -842,7 +1044,12 @@ module.exports = {
   mimeTypeFor,
   splitForSynthesis,
   createPcmTrimmer,
+  createPcmMeter,
+  matchSegmentGain,
+  applyPcmGain,
+  wrapPcm16Wav,
   LANGUAGES,
+  LEVEL_MIN_SPEECH_SAMPLES,
   STREAM_FORMAT,
   STREAM_SAMPLE_RATE,
   STREAM_CHANNELS,
