@@ -269,6 +269,65 @@ function verify({ root = path.join(__dirname, '..'), docPath = 'docs/architectur
     }
   }
 
+  // 7. The documents that are *runtime content* — bundled into the artifact clients
+  //    pull and the container bakes in — rather than documentation. Two ways this
+  //    goes wrong, and both are silent until the release job runs: a file in
+  //    `DOCUMENTS` disappears from the tree (exactly what happened on 2026-11-11,
+  //    when `docs/` was emptied and `publish-foundation` failed on principles.md —
+  //    after the merge), and the list grows without the section in this document
+  //    that explains it.
+  //
+  //    The list has to be read from the *sentence that lists the bundle*, not from
+  //    the whole section: this section goes on to cite `docs/advice.md` §1, so
+  //    "the name occurs in this section" would call any mention a listing and the
+  //    check would pass on anything. The sentence is line-wrapped, so it is
+  //    reassembled from the blank line above to the blank line below, and both
+  //    directions are compared — a name in `DOCUMENTS` that the sentence omits, and
+  //    a name in the sentence that `DOCUMENTS` does not carry, are both drift.
+  const bundleScript = path.join(root, 'scripts/build-foundation-artifact.js');
+  const runtimeSection = sections(text).find((s) => s.title === 'These documents are runtime content');
+  if (fs.existsSync(bundleScript) && runtimeSection) {
+    const declared = /const DOCUMENTS = \[([^\]]*)\]/.exec(fs.readFileSync(bundleScript, 'utf8'));
+    const bundled = declared ? [...declared[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
+    checked.bundled = bundled.length;
+
+    const body = runtimeSection.body;
+    const start = body.findIndex(({ text: line }) => /\bbundles\b/.test(line));
+    if (start !== -1) {
+      let from = start;
+      while (from > 0 && body[from - 1].text.trim() !== '') from -= 1;
+      let to = start;
+      while (to + 1 < body.length && body[to + 1].text.trim() !== '') to += 1;
+      const at = body[start].line;
+
+      const documented = new Set();
+      for (const { text: line } of body.slice(from, to + 1)) {
+        for (const token of backticked(line)) {
+          if (token.endsWith('.md')) documented.add(path.basename(token));
+        }
+      }
+      for (const name of bundled) {
+        if (!documented.has(name)) {
+          addFailure('bundled', name, at,
+            `${name} is in DOCUMENTS but the sentence describing the bundle does not name it`);
+        }
+        const onDisk = name === 'soul.md'
+          ? path.join(root, 'services/gaia-api/identity/soul.md')
+          : path.join(root, 'docs', name);
+        if (!fs.existsSync(onDisk)) {
+          addFailure('bundled', name, at,
+            `${name} is in DOCUMENTS but not in the tree — the publish workflow fails on this after the merge`);
+        }
+      }
+      for (const name of documented) {
+        if (!bundled.includes(name)) {
+          addFailure('bundled', name, at,
+            `${name} is named in the sentence describing the bundle but DOCUMENTS does not carry it`);
+        }
+      }
+    }
+  }
+
   return {
     ok: failures.length === 0,
     failures,
@@ -293,7 +352,8 @@ function main() {
     `verify-architecture: ${checked.paths} paths, ${checked.flags} flags, `
     + `${checked.identifiers} capability/tool names, ${checked.statuses} lifecycle terms, `
     + `${checked.routes} routes checked against the tree, `
-    + `${checked.diagrams ?? 0} diagrams checked against their twin`,
+    + `${checked.diagrams ?? 0} diagrams checked against their twin, `
+    + `${checked.bundled ?? 0} runtime documents checked against their bundle`,
   );
   if (result.ok) {
     console.log(`ok — every anchor in docs/architecture.md exists (doc verified against ${result.docCommit || 'an unrecorded commit'})`);

@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `561a7ad` (2026-11-17).** Every path, route, flag
+> **Verified against code: commit `d778972` (2026-11-17).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -593,11 +593,23 @@ those six documents breaks the publish workflow outright
 (`Error: Could not find document at …/principles.md`). The document list is
 `DOCUMENTS` in `build-foundation-artifact.js`; change it in the same commit as the file.
 
+That failure has a rail now, so it lands on the pull request instead of on the release:
+`verify-architecture.js` (check 7) reads `DOCUMENTS` from the build script and the sentence
+above that lists the bundle, and fails when the two disagree in either direction or when a
+name in the list is not in the tree. It reads the *sentence*, not the whole section, because
+this section goes on to cite `docs/advice.md` §1 — a document mentioned here is not a
+document bundled here. The other half of the same rail is in the gaia-api suite: every
+document any rule selects in `src/foundation.js` has to be one `DOCUMENTS` carries, since
+`buildSystemPrompt` skips a document the artifact does not hold without saying so, and a
+rename that misses the sets would quietly shrink the prompt instead of failing.
+
 This document is also the one place where drift stayed invisible for a month: it described
 a state of the code that 117 commits had moved past, and nothing noticed it
 (`docs/advice.md` §1). `scripts/verify-architecture.js` closes that. It re-reads the
 anchors *out of this file* — repo paths, environment flags, capability ids, lifecycle
-terms and routes — and exits non-zero when one of them is gone from the tree. It runs on
+terms, routes, the two halves of the visual map, and the list of documents that are runtime
+content rather than documentation — and exits non-zero when one of them is gone from the tree.
+It runs on
 every push and pull request touching `docs/`, `services/` or `scripts/`
 (`.github/workflows/verify-architecture.yml`) and again inside the gaia-api suite
 (`test/verifyArchitecture.test.js`).

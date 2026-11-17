@@ -185,3 +185,74 @@ test('a missing half of the pair, or a different number of diagrams, is reported
   assert.equal(unevenResult.ok, false);
   assert.match(unevenResult.failures.find((f) => f.kind === 'graph').detail, /carries 2 diagrams, .* carries 1/);
 });
+
+// Check 7: the documents that are runtime content — bundled by
+// scripts/build-foundation-artifact.js into the artifact the container bakes in.
+// The bundle list and the sentence in the document that lists it must agree in both
+// directions, and every name in it must exist: on 2026-11-11 docs/ was emptied while
+// the list kept naming a file that was gone, and what found out was
+// `publish-foundation`, after the merge, as a failed release. All three are proven
+// here — and so is the boundary: that section cites `docs/advice.md` in a later
+// paragraph, which is not a listing, so the check must not read it as one.
+const BUNDLE_SECTION = [
+  '## These documents are runtime content',
+  '',
+  'The build script `scripts/build-foundation-artifact.js` bundles',
+  '`services/gaia-api/identity/soul.md` with `docs/principles.md` and',
+  '`docs/lexicon.md` into the artifact.',
+  '',
+  'Later in this section, and not a listing: `docs/advice.md` §1.',
+  '',
+];
+
+function bundledFixture({ documents = "['soul.md', 'principles.md', 'lexicon.md']", files } = {}) {
+  const code = {
+    'scripts/build-foundation-artifact.js': `const DOCUMENTS = ${documents};\n\nmodule.exports = { DOCUMENTS };\n`,
+    'docs/advice.md': 'cited above, never bundled\n',
+  };
+  for (const file of files ?? ['docs/principles.md', 'docs/lexicon.md', 'services/gaia-api/identity/soul.md']) {
+    code[file] = 'runtime text\n';
+  }
+  return fixture({ doc: [...DOC, ...BUNDLE_SECTION].join('\n'), code });
+}
+
+test('a bundle list the document agrees with is fine, and the guard counts it', () => {
+  const result = verify({ root: bundledFixture() });
+  assert.deepEqual(result.failures, [], 'a cited document must not be read as a bundled one');
+  assert.equal(result.checked.bundled, 3);
+});
+
+test('a document bundled but not named in the sentence that lists the bundle is reported', () => {
+  const root = bundledFixture({
+    documents: "['soul.md', 'principles.md', 'lexicon.md', 'identity.md']",
+    files: ['docs/principles.md', 'docs/lexicon.md', 'docs/identity.md', 'services/gaia-api/identity/soul.md'],
+  });
+  const result = verify({ root });
+  assert.equal(result.ok, false);
+  const bundled = result.failures.filter((f) => f.kind === 'bundled');
+  assert.equal(bundled.length, 1, `expected one finding, got ${JSON.stringify(result.failures)}`);
+  assert.match(bundled[0].detail, /identity\.md is in DOCUMENTS but the sentence describing the bundle does not name it/);
+});
+
+test('a document the sentence lists but DOCUMENTS does not carry is reported', () => {
+  const root = bundledFixture({ documents: "['soul.md', 'principles.md']" });
+  fs.writeFileSync(path.join(root, 'docs/lexicon.md'), 'runtime text\n');
+  const result = verify({ root });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.failures.find((f) => f.kind === 'bundled').detail,
+    /lexicon\.md is named in the sentence describing the bundle but DOCUMENTS does not carry it/,
+  );
+});
+
+test('a bundled document missing from the tree is reported before the merge, not after it', () => {
+  // The list still names principles.md — the file is simply gone, which is what
+  // 2026-11-11 looked like: the list was right, the tree was not.
+  const root = bundledFixture({ files: ['docs/lexicon.md', 'services/gaia-api/identity/soul.md'] });
+  const result = verify({ root });
+  assert.equal(result.ok, false);
+  assert.match(
+    result.failures.find((f) => f.kind === 'bundled').detail,
+    /principles\.md is in DOCUMENTS but not in the tree/,
+  );
+});

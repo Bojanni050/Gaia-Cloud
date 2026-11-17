@@ -19,6 +19,20 @@ test('deriveIntent classifies technical, gaia and plain conversation turns', () 
   assert.deepEqual(deriveIntent([]), { type: 'conversation' });
 });
 
+// Every document a rule can select has to be one the artifact actually carries.
+// `buildSystemPrompt` filters out a document the artifact does not have, silently —
+// so a rename in DOCUMENTS (scripts/build-foundation-artifact.js) that misses the
+// sets here would quietly drop a document from the system prompt, and nothing about
+// the turn would look wrong.
+test('every document the rules select is one the artifact bundles', () => {
+  const { DOCUMENTS } = require('../../../scripts/build-foundation-artifact');
+  for (const type of ['technical', 'gaia', 'conversation', 'something-else']) {
+    for (const name of selectDocuments({ type })) {
+      assert.ok(DOCUMENTS.includes(name), `rule '${type}' selects ${name}, which DOCUMENTS does not bundle`);
+    }
+  }
+});
+
 test('selectDocuments matches each rule branch, falling back to the base three', () => {
   assert.deepEqual(selectDocuments({ type: 'technical' }), ['soul.md', 'principles.md', 'lexicon.md', 'identity.md']);
   assert.deepEqual(selectDocuments({ type: 'gaia' }), ['soul.md', 'principles.md', 'lexicon.md', 'identity.md']);
