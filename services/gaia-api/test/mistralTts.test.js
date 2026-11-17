@@ -473,6 +473,46 @@ test('stream() is calm about an HTTP failure, an empty stream and a missing body
   await assert.rejects(() => collect(mistralClient(async () => ({ ok: true, body: null })).stream('x')), /speech synthesis returned no audio/);
 });
 
+/** Runs `fn` with console.error captured, for the operator-log assertions. */
+async function withCapturedLog(fn) {
+  const lines = [];
+  const original = console.error;
+  console.error = (line) => lines.push(String(line));
+  try {
+    await fn();
+  } finally {
+    console.error = original;
+  }
+  return lines;
+}
+
+test('a segment that returns 200 with no audio says what the provider actually sent', async () => {
+  const lines = await withCapturedLog(async () => {
+    const fetchImpl = async () => sseResponse(sseEvent({ type: 'speech.audio.done' }));
+    await assert.rejects(() => collect(mistralClient(fetchImpl).stream('Hi')), /returned no audio/);
+  });
+
+  assert.ok(
+    lines.some((line) => /segment carried no audio/.test(line) && /1 event\(s\)/.test(line)),
+    `the log must name what arrived, got:\n${lines.join('\n')}`,
+  );
+});
+
+test('an event type we do not recognise is named in that line, so silence is never unexplained', async () => {
+  const lines = await withCapturedLog(async () => {
+    const fetchImpl = async () => sseResponse(
+      sseEvent({ type: 'speech.audio.throttled', message: 'slow down' }) + sseEvent({ type: 'speech.audio.done' }),
+    );
+    await assert.rejects(() => collect(mistralClient(fetchImpl).stream('Hi')), /returned no audio/);
+  });
+
+  assert.ok(
+    lines.some((line) => /first silent type speech\.audio\.throttled/.test(line)),
+    `the unrecognised type must be named, got:\n${lines.join('\n')}`,
+  );
+  assert.ok(!lines.some((line) => /slow down/.test(line)), 'the provider payload itself stays out of the log');
+});
+
 test('stream() reports an abort as cancelled, not as an outage', async () => {
   const controller = new AbortController();
   controller.abort();

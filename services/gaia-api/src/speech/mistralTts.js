@@ -343,10 +343,19 @@ function createMistralTts(options = {}) {
     // sample may straddle two events; the converter carries the leftover
     // bytes into the next chunk instead of dropping half a sample.
     const pcm = createPcmFloat32ToS16();
+    // What came back, for the operator log when nothing audible did. A
+    // segment that returns 200 with no audio used to be indistinguishable
+    // from an empty one: the log said "no audio" and not what the provider
+    // had actually sent, which is exactly the question you cannot answer
+    // from outside. The client still sees nothing but the calm wording.
+    let events = 0;
+    let audioEvents = 0;
+    let firstSilentType = null;
     try {
       for await (const payload of sseData(response.body)) {
         const event = parseStreamPayload(payload);
         if (!event) continue;
+        events += 1;
         if (event.type === 'speech.audio.done') break;
         if (event.error) {
           console.error(`[gaia:tts] stream error at ${baseUrl}: ${JSON.stringify(event.error).slice(0, 200)}`);
@@ -358,10 +367,17 @@ function createMistralTts(options = {}) {
         const encoded = typeof event.audio_data === 'string'
           ? event.audio_data
           : event.data && typeof event.data.audio_data === 'string' ? event.data.audio_data : undefined;
-        if (!encoded) continue;
+        if (!encoded) {
+          if (firstSilentType === null) firstSilentType = typeof event.type === 'string' ? event.type.slice(0, 40) : 'untyped';
+          continue;
+        }
         const chunk = pcm.push(Buffer.from(encoded, 'base64'));
         if (chunk.length === 0) continue;
+        audioEvents += 1;
         yield chunk;
+      }
+      if (audioEvents === 0) {
+        console.error(`[gaia:tts] segment carried no audio at ${baseUrl}: ${events} event(s), first silent type ${firstSilentType || 'none'}`);
       }
     } catch (error) {
       // A calm error already says why; anything else is the transport
