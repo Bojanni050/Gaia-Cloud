@@ -26,12 +26,16 @@ const WINDOW_MESSAGES = 12;
  *   clearTimer?: Function,
  * }} [options]
  */
+const PASS = 'aion'; // the name it answers to in GET /admin/api/scans
+
 function createAionScheduler({
   getWriter,
   everyTurns = 5,
   idleMs = 5 * 60 * 1000,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
+  now = Date.now,
+  registry = null,
 } = {}) {
   const every = Number(everyTurns) > 0 ? Number(everyTurns) : 5;
   const conversations = new Map(); // id -> { count, window, logger, timer }
@@ -53,7 +57,7 @@ function createAionScheduler({
     }
   }
 
-  async function flush(id) {
+  async function flushOnce(id) {
     const entry = conversations.get(id);
     if (!entry) return { written: 0, skipped: 'no-session' };
     clearEntryTimer(entry);
@@ -66,6 +70,28 @@ function createAionScheduler({
     } catch (_) {
       return { written: 0, skipped: 'failed' };
     }
+  }
+
+  /**
+   * One flush, recorded — and every path goes through here: the every-N-turns
+   * run, the idle timer, a session change and `flushAll`. `noteTurn` is not the
+   * pass (it runs on every turn); the flush is the thing that may or may not
+   * happen, so the surface asks about that.
+   *
+   * The pass swallows its own write error and answers `{ skipped: 'failed' }`,
+   * so that answer is reported as a failure here — otherwise a silently broken
+   * Aion writer would look exactly like an idle one.
+   */
+  async function flush(id) {
+    const at = now();
+    const result = await flushOnce(id);
+    const durationMs = now() - at;
+    if (result && result.skipped === 'failed') {
+      registry?.record(PASS, { at, durationMs, error: new Error('the Aion writer threw') });
+    } else {
+      registry?.record(PASS, { at, durationMs, result });
+    }
+    return result;
   }
 
   function armIdle(id, entry) {

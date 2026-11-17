@@ -68,10 +68,11 @@ const VALID_ROLES = ['generation', 'reasoning', 'vision', 'kairos', 'aion', 'ele
  *   probeChatFn?: typeof probeChatCompletion,
  *   ttsLog?: { list: () => object[] },
  *   sttLog?: { list: () => object[] },
+ *   passRegistry?: ReturnType<import('./passRegistry').createPassRegistry>,
  * }} deps
  */
 function createAdminRouter({
-  providerStore, decisionStore, auth, ttsLog, sttLog,
+  providerStore, decisionStore, auth, ttsLog, sttLog, passRegistry = null,
   createOpenRouterClientFn = createOpenRouterClient,
   retrieveModelsFn = retrieveModels,
   retrieveOpenRouterModelEndpointsFn = retrieveOpenRouterModelEndpoints,
@@ -118,6 +119,18 @@ function createAdminRouter({
     const limit = Number(req.query.limit);
     const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
     res.json({ decisions: decisionStore.list({ limit: Number.isFinite(limit) ? limit : undefined, kind }) });
+  });
+
+  // The background passes and what each of them last did (docs/advice.md C7).
+  // Before this, "is the expiry pass off, or did nothing expire?" could only be
+  // answered by reading the container's environment; the passes computed their
+  // counts and threw them away. Read-only by design: nothing here can start,
+  // stop or re-run a pass — the surface exists to be looked at, not driven.
+  router.get('/api/scans', auth, (req, res) => {
+    if (!passRegistry) {
+      return res.status(503).json({ error: 'the pass registry is not wired in this process' });
+    }
+    res.json({ passes: passRegistry.snapshot() });
   });
 
   // Offered, used and usable per tool — the baseline a learned skill has to

@@ -62,23 +62,33 @@ function fromStoreRecord(row) {
  * }} deps
  * @returns {{ start: () => void, stop: () => void, runOnce: () => Promise<object>, enabled: boolean }|null}
  */
+const PASS = 'soft-promotion'; // the name it answers to in GET /admin/api/scans
+
 function createSoftPromotionScan({
   cognition,
   sink,
   env = process.env,
   intervalMs = Number(env.GAIA_HYPOTHESIS_SCAN_INTERVAL_MS) || DEFAULT_INTERVAL_MS,
   policy,
+  now = Date.now,
   logger = console,
+  registry = null,
 } = {}) {
-  if (!flag(env, 'GAIA_HYPOTHESIS_SCAN', { default: true })) return null;
+  if (!flag(env, 'GAIA_HYPOTHESIS_SCAN', { default: true })) {
+    registry?.declare(PASS, { enabled: false, reason: 'GAIA_HYPOTHESIS_SCAN is off' });
+    return null;
+  }
   if (!cognition || typeof cognition.listHypotheses !== 'function') {
     logger.warn?.('[hypotheses] soft-promotion scan not started: Cognition client unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'Cognition client unavailable' });
     return null;
   }
   if (!sink || typeof sink.update !== 'function') {
     logger.warn?.('[hypotheses] soft-promotion scan not started: hypothesis sink unavailable');
+    registry?.declare(PASS, { enabled: false, reason: 'hypothesis sink unavailable' });
     return null;
   }
+  registry?.declare(PASS, { enabled: true, intervalMs });
 
   let running = false;
   let timer = null;
@@ -125,11 +135,24 @@ function createSoftPromotionScan({
     }
   }
 
+  /**
+   * One run, recorded. The timer and a hand-asked run both go through here, so
+   * `GET /admin/api/scans` can show what this pass last did. The re-entrancy
+   * answer (`{ skipped: true }`) is not a run and is not recorded: it would
+   * overwrite the counts of the run that is still going.
+   */
+  async function pass() {
+    const at = now();
+    const result = await runOnce();
+    if (!(result && result.skipped === true)) registry?.record(PASS, { at, durationMs: now() - at, result });
+    return result;
+  }
+
   function start() {
     if (timer) return;
-    timer = setInterval(() => { void runOnce(); }, intervalMs);
+    timer = setInterval(() => { void pass(); }, intervalMs);
     if (typeof timer.unref === 'function') timer.unref();
-    void runOnce();
+    void pass();
     logger.info?.(`[hypotheses] soft-promotion scan started (every ${intervalMs}ms)`);
   }
 
@@ -138,7 +161,7 @@ function createSoftPromotionScan({
     timer = null;
   }
 
-  return { start, stop, runOnce, enabled: true };
+  return { start, stop, runOnce: pass, enabled: true };
 }
 
 module.exports = { createSoftPromotionScan, fromStoreRecord, DEFAULT_INTERVAL_MS };

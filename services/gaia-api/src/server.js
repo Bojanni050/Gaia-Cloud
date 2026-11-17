@@ -52,6 +52,7 @@ const { readReachPolicy } = require('./reasoning/openQuestionReach');
 const { createCognitionKnowledgeAdapter } = require('./reasoning/cognitionKnowledgeAdapter');
 const { createAionWriter } = require('./reasoning/aion');
 const { createAionScheduler } = require('./reasoning/aionScheduler');
+const { createPassRegistry } = require('./passRegistry');
 const { createMemoryTool } = require('./reasoning/memoryTool');
 const { createMemoryRouter } = require('./memoryRoutes');
 const { createWebSearchTool } = require('./reasoning/webSearchTool');
@@ -215,6 +216,13 @@ function createApp(env = process.env) {
   });
   const cognitionSync = createCognitionSync({ hindsight: hindsightLogos, cognition });
 
+  // Every background pass reports into this one registry, and `GET
+  // /admin/api/scans` reads it back (docs/advice.md C7). Created here, before
+  // anything that can report, so a pass that never starts is on the list too —
+  // with the reason it did not. Without this, "is the expiry pass off, or did
+  // nothing expire?" could only be answered from the container's environment.
+  const passRegistry = createPassRegistry();
+
   // On-demand memory: the tools Gaia may call during a turn. `remember`
   // writes to the shared system-memory bank (`bojan`); `keep` writes to HER
   // own bank (`gaia`) — the explicit, in-conversation counterpart to Aion.
@@ -350,6 +358,7 @@ function createApp(env = process.env) {
       cognition,
       sink: cognitionSink.hypothesis,
       env,
+      registry: passRegistry,
     });
 
     // The expiry pass: a hypothesis that never gathered evidence, and that
@@ -359,6 +368,7 @@ function createApp(env = process.env) {
       cognition,
       sink: cognitionSink.hypothesis,
       env,
+      registry: passRegistry,
     });
 
     // The belief formation pass: the ONLY thing that forms a statement from
@@ -374,6 +384,7 @@ function createApp(env = process.env) {
       hindsight,
       env,
       logger: console,
+      registry: passRegistry,
       // A belief born in the pass must be visible to the manager in the same
       // process, otherwise the model can neither recognize it next turn (no
       // existingId) nor weigh new evidence against it.
@@ -460,7 +471,7 @@ function createApp(env = process.env) {
   const ttsLog = createTtsLog();
   // Listening activity tail (GET /admin/api/stt/log) — never carries audio or text.
   const sttLog = createSttLog();
-  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog, sttLog }));
+  app.use('/admin', createAdminRouter({ providerStore, decisionStore, auth, ttsLog, sttLog, passRegistry }));
 
   // v3.0: no live IntentIQ pre-flight — Logos reflects after delivery.
 
@@ -531,7 +542,17 @@ function createApp(env = process.env) {
         idleMs: env.GAIA_AION_IDLE_MS !== undefined
           ? Number(env.GAIA_AION_IDLE_MS)
           : 5 * 60 * 1000,
+        registry: passRegistry,
       });
+  if (aion) {
+    // No interval to report: its rhythm is turns, idle time and session changes.
+    passRegistry.declare('aion', {
+      enabled: true,
+      note: 'flushes every N turns, on an idle conversation and on a session change',
+    });
+  } else {
+    passRegistry.declare('aion', { enabled: false, reason: 'GAIA_AION is off' });
+  }
 
   /**
    * The speech-to-text client for the current configuration (provider store,
@@ -687,6 +708,7 @@ function createApp(env = process.env) {
     timezone: env.GAIA_ELEOS_TIMEZONE || undefined,
     maxPerDay: Number.isFinite(Number(env.GAIA_ELEOS_MAX_PER_DAY)) ? Number(env.GAIA_ELEOS_MAX_PER_DAY) : undefined,
     tickMs: Number(env.GAIA_ELEOS_TICK_MS) || undefined,
+    registry: passRegistry,
   });
   const eleos = flag(env, 'GAIA_ELEOS', { default: false })
     ? createEleos({
@@ -700,6 +722,7 @@ function createApp(env = process.env) {
       })
     : undefined;
   if (eleos) eleos.start();
+  else passRegistry.declare('eleos-tick', { enabled: false, reason: 'GAIA_ELEOS is off (default)' });
   app.use('/eleos', createEleosRouter({ store: eleosStore, auth }));
 
   // DESKTOP — Gaia reaching for the person's OWN computer (Desktop Commander, run by Gaia-Desktop).
@@ -754,6 +777,10 @@ function createApp(env = process.env) {
     }),
   }));
 
+  passRegistry.declare('research-poll', researchJobs
+    ? { enabled: true, intervalMs: Number(env.GAIA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_RESEARCH_POLL_MS) : 20000 }
+    : { enabled: false, reason: 'GAIA_RESEARCH_REACH is off (default)' });
+
   if (researchJobs) {
     const pollMs = Number(env.GAIA_RESEARCH_POLL_MS) > 0 ? Number(env.GAIA_RESEARCH_POLL_MS) : 20000;
     // A slow Hermes must not let two polls overlap: each walks the running
@@ -777,8 +804,19 @@ function createApp(env = process.env) {
           if (saved) researchStore.update(job.id, { checkinSaved: true });
         },
       }));
+    // One cycle, recorded — this pass is the reason a finished Hermes run
+    // reaches the conversation at all, so "did the poller ever run, and what did
+    // it find?" belongs on the same surface as the other passes.
+    const pollPass = async () => {
+      const at = Date.now();
+      const result = await pollOnce();
+      if (!(result && result.skipped === true)) {
+        passRegistry.record('research-poll', { at, durationMs: Date.now() - at, result });
+      }
+      return result;
+    };
     const timer = setInterval(() => {
-      pollOnce().catch(() => { /* a poll cycle never rejects; belt and braces */ });
+      pollPass().catch(() => { /* a poll cycle never rejects; belt and braces */ });
     }, pollMs);
     // Never hold the process open just for the poller.
     if (typeof timer.unref === 'function') timer.unref();
@@ -1261,6 +1299,7 @@ function createApp(env = process.env) {
     providerStore,
     syncEpisode: (episode) => cognitionSync.syncKairosEpisode(episode),
     env,
+    registry: passRegistry,
   });
   if (kairosRuntime) kairosRuntime.start();
 
@@ -1276,8 +1315,18 @@ function createApp(env = process.env) {
       intervalMs: Number(env.GAIA_KAIROS_DIGEST_INTERVAL_MS) > 0
         ? Number(env.GAIA_KAIROS_DIGEST_INTERVAL_MS)
         : undefined,
+      registry: passRegistry,
     });
     digestScheduler.start();
+    passRegistry.declare('kairos-digest', {
+      enabled: true,
+      note: 'one digest a day, on the first tick after the configured hour',
+    });
+  } else {
+    passRegistry.declare('kairos-digest', {
+      enabled: false,
+      reason: kairosRuntime ? 'GAIA_KAIROS_DIGEST_ENABLED is off' : 'GAIA_KAIROS_ENABLED is off (default)',
+    });
   }
   // Hypothesis soft-promotion scan — same posture as Kairos: best-effort,
   // never blocks startup and never affects a turn.
