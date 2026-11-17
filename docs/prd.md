@@ -1,7 +1,15 @@
 # Gaia — Product Foundation PRD
 
+> **Status: frozen history** — the product log from 2026-06-01 to 2026-09-25 (11 update
+> entries). The per-change log continues in the root's `walkthrough*.md` (from 2026-10-04) and
+> the milestone history in `evolution.md`, which overlaps the middle of this file.
+> It lives here from 2026-11-16, when it moved out of `memory/PRD.md`: that directory means
+> nothing in a repository whose whole subject is memory, and `docs/architecture.md` cites this
+> document by name (the Eleos proactivity ceiling), so it has to be findable.
+
 **Framing:** Gaia is a lifelong personal intelligence designed to grow through understanding.
-**Last updated:** 2026-06-01
+**Last updated:** 2026-06-01 — the header line only; it was never maintained, and the last entry
+in this file is 2026-09-25.
 
 ## Original Problem Statement
 Create the foundational documentation set for Gaia — a desktop-first lifelong personal intelligence

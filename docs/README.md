@@ -30,6 +30,7 @@ maintained version and wins — four bullets plus `Open punt:`.
 | `principles.md` | the constitution the rest is derived from | active — runtime content |
 | `lexicon.md` | her vocabulary | active — runtime content |
 | `evolution.md` | the history up to 2026-10-14 | **frozen** (`status: frozen`, 2026-11-11). Still bundled, no longer selected per turn; the dated log continues in the root's `walkthrough*.md` |
+| `prd.md` | the product log from 2026-06-01 to 2026-09-25 (11 entries): problem statement, personas, scope decisions, and per-change updates with their reasons | **frozen history** — the period the root's `walkthrough*.md` does not cover (it starts 2026-10-04). `architecture.md` cites it for the Eleos proactivity ceiling, so it has to stay findable; it lived in `memory/PRD.md` until 2026-11-16 |
 | `CONVENTIONS.md` | how a change is made here | active |
 | `advice.md` | the audit of 2026-11-11 (against `5a9e1d9`): drift rows, A1-A8, C1-C12, with the status maintained in place | active — **its line numbers have drifted: re-verify a claim against the code before acting on it** |
 | `architecture-graph.md` + `.html` | the visual map of the system | **active, regenerated 2026-11-16 against `a1a485e`**: seven diagrams — the whole system, the live turn with its recall legs and the tools inside that one call, the deferred chain 1–8 with 7b/7c as side tasks, the faculties, the human override, the lifecycle with six statuses, what lives where, and the HTTP surface. The `.md` and the `.html` carry the same diagrams and the guard checks that they still do (check 6), because two copies of one picture drifting apart is exactly how this file went stale (A4) |
@@ -57,3 +58,9 @@ the log format in an older shape, are gone (2026-11-16). Nothing loose — the t
 August and September (`test_result.md`, a testing protocol for a two-agent setup that no longer
 exists, and `CONVERSATIONAL_GROUNDING_FIX_SUMMARY.md`) were removed on 2026-11-16 as well, with
 the one lesson in them rescued into the test that guards it.
+
+Two more root leftovers went that day: `.claude/launch.json`, a launch config that started a
+`frontend/` this repository does not have (it belonged to `gaia-desktop`), and `memory/PRD.md`,
+which **moved** to `prd.md` rather than being deleted — it is history this repository reads.
+`memory/` itself stays, empty apart from `.gitkeep`: `.gitignore` excludes
+`memory/test_credentials.md`, so that directory is where local test credentials are meant to go.
