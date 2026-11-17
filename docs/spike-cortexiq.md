@@ -84,6 +84,27 @@ Houd de eerder voorgestelde volgorde aan, met de terugkijk-route als eerste echt
 4. `bojan` en `gaia` exporteren en importeren, twee weken schaduwdraaien.
 5. Hindsight read-only, dan weg, inclusief de nginx-proxy in gaia-web.
 
+## Besluit: wat een marker draagt die de overstap moet overleven
+
+Uit §3 volgt een regel die verder reikt dan deze spike: **een vrij `metadata`-veld is geen
+kanaal om op te bouwen.** Wat Gaia aan een herinnering hangt en wat de overstap naar deze
+laag moet overleven, gaat in een **tag** — of, voor koppeling, in `external_key` /
+`external_refs` (§3, §5) — want dat zijn de velden die deze store bewaart, doorgeeft aan de
+facts die eruit volgen en waarop retrieval kan filteren. Dat is geen nieuwe gewoonte:
+`hindsightClient.reflect` schrijft elke reflectie al met `tags: [domain]`, en de afgeleide
+schrijvers gebruiken de `gaia:*`-vocabulaire (`gaia:aion`, `gaia:hypothesis`).
+
+De eerste die dit raakt is de reflectie-por uit de Hermes-leerlus: die hing als
+`gaia_memory_nudge`-metadata aan de post-turn reflectie en reist nu als de tag
+**`gaia:memory_nudge`** mee met het item (besluit 17 november 2026; de ombouw staat in
+PR #32). Daarmee is ook beslist *waar* de por woont: de turn geeft alleen nog de intentie
+door (`nudge`), de tag en zijn betekenis staan in de memory-laag (`src/memory.js`) — dat is
+het deel dat verandert wanneer de store dat doet.
+
+Wat hier bewust **niet** is besloten: of een geporde beurt daadwerkelijk beter beklijft.
+Dat meet niets in deze repo — daar hoort de schaduwperiode uit de aanbeveling bij. Tot die
+tijd is de por een por met een kanaal dat blijft, niet een bewezen betere retentie.
+
 ## Incident tijdens de spike
 
 Bij het opruimen van de test-episodes heb ik één bestaande episode geraakt: **id 980**, "Mindstack 2026-11-16: frontend gemigreerd van CRA/craco naar Vite…". Oorzaak: ik filterde met `namespace: "/spike"`, wat geen filter is, en de purge-lus liep daarna over alles wat terugkwam. De afgeleide facts van die episode staan er nog (3170, 3172, 3173, 3174); alleen de ruwe tekst is weg. Te herstellen door dezelfde regel opnieuw te sturen vanuit de Mindstack-sessie.
