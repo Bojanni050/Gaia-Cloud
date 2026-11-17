@@ -606,7 +606,9 @@ Not in this repository, and therefore not verifiable here: Gaia-Web, Gaia-Deskto
 (VPS paths such as `/root/gaia`, Tailscale addresses, container names, and the
 Hindsight bank settings). `proxy/` — an nginx front for hermes-agent that injects
 its auth token so clients never hold it — is in this repo but is not part of
-Gaia's own architecture.
+Gaia's own architecture: `proxy/README.md` is where it explains itself, and
+`proxy/templates/default.conf.template` with `proxy/.env.example` are what a
+token or upstream change touches.
 
 Handover to the host: `.github/workflows/deploy.yml` tests both services on every
 push and pull request, then deploys by resetting `/root/gaia` to `origin/main`,

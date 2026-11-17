@@ -90,3 +90,23 @@ Check the path filters before merging, and say the consequence:
 
 On a **pull request** these run their test jobs and skip the deploy job, so "green on the PR"
 does not prove the deploy works. Read the merge commit's runs before calling anything live.
+
+## Working style
+
+How work in this repository is done, as opposed to how it is built. The first four came from
+`AGENTS.md`'s appended blocks, which were carried in from other projects; they are the part of
+that set that is about this repository, and they live here now so there is one home per rule.
+
+- **One task at a time.** Several unrelated changes in one pass make a review impossible and a
+  revert expensive. A queue belongs in `docs/advice.md` §5, not in one diff.
+- **Flag an inconsistency instead of stepping around it.** A comment that contradicts the code,
+  a test that passes for the wrong reason, a line number in `docs/advice.md` that no longer
+  points at the code — each is worth one sentence, because the next reader pays for silence.
+- **Architecture decisions are not the agent's to make.** Propose them with the reason and the
+  alternative; do not infer them from the shape of the request.
+- **A new dependency is a decision.** Name it, say what it is for, and ask before installing it.
+- **Be exact.** Real paths, real function names, real line numbers, and the actual test counts.
+- **Verify before calling something done.** In this repository that is the two suites plus the
+  drift guard for a doc change. Note that there is **no build, lint or typecheck step** to lean
+  on here, so `npm run build` proves nothing — it does not exist.
+- **Reply in the language the question was asked in.**
