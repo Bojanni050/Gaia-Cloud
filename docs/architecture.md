@@ -1,6 +1,6 @@
 # Gaia — Architecture (Cloud)
 
-> **Verified against code: commit `d778972` (2026-11-17).** Every path, route, flag
+> **Verified against code: commit `68e8763` (2026-11-19).** Every path, route, flag
 > and literal in this document was read from the tree on that commit. Everything
 > that lives outside this repository is marked *(external)* or *(deployment)* —
 > those are precisely the places this document can drift while nothing here
@@ -349,7 +349,13 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   trailing run is *not* finalised while it is still recent — but once it has been
   quiet longer than the inactivity window (measured against *now*) or hits the
   30 min cap, it **is** finalised on that poll. A session therefore ends in one
-  closed episode instead of an open one nobody ever closes.
+  closed episode instead of an open one nobody ever closes. That cap is *time*,
+  not text, and one cluster can therefore carry far more text than a model should
+  be sent: `partition.js` cuts a cluster whose rendered observation block costs
+  more than `GAIA_KAIROS_MAX_CLUSTER_CHARS` (24 000) characters into consecutive
+  windows, each its own episode — in order, with nothing dropped, and the greedy
+  cut keeps a window's id stable while the cluster grows. One window is one model
+  call, and that window is the unit the run budget counts.
 - **Satellite synthesis.** `synthesizer.js` runs one cheap inference call under
   the admin-selected **Kairos** role (Logos's "younger sibling"). The model
   returns a **title**, a summary and an app name; the epistemic literals are set

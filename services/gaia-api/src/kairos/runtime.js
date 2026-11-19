@@ -14,6 +14,7 @@
 
 const { createKairosWorker } = require('./worker');
 const { createSynthesizer, episodeIdFor } = require('./synthesizer');
+const { MAX_CLUSTER_PROMPT_CHARS } = require('./partition');
 const { emitEpisode } = require('./emitter');
 const { resolveRoleConfig } = require('../providerConfigResolver');
 const { flag } = require('../flags');
@@ -78,6 +79,10 @@ function createKairosRuntime({
     bankId,
     maxClustersPerRun:
       Number(env.GAIA_KAIROS_MAX_CLUSTERS_PER_RUN) || DEFAULT_MAX_CLUSTERS_PER_RUN,
+    // One episode's observation block may cost at most this many characters;
+    // a cluster that costs more becomes consecutive episodes (partition.js).
+    maxClusterChars:
+      Number(env.GAIA_KAIROS_MAX_CLUSTER_CHARS) || MAX_CLUSTER_PROMPT_CHARS,
     readWatermark: () => cognition.getKairosState(),
     writeWatermark: (iso) => cognition.setKairosState(iso),
     fetchObservations: (since) => foundation.listObservationsSince(since),

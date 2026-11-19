@@ -44,6 +44,17 @@
  * progress is visible and a restart re-checks far less. A held-back cluster still
  * pins it; checkpointing changes WHEN it is written, never what it may be.
  *
+ * ONE CLUSTER, SEVERAL EPISODES (2026-11-19). A cluster is bounded by time, not
+ * by content, so the observation block of one 30-minute browsing cluster could
+ * be 161 472 characters (measured on the live store; see partition.js). Every
+ * cluster is therefore partitioned into WINDOWS whose rendered prompt fits
+ * `maxClusterChars` (default MAX_CLUSTER_PROMPT_CHARS), and each window is its
+ * own episode — in order, with nothing dropped. The unit of work in this file is
+ * consequently a WINDOW, not a time cluster: one window is one model call,
+ * `maxClustersPerRun` bounds windows, and `processed`/`remaining` count
+ * episodes. A window never overlaps another, because the walk is greedy from the
+ * front and a closed cluster's observation list is stable.
+ *
  * Re-fetch is cheap: a cluster whose episode already exists (`readEpisode`) is
  * SKIPPED — no second model call — and counts as finalized, so a conservative
  * watermark never re-spends tokens.
@@ -59,6 +70,7 @@
  */
 
 const { groupObservations } = require('./clusterer');
+const { partitionCluster, MAX_CLUSTER_PROMPT_CHARS } = require('./partition');
 
 // Kairos synthesizes NARRATIVE activity episodes. Only screen/activity
 // observations belong in that: `source_type === 'system-observation'` (what
@@ -151,6 +163,7 @@ function computeSafeWatermark(batch, finalizedClusters, currentWatermark) {
  *   episodeIdFor?: (clusterId: string) => string,
  *   emit?: (episode: object) => void,
  *   maxClustersPerRun?: number,
+ *   maxClusterChars?: number,
  *   logger?: { info: Function, warn: Function, error: Function },
  * }} deps
  */
@@ -166,6 +179,7 @@ function createKairosWorker({
   episodeIdFor,
   emit,
   maxClustersPerRun = Number.POSITIVE_INFINITY,
+  maxClusterChars = MAX_CLUSTER_PROMPT_CHARS,
   logger = console,
 } = {}) {
   if (!bankId) throw new Error('kairos worker requires a bankId');
@@ -177,6 +191,13 @@ function createKairosWorker({
   const clusterBudget =
     Number.isFinite(maxClustersPerRun) && maxClustersPerRun > 0
       ? Math.floor(maxClustersPerRun)
+      : Number.POSITIVE_INFINITY;
+
+  // Same idiom for the prompt budget: a non-positive or non-finite value means
+  // one episode per cluster, however big the cluster is (partition.js).
+  const promptBudget =
+    Number.isFinite(maxClusterChars) && maxClusterChars > 0
+      ? Math.floor(maxClusterChars)
       : Number.POSITIVE_INFINITY;
 
   // In-memory on purpose: a restart simply gives a cluster three fresh attempts.
@@ -212,7 +233,13 @@ function createKairosWorker({
       logger.info?.(`[kairos] skipped ${skipped.length} non-clusterable observations by source_type: ${JSON.stringify(skippedByType)}`);
     }
 
-    const clusters = groupObservations(clusterable, { now: now().toISOString() });
+    // One closed cluster is one episode — unless its observation block is too
+    // big to send, in which case partition.js cuts it into consecutive windows
+    // and each window becomes its own episode. The unit of work below (and of
+    // the run budget) is therefore a window: exactly one model call.
+    const episodeWindows = groupObservations(clusterable, { now: now().toISOString() })
+      .flatMap((cluster) => partitionCluster(cluster, { maxChars: promptBudget }));
+
     const finalized = [];
     if (skipped.length > 0) finalized.push({ observations: skipped });
     let finalizedClusters = 0;
@@ -226,7 +253,7 @@ function createKairosWorker({
     let written = since;
     const advance = async () => {
       const next = computeSafeWatermark(observations, finalized, written);
-      const progress = `${finalizedClusters}/${clusters.length} clusters finalized, ${observations.length} observations fetched`;
+      const progress = `${finalizedClusters}/${episodeWindows.length} episodes finalized, ${observations.length} observations fetched`;
       if (!next || next === written) {
         logger.info?.(`[kairos] watermark unchanged at ${written || '(none)'} (${progress})`);
         return;
@@ -254,25 +281,25 @@ function createKairosWorker({
       }
     };
 
-    for (const cluster of clusters) {
+    for (const episodeWindow of episodeWindows) {
       // A bounded run stops here and lets the watermark advance over the slice
       // it finished; the rest is picked up by the next run. See the header.
       if (finalizedClusters >= clusterBudget) break;
       try {
-        const existing = await existingEpisode(cluster);
+        const existing = await existingEpisode(episodeWindow);
         if (existing) {
           // Already synthesized in an earlier run (re-fetched on a conservative
           // watermark): finalize it WITHOUT a second model call.
           skippedEpisodes += 1;
           finalizedClusters += 1;
-          finalized.push(cluster);
+          finalized.push(episodeWindow);
           continue;
         }
-        const episode = await synthesize(cluster, bankId);
+        const episode = await synthesize(episodeWindow, bankId);
         await saveEpisode(episode);
         processed += 1;
         finalizedClusters += 1;
-        finalized.push(cluster);
+        finalized.push(episodeWindow);
         await checkpoint();
         if (emit) {
           emitted += 1;
@@ -284,40 +311,41 @@ function createKairosWorker({
         }
       } catch (error) {
         if (error && error.clusterSpecific) {
-          // The provider refused THIS cluster's content (or answered garbage for
-          // it). One such cluster used to stop every run for good (2026-11-19).
-          // Leave it unfinalized and go on; after MAX_CLUSTER_ATTEMPTS it is
-          // parked (finalized without an episode) so the watermark can pass it.
-          const attempts = (clusterFailures.get(cluster.id) || 0) + 1;
+          // The provider refused THIS episode window's content (or answered
+          // garbage for it). One such window used to stop every run for good
+          // (2026-11-19). Leave it unfinalized and go on; after
+          // MAX_CLUSTER_ATTEMPTS it is parked (finalized without an episode) so
+          // the watermark can pass it.
+          const attempts = (clusterFailures.get(episodeWindow.id) || 0) + 1;
           if (attempts >= MAX_CLUSTER_ATTEMPTS) {
-            clusterFailures.delete(cluster.id);
-            logger.warn?.(`[kairos] parked ${cluster.id} after ${attempts} failed attempts (no episode): ${error.message}`);
+            clusterFailures.delete(episodeWindow.id);
+            logger.warn?.(`[kairos] parked ${episodeWindow.id} after ${attempts} failed attempts (no episode): ${error.message}`);
             finalizedClusters += 1;
-            finalized.push(cluster);
+            finalized.push(episodeWindow);
             await checkpoint();
           } else {
-            clusterFailures.set(cluster.id, attempts);
-            logger.error?.(`[kairos] synthesis failed for ${cluster.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);
+            clusterFailures.set(episodeWindow.id, attempts);
+            logger.error?.(`[kairos] synthesis failed for ${episodeWindow.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);
           }
           continue;
         }
-        // Stop the run here: do NOT finalize this cluster, so its observations
+        // Stop the run here: do NOT finalize this window, so its observations
         // are re-fetched. The watermark still advances over the safe prefix.
-        logger.error?.(`[kairos] synthesis failed for ${cluster.id}, stopping batch: ${error.message}`);
+        logger.error?.(`[kairos] synthesis failed for ${episodeWindow.id}, stopping batch: ${error.message}`);
         await advance();
         return {
           processed,
           emitted,
           skipped: skippedEpisodes,
-          failed: clusters.length - finalizedClusters,
-          remaining: Math.max(0, clusters.length - finalizedClusters),
+          failed: episodeWindows.length - finalizedClusters,
+          remaining: Math.max(0, episodeWindows.length - finalizedClusters),
         };
       }
     }
 
     await advance();
     // `remaining` is what this run's budget left for the next one (0 = caught up).
-    return { processed, emitted, skipped: skippedEpisodes, failed: 0, remaining: Math.max(0, clusters.length - finalizedClusters) };
+    return { processed, emitted, skipped: skippedEpisodes, failed: 0, remaining: Math.max(0, episodeWindows.length - finalizedClusters) };
   }
 
   return { runOnce };

@@ -25,7 +25,7 @@ maintained version and wins — four bullets plus `Open punt:`.
 
 | document | what it is | status |
 | --- | --- | --- |
-| `architecture.md` | code truth: paths, routes, flags, the three stores, the lifecycle, the HTTP surface | **active** — `Verified against code: d11abca` (2026-11-16), re-checked by `scripts/verify-architecture.js` in CI. The anchor is the commit the claims were *read* at, not the current tip. Runtime content |
+| `architecture.md` | code truth: paths, routes, flags, the three stores, the lifecycle, the HTTP surface | **active** — `Verified against code: 68e8763` (2026-11-19), re-checked by `scripts/verify-architecture.js` in CI. The anchor is the commit the claims were *read* at, not the current tip. Runtime content |
 | `identity.md` | what she knows about herself, in her own terms | active — handed to a turn that is about her; runtime content |
 | `principles.md` | the constitution the rest is derived from | active — runtime content |
 | `lexicon.md` | her vocabulary | active — runtime content |

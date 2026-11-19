@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createKairosWorker, computeSafeWatermark, selectClusterable } = require('../src/kairos/worker');
 const { INACTIVITY_THRESHOLD_MS } = require('../src/kairos/clusterer');
+const { windowCost } = require('../src/kairos/partition');
 
 function obs(observedAt, app, capturedAt, id, sourceType = 'system-observation') {
   return {
@@ -459,3 +460,144 @@ test('the watermark is saved as clusters finish, not only at the end of the run'
   assert.equal(stored, new Date(t2).toISOString());
   assert.equal(new Set(writes).size, writes.length, 'no duplicate writes');
 });
+
+// --- One cluster, several episodes (partition.js, 2026-11-19) ----------------
+
+/**
+ * One observation with a big fragment, all inside the inactivity window and in
+ * one app: together they form ONE cluster whose rendered prompt runs far past
+ * the budget, which is exactly the case the live store showed (161 472 chars).
+ */
+const BIG_BASE = Date.parse('2026-11-19T10:00:00Z');
+function bigObs(id, second, chars = 2000) {
+  const at = new Date(BIG_BASE + second * 1000).toISOString();
+  return {
+    id: `obs${id}`,
+    bron_object_id: `ingest:obs${id}`,
+    fragment: 'x'.repeat(chars),
+    observed_at: at,
+    captured_at: at,
+    observed_app: 'msedge',
+    source_type: 'system-observation',
+  };
+}
+
+/**
+ * A budget that fits exactly one of those observations, derived from the real
+ * renderer: the floor for "one episode per slice" without encoding the
+ * synthesizer's own fragment caps.
+ */
+const ONE_OBS_BUDGET = windowCost([bigObs('probe', 0)]) + 50;
+
+test('a cluster whose prompt exceeds maxClusterChars becomes several episodes, one model call each', async () => {
+  const observations = ['a', 'b', 'c', 'd'].map((id, i) => bigObs(id, i * 10));
+  const synthesized = [];
+  let watermark = null;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    maxClusterChars: ONE_OBS_BUDGET, // fits one of these observations per window
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (window) => { synthesized.push(window); return { id: window.id, summary: 's' }; },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-11-19T12:00:00Z'),
+  });
+  const r = await worker.runOnce();
+
+  assert.equal(synthesized.length, 4, 'one model call per window');
+  assert.deepEqual(synthesized.map((w) => w.observations.length), [1, 1, 1, 1]);
+  assert.equal(new Set(synthesized.map((w) => w.id)).size, 4, 'each window its own episode id');
+  // A window carries its own slice, not the whole cluster:
+  assert.deepEqual(synthesized[2].observations.map((o) => o.id), ['obsc']);
+  assert.equal(r.processed, 4);
+  assert.equal(r.remaining, 0);
+  assert.equal(watermark, observations[3].captured_at, 'everything finalized');
+});
+
+test('the run budget bounds windows, and a re-fetch skips the episodes already stored', async () => {
+  const observations = ['a', 'b', 'c', 'd'].map((id, i) => bigObs(id, i * 10));
+  const storedEpisodes = new Map();
+  const synthIds = [];
+  const state = { watermark: null };
+
+  // One worker per run budget, all three sharing the store and the cursor —
+  // which is what a restart looks like from the inside.
+  const makeWorker = (maxClustersPerRun) => createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    maxClusterChars: ONE_OBS_BUDGET,
+    maxClustersPerRun,
+    readWatermark: async () => state.watermark,
+    writeWatermark: async (iso) => { state.watermark = iso; },
+    // The conservative re-fetch: every run sees the same batch again.
+    fetchObservations: async () => observations,
+    synthesize: async (window) => { synthIds.push(window.id); return { id: `kei_gaia_${window.id}`, summary: 's' }; },
+    saveEpisode: async (episode) => { storedEpisodes.set(episode.id, episode); },
+    readEpisode: async (id) => storedEpisodes.get(id) || null,
+    episodeIdFor: (clusterId) => `kei_gaia_${clusterId}`,
+    emit: () => {},
+    now: () => new Date('2026-11-19T12:00:00Z'),
+  });
+
+  const first = await makeWorker(2).runOnce();
+  assert.equal(first.processed, 2, 'the budget counts windows, not time clusters');
+  assert.equal(first.remaining, 2);
+  assert.equal(synthIds.length, 2);
+  // Pinned below the first unfinished window: its observations are re-fetched.
+  assert.equal(state.watermark, observations[1].captured_at);
+
+  // The same batch again (a failed run left the watermark behind). The two
+  // stored windows are skipped without a model call — and a skip counts as
+  // finished work for the run budget, exactly as a skipped cluster did, so this
+  // run spends its budget on nothing new.
+  const second = await makeWorker(2).runOnce();
+  assert.equal(second.skipped, 2, 'the stored windows are skipped without a model call');
+  assert.equal(second.processed, 0);
+  assert.equal(synthIds.length, 2, 'no second model call for a stored window');
+  assert.equal(state.watermark, observations[1].captured_at, 'a skip alone cannot move the cursor');
+
+  // With room for the whole batch the re-fetch converges: skip, then finish.
+  const third = await makeWorker(8).runOnce();
+  assert.equal(third.skipped, 2);
+  assert.equal(third.processed, 2);
+  assert.equal(third.remaining, 0);
+  assert.equal(synthIds.length, 4);
+  assert.equal(new Set(synthIds).size, 4, 'no window was synthesized twice');
+  assert.equal(state.watermark, observations[3].captured_at);
+});
+
+test('a window the provider refuses moves on, and that window is not finalized', async () => {
+  const observations = ['a', 'b', 'c'].map((id, i) => bigObs(id, i * 10));
+  let watermark = null;
+  const seen = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    maxClusterChars: ONE_OBS_BUDGET,
+    readWatermark: async () => null,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (window) => {
+      seen.push(window.observations[0].id);
+      if (window.observations[0].id === 'obsb') {
+        const error = new Error('model output was not valid JSON');
+        error.clusterSpecific = true;
+        throw error;
+      }
+      return { id: window.id, summary: 's' };
+    },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-11-19T12:00:00Z'),
+  });
+  const r = await worker.runOnce();
+
+  assert.deepEqual(seen, ['obsa', 'obsb', 'obsc'], 'the refused window did not stop the rest');
+  assert.equal(r.processed, 2);
+  assert.equal(r.failed, 0);
+  assert.equal(r.remaining, 1);
+  // The watermark may not name an observation of the unfinalized window.
+  assert.equal(watermark, observations[0].captured_at);
+});
+
