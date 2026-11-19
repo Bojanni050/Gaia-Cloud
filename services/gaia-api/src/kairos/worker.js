@@ -237,8 +237,18 @@ function createKairosWorker({
     // big to send, in which case partition.js cuts it into consecutive windows
     // and each window becomes its own episode. The unit of work below (and of
     // the run budget) is therefore a window: exactly one model call.
-    const episodeWindows = groupObservations(clusterable, { now: now().toISOString() })
-      .flatMap((cluster) => partitionCluster(cluster, { maxChars: promptBudget }));
+    const episodeWindows = [];
+    for (const cluster of groupObservations(clusterable, { now: now().toISOString() })) {
+      const windows = partitionCluster(cluster, { maxChars: promptBudget });
+      // Say it once per split cluster. Without this line a split is visible only
+      // as a count, and "did the budget do anything in production?" would have no
+      // answer in the log. It repeats on a re-fetch, which is honest: the same
+      // cluster is partitioned again on every run that sees it.
+      if (windows.length > 1) {
+        logger.info?.(`[kairos] ${cluster.id} is ${windows.length} episodes (observation block over ${promptBudget} chars)`);
+      }
+      episodeWindows.push(...windows);
+    }
 
     const finalized = [];
     if (skipped.length > 0) finalized.push({ observations: skipped });

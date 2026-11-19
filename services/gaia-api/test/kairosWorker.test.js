@@ -601,3 +601,28 @@ test('a window the provider refuses moves on, and that window is not finalized',
   assert.equal(watermark, observations[0].captured_at);
 });
 
+test('a split cluster is reported in the log, a cluster that fits is not', async () => {
+  const big = ['a', 'b', 'c', 'd'].map((id, i) => bigObs(id, i * 10));
+  // A separate, small cluster (a different app an hour earlier) that fits.
+  const small = [obs('2026-11-19T09:00:00Z', 'Outlook', '2026-11-19T09:00:00Z', 'x')];
+  const lines = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info: (line) => lines.push(line), warn() {}, error() {} },
+    maxClusterChars: ONE_OBS_BUDGET,
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => [...big, ...small],
+    synthesize: async (window) => ({ id: window.id, summary: 's' }),
+    saveEpisode: async () => {},
+    now: () => new Date('2026-11-19T12:00:00Z'),
+  });
+  await worker.runOnce();
+
+  const splits = lines.filter((line) => line.includes('episodes (observation block over'));
+  assert.equal(splits.length, 1, 'exactly one line for the one split cluster');
+  assert.match(splits[0], /cluster_obsa_obsd is 4 episodes/);
+  assert.match(splits[0], new RegExp(`over ${ONE_OBS_BUDGET} chars`));
+  assert.ok(!lines.some((line) => line.includes('cluster_obsx_obsx')), 'the fitting cluster is silent');
+});
+
