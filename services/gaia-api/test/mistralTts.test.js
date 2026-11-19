@@ -381,7 +381,9 @@ function sseResponse(text, parts = 1, extra = {}) {
 }
 
 function mistralClient(fetchImpl, extra = {}) {
-  return createMistralTts({ baseUrl: 'http://test:1234/v1', model: 'voxtral-mini-tts-2603', fetchImpl, ...extra });
+  // Segmentation is off by default in production, so the tests that describe what it
+  // does ask for it here; the tests about the default and the switch say otherwise.
+  return createMistralTts({ baseUrl: 'http://test:1234/v1', model: 'voxtral-mini-tts-2603', fetchImpl, segment: true, ...extra });
 }
 
 async function collect(generator) {
@@ -808,7 +810,7 @@ test('level matching reads GAIA_TTS_LEVEL_MATCH through flags.js, defaulting to 
       baseUrl: 'http://test:1234/v1',
       model: 'voxtral-mini-tts-2603',
       fetchImpl,
-      env,
+      env: { GAIA_TTS_SEGMENT: 'on', ...env },
     });
     const pcm = await collect(tts.stream(TWO_PARAGRAPHS));
     return rmsOf(pcm.subarray(perSegment + gap));
@@ -901,4 +903,66 @@ test('applyPcmGain clamps at the int16 bounds instead of wrapping around', () =>
   assert.equal(out.readInt16LE(0), 32_767);
   assert.equal(out.readInt16LE(2), -32_768);
   assert.equal(applyPcmGain(source, 1), source, 'a gain of 1 passes the buffer through');
+});
+
+// --- GAIA_TTS_SEGMENT: segmentation is a switch, and off by default ------------
+
+/** Counts provider requests; every one answers one streamed sample. */
+function countingStreamProvider() {
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    asked.push(JSON.parse(init.body));
+    return sseResponse(sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer([0.5]).toString('base64') }));
+  };
+  return { fetchImpl, asked };
+}
+
+test('with segmentation off, a multi-paragraph reply is one provider request and no breath is inserted', async () => {
+  const { fetchImpl, asked } = countingStreamProvider();
+  const pcm = await collect(mistralClient(fetchImpl, { segment: false }).stream(TWO_PARAGRAPHS));
+
+  assert.equal(asked.length, 1, 'one request for the whole reply');
+  assert.equal(asked[0].input, TWO_PARAGRAPHS, 'the text goes through whole, paragraphs and all');
+  assert.equal(asked[0].stream, true);
+  assert.equal(pcm.length, 2, 'one sample came back, and no 600 ms gap was put after it');
+});
+
+test('with segmentation off, synthesize() answers one clip in the configured format, however long', async () => {
+  let seen;
+  let asked = 0;
+  const fetchImpl = async (url, init) => {
+    asked += 1;
+    seen = JSON.parse(init.body);
+    return okAudioResponse(Buffer.from('one clip').toString('base64'));
+  };
+  const { mimeType } = await mistralClient(fetchImpl, { segment: false }).synthesize(TWO_PARAGRAPHS);
+
+  assert.equal(asked, 1);
+  assert.equal(seen.response_format, 'mp3');
+  assert.equal(seen.stream, undefined, 'not the streaming request');
+  assert.equal(mimeType, 'audio/mpeg', 'never a WAV on this route while segmentation is off');
+});
+
+test('with segmentation off, empty text is still refused rather than sent', async () => {
+  const { fetchImpl, asked } = countingStreamProvider();
+  await assert.rejects(collect(mistralClient(fetchImpl, { segment: false }).stream('   ')), /returned no audio/);
+  assert.equal(asked.length, 0, 'nothing to say, nothing asked');
+});
+
+test('GAIA_TTS_SEGMENT is read through flags.js and is off unless it is switched on', async () => {
+  const requestsWith = async (env) => {
+    const { fetchImpl, asked } = countingStreamProvider();
+    const tts = createMistralTts({
+      baseUrl: 'http://test:1234/v1',
+      model: 'voxtral-mini-tts-2603',
+      fetchImpl,
+      env,
+    });
+    await collect(tts.stream(TWO_PARAGRAPHS));
+    return asked.length;
+  };
+
+  assert.equal(await requestsWith({}), 1, 'unset: off by default');
+  assert.equal(await requestsWith({ GAIA_TTS_SEGMENT: 'off' }), 1, 'off');
+  assert.equal(await requestsWith({ GAIA_TTS_SEGMENT: 'on' }), 2, 'on: one request per paragraph again');
 });

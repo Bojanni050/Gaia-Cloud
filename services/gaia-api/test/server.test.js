@@ -1014,7 +1014,7 @@ test('POST /speech speaks a long Mistral reply segment by segment and answers it
   };
 
   await withMockedFetch(fake, async (originalFetch) => {
-    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath, GAIA_TTS_FORMAT: 'mp3' }));
+    const app = createApp(baseEnv({ GAIA_PROVIDER_CONFIG_PATH: storePath, GAIA_TTS_FORMAT: 'mp3', GAIA_TTS_SEGMENT: 'on' }));
     await withServer(app, async (port) => {
       const res = await originalFetch(`http://127.0.0.1:${port}/speech`, {
         method: 'POST',

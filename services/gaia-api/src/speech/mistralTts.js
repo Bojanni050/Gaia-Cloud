@@ -49,6 +49,13 @@
  * came back after a minute of silence, and the level of that one long clip
  * drifted; chunk by chunk it starts in under a second.
  *
+ * UPDATE 2026-11-19: everything below describes what the split does while
+ * `GAIA_TTS_SEGMENT` is on. It is off by default now — a single unsegmented
+ * request of 65 s measured −0.3 dB (voxtral-mini-tts-2603) and −1.0 dB
+ * (voxtral-mini-tts-3-0) from the first to the last 4 s window, so the
+ * provider no longer fades. With it off, `stream()` is one request and
+ * `synthesize()` is one clip in the configured format, always.
+ *
  * Streaming alone did not cure the drift: the same 36 s reply measured
  * −6.8 dB from start to end as a stream, against −16.6 dB as one clip.
  * `stream()` therefore asks for one *paragraph* at a time (see
@@ -179,6 +186,7 @@ function mimeTypeFor(format) {
  *   fetchImpl?: Function,
  *   timeoutMs?: number,
  *   levelMatch?: boolean,
+ *   segment?: boolean,
  *   env?: Record<string, string|undefined>,
  * }} options
  * @returns {{ synthesize: (text: string, options?: { voiceId?: string }) => Promise<{ audio: Buffer, mimeType: string }> }}
@@ -198,6 +206,16 @@ function createMistralTts(options = {}) {
   const levelMatch = options.levelMatch !== undefined
     ? Boolean(options.levelMatch)
     : flag(options.env || process.env, 'GAIA_TTS_LEVEL_MATCH', { default: true });
+  // Segmentation itself (see `splitForSynthesis`): a switch too, and off by
+  // default. It exists because one long Mistral request used to lose level as
+  // it went (−16.6 dB over 36 s, measured 2026-11-16); on 2026-11-19 the same
+  // kind of request measured −0.3 dB (2603) and −1.0 dB (3-0) over 65 s, so
+  // the split no longer earns its seams. It stays rather than goes: if the
+  // provider's drift ever comes back, `GAIA_TTS_SEGMENT=on` is the whole fix.
+  // Level matching only has something to do while this is on.
+  const segment = options.segment !== undefined
+    ? Boolean(options.segment)
+    : flag(options.env || process.env, 'GAIA_TTS_SEGMENT', { default: false });
 
   if (!baseUrl) {
     throw new Error('GAIA_TTS_BASE_URL is required for speech synthesis');
@@ -230,7 +248,7 @@ function createMistralTts(options = {}) {
    * @returns {Promise<{ audio: Buffer, mimeType: string }>}
    */
   async function synthesize(text, { voiceId } = {}) {
-    if (splitForSynthesis(text).length > 1) {
+    if (segment && splitForSynthesis(text).length > 1) {
       const chunks = [];
       for await (const chunk of stream(text, { voiceId })) chunks.push(chunk);
       return { audio: wrapPcm16Wav(chunks), mimeType: mimeTypeFor('wav') };
@@ -438,7 +456,10 @@ function createMistralTts(options = {}) {
 
     try {
       let yielded = false;
-      const segments = splitForSynthesis(text);
+      // With segmentation off the whole reply is one segment: one provider
+      // request, and the paths below that only exist for a second segment
+      // (the pause, the prefetch, the level match) never run.
+      const segments = segment ? splitForSynthesis(text) : (String(text ?? '').trim() ? [text] : []);
       const start = (index) => (index < segments.length
         ? bufferSegment(streamSegment(segments[index], controller.signal, voiceId))
         : null);
