@@ -832,6 +832,66 @@ test('matchSegmentGain answers 1 for anything it cannot measure', () => {
   assert.ok(Math.abs(matchSegmentGain(0.25, loud) - 0.5) < 0.01);
 });
 
+/** A provider answering each streaming request with explicit samples (−1..1). */
+function sampleProvider(segments) {
+  let asked = 0;
+  return async () => {
+    const samples = segments[Math.min(asked, segments.length - 1)];
+    asked += 1;
+    return sseResponse(
+      sseEvent({ type: 'speech.audio.delta', audio_data: float32Buffer(samples).toString('base64') })
+      + sseEvent({ type: 'speech.audio.done', usage: {} }),
+    );
+  };
+}
+
+test('stream() never lifts a peaky short segment into hard clipping', async () => {
+  // A short closing sentence: mostly quiet, with one loud syllable. Its RMS is
+  // low, so the level match wants the full +12 dB — which would drive that
+  // peak far past full scale and clip it into a click.
+  const closing = Array(LEVEL_MIN_SPEECH_SAMPLES).fill(0.1);
+  closing[1200] = 0.5;
+  const fetchImpl = sampleProvider([Array(LEVEL_MIN_SPEECH_SAMPLES).fill(0.5), closing]);
+  const pcm = await collect(mistralClient(fetchImpl).stream(TWO_PARAGRAPHS));
+  const gap = Math.round((STREAM_SAMPLE_RATE * 600) / 1000) * 2;
+  const second = pcm.subarray(LEVEL_MIN_SPEECH_SAMPLES * 2 + gap);
+
+  let peak = 0;
+  let clipped = 0;
+  for (let index = 0; index < second.length; index += 2) {
+    const sample = Math.abs(second.readInt16LE(index));
+    peak = Math.max(peak, sample);
+    if (sample >= 32_767) clipped += 1;
+  }
+  assert.equal(clipped, 0, 'no sample hits the rail');
+  assert.ok(peak / 32_768 <= 0.96, `the peak stays under the ceiling (was ${peak / 32_768})`);
+  assert.ok(peak / 32_768 > 0.5, 'but the segment was still lifted');
+});
+
+test('stream() ends a matched segment on a fade, not on a sample that is still at full level', async () => {
+  const { fetchImpl } = pcmProvider([0.5, 0.25]);
+  const pcm = await collect(mistralClient(fetchImpl).stream(TWO_PARAGRAPHS));
+  const last = pcm.readInt16LE(pcm.length - 2) / 32_768;
+  const before = pcm.readInt16LE(pcm.length - 2 - 2 * 600) / 32_768;
+  assert.ok(Math.abs(last) < 0.02, `the last sample is at rest (was ${last})`);
+  assert.ok(Math.abs(before) > 0.4, `well before the end the segment is still at level (was ${before})`);
+});
+
+test('matchSegmentGain only caps a boost by the peak, and never turns a cut into a boost', () => {
+  const peaky = createPcmMeter();
+  const samples = Buffer.alloc(LEVEL_MIN_SPEECH_SAMPLES * 2);
+  for (let index = 0; index < LEVEL_MIN_SPEECH_SAMPLES; index += 1) {
+    samples.writeInt16LE(index === 10 ? 16_384 : 3_277, index * 2); // one 0.5 peak over 0.1
+  }
+  peaky.push(samples);
+  const lifted = matchSegmentGain(0.5, peaky);
+  assert.ok(lifted > 1 && lifted < 2, `lifted, but held back by the peak (was ${lifted})`);
+
+  const hot = createPcmMeter();
+  hot.push(pcm16(LEVEL_MIN_SPEECH_SAMPLES, 0.9));
+  assert.ok(matchSegmentGain(0.3, hot) < 1, 'a segment that is too loud is still brought down');
+});
+
 test('applyPcmGain clamps at the int16 bounds instead of wrapping around', () => {
   const source = Buffer.allocUnsafe(4);
   source.writeInt16LE(30_000, 0);

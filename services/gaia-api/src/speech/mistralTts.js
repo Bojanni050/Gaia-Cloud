@@ -486,9 +486,10 @@ function createMistralTts(options = {}) {
           if (tail.length > 0) spoken.push(tail);
           for (const piece of spoken) meter.push(piece);
           const gain = matchSegmentGain(referenceRms, meter);
-          for (const piece of spoken) {
-            const matched = applyPcmGain(piece, gain);
-            if (matched.length === 0) continue;
+          // Joined only now, because the fade has to land on the very last
+          // samples of the segment, wherever the chunk boundaries happened to be.
+          const matched = fadeOutPcm(applyPcmGain(Buffer.concat(spoken), gain));
+          if (matched.length > 0) {
             yielded = true;
             yield matched;
           }
@@ -621,18 +622,24 @@ function createPcmTrimmer() {
 function createPcmMeter() {
   let sumSquares = 0;
   let count = 0;
+  let peak = 0;
   return {
     push(bytes) {
       const samples = Math.floor(bytes.length / 2);
       for (let index = 0; index < samples; index += 1) {
-        const sample = bytes.readInt16LE(index * 2);
-        if (Math.abs(sample) < SILENCE_FLOOR) continue;
-        sumSquares += sample * sample;
+        const magnitude = Math.abs(bytes.readInt16LE(index * 2));
+        if (magnitude < SILENCE_FLOOR) continue;
+        sumSquares += magnitude * magnitude;
         count += 1;
+        if (magnitude > peak) peak = magnitude;
       }
     },
     rms() {
       return count > 0 ? Math.sqrt(sumSquares / count) / 32768 : null;
+    },
+    /** The loudest sample seen, normalised to 0..1 (0 when nothing was spoken). */
+    peak() {
+      return peak / 32768;
     },
     isMeasurable() {
       return count >= LEVEL_MIN_SPEECH_SAMPLES;
@@ -676,7 +683,52 @@ function matchSegmentGain(referenceRms, meter) {
   if (!(measured > 0)) return 1;
   const ceiling = 10 ** (LEVEL_GAIN_CEILING_DB / 20);
   const floor = 10 ** (LEVEL_GAIN_FLOOR_DB / 20);
-  return Math.min(ceiling, Math.max(floor, referenceRms / measured));
+  const wanted = Math.min(ceiling, Math.max(floor, referenceRms / measured));
+  // A boost is held back by the segment's own loudest sample: a short closing
+  // sentence has a low RMS but can still carry one loud syllable, and lifting
+  // that past full scale clips it into a click. Only ever a limit on a boost —
+  // a cut is never turned into a lift, and never below 1 on account of a peak.
+  if (wanted > 1) {
+    const peak = typeof meter.peak === 'function' ? meter.peak() : 0;
+    if (peak > 0) return Math.min(wanted, Math.max(1, LEVEL_PEAK_CEILING / peak));
+  }
+  return wanted;
+}
+
+/**
+ * The loudest a matched sample may become, as a fraction of full scale:
+ * about −0.4 dBFS, so a boost lands just under the rail instead of on it.
+ */
+const LEVEL_PEAK_CEILING = 0.95;
+
+/**
+ * How long a matched segment is faded out at its end, in ms. A provider may end
+ * a request while the waveform is still moving; a cut there is a step, and a
+ * step is a click. Short enough to be inaudible as a fade, long enough to be a
+ * ramp. Capped at a fiftieth of the segment, so a tiny one is not eaten by it.
+ */
+const SEGMENT_FADE_OUT_MS = 5;
+
+/**
+ * Ramps the last few milliseconds of PCM16LE down to zero. Returns a copy; the
+ * input is not touched.
+ *
+ * @param {Buffer} bytes
+ * @returns {Buffer}
+ */
+function fadeOutPcm(bytes) {
+  const samples = Math.floor(bytes.length / 2);
+  const wanted = Math.round((STREAM_SAMPLE_RATE * SEGMENT_FADE_OUT_MS) / 1000);
+  const length = Math.min(wanted, Math.floor(samples / 50));
+  if (length < 2) return bytes;
+  const out = Buffer.from(bytes);
+  for (let step = 0; step < length; step += 1) {
+    const index = samples - length + step;
+    // (length - 1 - step) / (length - 1): 1 at the start of the ramp, 0 on the last sample.
+    const factor = (length - 1 - step) / (length - 1);
+    out.writeInt16LE(Math.round(out.readInt16LE(index * 2) * factor), index * 2);
+  }
+  return out;
 }
 
 /**
@@ -1063,6 +1115,7 @@ module.exports = {
   createPcmMeter,
   matchSegmentGain,
   applyPcmGain,
+  fadeOutPcm,
   wrapPcm16Wav,
   LANGUAGES,
   LEVEL_MIN_SPEECH_SAMPLES,
