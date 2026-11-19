@@ -363,6 +363,60 @@ test('GET /admin/api/provider/models uses the env key after switching provider w
   }
 });
 
+test('GET /admin/api/provider/models borrows a key a role saved for that provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    // Hopscotch only lives as a role provider; the Main Provider is litellm.
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'litellm', baseUrl: 'http://100.64.144.93:4000/v1', apiKey: 'sk-litellm' }),
+    });
+    await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'vision', provider: 'hopscotch', baseUrl: 'https://api.hopscotchlabs.ai/v1', model: 'openai/gpt-4o-mini', apiKey: 'sk-role-hop' }),
+    });
+    ctx.setProviderModels([{ id: 'hop/large', name: 'Hop Large', capabilities: [] }]);
+    const url = `${ctx.baseUrl}/admin/api/provider/models?provider=hopscotch&baseUrl=${encodeURIComponent('https://api.hopscotchlabs.ai/v1')}`;
+    const res = await fetch(url, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    assert.deepEqual(ctx.getLastRetrieveArgs(), {
+      provider: 'hopscotch',
+      baseUrl: 'https://api.hopscotchlabs.ai/v1',
+      apiKey: 'sk-role-hop',
+    });
+    // Neither stored key may leak into the response.
+    const body = await res.json();
+    assert.ok(!JSON.stringify(body).includes('sk-litellm'));
+    assert.ok(!JSON.stringify(body).includes('sk-role-hop'));
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('GET /admin/api/provider/models never borrows a role key saved for another provider', async () => {
+  const ctx = startTestServer({ withProviderStore: true });
+  try {
+    await fetch(`${ctx.baseUrl}/admin/api/provider/config`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ provider: 'litellm', baseUrl: 'http://100.64.144.93:4000/v1', apiKey: 'sk-litellm' }),
+    });
+    // A mistral role key must not travel to hopscotch's endpoint.
+    await fetch(`${ctx.baseUrl}/admin/api/provider/role-provider`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ role: 'reasoning', provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-medium', apiKey: 'sk-mistral-role' }),
+    });
+    ctx.setProviderModels([{ id: 'hop/large', name: 'Hop Large', capabilities: [] }]);
+    const url = `${ctx.baseUrl}/admin/api/provider/models?provider=hopscotch&baseUrl=${encodeURIComponent('https://api.hopscotchlabs.ai/v1')}`;
+    const res = await fetch(url, { headers: authHeaders() });
+    assert.equal(res.status, 200);
+    const args = ctx.getLastRetrieveArgs();
+    assert.equal(args.provider, 'hopscotch');
+    assert.ok(!args.apiKey, 'a role key saved for mistral must not reach hopscotch');
+  } finally {
+    await ctx.close();
+  }
+});
+
 test('provider/config names the env variables the key and base URL come from', async () => {
   const ctx = startTestServer({ withProviderStore: true, env: { HOPSCOTCH_KEY: 'sk-hop', HOPSCOTCH_BASE: 'http://hopscotch.internal:8000/v1' } });
   try {

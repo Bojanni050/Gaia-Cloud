@@ -233,12 +233,27 @@ function createAdminRouter({
       if (!baseUrl) {
         return res.status(400).json({ error: 'set a base URL for the provider' });
       }
+      // A provider that only lives in a role block (Hopscotch as a role
+      // provider while the Main Provider is something else) can still be
+      // retrieved from the main section: fall back to a key any role saved
+      // for that same provider. Like the role-models route, a stored key
+      // only ever travels to the provider it was entered for.
+      let apiKey = (sameProvider && config.apiKey) || '';
+      if (!apiKey && config && config.roleProviders) {
+        for (const storedRole of Object.keys(config.roleProviders)) {
+          const rp = config.roleProviders[storedRole];
+          if (rp && rp.apiKey && rp.provider === provider) {
+            apiKey = rp.apiKey;
+            break;
+          }
+        }
+      }
 
       try {
         const catalog = await retrieveModelsFn({
           provider,
           baseUrl,
-          apiKey: (sameProvider && config.apiKey) || providerKeyFromEnv(provider, env),
+          apiKey: apiKey || providerKeyFromEnv(provider, env),
         });
         providerStore.saveCatalog(catalog, new Date().toISOString());
         res.json({ catalog, catalogRetrievedAt: new Date().toISOString() });

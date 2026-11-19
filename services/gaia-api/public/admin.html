@@ -1059,8 +1059,11 @@
                 capabilityTagsHtml(m.capabilities, showPrices) +
               '</div>' +
               (contextStr ? '<div class="context">' + escapeHtml(contextStr) + '</div>' : '') +
-              (m.description ? '<div class="desc">' + escapeHtml(m.description) + '</div>' +
-                '<button type="button" class="model-dd-read-more" data-id="' + escapeHtml(m.id) + '">Read more</button>' : '') +
+              (m.description ? '<div class="desc">' + escapeHtml(m.description) + '</div>' : '') +
+              // Hopscotch list entries have no description but do carry
+              // servedBy — either one makes the details modal worth opening.
+              ((m.description || (m.servedBy && m.servedBy.length))
+                ? '<button type="button" class="model-dd-read-more" data-id="' + escapeHtml(m.id) + '">Read more</button>' : '') +
             '</div>' +
           '</div>'
         );
@@ -2018,12 +2021,11 @@
       +   '<label for="' + prefix + 'ApiKey">API Key</label>'
       +   '<input id="' + prefix + 'ApiKey" type="password" placeholder="••••••••••••••••" autocomplete="off">'
       +   '<p class="hint" id="' + prefix + 'KeyHint">No key saved yet.</p>'
-      +   '<label for="' + prefix + 'Model">Model</label>'
+      +   '<label>Model</label>'
       +   '<div style="display:flex; gap:0.6rem; align-items:center;">'
-      +     '<input id="' + prefix + 'Model" type="text" list="' + prefix + 'ModelList" placeholder="e.g. gpt-4o-mini" autocomplete="off" style="flex:1;">'
+      +     '<div id="' + prefix + 'ModelDd" style="flex:1;"></div>'
       +     '<button type="button" id="' + prefix + 'FetchModelsBtn" class="secondary">Fetch models</button>'
       +   '</div>'
-      +   '<datalist id="' + prefix + 'ModelList"></datalist>'
       +   '<p class="hint" id="' + prefix + 'ModelsHint"></p>'
       + '</div>'
       + '<p class="hint" id="' + prefix + 'MainHint" style="display:none;">Using the Main Provider — the model is picked in the dropdown above.</p>'
@@ -2041,16 +2043,32 @@
     const fieldsEl = $(prefix + 'CustomFields');
     const mainHintEl = $(prefix + 'MainHint');
     wireBaseUrlAutofill(providerEl, $(prefix + 'BaseUrl'));
+    // Same priced, searchable dropdown as the Main Provider section, so a
+    // role's custom models show their prices too. allowCustom keeps a typed
+    // or previously saved model id usable even when the list is still empty.
+    const modelDd = createModelDropdown($(prefix + 'ModelDd'), {
+      allowCustom: true,
+      placeholder: '— fetch models first —',
+      emptyText: 'No models yet — hit Fetch models.',
+      emptyOptionLabel: '— no model (use the Main Provider) —',
+    });
     providerEl.addEventListener('change', () => {
       const rp = (currentConfig && currentConfig.roleProviders && currentConfig.roleProviders[role]) || {};
       $(prefix + 'KeyHint').textContent = pendingKeyHint(rp, providerEl.value, envProviders);
+      // The fetched list belongs to the provider it was fetched for; after
+      // a switch it must not keep showing that provider's models.
+      modelDd.setModels([]);
+      const p = providerEl.value;
+      modelDd.setProviderId(p !== USE_MAIN_PROVIDER ? p : '');
+      modelDd.setProviderLabel(p !== USE_MAIN_PROVIDER ? providerLabelFor(p) : '');
     });
     wireMainProviderToggle(providerEl, fieldsEl, mainHintEl);
     const saveBtn = $(prefix + 'SaveProviderBtn');
     const statusEl = $(prefix + 'ProviderStatus');
     saveBtn.addEventListener('click', async () => {
       // A custom provider without a model cannot run anything: that means "use the Main Provider".
-      const noModel = providerEl.value !== USE_MAIN_PROVIDER && !$(prefix + 'Model').value.trim();
+      const modelValue = modelDd.getValue().trim();
+      const noModel = providerEl.value !== USE_MAIN_PROVIDER && !modelValue;
       const usingMain = providerEl.value === USE_MAIN_PROVIDER || noModel;
       const payload = usingMain
         ? { role, useMainProvider: true }
@@ -2059,7 +2077,7 @@
             useMainProvider: false,
             provider: providerEl.value,
             baseUrl: $(prefix + 'BaseUrl').value.trim(),
-            model: $(prefix + 'Model').value.trim(),
+            model: modelValue,
             apiKey: $(prefix + 'ApiKey').value,
           };
       saveBtn.disabled = true;
@@ -2084,7 +2102,6 @@
     });
     const fetchModelsBtn = $(prefix + 'FetchModelsBtn');
     const modelsHintEl = $(prefix + 'ModelsHint');
-    const modelListEl = $(prefix + 'ModelList');
     async function fetchModels(silent) {
       const provider = providerEl.value;
       if (provider === USE_MAIN_PROVIDER) {
@@ -2106,12 +2123,12 @@
         if (!res.ok) throw new Error(await res.text());
         const body = await res.json();
         const models = body.models || [];
-        modelListEl.innerHTML = models
-          .map((m) => {
-            return '<option value="' + escapeHtml(m.id) + '" data-name="' + escapeHtml(m.name || m.id) + '" data-caps="' + escapeHtml((m.capabilities || []).join(',')) + '"></option>';
-          })
-          .join('');
-        modelsHintEl.textContent = models.length + ' models — start typing in Model to pick one.';
+        // The full normalized models (prices, context, servedBy) go straight
+        // into the dropdown; setModels keeps the current selection alive.
+        modelDd.setModels(models);
+        modelDd.setProviderId(provider);
+        modelDd.setProviderLabel(providerLabelFor(provider));
+        modelsHintEl.textContent = models.length + ' models — pick one in the dropdown.';
       } catch (_) {
         modelsHintEl.textContent = 'Could not fetch models — check the base URL and key.';
       } finally {
@@ -2131,7 +2148,7 @@
       if (!usingMain) {
         payload.provider = providerEl.value;
         payload.baseUrl = $(prefix + 'BaseUrl').value.trim();
-        payload.model = $(prefix + 'Model').value.trim();
+        payload.model = modelDd.getValue().trim();
         const key = $(prefix + 'ApiKey').value;
         if (key) payload.apiKey = key;
       }
@@ -2153,7 +2170,7 @@
       }
     });
 
-    ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl, fetchModels, loaded: false };
+    ROLE_PROVIDER_BLOCKS[prefix] = { role, providerEl, fieldsEl, mainHintEl, modelDd, fetchModels, loaded: false };
   }
 
   function applyRoleProviders(cfg) {
@@ -2170,7 +2187,9 @@
       const baseUrlEl = $(prefix + 'BaseUrl');
       baseUrlEl.value = rp.baseUrl || envBase || '';
       $(prefix + 'ApiKey').value = '';
-      $(prefix + 'Model').value = rp.model || '';
+      block.modelDd.setValue(rp.model || '');
+      block.modelDd.setProviderId(usingMain ? '' : (rp.provider || 'custom'));
+      block.modelDd.setProviderLabel(usingMain ? '' : providerLabelFor(rp.provider || 'custom'));
       $(prefix + 'KeyHint').textContent = keyHintText(rp);
       if (!usingMain && baseUrlEl.value.trim() && rp.model && !block.loaded) {
         block.loaded = true;
