@@ -37,6 +37,9 @@ const MAX_OCR_CHARS = 800;
 // app was open and echoed the unread badge, never what was said.
 const MAX_CONVERSATION_CHARS = 1500;
 const MAX_TITLE_CHARS = 120;
+// Without a cap a reasoning model (gpt-oss) spends the router default (128
+// tokens) on thinking and returns an empty content.
+const MAX_OUTPUT_TOKENS = 2000;
 
 // Foreground apps whose screen text is a conversation. Matched against the
 // derived app and window title capture-rs leaves on the observation.
@@ -93,11 +96,25 @@ const SYNTHESIS_SYSTEM_PROMPT = [
   '{ "title": "korte concrete kop", "summary": "de inhoud, met letterlijke citaten", "primary_app": "applicatienaam" }',
 ].join('\n');
 
+// A lone UTF-16 surrogate (half an emoji) serialises to a "\ud83d"-style escape
+// that strict JSON parsers refuse: wandb answered HTTP 400 "unexpected end of
+// hex escape", and one such cluster stalled the whole worker (2026-11-19).
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 function cleanOneLine(value, max) {
   if (typeof value !== 'string') return undefined;
   const cleaned = value.replace(/\s+/g, ' ').trim();
   if (!cleaned) return undefined;
-  return cleaned.slice(0, max);
+  // Cut first, then drop any half a surrogate pair the cut (or the source) left.
+  const cut = cleaned.slice(0, max).replace(LONE_SURROGATE, '');
+  return cut || undefined;
+}
+
+/** An error about THIS cluster's content, not the provider: the worker may move past it. */
+function clusterError(message) {
+  const error = new Error(message);
+  error.clusterSpecific = true;
+  return error;
 }
 
 /**
@@ -164,14 +181,14 @@ function validateSynthesis(raw, observedApps = []) {
     try {
       data = JSON.parse(raw);
     } catch (_) {
-      throw new Error('kairos synthesis: model output was not valid JSON');
+      throw clusterError('kairos synthesis: model output was not valid JSON');
     }
   }
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    throw new Error('kairos synthesis: model output was not a JSON object');
+    throw clusterError('kairos synthesis: model output was not a JSON object');
   }
   const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
-  if (!summary) throw new Error("kairos synthesis: missing a non-empty 'summary'");
+  if (!summary) throw clusterError("kairos synthesis: missing a non-empty 'summary'");
 
   // One line, collapsed and capped — a title is a heading, not a paragraph.
   const title = cleanOneLine(data.title, MAX_TITLE_CHARS) || '';
@@ -226,6 +243,7 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
         body: JSON.stringify({
           model: config.model,
           temperature: 0,
+          max_tokens: MAX_OUTPUT_TOKENS,
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: SYNTHESIS_SYSTEM_PROMPT },
@@ -241,7 +259,10 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
 
     if (!response.ok) {
       logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: false, errorMessage: `HTTP ${response.status}` }, logger);
-      throw new Error(`kairos synthesis: model responded ${response.status}`);
+      const failure = new Error(`kairos synthesis: model responded ${response.status}`);
+      // A 400 is the provider refusing THIS request body; 5xx/401/429 are about the provider.
+      if (response.status === 400) failure.clusterSpecific = true;
+      throw failure;
     }
 
     let data;
@@ -253,7 +274,13 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
     const content = data && data.choices && data.choices[0] && data.choices[0].message
       ? data.choices[0].message.content
       : undefined;
-    const validated = validateSynthesis(content, cluster.apps);
+    let validated;
+    try {
+      validated = validateSynthesis(content, cluster.apps);
+    } catch (error) {
+      logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: false, errorMessage: error.message }, logger);
+      throw error;
+    }
     logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: true, errorMessage: null }, logger);
 
     const sourceIds = cluster.observations

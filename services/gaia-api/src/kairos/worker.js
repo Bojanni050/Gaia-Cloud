@@ -33,6 +33,12 @@
  *   2. A failing cluster STOPS the batch (its observations are re-fetched), and
  *      the watermark is advanced only over the safely-finalized prefix.
  *
+ * EXCEPTION (2026-11-19): an error flagged `clusterSpecific` (the provider refused
+ * this cluster's body with a 400, or its answer was not usable JSON) does not
+ * stop the batch. The cluster is retried on later runs and parked after
+ * MAX_CLUSTER_ATTEMPTS, so one poison cluster cannot freeze the watermark.
+ * Provider-wide errors (unreachable, 5xx, 401, 429) still stop the run.
+ *
  * Re-fetch is cheap: a cluster whose episode already exists (`readEpisode`) is
  * SKIPPED — no second model call — and counts as finalized, so a conservative
  * watermark never re-spends tokens.
@@ -55,6 +61,9 @@ const { groupObservations } = require('./clusterer');
 // Chronicle-Gaia; documents are not activity either. Everything else is
 // deliberately left out — one owner per job.
 const CLUSTERABLE_SOURCE_TYPE = 'system-observation';
+
+// How often a cluster whose own content fails may be retried before it is parked.
+const MAX_CLUSTER_ATTEMPTS = 3;
 
 /**
  * Split a fetched batch into the observations Kairos may cluster and the ones
@@ -165,6 +174,9 @@ function createKairosWorker({
       ? Math.floor(maxClustersPerRun)
       : Number.POSITIVE_INFINITY;
 
+  // In-memory on purpose: a restart simply gives a cluster three fresh attempts.
+  const clusterFailures = new Map();
+
   /** The episode already stored for a cluster, or null (skip = no model call). */
   async function existingEpisode(cluster) {
     if (typeof readEpisode !== 'function' || typeof episodeIdFor !== 'function') return null;
@@ -247,6 +259,23 @@ function createKairosWorker({
           }
         }
       } catch (error) {
+        if (error && error.clusterSpecific) {
+          // The provider refused THIS cluster's content (or answered garbage for
+          // it). One such cluster used to stop every run for good (2026-11-19).
+          // Leave it unfinalized and go on; after MAX_CLUSTER_ATTEMPTS it is
+          // parked (finalized without an episode) so the watermark can pass it.
+          const attempts = (clusterFailures.get(cluster.id) || 0) + 1;
+          if (attempts >= MAX_CLUSTER_ATTEMPTS) {
+            clusterFailures.delete(cluster.id);
+            logger.warn?.(`[kairos] parked ${cluster.id} after ${attempts} failed attempts (no episode): ${error.message}`);
+            finalizedClusters += 1;
+            finalized.push(cluster);
+          } else {
+            clusterFailures.set(cluster.id, attempts);
+            logger.error?.(`[kairos] synthesis failed for ${cluster.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);
+          }
+          continue;
+        }
         // Stop the run here: do NOT finalize this cluster, so its observations
         // are re-fetched. The watermark still advances over the safe prefix.
         logger.error?.(`[kairos] synthesis failed for ${cluster.id}, stopping batch: ${error.message}`);

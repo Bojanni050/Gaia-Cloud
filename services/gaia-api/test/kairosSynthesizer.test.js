@@ -167,3 +167,51 @@ test('synthesize() surfaces a model HTTP error as a retryable failure (throw, no
   const synth = createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'flash' }), fetchImpl });
   await assert.rejects(() => synth.synthesize(cluster(), 'gaia'), /responded 502/);
 });
+
+test('buildUserPrompt never leaves half an emoji behind when it cuts a long fragment', () => {
+  // The cut at MAX_OCR_CHARS lands between the two halves of the emoji.
+  const fragment = `${'a'.repeat(MAX_OCR_CHARS - 1)}\u{1F600} after`;
+  const prompt = buildUserPrompt(cluster({
+    observations: [{
+      id: 'o', bron_object_id: 'ingest:o', observed_at: '2026-10-04T10:00:00.000Z',
+      captured_at: '2026-10-04T10:00:00.000Z', observed_app: 'Outlook', observed_window: 'w', fragment,
+    }],
+  }));
+  assert.equal(prompt.isWellFormed(), true);
+  assert.equal(JSON.stringify({ p: prompt }).includes('\ud83d"'), false);
+  // A lone surrogate that was already in the source is dropped too.
+  const lone = buildUserPrompt(cluster({
+    observations: [{
+      id: 'o', bron_object_id: 'ingest:o', observed_at: '2026-10-04T10:00:00.000Z',
+      captured_at: '2026-10-04T10:00:00.000Z', observed_app: 'Outlook', observed_window: 'w\uD83D', fragment: 'x\uDE00y',
+    }],
+  }));
+  assert.equal(lone.isWellFormed(), true);
+});
+
+test('synthesize() caps the output length so a reasoning model cannot return an empty answer', async () => {
+  let sent;
+  const fetchImpl = async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"summary":"s"}' } }] }) };
+  };
+  const synth = createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'm' }), fetchImpl });
+  await synth.synthesize(cluster(), 'gaia');
+  assert.equal(sent.max_tokens, 2000);
+});
+
+test('a 400 or an unusable answer is flagged cluster-specific; a 502 is not', async () => {
+  const make = (res) => createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'm' }), fetchImpl: async () => res });
+  await assert.rejects(() => make({ ok: false, status: 400 }).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific === true);
+  await assert.rejects(() => make({ ok: false, status: 502 }).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific !== true);
+  const empty = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+  await assert.rejects(() => make(empty).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific === true && /valid JSON/.test(e.message));
+});
+
+test('an unusable answer is logged as a failed llm.call', async () => {
+  const lines = [];
+  const empty = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
+  const synth = createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'm' }), fetchImpl: async () => empty, logger: (l) => lines.push(String(l)) });
+  await assert.rejects(() => synth.synthesize(cluster(), 'gaia'));
+  assert.equal(lines.some((l) => l.includes('kairos.synthesis') && l.includes('"ok":false')), true);
+});

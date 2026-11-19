@@ -372,3 +372,60 @@ test('an open capture-run caps the watermark; chats after it neither hold nor ad
   // Only 'a' is finalized; the r1-r2 run is open, so the watermark stays at 'a'.
   assert.equal(watermark, new Date(early).toISOString());
 });
+
+test('a cluster-specific failure does not stop the batch; it is retried and parked after 3 attempts', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const t3 = new Date(Date.parse(t2) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const observations = [obs(t1, 'Outlook', t1, 'a'), obs(t2, 'VS Code', t2, 'b'), obs(t3, 'Word', t3, 'c')];
+  let watermark = null;
+  const saved = [];
+  const warnings = [];
+  let poison = null;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info() {}, error() {}, warn: (l) => warnings.push(l) },
+    readWatermark: async () => watermark,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => {
+      if (cluster.observations[0].id === 'b') {
+        poison = cluster.id;
+        const e = new Error('model responded 400');
+        e.clusterSpecific = true;
+        throw e;
+      }
+      return { id: cluster.id, summary: 's' };
+    },
+    saveEpisode: async (e) => { saved.push(e.id); },
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  // Run 1: a and c are synthesized although b failed; the watermark stays below b.
+  assert.equal(saved.length, 2);
+  assert.equal(watermark, new Date(t1).toISOString());
+  await worker.runOnce();
+  assert.equal(watermark, new Date(t1).toISOString(), 'second attempt: still held');
+  await worker.runOnce();
+  // Third attempt parks b; the watermark may now pass it.
+  assert.equal(warnings.some((w) => w.includes('parked') && w.includes(poison)), true);
+  assert.equal(watermark, new Date(t3).toISOString());
+});
+
+test('a provider-wide failure (no clusterSpecific flag) still stops the batch', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  let calls = 0;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => [obs(t1, 'Outlook', t1, 'a'), obs(t2, 'VS Code', t2, 'b')],
+    synthesize: async () => { calls += 1; throw new Error('kairos synthesis: model responded 502'); },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  assert.equal(calls, 1);
+});
