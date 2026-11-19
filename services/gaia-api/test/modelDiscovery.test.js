@@ -13,6 +13,8 @@ const {
   normalizeOpenAiModel,
   normalizeMistralModel,
   normalizeDeepInfraModel,
+  retrieveHopscotchModels,
+  normalizeHopscotchModel,
 } = require('../src/modelDiscovery');
 
 // --- normalizeEdenAiModel ---
@@ -561,4 +563,150 @@ test('retrieveModels: routes to the DeepInfra adapter for deepinfra provider', a
   assert.equal(capturedUrl, 'https://api.deepinfra.com/v1/openai/models');
   assert.equal(models[0].contextLength, 262144);
   assert.equal(models[0].pricing.prompt, '0.0000001');
+});
+
+// --- normalizeHopscotchModel / retrieveHopscotchModels ---
+
+// Shape per the published OpenAPI spec (2026-11-19): an OpenAI model object
+// with everything worth showing nested in a `uniblock` block. Prices are
+// thousandths of the currency unit per million tokens, so 400 = $0.40/1M.
+const HOPSCOTCH_CHAT = {
+  id: 'openai/gpt-4o-mini',
+  object: 'model',
+  created: 1760000000,
+  owned_by: 'hopscotch',
+  uniblock: {
+    model_id: 'openai/gpt-4o-mini',
+    display_name: 'GPT-4o mini',
+    author: 'OpenAI',
+    context_window_tokens: 128000,
+    max_output_tokens: 16384,
+    input_rate_thousandths: 400,
+    output_rate_thousandths: 1600,
+    currency_code: 'USD',
+    endpoint_families: ['chat_completions'],
+    provider_display_names: ['OpenAI', 'Azure OpenAI'],
+    capabilities: { audio: 'no', json_mode: 'yes', streaming: 'yes', tools: 'yes', vision: 'yes' },
+  },
+};
+
+test('normalizeHopscotchModel: reads price, context window, display name and servers from uniblock', () => {
+  const result = normalizeHopscotchModel(HOPSCOTCH_CHAT);
+  assert.equal(result.id, 'openai/gpt-4o-mini');
+  assert.equal(result.name, 'GPT-4o mini');
+  // 400 thousandths = $0.40 per 1M in, 1600 = $1.60 per 1M out -> USD per token.
+  assert.equal(result.pricing.prompt, '0.0000004');
+  assert.equal(result.pricing.completion, '0.0000016');
+  assert.equal(result.contextLength, 128000);
+  assert.deepEqual(result.servedBy, ['OpenAI', 'Azure OpenAI']);
+  // tools -> function_calling and vision -> vision; json_mode/streaming have no
+  // equivalent in the page vocabulary.
+  assert.deepEqual(result.capabilities, ['function_calling', 'vision']);
+  // Descriptions live on GET /models/{id}, not on the list.
+  assert.equal(result.description, null);
+});
+
+test('normalizeHopscotchModel: "unknown" and "no" capabilities are not "yes", and modalities_in is read additively', () => {
+  const words = normalizeHopscotchModel({
+    id: 'x/words',
+    uniblock: { capabilities: { audio: 'unknown', json_mode: 'yes', streaming: 'no', tools: 'no', vision: 'unknown' } },
+  });
+  assert.deepEqual(words.capabilities, []);
+  // modalities_in appears in live responses even though the spec omits it;
+  // it is the only place image/audio input support is actually marked.
+  const modalities = normalizeHopscotchModel({
+    id: 'x/modal',
+    uniblock: { capabilities: { audio: 'no', vision: 'no' }, modalities_in: ['text', 'image', 'audio', 'pdf'] },
+  });
+  assert.deepEqual(modalities.capabilities, ['vision', 'audio']);
+  const both = normalizeHopscotchModel({
+    id: 'x/both',
+    uniblock: { capabilities: { vision: 'yes' }, modalities_in: ['image'] },
+  });
+  assert.deepEqual(both.capabilities, ['vision']);
+});
+
+test('normalizeHopscotchModel: a non-USD price is not reported rather than shown as dollars', () => {
+  const eur = normalizeHopscotchModel({
+    id: 'x/eur',
+    uniblock: { input_rate_thousandths: 400, output_rate_thousandths: 1600, currency_code: 'EUR' },
+  });
+  assert.deepEqual(eur.pricing, { prompt: null, completion: null });
+  // Absent currency means unpublished-but-dollars as far as the list is concerned.
+  const quiet = normalizeHopscotchModel({ id: 'x/quiet', uniblock: { input_rate_thousandths: 400, currency_code: null } });
+  assert.equal(quiet.pricing.prompt, '0.0000004');
+  // output_rate_thousandths is absent when there is no separate output rate.
+  assert.equal(quiet.pricing.completion, null);
+});
+
+test('normalizeHopscotchModel: a free model is zero, not unknown, and a bare entry is survivable', () => {
+  const free = normalizeHopscotchModel({ id: 'x/free', uniblock: { input_rate_thousandths: 0, output_rate_thousandths: 0 } });
+  assert.deepEqual(free.pricing, { prompt: '0', completion: '0' });
+  const bare = normalizeHopscotchModel({ id: 'x/bare' });
+  assert.deepEqual(bare, {
+    id: 'x/bare', name: 'x/bare', capabilities: [], contextLength: null,
+    pricing: { prompt: null, completion: null }, description: null, servedBy: null,
+  });
+  // No top-level id: fall back to uniblock.model_id so the entry is still addressable.
+  assert.equal(normalizeHopscotchModel({ uniblock: { model_id: 'x/from-uniblock' } }).id, 'x/from-uniblock');
+});
+
+test('retrieveHopscotchModels: drops models Gaia cannot address, keeps unknown families', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      object: 'list',
+      data: [
+        { id: 'z/only-responses', uniblock: { display_name: 'Responses-only', endpoint_families: ['responses'] } },
+        { id: 'a/only-messages', uniblock: { display_name: 'Messages-only', endpoint_families: ['messages'] } },
+        HOPSCOTCH_CHAT,
+        // A missing or unreadable families list is unknown rather than "no".
+        { id: 'm/unknown-families', uniblock: { display_name: 'Mystery' } },
+        { id: 'b/empty-uniblock' },
+      ],
+    }),
+  });
+  const models = await retrieveHopscotchModels({ baseUrl: 'https://api.hopscotchlabs.ai/v1', apiKey: 'ub_live_x', fetchImpl, timeoutMs: 5000 });
+  // Only chat-capable (or family-unknown) entries survive, sorted by name.
+  assert.deepEqual(models.map((m) => m.id), ['b/empty-uniblock', 'openai/gpt-4o-mini', 'm/unknown-families']);
+});
+
+test('retrieveHopscotchModels: requires the key, defaults to Hopscotch, and reports auth and network failures', async () => {
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => {
+    capturedUrl = url;
+    capturedHeaders = init.headers;
+    return { ok: true, json: async () => ({ data: [] }) };
+  };
+  await retrieveHopscotchModels({ apiKey: 'ub_live_key', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.hopscotchlabs.ai/v1/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer ub_live_key');
+  await retrieveHopscotchModels({ apiKey: '', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedHeaders.Authorization, undefined);
+  await assert.rejects(
+    () => retrieveHopscotchModels({ apiKey: 'bad', fetchImpl: async () => ({ ok: false, status: 401 }), timeoutMs: 5000 }),
+    /authentication failed/
+  );
+  await assert.rejects(
+    () => retrieveHopscotchModels({ fetchImpl: async () => { throw new Error('offline'); }, timeoutMs: 5000 }),
+    /hopscotch unreachable/
+  );
+  await assert.rejects(
+    () => retrieveHopscotchModels({ fetchImpl: async () => ({ ok: true, json: async () => { throw new Error('not json'); } }), timeoutMs: 5000 }),
+    /provider returned an unreadable response/
+  );
+});
+
+test('retrieveModels: routes to the Hopscotch adapter for hopscotch provider', async () => {
+  let capturedUrl, capturedHeaders;
+  const fetchImpl = async (url, init) => {
+    capturedUrl = url;
+    capturedHeaders = init.headers;
+    return { ok: true, json: async () => ({ data: [HOPSCOTCH_CHAT] }) };
+  };
+  const models = await retrieveModels({ provider: 'hopscotch', apiKey: 'ub_live_key', fetchImpl, timeoutMs: 5000 });
+  assert.equal(capturedUrl, 'https://api.hopscotchlabs.ai/v1/models');
+  assert.equal(capturedHeaders.Authorization, 'Bearer ub_live_key');
+  assert.equal(models[0].pricing.prompt, '0.0000004');
+  assert.equal(models[0].contextLength, 128000);
 });

@@ -142,7 +142,7 @@
   }
   .model-dd-trigger:hover { border-color: var(--accent-line); }
   .model-dd-trigger .price {
-    width: 4.4rem; flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--accent); text-align: right;
+    width: 5.4rem; flex-shrink: 0; font-size: 0.68rem; font-weight: 700; color: var(--accent); text-align: right;
   }
   .model-dd-trigger .info { flex: 1; min-width: 0; }
   .model-dd-trigger .name { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -158,25 +158,25 @@
 
   .model-dd-panel {
     position: absolute; z-index: 40; margin-top: 0.5rem; width: 100%;
-    background: var(--card); border: 1px solid var(--border); border-radius: 1.25rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 1.5rem;
     box-shadow: 0 20px 40px -12px rgba(0,0,0,0.6); display: none; flex-direction: column;
-    max-height: 24rem; padding: 0.65rem;
+    max-height: 26rem; padding: 0.75rem;
   }
   .model-dd-panel:not([hidden]) { display: flex; }
   .model-dd-search {
     width: 100%; background: var(--input); border: 1px solid var(--border); border-radius: 0.8rem;
     padding: 0.5rem 0.7rem; font-size: 0.82rem; color: var(--text); margin-bottom: 0.5rem;
   }
-  .model-dd-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }
+  .model-dd-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
   .model-dd-empty { padding: 0.5rem 0.6rem; font-size: 0.82rem; color: var(--text-faint); }
 
   .model-dd-opt {
-    display: flex; gap: 0.65rem; border-radius: 1rem; border: 1px solid var(--border-soft);
-    background: var(--card-2); padding: 0.55rem 0.65rem; cursor: pointer;
+    display: flex; gap: 0.75rem; border-radius: 1rem; border: 1px solid var(--border-soft);
+    background: var(--card-2); padding: 0.65rem 0.75rem; cursor: pointer;
   }
   .model-dd-opt:hover, .model-dd-opt.hi { border-color: var(--accent-line); background: var(--card); }
   .model-dd-opt.sel { box-shadow: inset 0 0 0 1px var(--accent-line); }
-  .model-dd-opt .prices { width: 3.6rem; flex-shrink: 0; font-size: 0.66rem; color: var(--text-faint); line-height: 1.35; padding-top: 0.1rem; }
+  .model-dd-opt .prices { width: 4rem; flex-shrink: 0; font-size: 0.66rem; color: var(--text-faint); line-height: 1.35; padding-top: 0.1rem; }
   .model-dd-opt .prices b { color: var(--accent); font-weight: 600; }
   .model-dd-opt .body { min-width: 0; flex: 1; border-left: 1px solid var(--border-soft); padding-left: 0.65rem; }
   .model-dd-opt:not(:has(.prices)) .body { border-left: none; padding-left: 0; }
@@ -185,8 +185,10 @@
   .model-dd-opt .mname { font-size: 0.82rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .model-dd-opt .free-tag { font-size: 0.68rem; color: var(--accent); flex-shrink: 0; }
   .model-dd-opt .tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
-  .tag { font-size: 0.62rem; padding: 0.1rem 0.45rem; border-radius: 0.5rem; border: 1px solid; line-height: 1.5; white-space: nowrap; }
+  .tag { font-size: 0.62rem; padding: 0.1rem 0.45rem; border-radius: 0.5rem; border: 1px solid; line-height: 1.5; white-space: nowrap; display: inline-flex; align-items: center; }
+  .tag svg { width: 0.65rem; height: 0.65rem; margin-right: 0.25rem; flex-shrink: 0; }
   .tag.provider { background: color-mix(in srgb, var(--text-dim) 16%, transparent); color: var(--text-dim); border-color: color-mix(in srgb, var(--text-dim) 35%, transparent); }
+  .tag.text { background: color-mix(in srgb, var(--text-dim) 10%, transparent); color: var(--text-dim); border-color: var(--border); }
   .tag.vision { background: color-mix(in srgb, var(--sage) 18%, transparent); color: var(--sage); border-color: color-mix(in srgb, var(--sage) 40%, transparent); }
   .tag.reasoning { background: color-mix(in srgb, var(--rust) 18%, transparent); color: var(--rust); border-color: color-mix(in srgb, var(--rust) 40%, transparent); }
   .tag.kairos { background: color-mix(in srgb, var(--moss) 18%, transparent); color: var(--moss); border-color: color-mix(in srgb, var(--moss) 40%, transparent); }
@@ -671,6 +673,7 @@
     openrouter: 'https://openrouter.ai/api/v1',
     openai: 'https://api.openai.com/v1',
     deepinfra: 'https://api.deepinfra.com/v1/openai',
+    hopscotch: 'https://api.hopscotchlabs.ai/v1',
     anthropic: 'https://api.anthropic.com/v1',
     mistral: 'https://api.mistral.ai/v1',
     xiaomi: 'https://api.xiaomimimo.com/v1',
@@ -777,11 +780,42 @@
   const CAP_LABELS = {
     vision: 'Vision', reasoning: 'Reasoning', function_calling: 'Function calling',
     audio: 'Audio', video: 'Video', web_search: 'Web search', fim: 'FIM', fine_tuning: 'Fine-tuning',
+    text: 'Text',
   };
 
-  function capabilityTagsHtml(caps) {
-    if (!caps || caps.length === 0) return '';
-    return caps.map((c) => '<span class="tag ' + escapeHtml(c) + '">' + escapeHtml(CAP_LABELS[c] || c) + '</span>').join('');
+  // Inline icons per capability chip — same idea as NightCompanion's ModelSelector
+  // (a small line icon inside every chip), drawn in the chip's own color via
+  // stroke="currentColor". Paths follow the familiar 24x24 line-icon grid.
+  const CAP_ICONS = {
+    // FileText — the default chip: every chat model serves plain text.
+    text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    // Eye
+    vision: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    // Brain
+    reasoning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04Z"/></svg>',
+    // Code2 — braces, for tools/function calling
+    function_calling: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>',
+    // Mic
+    audio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+    // Video camera
+    video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
+    // Globe
+    web_search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>',
+    // Type — a text cursor, for fill-in-the-middle
+    fim: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>',
+    // Sliders — for fine-tuning
+    fine_tuning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>',
+  };
+
+  // Chat model lists pass withTextDefault so a model without capability
+  // metadata still carries a plain "Text" chip (NightCompanion-style) — a
+  // chat model serves text by definition. Voice/speech lists leave it off.
+  function capabilityTagsHtml(caps, withTextDefault) {
+    const list = (caps && caps.length) ? caps : (withTextDefault ? ['text'] : []);
+    return list.map((c) => {
+      const icon = CAP_ICONS[c] || '';
+      return '<span class="tag ' + escapeHtml(c) + '">' + icon + escapeHtml(CAP_LABELS[c] || c) + '</span>';
+    }).join('');
   }
 
   // A card can get its key in three ways: saved on this page, read from the
@@ -886,8 +920,9 @@
     const modal = ensureModelDetailsModal();
     modal.querySelector('#modelModalTitle').textContent = getModelTitle(model);
     modal.querySelector('#modelModalSub').textContent = providerLabel ? ('● ' + providerLabel.toLowerCase()) : model.id;
-    modal.querySelector('#modelModalCaps').innerHTML = capabilityTagsHtml(model.capabilities) ||
-      '<span class="hint" style="margin:0;">No capability metadata reported.</span>';
+    // Every model serves at least plain text, so the caps row never shows the
+    // old "no metadata" hint anymore — a bare Text chip says the same, nicer.
+    modal.querySelector('#modelModalCaps').innerHTML = capabilityTagsHtml(model.capabilities, true);
     const free = isFreeModel(model);
     const promptPrice = free ? 'Free' : (formatPricePerMillion(model.pricing && model.pricing.prompt) || '—');
     const completionPrice = free ? 'Free' : (formatPricePerMillion(model.pricing && model.pricing.completion) || '—');
@@ -896,7 +931,10 @@
       '<div class="row"><span class="k">Model ID</span><span>' + escapeHtml(model.id) + '</span></div>' +
       '<div class="row"><span class="k">Input cost /1M</span><span>' + escapeHtml(promptPrice) + '</span></div>' +
       '<div class="row"><span class="k">Output cost /1M</span><span>' + escapeHtml(completionPrice) + '</span></div>' +
-      '<div class="row"><span class="k">Context window</span><span>' + escapeHtml(contextStr) + '</span></div>';
+      '<div class="row"><span class="k">Context window</span><span>' + escapeHtml(contextStr) + '</span></div>' +
+      (model.servedBy && model.servedBy.length
+        ? '<div class="row"><span class="k">Served by</span><span>' + escapeHtml(model.servedBy.join(', ')) + '</span></div>'
+        : '');
     modal.querySelector('#modelModalDesc').textContent = model.description || 'No description reported by the provider.';
     const providersEl = modal.querySelector('#modelModalProviders');
     if (providerId === 'openrouter' && model.id && model.id.includes('/')) {
@@ -910,7 +948,7 @@
   // --- Searchable, priced model dropdown (mounts into a container div) ---
   function createModelDropdown(mountEl, opts) {
     opts = opts || {};
-    const state = { models: [], value: '', open: false, query: '', providerLabel: opts.providerLabel || '', providerId: opts.providerId || '', emptyOptionLabel: opts.emptyOptionLabel || null };
+    const state = { models: [], value: '', open: false, query: '', highlight: 0, providerLabel: opts.providerLabel || '', providerId: opts.providerId || '', emptyOptionLabel: opts.emptyOptionLabel || null };
     // Lists without prices (voices, speech models) leave the price columns out; `allowCustom` lets a typed id be used as is.
     const showPrices = opts.showPrices !== false;
 
@@ -956,14 +994,23 @@
           '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
         return;
       }
-      const free = isFreeModel(m);
-      const promptPrice = free ? 'Free' : (formatPricePerMillion(m.pricing && m.pricing.prompt) || '—');
+      // NightCompanion-style trigger: a compact in/out pair (or "Free"),
+      // the model name and its provider — no capability chips up here.
+      let priceLabel = '';
+      if (showPrices) {
+        if (isFreeModel(m)) {
+          priceLabel = 'Free';
+        } else {
+          const pIn = formatPricePerMillion(m.pricing && m.pricing.prompt);
+          const pOut = formatPricePerMillion(m.pricing && m.pricing.completion);
+          priceLabel = (pIn || pOut) ? ((pIn || '—') + '/' + (pOut || '—')) : '—';
+        }
+      }
       trigger.innerHTML =
-        (showPrices ? '<span class="price">' + escapeHtml(promptPrice) + (free ? '' : '/1M') + '</span>' : '') +
+        (showPrices ? '<span class="price">' + escapeHtml(priceLabel) + '</span>' : '') +
         '<span class="info">' +
           '<span class="name">' + escapeHtml(getModelTitle(m)) + '</span>' +
           (state.providerLabel ? '<span class="provider">• ' + escapeHtml(state.providerLabel.toLowerCase()) + '</span>' : '') +
-          (m.capabilities && m.capabilities.length ? '<span class="tags">' + capabilityTagsHtml(m.capabilities) + '</span>' : '') +
         '</span>' +
         '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
     }
@@ -1009,7 +1056,7 @@
               '<div class="row1"><span class="mname">' + escapeHtml(getModelTitle(m)) + '</span>' + (free ? '<span class="free-tag">Free</span>' : '') + '</div>' +
               '<div class="tags">' +
                 (state.providerLabel ? '<span class="tag provider">● ' + escapeHtml(state.providerLabel.toLowerCase()) + '</span>' : '') +
-                capabilityTagsHtml(m.capabilities) +
+                capabilityTagsHtml(m.capabilities, showPrices) +
               '</div>' +
               (contextStr ? '<div class="context">' + escapeHtml(contextStr) + '</div>' : '') +
               (m.description ? '<div class="desc">' + escapeHtml(m.description) + '</div>' +
@@ -1019,11 +1066,35 @@
         );
       }
       listEl.innerHTML = parts.join('');
+      syncHighlight();
+    }
+
+    // Keyboard navigation, NightCompanion-style: one highlighted option that
+    // ArrowUp/ArrowDown move, Enter picks and Escape dismisses. The highlight
+    // index counts the rendered option elements, so the optional empty and
+    // custom entries at the top are simply part of the list.
+    function syncHighlight() {
+      const els = listEl.querySelectorAll('.model-dd-opt');
+      if (state.highlight >= els.length) state.highlight = els.length - 1;
+      if (state.highlight < 0) state.highlight = 0;
+      els.forEach((el, i) => el.classList.toggle('hi', i === state.highlight));
+      const current = els[state.highlight];
+      if (current) current.scrollIntoView({ block: 'nearest' });
+    }
+
+    function pickOption(el) {
+      if (!el) return;
+      const id = el.dataset.empty ? '' : el.dataset.custom ? state.query.trim() : el.dataset.id;
+      state.value = id;
+      renderTrigger();
+      close();
+      if (opts.onChange) opts.onChange(id);
     }
 
     function open() {
       state.open = true;
       state.query = '';
+      state.highlight = 0;
       root.classList.add('open');
       panel.hidden = false;
       searchEl.value = '';
@@ -1038,7 +1109,31 @@
     }
 
     trigger.addEventListener('click', () => (state.open ? close() : open()));
-    searchEl.addEventListener('input', () => { state.query = searchEl.value; renderList(); });
+    searchEl.addEventListener('input', () => { state.query = searchEl.value; state.highlight = 0; renderList(); });
+    searchEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        if (state.open) { event.preventDefault(); close(); }
+        return;
+      }
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+      event.preventDefault();
+      const els = listEl.querySelectorAll('.model-dd-opt');
+      if (!els.length) return;
+      if (event.key === 'Enter') {
+        pickOption(els[state.highlight]);
+        return;
+      }
+      const dir = event.key === 'ArrowDown' ? 1 : -1;
+      state.highlight = (state.highlight + dir + els.length) % els.length;
+      syncHighlight();
+    });
+    listEl.addEventListener('mouseover', (event) => {
+      const el = event.target.closest('.model-dd-opt');
+      if (!el) return;
+      const els = Array.from(listEl.querySelectorAll('.model-dd-opt'));
+      const idx = els.indexOf(el);
+      if (idx >= 0 && idx !== state.highlight) { state.highlight = idx; syncHighlight(); }
+    });
     listEl.addEventListener('mousedown', (event) => {
       const readMoreEl = event.target.closest('.model-dd-read-more');
       if (readMoreEl) {
@@ -1051,11 +1146,7 @@
       const optEl = event.target.closest('.model-dd-opt');
       if (!optEl) return;
       event.preventDefault();
-      const id = optEl.dataset.empty ? '' : optEl.dataset.custom ? state.query.trim() : optEl.dataset.id;
-      state.value = id;
-      renderTrigger();
-      close();
-      if (opts.onChange) opts.onChange(id);
+      pickOption(optEl);
     });
     document.addEventListener('mousedown', (event) => {
       if (!root.contains(event.target)) close();

@@ -23,6 +23,12 @@
  *                        at the top, with price, context length, tags and
  *                        description nested in `metadata` — so it gets its
  *                        own normalizer. Public list; no key required.
+ *   - Hopscotch:        GET {baseUrl}/models (default
+ *                        https://api.hopscotchlabs.ai/v1). OpenAI-shaped
+ *                        at the top, with prices, context window,
+ *                        endpoint families and capabilities nested in a
+ *                        `uniblock` block — so it gets its own
+ *                        normalizer. Bearer-authenticated; key required.
  *
  * The provider string determines which adapter is used. Unknown providers
  * fall back to the OpenAI-compatible pattern, which covers OpenRouter,
@@ -77,6 +83,10 @@ async function retrieveModels({ provider, baseUrl, apiKey, fetchImpl, timeoutMs 
 
   if (normalizedProvider === 'deepinfra') {
     return retrieveDeepInfraModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
+  }
+
+  if (normalizedProvider === 'hopscotch') {
+    return retrieveHopscotchModels({ baseUrl, apiKey, fetchImpl: fetchFn, timeoutMs: ms });
   }
 
   if (normalizedProvider === 'fishaudio') {
@@ -492,6 +502,142 @@ function normalizeDeepInfraModel(m) {
   };
 }
 
+
+const HOPSCOTCH_DEFAULT_BASE_URL = 'https://api.hopscotchlabs.ai/v1';
+
+/**
+ * Hopscotch model discovery — GET {baseUrl}/models, default
+ * https://api.hopscotchlabs.ai/v1/models. Bearer-authenticated: a key is
+ * required, and the list answers 401 without one.
+ *
+ * Every entry is OpenAI-shaped at the top (`id`, `object`, `created`,
+ * `owned_by`) with everything worth showing nested in a `uniblock` block:
+ * `display_name`, `author`, `context_window_tokens`, prices as
+ * `input_rate_thousandths` / `output_rate_thousandths` — thousandths of
+ * the currency unit per million tokens, so 400 = $0.40 per 1M — plus
+ * `currency_code` (ISO 4217, null when unpublished), `endpoint_families`
+ * (chat_completions / responses / completions / messages),
+ * `provider_display_names` (who can serve it) and a `capabilities` object
+ * whose audio/json_mode/streaming/tools/vision values are the words
+ * yes / no / unknown. Descriptions exist only on GET /models/{id}, not on
+ * the list, so they are reported as not available here.
+ * See https://docs.hopscotchlabs.ai/api-reference/models/list-models
+ *
+ * Gaia only speaks /chat/completions, so an entry whose endpoint_families
+ * list is readable but does not include "chat_completions" (responses-only
+ * or messages-only models) is dropped — same reasoning as the OpenCode
+ * adapter above. A missing or unreadable families list is unknown rather
+ * than "no", and such entries stay.
+ */
+async function retrieveHopscotchModels({ baseUrl, apiKey, fetchImpl, timeoutMs }) {
+  const fetchFn = fetchImpl || fetch;
+  const url = `${String(baseUrl || HOPSCOTCH_DEFAULT_BASE_URL).replace(/\/+$/, '')}/models`;
+  const headers = {};
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  let response;
+  try {
+    response = await fetchFn(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    throw new Error('hopscotch unreachable');
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('authentication failed');
+    throw new Error('provider responded with an error');
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (_) {
+    throw new Error('provider returned an unreadable response');
+  }
+
+  const models = Array.isArray(data?.data) ? data.data : [];
+  return models
+    .filter((m) => hopscotchServesChat(m))
+    .map((m) => normalizeHopscotchModel(m))
+    .filter((m) => Boolean(m.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Endpoint families decide which models Gaia can actually address. Unknown
+ * is not "no": an entry without a readable families list stays in the
+ * catalog, and only a list that clearly lacks chat_completions is dropped.
+ */
+function hopscotchServesChat(entry) {
+  const families = entry && entry.uniblock ? entry.uniblock.endpoint_families : undefined;
+  if (!Array.isArray(families)) return true;
+  return families.includes('chat_completions');
+}
+
+/** Hopscotch uniblock metadata -> the capability ids the admin page knows. */
+function hopscotchCapabilitiesFromUniblock(uniblock) {
+  const caps = [];
+  const words = uniblock && typeof uniblock.capabilities === 'object' ? uniblock.capabilities : {};
+  const yes = (value) => value === 'yes' || value === true;
+  if (yes(words.tools)) caps.push('function_calling');
+  if (yes(words.vision)) caps.push('vision');
+  if (yes(words.audio)) caps.push('audio');
+  // json_mode and streaming have no equivalent in Gaia's vocabulary.
+  // `modalities_in` is absent from the published OpenAPI spec but shows up
+  // in live responses, and there it is the only place image/audio input
+  // support is actually marked (capabilities.vision/audio are never "yes").
+  // Read it additively when present; the words stay the spec source.
+  const modalities = Array.isArray(uniblock && uniblock.modalities_in)
+    ? uniblock.modalities_in.map((x) => String(x).toLowerCase())
+    : [];
+  if (modalities.includes('image')) caps.push('vision');
+  if (modalities.includes('audio')) caps.push('audio');
+  return [...new Set(caps)];
+}
+
+/**
+ * Hopscotch publishes prices in thousandths of the currency unit per
+ * million tokens (400 = $0.40/1M). The admin page only knows how to format
+ * dollars, so a non-USD currency_code is reported as not available rather
+ * than shown as dollars. `output_rate_thousandths` is absent when there is
+ * no separate output rate, which leaves completion null.
+ */
+function hopscotchRateToPerToken(thousandths, currencyCode) {
+  const currency = currencyCode === null || currencyCode === undefined
+    ? 'USD'
+    : String(currencyCode).toUpperCase();
+  if (currency !== 'USD') return null;
+  if (thousandths === null || thousandths === undefined || thousandths === '') return null;
+  const n = Number(thousandths);
+  if (!Number.isFinite(n)) return null;
+  return perTokenFromPerMillion(n / 1000);
+}
+
+function normalizeHopscotchModel(m) {
+  const uniblock = (m && typeof m.uniblock === 'object' && m.uniblock) || {};
+  const id = (m && m.id) || uniblock.model_id || '';
+  const context = typeof uniblock.context_window_tokens === 'number' && uniblock.context_window_tokens > 0
+    ? uniblock.context_window_tokens
+    : null;
+  const servedBy = Array.isArray(uniblock.provider_display_names)
+    ? uniblock.provider_display_names.map((p) => String(p)).filter(Boolean)
+    : null;
+  return {
+    id: String(id),
+    name: typeof uniblock.display_name === 'string' && uniblock.display_name.trim()
+      ? uniblock.display_name.trim()
+      : String(id),
+    capabilities: hopscotchCapabilitiesFromUniblock(uniblock),
+    contextLength: context,
+    pricing: {
+      prompt: hopscotchRateToPerToken(uniblock.input_rate_thousandths, uniblock.currency_code),
+      completion: hopscotchRateToPerToken(uniblock.output_rate_thousandths, uniblock.currency_code),
+    },
+    // Descriptions live on GET /models/{id}, not on the list.
+    description: null,
+    servedBy,
+  };
+}
+
 module.exports = {
   retrieveModels,
   retrieveEdenAiModels,
@@ -503,4 +649,6 @@ module.exports = {
   normalizeMistralModel,
   retrieveDeepInfraModels,
   normalizeDeepInfraModel,
+  retrieveHopscotchModels,
+  normalizeHopscotchModel,
 };
