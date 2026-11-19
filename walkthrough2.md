@@ -327,3 +327,10 @@
 - Actions: `src/kairos/synthesizer.js` (LONE_SURROGATE-filter in `cleanOneLine`; `max_tokens: 2000`; `clusterSpecific` op 400 en op validatiefouten; ongeldige antwoorden worden nu als `llm.call ok:false` gelogd), `src/kairos/worker.js` (doorgaan na `clusterSpecific`, parkeren na `MAX_CLUSTER_ATTEMPTS = 3`, kopcommentaar), `test/kairosSynthesizer.test.js` (+4), `test/kairosWorker.test.js` (+2). Validated: gaia-api 1846/1846, verify-architecture ok.
 - Deployment: raakt `services/**`, dus `deploy` loopt mee; geen migratie, geen vlag. Na de deploy in de logs kijken of het watermark beweegt.
 - Open punt: clusterprompts zijn onbegrensd (tot 161k tekens); een cluster met honderden observaties kan een contextlimiet raken. Niet aangepast, dat is een eigen keuze (hoeveel observaties per episode).
+
+## 2026-11-19 (Kairos: watermark per cluster bewaard in plaats van aan het einde van de run)
+
+- Findings: het watermark werd pas aan het einde van een run geschreven (max 120 clusters, uren bij een grote achterstand). Tijdens de run bewoog er niets zichtbaars, en na een herstart moest de volgende run alles opnieuw ophalen en als "bestaat al" overslaan.
+- Conclusions: de veilige waarde kan na elke cluster al worden berekend (zelfde regel, `computeSafeWatermark`); alleen het moment van schrijven verandert. Een vastgehouden cluster pint het watermark nog steeds. Alleen na een cluster die een modelaanroep kostte, niet bij de goedkope overslagen, zodat een herstart niet honderden schrijfacties geeft.
+- Actions: `src/kairos/worker.js` (`written` bijhouden, `checkpoint()` na een geslaagde of geparkeerde cluster, schrijft alleen als de waarde verder is, logt `watermark A -> B (checkpoint)`; kopcommentaar), `test/kairosWorker.test.js` (+1: opgeslagen voordat de run stopt). Validated: gaia-api 1847/1847, verify-architecture ok.
+- Deployment: raakt `services/**`, `deploy` loopt mee; geen migratie, geen vlag. De herstart onderbreekt de lopende run; dat kost niets, de episodes staan al opgeslagen.

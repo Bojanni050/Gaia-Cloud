@@ -39,6 +39,11 @@
  * MAX_CLUSTER_ATTEMPTS, so one poison cluster cannot freeze the watermark.
  * Provider-wide errors (unreachable, 5xx, 401, 429) still stop the run.
  *
+ * CHECKPOINTS (2026-11-19): the watermark is saved after every cluster that cost a
+ * model call (when the safe value moved), not only at the end of the run, so
+ * progress is visible and a restart re-checks far less. A held-back cluster still
+ * pins it; checkpointing changes WHEN it is written, never what it may be.
+ *
  * Re-fetch is cheap: a cluster whose episode already exists (`readEpisode`) is
  * SKIPPED — no second model call — and counts as finalized, so a conservative
  * watermark never re-spends tokens.
@@ -215,19 +220,37 @@ function createKairosWorker({
     let emitted = 0;
     let skippedEpisodes = 0;
 
+    // `written` is what the store holds right now; a checkpoint only writes when
+    // the safe watermark is genuinely further, so the cursor is saved as the work
+    // happens instead of once at the end of a (possibly hours-long) run.
+    let written = since;
     const advance = async () => {
-      const next = computeSafeWatermark(observations, finalized, since);
+      const next = computeSafeWatermark(observations, finalized, written);
       const progress = `${finalizedClusters}/${clusters.length} clusters finalized, ${observations.length} observations fetched`;
-      if (!next || next === since) {
-        logger.info?.(`[kairos] watermark unchanged at ${since || '(none)'} (${progress})`);
+      if (!next || next === written) {
+        logger.info?.(`[kairos] watermark unchanged at ${written || '(none)'} (${progress})`);
         return;
       }
       try {
         await writeWatermark(next);
-        logger.info?.(`[kairos] watermark ${since || '(none)'} -> ${next} (${progress})`);
+        logger.info?.(`[kairos] watermark ${written || '(none)'} -> ${next} (${progress})`);
+        written = next;
       } catch (error) {
         // a failed watermark write just means a re-fetch next run
         logger.warn?.(`[kairos] watermark write failed for ${next}, will re-fetch: ${error.message}`);
+      }
+    };
+    // After each cluster that cost a model call: save the cursor if it moved.
+    // Silent when it did not (a held-back cluster keeps it in place).
+    const checkpoint = async () => {
+      const next = computeSafeWatermark(observations, finalized, written);
+      if (!next || next === written) return;
+      try {
+        await writeWatermark(next);
+        logger.info?.(`[kairos] watermark ${written || '(none)'} -> ${next} (checkpoint)`);
+        written = next;
+      } catch (error) {
+        logger.warn?.(`[kairos] watermark checkpoint failed for ${next}, will retry: ${error.message}`);
       }
     };
 
@@ -250,6 +273,7 @@ function createKairosWorker({
         processed += 1;
         finalizedClusters += 1;
         finalized.push(cluster);
+        await checkpoint();
         if (emit) {
           emitted += 1;
           try {
@@ -270,6 +294,7 @@ function createKairosWorker({
             logger.warn?.(`[kairos] parked ${cluster.id} after ${attempts} failed attempts (no episode): ${error.message}`);
             finalizedClusters += 1;
             finalized.push(cluster);
+            await checkpoint();
           } else {
             clusterFailures.set(cluster.id, attempts);
             logger.error?.(`[kairos] synthesis failed for ${cluster.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);

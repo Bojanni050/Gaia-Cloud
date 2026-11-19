@@ -429,3 +429,33 @@ test('a provider-wide failure (no clusterSpecific flag) still stops the batch', 
   await worker.runOnce();
   assert.equal(calls, 1);
 });
+
+test('the watermark is saved as clusters finish, not only at the end of the run', async () => {
+  const t1 = '2026-10-04T10:00:00Z';
+  const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const t3 = new Date(Date.parse(t2) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();
+  const writes = [];
+  let stored = null;
+  let call = 0;
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: quiet,
+    readWatermark: async () => stored,
+    writeWatermark: async (iso) => { stored = iso; writes.push(iso); },
+    fetchObservations: async () => [obs(t1, 'Outlook', t1, 'a'), obs(t2, 'VS Code', t2, 'b'), obs(t3, 'Word', t3, 'c')],
+    synthesize: async (cluster) => {
+      call += 1;
+      // The run dies on the third cluster (a provider-wide error).
+      if (call === 3) {
+        assert.deepEqual(writes, [new Date(t1).toISOString(), new Date(t2).toISOString()], 'saved before the run ended');
+        throw new Error('provider down');
+      }
+      return { id: cluster.id, summary: 's' };
+    },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  assert.equal(stored, new Date(t2).toISOString());
+  assert.equal(new Set(writes).size, writes.length, 'no duplicate writes');
+});
