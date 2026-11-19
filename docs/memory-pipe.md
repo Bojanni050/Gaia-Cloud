@@ -96,7 +96,14 @@ score order.
 5. **System memory** — `reflectOnTurn` (`src/memory.js`): the User/Assistant
    exchange as role-labelled JSON, retained async (`async: true`,
    `timeout: null`); identity is always Gaia and `agent_identity` cannot be
-   overridden by caller metadata.
+   overridden by caller metadata. Every `GAIA_MEMORY_NUDGE_EVERY_TURNS`
+   retained turns the item also carries the **`gaia:memory_nudge`** tag — the
+   persist reminder from the Hermes learning loop
+   (`src/reasoning/reflectionNudge.js`). It is a tag and not a metadata key on
+   purpose: `metadata` is the one field of this item that does not survive the
+   move to CortexIQ, while tags are kept, inherited by the facts derived from
+   the memory and filterable at retrieval (`docs/spike-cortexiq.md`,
+   2026-11-16, section 3).
 6. **Aion** — `src/reasoning/aion.js`: the one ungated writer; a background
    pass asks her what she wants to keep as her own memory, and an empty
    answer is normal and honest; tagged `gaia:aion`.

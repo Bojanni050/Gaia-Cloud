@@ -923,6 +923,7 @@ async function runTurnCore({
   hypothesisRuntime,
   aion,
   eleos,
+  reflectionNudge,
   desktop,
   decisionStore,
   reasonIQ = evaluateLogos,
@@ -1026,6 +1027,7 @@ async function runTurnCore({
     reasonIQ,
     aion,
     eleos,
+    reflectionNudge,
     evidence,
     intentDecision,
     // Dezelfde lezing van de vraag als de poorten in de turn zelf gebruikten
@@ -1092,6 +1094,7 @@ async function runDeferredCognition({
   reasonIQ = evaluateLogos,
   aion,
   eleos,
+  reflectionNudge,
   evidence,
   intentDecision,
   shape,
@@ -1381,13 +1384,25 @@ async function runDeferredCognition({
   // 7. Post-turn Hindsight reflection — gated by Memoryworthiness. A turn
   //    that produced no reply is never reflected. Conversation history
   //    saves EVERY turn regardless; Hindsight is what Gaia remembers.
+  //    Every GAIA_MEMORY_NUDGE_EVERY_TURNS retained turns the reflection
+  //    carries the gaia:memory_nudge tag — the persist reminder from the Hermes
+  //    learning loop, riding on the async reflection (never the live turn).
+  //    This block says *that* it is a nudge turn; what the reminder looks like
+  //    on the wire lives in the memory layer (memory.js), which is the part
+  //    that changes when the store behind it does.
   if (hindsight && replyText && (!memoryDecision || shouldRetainToHindsight(memoryDecision))) {
+    const nudgeTurn = Boolean(
+      reflectionNudge
+      && typeof reflectionNudge.noteTurn === 'function'
+      && reflectionNudge.noteTurn(conversationId)
+    );
     try {
       reflectOnTurn(hindsight, {
         conversationId,
         userText,
         assistantText: replyText,
         metadata: metadataForMemoryDecision(memoryDecision),
+        nudge: nudgeTurn,
         userDisplayName,
         capabilityExecutor: 'generation',
         shape,

@@ -306,6 +306,24 @@ async function recallRelevantContext(hindsight, query, options = {}) {
 }
 
 /**
+ * The tag that carries the persist reminder (the reflection nudge).
+ *
+ * A tag and not a metadata key, deliberately: `tags` is a field both memory
+ * layers keep and pass on. Hindsight already writes every reflection with
+ * `tags: [domain]`, and CortexIQ stores tags, lets the facts derived from a
+ * memory inherit them, and can filter retrieval on them — while free `metadata`
+ * comes back as `{}` there (`docs/spike-cortexiq.md`, 2026-11-16, section 3).
+ * The nudge has to outlive the swap of the thing it is stored in, so it belongs
+ * in the field that survives it.
+ *
+ * When the memory layer speaks CortexIQ, the same intent gets its second native
+ * field too — an explicit `importance`, since "persist this deliberately" is also
+ * a ranking statement. Nothing in Hindsight's item shape carries that today, so
+ * it is named here as the port's extension point rather than invented now.
+ */
+const NUDGE_TAG = 'gaia:memory_nudge';
+
+/**
  * Fire-and-forget retention of a complete, role-labelled turn. Callers must
  * not await this for turn completion — Hindsight performs extraction async.
  *
@@ -315,6 +333,11 @@ async function recallRelevantContext(hindsight, query, options = {}) {
  * additively over the existing provenance metadata. The retain/discard
  * GATE itself lives at the call site (turn.js); this function stays the
  * transport.
+ *
+ * The reflection nudge (the persist reminder, src/reasoning/reflectionNudge.js)
+ * is the exception to that: it travels as `tags: [NUDGE_TAG]` and not as another
+ * `gaia_*` metadata key, because metadata is the one field of this item that the
+ * memory layer this is moving to does not keep (see NUDGE_TAG below).
  *
  * The complete User/Assistant exchange is serialized as a JSON array, matching
  * the Hermes Hindsight integration. Explicit role labels preserve who said
@@ -329,10 +352,10 @@ async function recallRelevantContext(hindsight, query, options = {}) {
  * @param {ReturnType<import('./hindsightClient').createHindsightClient>} hindsight
  * @param {{ conversationId: string, userText: string, assistantText: string,
  *          assistantMessageId?: string, metadata?: Record<string,string>,
- *          userDisplayName?: string, userIdentityOptions?: object,
+ *          nudge?: boolean, userDisplayName?: string, userIdentityOptions?: object,
  *          capabilityExecutor?: string, shape?: object|null }} turn
  */
-function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
+function reflectOnTurn(hindsight, { conversationId, userText, assistantText, assistantMessageId, metadata, nudge, userDisplayName, userIdentityOptions, capabilityExecutor, shape }) {
   if (!userText || !assistantText) return;
   if (!shouldReflect(userText, assistantText, { shape })) return;
   const assistantIdentity = getAssistantIdentity();
@@ -372,6 +395,12 @@ function reflectOnTurn(hindsight, { conversationId, userText, assistantText, ass
       source_message_id: assistantMessageId,
       observed_at: new Date().toISOString(),
     },
+    // The persist reminder (the reflection nudge, src/reasoning/reflectionNudge.js)
+    // travels as a tag, not as a metadata key. A tag is the field a store keeps and
+    // hands on — the facts it derives from this reflection inherit the tag, and
+    // retrieval can filter on it — while free metadata is dropped on the floor by
+    // the memory layer this is moving to (docs/spike-cortexiq.md, 2026-11-16).
+    tags: nudge ? [NUDGE_TAG] : [],
     metadata: mergedMetadataForReflect,
   }).catch((err) => {
     console.warn(`reflection failed (non-fatal): ${err.message}`);
@@ -433,6 +462,7 @@ module.exports = {
   renderDualRecallContext,
   recallRelevantContext,
   reflectOnTurn,
+  NUDGE_TAG,
   MENTAL_MODEL_IDS,
   renderMentalModelContext,
   fetchMentalModelContext,
