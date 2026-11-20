@@ -412,3 +412,10 @@
 - Actions: `Gaia-Documentation/architecture.md` (v2.6.0: §9 zesde reden en tabel, statusnotitie, frontmatter), `Gaia-Documentation/CURRENT.md` (v1.3.3: §3.1 #19, §3.2 A2 gesloten, versieregel), `Gaia-Documentation/evolution.md` (aanvulling A2); validated: alleen documentatie, geen code of tests geraakt; de rij "Backend stance" in de historische tabel is bewust ongemoeid gelaten.
 - Deployment: geen; `Gaia-Documentation` heeft geen deploy en `Gaia-Cloud/docs` is niet geraakt.
 - Open punt: §15 zegt nog "2.3.0" en `operations.md` draagt nog de gepensioneerde ReasonIQ-configuratie; de Hermes-regel in de statusnotitie blijft een niet bevestigd gevolg van A1(a).
+
+## 2026-11-20 (A3 besloten: Hermes-regel bevestigd)
+
+- Findings: De statusnotitie in `Gaia-Documentation/architecture.md` droeg een niet bevestigde regel (Hermes = externe executie-subagent, nooit generator, nooit fallback) die uit A1(a) volgde. Code en `Gaia-Cloud/docs/architecture.md` ondersteunen dat voor het live serverpad; `adaptHermesToGenerator` in `turn.js` is dode code buiten de server.
+- Conclusions: Bo koos bevestigen (optie 1) zonder de dode code te verwijderen. De regel kreeg de woorden "in het live serverpad" omdat hij niet absoluut is afgedwongen; wel waar in de praktijk.
+- Actions: `Gaia-Documentation/architecture.md` (v2.6.1: statusnotitie-rij, frontmatter), `Gaia-Documentation/CURRENT.md` (v1.3.4: §3.1 #20, versieregel), `Gaia-Documentation/evolution.md` (aanvulling A3); validated: alleen documentatie, geen code of tests geraakt.
+- Open punt: de dode code `adaptHermesToGenerator` kan later worden verwijderd om de regel structureel te maken (eerst nagaan of een test erop leunt); §15 zegt nog "2.3.0" en `operations.md` draagt nog de gepensioneerde ReasonIQ-configuratie.
