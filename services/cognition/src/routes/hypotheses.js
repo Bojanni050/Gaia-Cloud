@@ -117,6 +117,13 @@ router.post('/:id/reject', asyncRoute(async (req, res) => {
   res.json(await hypotheses.reject(bankId, id, req.body.reason, req.body.verwerp_bron));
 }));
 
+// Human retraction — the way out of `confirmed` (and a safe repeat on rejected);
+// reason required. Not called by any machine path.
+router.post('/:id/retract', asyncRoute(async (req, res) => {
+  const { bankId, id } = req.params;
+  res.json(await hypotheses.retract(bankId, id, { reason: req.body.reason }));
+}));
+
 // Human reopen — the only way out of the rejected quarantine; reason required.
 router.post('/:id/reopen', asyncRoute(async (req, res) => {
   const { bankId, id } = req.params;

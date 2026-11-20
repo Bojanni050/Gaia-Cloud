@@ -13,6 +13,8 @@
  *
  * `rejected` is terminal in VALID_TRANSITIONS: every automatic verb refuses it.
  * reopen() is the single human-initiated exception (like supersede()).
+ * retract() is the human way OUT of `confirmed` (to rejected, with a reason);
+ * correct() rewrites a confirmed statement and keeps it confirmed.
  *
  * A human may also settle a `proposed` statement directly. The machine's
  * testing is the honest path to `corroborated`, but it is not a precondition
@@ -318,6 +320,33 @@ async function reject(bankId, id, reason, verwerpBron = 'mens') {
 }
 
 /**
+ * A person takes a statement back — whatever its status, `confirmed` included.
+ * `reject()` refuses a confirmed statement because the transition table has no
+ * way out of it, so a person who said "that is not true" about something they
+ * (or Gaia) had settled could not retire it: the Hindsight copies were
+ * withdrawn, the record stayed confirmed, and the next mirroring round wrote
+ * the same words back into recall. This is the fourth deliberate human
+ * exception beside reopen(), supersede() and correct(); no machine verb calls
+ * it. Unlike supersede() it needs no replacement, and a reason is required
+ * because the person is overriding a settled record. Retracting an already
+ * rejected statement is a no-op, so a repeated "forget that" is safe.
+ */
+async function retract(bankId, id, { reason } = {}) {
+  const why = typeof reason === 'string' ? reason.trim() : '';
+  if (!why) throw new ValidationError('a reason is required to retract a statement');
+  const current = await get(bankId, id);
+  if (current.status === 'rejected') return current;
+  if (current.status !== 'confirmed') return reject(bankId, id, why, 'mens');
+  const { rows } = await pool.query(
+    `UPDATE hypotheses SET status = 'rejected', rejected_at = now(), rejection_reason = $3,
+       verwerp_bron = 'mens', updated_at = now()
+     WHERE bank_id = $1 AND id = $2 RETURNING ${COLUMNS}`,
+    [bankId, id, why],
+  );
+  return rows[0];
+}
+
+/**
  * Human reopen — the ONLY way out of the rejected quarantine. `rejected` is
  * terminal in VALID_TRANSITIONS, so every automatic verb (test, corroborate,
  * confirm, evidence, update) refuses it; this function is the one deliberate,
@@ -531,6 +560,6 @@ async function raise(bankId, id) {
 }
 
 module.exports = {
-  propose, list, get, update, markTesting, markCorroborated, expire, revive, raise, confirm, reject, reopen, supersede, correct, answer, applyEvidence, softDelete,
+  propose, list, get, update, markTesting, markCorroborated, expire, revive, raise, confirm, reject, retract, reopen, supersede, correct, answer, applyEvidence, softDelete,
   VALID_TRANSITIONS, KINDS, RELATIONS, SCOPES, QUESTION_SHAPES,
 };

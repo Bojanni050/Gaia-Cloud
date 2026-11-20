@@ -102,6 +102,10 @@ function createCognitionClient({
     ...(reason !== undefined ? { reason } : {}),
     ...(verwerpBron !== undefined ? { verwerp_bron: verwerpBron } : {}),
   });
+  // A person takes a statement back, `confirmed` included (reject refuses that).
+  const retractHypothesis = (id, { reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/retract`, {
+    ...(reason !== undefined ? { reason } : {}),
+  });
   const reopenHypothesis = (id, { reason } = {}) => request('POST', `/hypotheses/${encodeURIComponent(id)}/reopen`, {
     ...(reason !== undefined ? { reason } : {}),
   });
@@ -200,6 +204,7 @@ function createCognitionClient({
     markQuestionRaised,
     confirmHypothesis,
     rejectHypothesis,
+    retractHypothesis,
     reopenHypothesis,
     correctHypothesis,
     supersedeHypothesis,

@@ -60,6 +60,17 @@ test('lifecycle verbs hit their routes (corroborate, confirm, reject, supersede)
   assert.equal(calls[3].body.superseded_by_id, 'h2');
 });
 
+test('retractHypothesis hits the retract route with its reason', async () => {
+  const { calls, fetchImpl } = fakeFetch();
+  const client = createCognitionClient({ baseUrl: 'http://c:8890', fetchImpl });
+
+  await client.retractHypothesis('h1', { reason: 'the person said so' });
+
+  assert.match(calls[0].url, /\/hypotheses\/h1\/retract$/);
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].body.reason, 'the person said so');
+});
+
 test('an unreachable Cognition throws a calm error without host leakage', async () => {
   const client = createCognitionClient({
     baseUrl: 'http://c:8890',

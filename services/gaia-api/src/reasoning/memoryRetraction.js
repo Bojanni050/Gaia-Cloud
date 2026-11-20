@@ -374,7 +374,12 @@ async function retireSource(hypothesisId, { cognition = null, sync = null, reaso
     return { kind: 'hypothesis', id: hypothesisId, status: 'unavailable' };
   }
   try {
-    const record = await cognition.rejectHypothesis(hypothesisId, { reason, verwerpBron: 'mens' });
+    // The person's own word, so it must reach a confirmed statement too: reject()
+    // refuses `confirmed`, retract() does not. (An older client without it keeps
+    // the old call.)
+    const record = typeof cognition.retractHypothesis === 'function'
+      ? await cognition.retractHypothesis(hypothesisId, { reason })
+      : await cognition.rejectHypothesis(hypothesisId, { reason, verwerpBron: 'mens' });
     if (sync && typeof sync.syncHypothesis === 'function') {
       try { await sync.syncHypothesis(record); } catch (_) { /* the mirror may lag; the rejection stands */ }
     }

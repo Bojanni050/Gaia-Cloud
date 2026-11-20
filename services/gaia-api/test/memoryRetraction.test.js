@@ -329,6 +329,23 @@ test('a memory that came from a hypothesis retires the statement too — the sou
   assert.match(renderRetractionReceipt(receipt), /The statement it came from is rejected too, so it cannot come back\./);
 });
 
+test('a confirmed statement is taken back with retract, which the store accepts, not with reject', async () => {
+  const shared = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je', {
+    metadata: { gaia_hypothesis_id: 'a9eeb399', gaia_hypothesis_status: 'confirmed' },
+    tags: ['gaia:hypothesis', 'gaia:confirmed_fact'],
+  })]);
+  const retracted = [];
+  const cognition = {
+    async retractHypothesis(id, options) { retracted.push({ id, options }); return { id, status: 'rejected' }; },
+    async rejectHypothesis() { throw new Error('reject refuses a confirmed statement'); },
+  };
+
+  const receipt = await retractMemory({ banks: [shared], home: shared, cognition, quote: 'Yassine is een vriend van je' });
+
+  assert.deepEqual(retracted, [{ id: 'a9eeb399', options: { reason: 'the person said this is not correct' } }]);
+  assert.deepEqual(receipt.source, { kind: 'hypothesis', id: 'a9eeb399', status: 'rejected' });
+});
+
 test('metadata that arrives as a JSON string is read the same way', async () => {
   const shared = fakeBank('bojan', [validItem('f1', 'Yassine is een vriend van je', {
     metadata: JSON.stringify({ gaia_hypothesis_id: 'a9eeb399' }),

@@ -39,6 +39,10 @@ proposed ──▶ testing ──▶ corroborated (machine, C >= 0.80) ──▶
   `POST …/reopen` — an explicit, human-initiated action that requires a stated
   reason and returns the record to `testing` (mirrored by the manager's
   `reopen()` and the GaiaChat "Heroverwegen" action).
+- **`POST …/retract`** is the human way out of `confirmed`: it takes a
+  statement back (to `rejected`, `verwerp_bron: 'mens'`) and requires a reason.
+  `reject` refuses a confirmed statement; no machine path calls `retract`. A
+  repeat on an already rejected statement is a no-op.
 - **`verwerp_bron`** records *why* a statement was rejected: `mens` (a human)
   or `consolidatie` (a newer statement superseded it).
 - **Supersession**: a newer confirmed statement can supersede an older one;

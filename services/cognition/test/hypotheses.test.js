@@ -306,6 +306,52 @@ test('reopen() refuses a non-rejected record', async () => {
   );
 });
 
+test('retract() takes a confirmed statement back: rejected, by a person, with the reason', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async (sql) => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'confirmed' })] };
+    assert.match(sql, /UPDATE hypotheses SET status = 'rejected'/);
+    return { rows: [row({ status: 'rejected', verwerp_bron: 'mens', rejection_reason: 'not true' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.retract('gaia', 'h1', { reason: 'not true' });
+  assert.equal(h.status, 'rejected');
+  assert.equal(h.verwerp_bron, 'mens');
+  assert.deepEqual(fake.calls[1].params, ['gaia', 'h1', 'not true']);
+});
+
+test('retract() requires a reason, and treats an already rejected statement as done', async () => {
+  const fake = makeFakePool();
+  fake.setImpl(async () => ({ rows: [row({ status: 'rejected', verwerp_bron: 'mens' })] }));
+  pool.query = fake.pool.query;
+
+  await assert.rejects(
+    () => hypotheses.retract('gaia', 'h1', {}),
+    (err) => err.name === 'ValidationError' && /reason/.test(err.message),
+  );
+  const h = await hypotheses.retract('gaia', 'h1', { reason: 'again' });
+  assert.equal(h.status, 'rejected');
+  assert.equal(fake.calls.length, 1); // one read, no second write
+});
+
+test('retract() on a statement that is not confirmed is a plain human rejection', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call <= 2) return { rows: [row({ status: 'testing' })] }; // retract's read, reject's read
+    return { rows: [row({ status: 'rejected', verwerp_bron: 'mens' })] };
+  });
+  pool.query = fake.pool.query;
+
+  const h = await hypotheses.retract('gaia', 'h1', { reason: 'nope' });
+  assert.equal(h.status, 'rejected');
+  assert.equal(fake.calls[2].params[3], 'mens');
+});
+
 test('markTesting() still refuses a rejected record (reopen is the only exit)', async () => {
   const fake = makeFakePool();
   fake.setImpl(async () => ({ rows: [row({ status: 'rejected' })] }));

@@ -312,7 +312,9 @@ proposed ──▶ testing ──▶ corroborated ──▶ confirmed (HUMAN ONL
   `reopen` (the only exit from the `rejected` quarantine), `correct` (rewording a
   settled statement), `answer` (an open question) and `confirm`. `reject` and
   `reopen` require a stated reason; a `macro` confirmation requires a `rationale`
-  and a quarantined counter-hypothesis.
+  and a quarantined counter-hypothesis. A seventh, `retract`, takes back a
+  statement of any status, `confirmed` included, and needs a reason; it is reached
+  through a spoken retraction (`memoryRetraction.js`), not the review card.
 
 ## Background passes
 
