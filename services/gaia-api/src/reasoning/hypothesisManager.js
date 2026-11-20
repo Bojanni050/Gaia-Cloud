@@ -13,9 +13,12 @@
  * no hypothesis API yet, the default sink is an honest no-op and the
  * manager keeps state in memory for the turn that owns it.
  *
- * Lifecycle (the frozen transitions below mirror the shape documented in
- * logos/logosSchema.js — THIS map is this codebase's single source of
- * truth):
+ * Lifecycle. Cognition OWNS the lifecycle (CURRENT.md §3.1 #17): its table is
+ * services/cognition/src/transitions.js. The map below is only the AUTOMATIC
+ * subset this in-memory manager may walk on its own — it is a copy because
+ * gaia-api cannot import Cognition at runtime, and
+ * test/transitionsContract.test.js fails when it drifts from Cognition's table
+ * (one deviation is named there: confirmed → testing, see below):
  *
  *   proposed → testing → corroborated → confirmed   (corroborated: machine,
  *            │                                        micro only)
@@ -94,10 +97,19 @@ const HYPOTHESIS_PERSISTENCE = Object.freeze(['ephemeral', 'durable']);
 const DEFAULT_PERSISTENCE = 'ephemeral';
 
 /**
- * The allowed status transitions. Anything not listed here is refused,
- * e.g. proposed → confirmed (a proposal must at least pass through
- * testing) and unknown → anything. The `corroborated` edges mirror
- * Cognition's own table (services/cognition/src/hypotheses.js).
+ * The allowed AUTOMATIC status transitions. Anything not listed here is
+ * refused, e.g. proposed → confirmed (a proposal must at least pass through
+ * testing) and unknown → anything. This is a subset of Cognition's table
+ * (services/cognition/src/transitions.js), which owns the lifecycle; a person
+ * can take edges here that Cognition allows and this map leaves out
+ * (proposed → confirmed, testing → proposed, expired → proposed).
+ *
+ * KNOWN DEVIATION — `confirmed → testing`: the manager demotes a confirmed
+ * hypothesis under contradiction (§9), but Cognition treats `confirmed` as
+ * terminal and refuses the verb, so the demotion lives in memory only and the
+ * store keeps `confirmed`. Which of the two is right is an open product
+ * decision, not something to settle by editing a table; the contract test
+ * pins this one edge by name so it cannot spread unnoticed.
  */
 const HYPOTHESIS_TRANSITIONS = Object.freeze({
   proposed: Object.freeze(['testing', 'rejected', 'expired']),

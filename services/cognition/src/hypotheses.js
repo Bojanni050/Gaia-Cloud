@@ -32,6 +32,7 @@
 const { pool } = require('./db/pool');
 const { sanitizeEvidenceItems, mergeEvidenceItems } = require('./evidenceItems');
 const { NotFoundError, InvalidTransitionError, ValidationError } = require('./errors');
+const { VALID_TRANSITIONS } = require('./transitions');
 
 const KINDS = ['hypothesis', 'mental_model', 'relationship', 'open_question'];
 // 'verlopen' (lapsed) is the machine's own reason, kept apart from 'mens' (a
@@ -46,20 +47,8 @@ const SCOPES = ['micro', 'macro'];
 // with: the Ja/Nee pair, free text, or one button per option.
 const QUESTION_SHAPES = ['yes_no', 'open', 'choice'];
 
-const VALID_TRANSITIONS = {
-  proposed: ['testing', 'confirmed', 'rejected', 'expired'],
-  testing: ['corroborated', 'confirmed', 'rejected', 'proposed'],
-  corroborated: ['confirmed', 'rejected', 'testing'],
-  confirmed: [],
-  rejected: [],
-  // v1.3 expiry — NOT a quarantine, unlike `rejected`. A lapse is not a
-  // judgement: nothing happened, so evidence that arrives later revives the
-  // statement (expired → testing), and a person may still settle this one
-  // themselves. Only a `proposed` statement can lapse.
-  // … and `proposed`, because a person who rewrites an expired statement puts
-  // it back in the waiting room rather than editing a lapsed one in place.
-  expired: ['testing', 'confirmed', 'rejected', 'proposed'],
-};
+// The table itself lives in ./transitions.js (no dependencies, so the rest of the repository
+// can read it); it is re-exported below under the same name.
 
 function assertTransition(from, to) {
   if (!(VALID_TRANSITIONS[from] || []).includes(to)) {
