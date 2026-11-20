@@ -530,6 +530,20 @@ test('applyEvidence: contradicts records evidence and lowers confidence of a con
   assert.equal(fake.calls[1].params[6], null); // no tested_at: a person decided, nothing was tested
 });
 
+test('applyEvidence: contradicts with an explicit delta of 0 only records the evidence', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'testing', confidence: 0.5, evidence_against: [] })] };
+    return { rows: [row({ status: 'testing', confidence: 0.5, evidence_against: ['m9'] })] };
+  });
+  pool.query = fake.pool.query;
+
+  await hypotheses.applyEvidence('gaia', 'h1', { relation: 'contradicts', evidenceId: 'm9', confidenceDelta: 0 });
+  assert.equal(fake.calls[1].params[4], 0.5); // the sink already patched the confidence; no second 0.15
+});
+
 test('applyEvidence: contradicts still moves a proposed statement to testing', async () => {
   const fake = makeFakePool();
   let call = 0;

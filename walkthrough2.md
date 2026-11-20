@@ -438,3 +438,11 @@
 - Conclusions: de dubbele flowcharts niet toevoegen; alleen de ontbrekende `retract` in beide diagrammen zetten, in `.md` en `.html` identiek zodat de drift guard (check 6) klopt.
 - Actions: `docs/architecture-graph.md` en `docs/architecture-graph.html` (§6: `POST .../:id/retract` met de overgang naar rejected; §7: de rand `confirmed --> rejected`); validated: `node scripts/verify-architecture.js` ok, 7 diagrammen tegen hun twin gecontroleerd; de gaia-api-suite niet opnieuw gedraaid (alleen docs).
 - Deployment: `publish-foundation` bij merge (docs/**).
+
+## 2026-11-20 (Cognition: een tegenspraak verlaagt de confidence niet twee keer)
+
+- Findings: de sink in gaia-api zet eerst de nieuwe confidence (`patch.confidence = next.confidence`, door de manager al met `|delta|` of 0,15 verlaagd) en roept daarna `applyEvidence` aan met `confidenceDelta: 0`. Cognition behandelde die expliciete 0 als "geen delta" (`Number(0) || 0.15`) en verlaagde bij `contradicts` nog eens met 0,15. Resultaat: Cognition (en daarmee de Hindsight-spiegel en het deranking-gewicht) stond 0,15 lager dan de manager; de tweede verlaging gold ook voor een bevestigde stelling. `supports` en `weakens` hadden dit niet (0 blijft 0).
+- Conclusions: de fout zit in Cognition, niet in de sink: 0,15 hoort de standaard te zijn voor een aanroeper die geen delta noemt (undefined of null), een expliciete 0 betekent "alleen het bewijs vastleggen". De sink laten staan omdat hij die betekenis bewust gebruikt.
+- Actions: `services/cognition/src/hypotheses.js` (`applyEvidence`: standaard 0,15 alleen bij undefined/null; doc-comment bijgewerkt); `services/cognition/test/hypotheses.test.js` (+1 test: expliciete delta 0 laat de confidence ongemoeid; de test faalt zonder de fix); validated: cognition-suite 88/88 (was 87 + 1 nieuw), de nieuwe test faalt zonder de fix.
+- Deployment: merge naar main bouwt beide containers en draait de migraties (`deploy.yml`); geen migratie hier. Bestaande rijen die al te laag staan worden niet gecorrigeerd.
+- Open punt: al opgeslagen confidence-waarden van stellingen die via de sink zijn tegengesproken staan 0,15 te laag per tegenspraak; er is niet gemeten hoeveel rijen dat zijn.

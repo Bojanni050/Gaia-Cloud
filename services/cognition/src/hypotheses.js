@@ -476,7 +476,7 @@ function clampConfidence(value) {
  * the evidence and books the consequence:
  *   supports     → evidence_for,     confidence + delta,  proposed → testing
  *   weakens      → evidence_against, confidence − |delta|, proposed → testing
- *   contradicts  → evidence_against, confidence − |delta|, proposed → testing
+ *   contradicts  → evidence_against, confidence − |delta| (0.15 when no delta is given; an explicit 0 lowers nothing), proposed → testing
  *                  (a `confirmed` statement keeps its status — B8)
  *   irrelevant   → recorded as a no-op (updated_at only)
  * Only a human reaches `confirmed` (Absolute Override); this never confirms.
@@ -510,7 +510,13 @@ async function applyEvidence(bankId, id, { relation, evidenceId, evidenceItem, c
     if (status === 'proposed') status = 'testing';
   } else if (relation === 'contradicts') {
     add(evidenceAgainst, evidenceId);
-    confidence = clampConfidence(confidence - Math.abs(Number(confidenceDelta) || 0.15));
+    // The 0.15 default is for a caller that names no delta at all. An explicit
+    // 0 means "the confidence was already set (gaia-api's sink patches it
+    // first); only record the evidence" and must not lower it a second time.
+    const delta = confidenceDelta === undefined || confidenceDelta === null
+      ? 0.15
+      : Math.abs(Number(confidenceDelta) || 0);
+    confidence = clampConfidence(confidence - delta);
     // B8: a confirmed statement is a person's word. A contradiction is recorded
     // (evidence_against, lower confidence) but never moves it; only a human does.
     if (status === 'proposed') status = 'testing';
