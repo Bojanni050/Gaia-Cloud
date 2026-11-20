@@ -15,10 +15,10 @@
       "expect": { "accepted": true, "confidenceAfter": 0.35, "evidenceAgainstContains": "metric-2" }
     },
     {
-      "id": "con-01", "behavior": "contradicts-demotes-confirmed",
+      "id": "con-01", "behavior": "contradicts-keeps-confirmed",
       "setup": { "hypotheses": [{ "id": "hyp-c1", "statement": "The emitter owns the wire format.", "status": "confirmed", "confidence": 0.8 }] },
       "action": { "type": "applyUpdate", "update": { "hypothesisId": "hyp-c1", "evidenceId": "doc-5", "relation": "contradicts", "confidenceDelta": 0.15, "rationale": "new design doc says otherwise" } },
-      "expect": { "accepted": true, "from": "confirmed", "to": "testing", "statusAfter": "testing" }
+      "expect": { "accepted": true, "from": "confirmed", "to": "confirmed", "statusAfter": "confirmed" }
     },
     {
       "id": "irr-01", "behavior": "irrelevant-noop",

@@ -298,8 +298,11 @@ proposed ──▶ testing ──▶ corroborated ──▶ confirmed (HUMAN ONL
   safe default — always waits for the person), `status === 'testing'`, confidence
   ≥ `softPromoteConfidence` (0.8) and no contradicting evidence. It may inform
   retrieval and behaviour; it is never presented as settled, and a contradiction
-  demotes a corroborated micro back to `testing` — the same rule a confirmed
-  statement gets.
+  demotes a corroborated micro back to `testing`. A *confirmed* statement is a
+  person's word and is terminal (as in Cognition): a contradiction on it is
+  recorded as evidence against it and audited
+  (`CONFIRMED_CONTRADICTED_REASON`), but the status never moves — only a person
+  unsettles it.
 - **`expired` is a lapse, not a judgement.** Only an evidence-less `proposed`
   statement can lapse; nothing is deleted and nothing is quarantined, so evidence
   arriving later revives it (`expired → testing`, `reasoning/expiryScan.js`).

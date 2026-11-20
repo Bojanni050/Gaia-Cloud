@@ -235,16 +235,15 @@ test('confirm + promotion: policy-approved confirm promotes exactly once and ado
   assert.equal(h.promotedFactId, 'hsf_3'); // adopted native id (v1, v2, promoted)
   assert.equal(h.promotionPending, false);
 
-  // Idempotence: settle again after a re-open round-trip -> zero extra calls.
+  // Idempotence: `confirmed` is terminal (B8), so neither a demotion nor a second confirm can
+  // happen -> zero extra calls. (The "already promoted" skip is unit-tested in hypothesisManager.test.js.)
   const promoteCallsBefore = promotes.length;
-  manager.evaluateTransition('hyp-z', 'testing', { rationale: 'pressure' });
-  manager.applyUpdate({ hypothesisId: 'hyp-z', evidenceId: 'c', relation: 'supports', confidenceDelta: 0.02, rationale: 'more' });
-  manager.evaluateTransition('hyp-z', 'confirmed', { rationale: 'again' });
+  assert.equal(manager.evaluateTransition('hyp-z', 'testing', { rationale: 'pressure' }).ok, false);
+  assert.equal(manager.evaluateTransition('hyp-z', 'confirmed', { rationale: 'again' }).ok, false);
   await drain();
   const promotesAfter = fake.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/memories') && c.body.items[0].document_id === 'gaia-hyp-hyp-z-promoted');
   assert.equal(promotesAfter.length, promoteCallsBefore);
-  const skipAudit = manager.audits.filter((a) => a.relation === 'promote').at(-1);
-  assert.equal(skipAudit.reason, 'already promoted');
+  assert.equal(manager.get('hyp-z').status, 'confirmed');
 });
 
 test('promotion failure semantics: a failing promote leaves confirmed + pending, and the turn flow continues', async () => {

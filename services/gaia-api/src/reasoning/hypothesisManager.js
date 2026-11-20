@@ -17,18 +17,18 @@
  * services/cognition/src/transitions.js. The map below is only the AUTOMATIC
  * subset this in-memory manager may walk on its own — it is a copy because
  * gaia-api cannot import Cognition at runtime, and
- * test/transitionsContract.test.js fails when it drifts from Cognition's table
- * (one deviation is named there: confirmed → testing, see below):
+ * test/transitionsContract.test.js fails when it drifts from Cognition's table:
  *
  *   proposed → testing → corroborated → confirmed   (corroborated: machine,
  *            │                                        micro only)
  *            ↘ rejected
  *   proposed    → confirmed   (a person may settle a proposal directly)
- *   corroborated → testing    (a contradiction arrived — same §9 rule as
- *                              confirmed below)
- *   confirmed   → testing     (new contradicting pressure — §9: a confirmed
- *                              hypothesis never silently survives a
- *                              contradiction)
+ *   corroborated → testing    (a contradiction arrived — §9, the machine tier)
+ *   confirmed   → (nothing)   `confirmed` is a person's word and TERMINAL here,
+ *                              as in Cognition (decided 2026-11-20, B8 option a).
+ *                              A contradiction on it is recorded as evidence and
+ *                              audited as a signal for a person; it never
+ *                              demotes the status on its own.
  *   rejected    → testing     ONLY through reopen(), an explicit human action.
  *                              For every automatic process (applyUpdate,
  *                              applyReasoningResult, setPersistence, the
@@ -56,8 +56,10 @@
  * `rejectionReason`, tested/confirmed/rejected timestamps, and knowledge
  * promotion on confirm. Two DELIBERATE divergences, both required by our
  * own briefs: (1) Stash treats confirmed/rejected as terminal states — we
- * allow re-opening (confirmed→testing, rejected→testing) because new
- * evidence must be able to put pressure on a settled belief (brief §7);
+ * allow a person to reopen a rejected one (rejected→testing, reopen()) because
+ * new evidence must be able to put pressure on a settled belief (brief §7).
+ * A confirmed one stays confirmed until a person decides otherwise: pressure
+ * on it is recorded, not acted on (see applyUpdate);
  * (2) Stash promotes a confirmed hypothesis into its internal facts table
  * itself — we have no store access here, so promotion is emitted through
  * the INJECTED sink (`promote`), keeping this module store-agnostic. The
@@ -104,18 +106,16 @@ const DEFAULT_PERSISTENCE = 'ephemeral';
  * can take edges here that Cognition allows and this map leaves out
  * (proposed → confirmed, testing → proposed, expired → proposed).
  *
- * KNOWN DEVIATION — `confirmed → testing`: the manager demotes a confirmed
- * hypothesis under contradiction (§9), but Cognition treats `confirmed` as
- * terminal and refuses the verb, so the demotion lives in memory only and the
- * store keeps `confirmed`. Which of the two is right is an open product
- * decision, not something to settle by editing a table; the contract test
- * pins this one edge by name so it cannot spread unnoticed.
+ * `confirmed` has no outgoing edge, as in Cognition. (Until 2026-11-20 the
+ * manager demoted a confirmed hypothesis under contradiction while Cognition
+ * refused the same step, so the demotion lived in memory only; B8 settled it
+ * the way the store always behaved.)
  */
 const HYPOTHESIS_TRANSITIONS = Object.freeze({
   proposed: Object.freeze(['testing', 'rejected', 'expired']),
   testing: Object.freeze(['corroborated', 'confirmed', 'rejected']),
   corroborated: Object.freeze(['confirmed', 'rejected', 'testing']),
-  confirmed: Object.freeze(['testing']),
+  confirmed: Object.freeze([]),
   // Terminal for every automatic path. reopen() is the one deliberate,
   // human-initiated exception (mirrors the Cognition store's /reopen route).
   rejected: Object.freeze([]),
@@ -290,6 +290,9 @@ function similarity(a, b) {
 }
 
 const DEDUP_SIMILARITY_THRESHOLD = 0.7;
+
+// The reason an audit carries when a contradiction hit a statement a person confirmed.
+const CONFIRMED_CONTRADICTED_REASON = 'confirmed statement contradicted: status kept, a person decides';
 
 function makeAudit(record) {
   return {
@@ -643,9 +646,10 @@ function createHypothesisManager(options = {}) {
       return { ok: false, reason: 'a rationale is required for confirm/reject transitions' };
     }
     if (target === 'testing' && h.status !== 'testing') {
-      // The only demotion this reaches is confirmed→testing (§9), which
-      // demands a reason. rejected→testing never gets here: the transition
-      // table has rejected as terminal — that is reopen()'s human path.
+      // The lifecycle check above already refused every edge into testing from
+      // a terminal status (confirmed, rejected): rejected→testing is reopen()'s
+      // human path. What reaches here is the corroborated demotion, which
+      // demands a reason.
       if (!rationale) return { ok: false, reason: 're-opening requires a rationale' };
     }
     const res = transition(h, target, rationale);
@@ -686,8 +690,10 @@ function createHypothesisManager(options = {}) {
   /**
    * Applies one explicit evidence update (§6). Relation must be one of the
    * four verdicts; irrelevant adjusts nothing but is recorded. A
-   * contradiction on a confirmed hypothesis automatically demotes it to
-   * testing (§9) — never silently left confirmed.
+   * contradiction on a corroborated hypothesis demotes it to testing (§9). A
+   * contradiction on a CONFIRMED one is recorded as evidence and audited as a
+   * signal (CONFIRMED_CONTRADICTED_REASON) — the status stays, because only a
+   * person moves a statement away from `confirmed` (B8, 2026-11-20).
    */
   function applyUpdate(update = {}, context) {
     const h = update.hypothesisId ? byId.get(update.hypothesisId) : null;
@@ -728,11 +734,26 @@ function createHypothesisManager(options = {}) {
 
     h.updatedAt = now().toISOString();
 
-    // §9: contradicting pressure on a SETTLED claim forces it back to testing
-    // immediately and explicitly — recorded, never silent. Both settled tiers
-    // demote: `confirmed` (the human's) and `corroborated` (the machine's);
-    // the store allows both edges.
-    if (relation === 'contradicts' && (h.status === 'confirmed' || h.status === 'corroborated')) {
+    // §9, `confirmed` (a person's word): the contradiction is already recorded
+    // above (evidence against, lower confidence) and persisted; the status does
+    // NOT move — Cognition refuses a confirmed → testing step, and only a person
+    // unsettles what a person settled. The audit is the signal.
+    if (relation === 'contradicts' && h.status === 'confirmed') {
+      persistUpdate(prev, h, context);
+      audits.push(makeAudit({
+        hypothesisId: h.id, from: 'confirmed', to: 'confirmed',
+        relation, evidenceId: update.evidenceId || null,
+        confidenceBefore: prev.confidence, confidenceAfter: h.confidence,
+        rationale: update.rationale || 'contradicting evidence',
+        reason: CONFIRMED_CONTRADICTED_REASON,
+      }));
+      return audits[audits.length - 1];
+    }
+
+    // §9: contradicting pressure on a corroborated claim (the machine's tier)
+    // forces it back to testing immediately and explicitly — recorded, never
+    // silent. Cognition allows this edge.
+    if (relation === 'contradicts' && h.status === 'corroborated') {
       const settled = h.status;
       stampStatus(h, settled, 'testing', h.updatedAt);
       h.status = 'testing';
@@ -970,6 +991,7 @@ function createHypothesisManager(options = {}) {
 module.exports = {
   createHypothesisManager,
   HYPOTHESIS_TRANSITIONS,
+  CONFIRMED_CONTRADICTED_REASON,
   HYPOTHESIS_METHODS,
   HYPOTHESIS_PERSISTENCE,
   DEFAULT_PERSISTENCE,

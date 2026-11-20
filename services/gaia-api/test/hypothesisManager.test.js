@@ -8,6 +8,7 @@ const path = require('path');
 const {
   createHypothesisManager,
   HYPOTHESIS_TRANSITIONS,
+  CONFIRMED_CONTRADICTED_REASON,
   DEFAULT_POLICY,
   DEFAULT_EXPIRY_DAYS,
   isExpirable,
@@ -33,7 +34,7 @@ test('transitions: the lifecycle map is explicit and frozen', () => {
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.proposed, ['testing', 'rejected', 'expired']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.testing, ['corroborated', 'confirmed', 'rejected']);
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.corroborated, ['confirmed', 'rejected', 'testing']);
-  assert.deepEqual(HYPOTHESIS_TRANSITIONS.confirmed, ['testing']);
+  assert.deepEqual(HYPOTHESIS_TRANSITIONS.confirmed, []); // a person's word: terminal, as in Cognition
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.rejected, []); // terminal; only reopen() leaves it
   // v1.3 — a lapse is not a judgement and not a quarantine: it may be revived.
   assert.deepEqual(HYPOTHESIS_TRANSITIONS.expired, ['testing', 'confirmed', 'rejected']);
@@ -144,14 +145,22 @@ test('contradicts: contradicting evidence registers as a conflict, never silentl
   assert.ok(m.get('hyp-123').evidenceAgainst.includes('log-3'));
 });
 
-test('contradicts on a CONFIRMED hypothesis forces it back to testing (never silently confirmed)', () => {
+test('contradicts on a CONFIRMED hypothesis is recorded and flagged, but the status stays (B8: only a person unsettles it)', () => {
+  const persisted = [];
   const m = createHypothesisManager({
+    sink: { update: (id, next, prev) => persisted.push({ id, next: next.status, prev: prev.status }) },
     hypotheses: [{ id: 'hyp-c1', statement: 'X causes Y.', status: 'confirmed', confidence: 0.8 }],
   });
   const audit = m.applyUpdate({ hypothesisId: 'hyp-c1', evidenceId: 'e-new', relation: 'contradicts', confidenceDelta: 0.15, rationale: 'new counterexample' });
+  assert.equal(audit.accepted, true);
   assert.equal(audit.from, 'confirmed');
-  assert.equal(audit.to, 'testing');
-  assert.equal(m.get('hyp-c1').status, 'testing');
+  assert.equal(audit.to, 'confirmed');
+  assert.equal(audit.reason, CONFIRMED_CONTRADICTED_REASON);
+  const h = m.get('hyp-c1');
+  assert.equal(h.status, 'confirmed', 'Cognition refuses confirmed -> testing, so the manager no longer pretends');
+  assert.ok(h.evidenceAgainst.includes('e-new'), 'the contradiction is still on record');
+  assert.ok(h.confidence < 0.8, 'and it still lowers the confidence');
+  assert.deepEqual(persisted.map((x) => [x.prev, x.next]), [['confirmed', 'confirmed']], 'the sink gets the evidence, not a status change');
 });
 
 test('irrelevant: recorded but adjusts nothing', () => {
@@ -296,15 +305,16 @@ test('reject: requires strong opposition AND low confidence per policy', () => {
   assert.equal(m.get('hyp-r1').status, 'rejected');
 });
 
-test('re-open: confirmed -> testing is legal; rejected is terminal except via the human reopen()', () => {
+test('confirmed and rejected are terminal for the automatic path; only a person leaves rejected, via reopen()', () => {
   const m = createHypothesisManager({
     hypotheses: [
       { id: 'hyp-ok', statement: 'A.', status: 'confirmed', confidence: 0.8 },
       { id: 'hyp-rej', statement: 'B.', status: 'rejected', confidence: 0.2, rejectionReason: 'old disproof' },
     ],
   });
-  assert.equal(m.evaluateTransition('hyp-ok', 'testing', { rationale: 'fresh contradiction pressure' }).ok, true);
-  assert.equal(m.get('hyp-ok').status, 'testing');
+  // confirmed is a person's word and terminal, with or without a rationale (B8).
+  assert.equal(m.evaluateTransition('hyp-ok', 'testing', { rationale: 'fresh contradiction pressure' }).ok, false);
+  assert.equal(m.get('hyp-ok').status, 'confirmed');
 
   // rejected is terminal for the automatic path — with or without a rationale.
   assert.equal(m.evaluateTransition('hyp-rej', 'testing', { rationale: 'strong new evidence surfaced' }).ok, false);
@@ -636,10 +646,11 @@ test('timeline: testedAt/confirmedAt/rejectedAt are stamped by their transitions
   assert.equal(m.evaluateTransition('hyp-c', 'confirmed', { rationale: 'policy met' }).ok, true);
   assert.ok(m.get('hyp-c').confirmedAt);
   assert.equal(m.get('hyp-c').rejectedAt, null);
-  // Terminal stamps survive a demote; rejectedAt stays untouched.
+  // A contradiction does not unsettle it, so the stamps stay as they were; rejectedAt untouched.
   m.applyUpdate({ hypothesisId: 'hyp-c', evidenceId: 'z', relation: 'contradicts', confidenceDelta: 0.3, rationale: 'counterexample' });
-  assert.equal(m.get('hyp-c').status, 'testing');
-  assert.ok(m.get('hyp-c').confirmedAt); // history of having been confirmed remains visible
+  assert.equal(m.get('hyp-c').status, 'confirmed');
+  assert.ok(m.get('hyp-c').confirmedAt);
+  assert.equal(m.get('hyp-c').rejectedAt, null);
 });
 
 test('promotion: confirm calls sink.promote exactly once with the settled payload and keeps the factId', () => {
@@ -657,12 +668,16 @@ test('promotion: confirm calls sink.promote exactly once with the settled payloa
   assert.equal(h.promotedFactId, 'hs-fact-77');
   assert.equal(h.promotionPending, false);
 
-  // Re-open + settle again: no second promotion.
-  m.evaluateTransition('hyp-p', 'testing', { rationale: 'new pressure' });
-  m.applyUpdate({ hypothesisId: 'hyp-p', evidenceId: 'q', relation: 'supports', confidenceDelta: 0.02, rationale: 'more' });
-  assert.equal(m.evaluateTransition('hyp-p', 'confirmed', { rationale: 're-confirmed' }).ok, true);
-  assert.equal(promotions.length, 1);
-  const skipAudit = m.audits.filter((a) => a.relation === 'promote').at(-1);
+  // A hypothesis that was already promoted (e.g. restored from the store) is never promoted again.
+  const again = [];
+  const m2 = createHypothesisManager({
+    sink: { promote: (x) => { again.push(x); return { factId: 'hs-fact-78' }; } },
+    policy: { minSupportEvidence: 1, confirmConfidence: 0.7 },
+    hypotheses: [{ id: 'hyp-q', statement: 'The emitter owns the wire format.', status: 'testing', confidence: 0.72, evidenceFor: ['a'], counterHypothesis: 'each capability formats its own output', promoted: true, promotedFactId: 'hs-fact-77' }],
+  });
+  assert.equal(m2.evaluateTransition('hyp-q', 'confirmed', { rationale: 're-confirmed' }).ok, true);
+  assert.equal(again.length, 0);
+  const skipAudit = m2.audits.filter((a) => a.relation === 'promote').at(-1);
   assert.equal(skipAudit.reason, 'already promoted');
 });
 
@@ -790,15 +805,24 @@ test("0.1 lifecycle independence: persistence survives the entire lifecycle in b
     assert.equal(m.evaluateTransition(`hyp-${persistence}`, "confirmed", { rationale: "policy met" }).ok, true);
     assert.equal(m.get(`hyp-${persistence}`).status, "confirmed");
     assert.equal(m.get(`hyp-${persistence}`).persistence, persistence); // confirmed ≠ durable
-    m.evaluateTransition(`hyp-${persistence}`, "testing", { rationale: "new pressure" });
+    // confirmed is terminal (B8): a contradiction is recorded but moves nothing, persistence included.
+    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "x0", relation: "contradicts", confidenceDelta: 0.01, rationale: "c0" });
+    assert.equal(m.get(`hyp-${persistence}`).status, "confirmed");
     assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
-    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "x1", relation: "contradicts", confidenceDelta: 0.4, rationale: "c1" });
-    m.applyUpdate({ hypothesisId: `hyp-${persistence}`, evidenceId: "x2", relation: "weakens", confidenceDelta: 0.05, rationale: "c2" });
-    assert.equal(m.evaluateTransition(`hyp-${persistence}`, "rejected", { rationale: "disproven" }).ok, true);
-    assert.equal(m.get(`hyp-${persistence}`).status, "rejected");
-    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
-    m.reopen(`hyp-${persistence}`, { reason: "re-opened" });
-    assert.equal(m.get(`hyp-${persistence}`).persistence, persistence);
+
+    // The other road: a hypothesis that is tested, disproven, rejected and reopened by a person.
+    const id = `hyp-${persistence}-r`;
+    const r = createHypothesisManager({
+      policy: { minSupportEvidence: 2, confirmConfidence: 0.7, minOpposeEvidence: 2, rejectConfidence: 0.35 },
+      hypotheses: [{ id, statement: `${persistence} claim, disputed.`, status: "testing", confidence: 0.72, evidenceFor: ["a"], persistence }],
+    });
+    r.applyUpdate({ hypothesisId: id, evidenceId: "x1", relation: "contradicts", confidenceDelta: 0.4, rationale: "c1" });
+    r.applyUpdate({ hypothesisId: id, evidenceId: "x2", relation: "weakens", confidenceDelta: 0.05, rationale: "c2" });
+    assert.equal(r.evaluateTransition(id, "rejected", { rationale: "disproven" }).ok, true);
+    assert.equal(r.get(id).status, "rejected");
+    assert.equal(r.get(id).persistence, persistence);
+    r.reopen(id, { reason: "re-opened" });
+    assert.equal(r.get(id).persistence, persistence);
   }
 });
 

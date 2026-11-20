@@ -6,10 +6,10 @@ const { HYPOTHESIS_TRANSITIONS } = require('../src/reasoning/hypothesisManager')
 // so a hermetic gaia-api run can read it without a database.
 const { VALID_TRANSITIONS: COGNITION } = require('../../cognition/src/transitions');
 
-// Edges the manager takes that Cognition refuses. Every entry is an open decision, not a
-// feature: the manager demotes a confirmed hypothesis under contradiction (§9) but Cognition's
-// `confirmed` is terminal, so the demotion never reaches the store.
-const KNOWN_DEVIATIONS = [['confirmed', 'testing']];
+// The manager takes no edge Cognition refuses. (`confirmed -> testing` was the one deviation until
+// 2026-11-20, when B8 settled it: a confirmed statement is a person's word and stays terminal.)
+// If you must add a deviation, name it here and open a decision in CURRENT.md.
+const KNOWN_DEVIATIONS = [];
 
 function edges(table) {
   const out = [];
@@ -17,7 +17,7 @@ function edges(table) {
   return out.sort();
 }
 
-test('the manager only takes automatic edges that Cognition also allows (bar the named deviation)', () => {
+test('the manager only takes automatic edges that Cognition also allows', () => {
   const cognition = new Set(edges(COGNITION));
   const outside = edges(HYPOTHESIS_TRANSITIONS).filter((e) => !cognition.has(e));
   assert.deepEqual(
@@ -25,7 +25,7 @@ test('the manager only takes automatic edges that Cognition also allows (bar the
     KNOWN_DEVIATIONS.map(([f, t]) => `${f}->${t}`).sort(),
     'gaia-api and Cognition disagree about a status transition. Cognition owns the lifecycle: '
       + 'change services/cognition/src/transitions.js first, then mirror it in hypothesisManager.js. '
-      + 'If you FIXED the confirmed->testing deviation, remove it from KNOWN_DEVIATIONS.',
+      + 'A deviation must be named in KNOWN_DEVIATIONS and decided in CURRENT.md.',
   );
 });
 
