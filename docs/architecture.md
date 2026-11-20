@@ -445,7 +445,7 @@ gate (free, bilingual)  ─ signal ─▶  model     due loop ─▶ politeness 
   written into a NEW conversation (`eleos-<loopId>`) — so the check-in literally
   is Gaia starting a conversation. The message is grounded only in the loop's
   summary and quote; nothing is invented.
-- **Never noisy (the PRD's proactivity ceiling — `docs/prd.md`).** One check-in per rolling 24h
+- **Never noisy (the PRD's proactivity ceiling — `docs/archief/prd.md`).** One check-in per rolling 24h
   (`GAIA_ELEOS_MAX_PER_DAY`); a recent turn defers delivery
   (`GAIA_ELEOS_ACTIVE_MS`); quiet hours (22:00–08:00, local to
   `GAIA_ELEOS_TIMEZONE`) defer *unless the person is active then*; delays are

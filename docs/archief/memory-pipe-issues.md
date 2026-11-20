@@ -1,6 +1,6 @@
 # The memory pipe — problems and fragile points
 
-Findings from a code review of the memory pipe (`docs/memory-pipe.md` maps the
+Findings from a code review of the memory pipe (`docs/archief/memory-pipe.md` maps the
 pipeline itself). Ordered by severity, each with its evidence in the code.
 Some are genuine defects, some are deliberate trade-offs that remain fragile.
 

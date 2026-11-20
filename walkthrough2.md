@@ -424,4 +424,10 @@
 
 - Findings: `docs/` bevatte vier onderdelen die zichzelf als afgehandeld of als overdracht beschrijven (`desktop-client-task.md`, `handover-2026-10-23-optie2.md`, `memory-pipe-issues.md`, `proposals/`) en waar geen code, test of CI naar verwijst; alleen `docs/README.md` noemde ze.
 - Conclusions: Bo koos de voorzichtige set. De kern die door `verify-architecture`, tests en runtime wordt gebruikt (architecture, CONVENTIONS, advice, deployment, identity, principles, lexicon, evolution, prd) blijft staan; verplaatsen via `git mv` houdt de geschiedenis.
-- Actions: vier onderdelen naar `docs/archief/`; `docs/README.md` (paden in vier rijen en een alinea over `archief/`); validated: verwijzingen gecontroleerd met grep, `node scripts/verify-architecture.js` en de test-suite gedraaid.
+- Actions: vier onderdelen naar `docs/archief/`; `docs/README.md` (paden in vier rijen en een alinea over `archief/`); validated: verwijzingen gecontroleerd met grep, `node scripts/verify-architecture.js` gedraaid en de verifyArchitecture-tests; de volledige suite niet (gecorrigeerd in de volgende entry).
+
+## 2026-11-20 (Ruimere set naar docs/archief)
+
+- Findings: Bo vroeg de ruimere set. Van de vijf kandidaten zijn vier verplaatst (`prd.md`, `memory-pipe.md`, `spike-cortexiq.md`, `Epistemic Memory & Execution Rules .txt`). `docs/Project Gaia/` (het leidende Main Document, plus lokaal de `.docx` en `sync.ffs_db` die `.gitignore` noemt) is bewust niet verplaatst.
+- Conclusions: de map laten staan omdat de README het document als leidend aanmerkt en een verplaatsing de lokale synchronisatiedatabase en de `.gitignore`-paden zou raken zonder dat ik die kan controleren. `spike-cortexiq.md` stond als "active decision material" met een regel (§3) die nieuwe code bindt; die status staat nu in de README-rij van het archief, de regel zelf geldt onverminderd.
+- Actions: vier bestanden via `git mv` naar `docs/archief/`; verwijzingen bijgewerkt in `docs/README.md`, `docs/architecture.md` (regel 448, `docs/archief/prd.md`) en `docs/archief/memory-pipe-issues.md`; eerdere entry gecorrigeerd (de volledige suite was toen niet gedraaid); validated: `verify-architecture` ok en de volledige gaia-api-suite 1868/1868.
