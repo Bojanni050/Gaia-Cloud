@@ -27,6 +27,15 @@ const { logLlmCall } = require('../logos/llmCallLog');
 
 const DEFAULT_TIMEZONE = 'Europe/Amsterdam';
 const DEFAULT_TIMEOUT_MS = 90000;
+// An output cap, for the same reason the episode synthesizer has one
+// (`synthesizer.js`, 2026-11-19): a reasoning model (gpt-oss) that gets no cap
+// spends the router's default output budget — 128 tokens here — on thinking and
+// returns an EMPTY content with HTTP 200. The synthesizer learned that the hard
+// way; this writer did not, so every day overview from 2026-11-17 on failed
+// with "model output was not valid JSON" (the JSON.parse of "") while the
+// episodes of those same days were written normally. The summary is 90–220
+// words, so 4000 leaves room for the thinking plus the answer.
+const MAX_OUTPUT_TOKENS = 4000;
 // Each episode keeps enough text that the digest can say what was DONE, not
 // just which window was open: 400 characters cut the outcome off the longer
 // episodes, so the day summary fell back to naming apps.
@@ -390,6 +399,7 @@ function createDigestWriter({
         body: JSON.stringify({
           model: config.model,
           temperature: 0,
+          max_tokens: MAX_OUTPUT_TOKENS,
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: DIGEST_SYSTEM_PROMPT },
@@ -417,7 +427,21 @@ function createDigestWriter({
     const content = data && data.choices && data.choices[0] && data.choices[0].message
       ? data.choices[0].message.content
       : undefined;
-    const validated = validateDigest(content);
+    // An empty answer is its own diagnosis, not a parse failure. A reasoning
+    // model that spent its whole output budget on thinking returns "" with HTTP
+    // 200; reporting that as "not valid JSON" is what sent this writer's
+    // operator looking for a prompt bug for three days (2026-11-17 → 20).
+    if (typeof content !== 'string' || content.trim() === '') {
+      logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.digest', latencyMs: Date.now() - startedAt, ok: false, errorMessage: 'empty model content' }, logger);
+      throw new Error('kairos digest: model returned no content (a reasoning model without max_tokens does this)');
+    }
+    let validated;
+    try {
+      validated = validateDigest(content);
+    } catch (error) {
+      logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.digest', latencyMs: Date.now() - startedAt, ok: false, errorMessage: error.message }, logger);
+      throw error;
+    }
     logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.digest', latencyMs: Date.now() - startedAt, ok: true, errorMessage: null }, logger);
 
     const digest = await cognition.createKairosDigest({

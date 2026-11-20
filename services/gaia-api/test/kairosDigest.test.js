@@ -321,6 +321,41 @@ test('writer throws when no Kairos model is configured', async () => {
   await assert.rejects(() => writer.generate({ date: '2026-11-06' }), /no model configured/);
 });
 
+test('writer caps the output, so a reasoning model cannot spend it all on thinking', async () => {
+  // The regression this prevents: the Kairos role runs on gpt-oss (a reasoning
+  // model) through Hopscotch. Without a cap it spends the router's 128-token
+  // default on thinking and returns HTTP 200 with an empty content, so the
+  // overview for every day since 2026-11-17 was never written.
+  const cognition = fakeCognition();
+  let sent = null;
+  const writer = createDigestWriter({
+    cognition,
+    resolveConfig: config,
+    minEpisodes: 1,
+    fetchImpl: async (url, options) => {
+      sent = JSON.parse(options.body);
+      return modelResponse({ title: 't', summary: 'Je werkte aan Gaia.' });
+    },
+    logger: { info() {}, warn() {} },
+  });
+  await writer.generate({ date: '2026-11-06' });
+  assert.equal(sent.max_tokens, 4000);
+});
+
+test('writer names an empty model answer instead of blaming the JSON', async () => {
+  const cognition = fakeCognition();
+  const empty = { ok: true, status: 200, async json() { return { choices: [{ message: { content: '' } }] }; } };
+  const writer = createDigestWriter({
+    cognition,
+    resolveConfig: config,
+    minEpisodes: 1,
+    fetchImpl: async () => empty,
+    logger: { info() {}, warn() {} },
+  });
+  await assert.rejects(() => writer.generate({ date: '2026-11-06' }), /returned no content/);
+  assert.equal(cognition.calls.created.length, 0);
+});
+
 test('scheduler waits for the configured hour', async () => {
   const generated = [];
   const sched = createDigestScheduler({
