@@ -232,6 +232,8 @@ sequenceDiagram
     API->>Cog: → testing · → rejected (verwerp_bron "mens")
     Chat->>API: POST .../:id/correct { reason }
     API->>Cog: reword a settled statement
+    Chat->>API: POST .../:id/retract { reason }
+    API->>Cog: confirmed → rejected (verwerp_bron "mens")
     Chat->>API: POST .../:id/answer — an open question
     Chat->>API: POST .../:id/confirm { supersedes[], rationale }
     API->>Cog: → confirmed
@@ -262,6 +264,7 @@ stateDiagram-v2
     expired --> rejected: let go
     expired --> proposed: a person rewrites it
     rejected --> testing: reopen — the only exit from that quarantine
+    confirmed --> rejected: a person retracts it (reason required)
     confirmed --> [*]
     rejected --> [*]
       </pre>
