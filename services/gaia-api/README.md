@@ -78,8 +78,9 @@ closes it with three verbs the generation model may call:
 - `search_memory` — reads back, ungated, through the **same cross-bank client**
   the turn's gated recall uses (so `bojan`, `gaia` and `gaia-logos` are all in
   scope), rendered through the same `condenseMemoryContext` (including the
-  `(uncertain)` marker). A failure or an empty result is stated plainly, never
-  thrown.
+  `(uncertain)` marker, and the quiet deranking of a statement with evidence
+  against it: 0.15 off the score per distinct item, floor 0.5, `(contested)` from
+  two items). A failure or an empty result is stated plainly, never thrown.
 
 All three are off with `GAIA_MEMORY_TOOL=false`; without a generation model that
 supports tools the turn falls back to plain generation. `search_memory` is only

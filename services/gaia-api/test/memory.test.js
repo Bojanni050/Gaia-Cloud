@@ -7,6 +7,8 @@ const { createHindsightClient } = require('../src/hindsightClient');
 const {
   condenseMemoryContext,
   memoryKindOf,
+  evidenceAgainstCount,
+  derankContested,
   renderMemoryContext,
   renderDualRecallContext,
   recallRelevantContext,
@@ -370,6 +372,42 @@ test('condenseMemoryContext composes kind, uncertainty and age, and ignores tags
   ], now);
   assert.equal(lines[0], '- Twijfel (your own hypothesis, never confirmed, uncertain, 3 dagen geleden)');
   assert.equal(lines[1], '- Onbekende tag');
+});
+
+const against = (...ids) => ({ gaia_hypothesis_evidence_against: JSON.stringify(ids) });
+const confirmedItem = (text, final, ids = []) => ({
+  text, tags: ['gaia:hypothesis', 'gaia:confirmed_fact'], metadata: against(...ids), scores: { final },
+});
+
+test('derankContested: evidence against sinks a confirmed line, in proportion, down to a floor', () => {
+  const plain = { text: 'Gewoon feit', scores: { final: 0.8 } };
+  const one = confirmedItem('Een tegenstem', 0.9, ['e1']); // 0.9 * 0.85 = 0.765
+  const two = confirmedItem('Twee tegenstemmen', 0.95, ['e1', 'e2']); // 0.95 * 0.70 = 0.665
+  const many = confirmedItem('Veel tegenstem', 1.0, ['a', 'b', 'c', 'd', 'e', 'f']); // floor 0.5
+  const out = derankContested([many, two, one, plain]).map((r) => r.text);
+  assert.deepEqual(out, ['Gewoon feit', 'Een tegenstem', 'Twee tegenstemmen', 'Veel tegenstem']);
+});
+
+test('derankContested: the same evidence id counts once, and nothing against leaves the array untouched', () => {
+  const a = confirmedItem('A', 0.9, ['x', 'x', 'x']);
+  assert.equal(evidenceAgainstCount(a), 1);
+  const list = [{ text: 'B', scores: { final: 0.5 } }, { text: 'C', scores: { final: 0.9 } }];
+  assert.equal(derankContested(list), list); // same array, original (even unsorted) order
+  assert.equal(evidenceAgainstCount({ metadata: { gaia_hypothesis_evidence_against: 'not json' } }), 0);
+  assert.equal(evidenceAgainstCount(null), 0);
+});
+
+test('a confirmed line with two or more items against says contested and ranks below one with fewer', () => {
+  const lines = condenseMemoryContext([
+    confirmedItem('Omstreden', 0.9, ['e1', 'e2']),
+    confirmedItem('Eenmaal tegen', 0.9, ['e1']),
+  ]);
+  assert.equal(lines[0], '- Eenmaal tegen (confirmed by the person)');
+  assert.equal(lines[1], '- Omstreden (confirmed by the person, contested)');
+});
+
+test('the memory header explains contested', () => {
+  assert.match(renderMemoryContext([reflection('A', 0.9)]), /\(contested\) means evidence against/);
 });
 
 test('memoryKindOf: the strongest tag wins, and an unknown shape is never a kind', () => {

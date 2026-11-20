@@ -32,6 +32,20 @@ const MAX_MEMORY_LINES = Number(process.env.MEMORY_MAX_LINES) || 9;
 const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.55;
 
 /**
+ * Quiet deranking of a statement that evidence has gone against (B8 follow-up).
+ * A confirmed statement is a person's word and no machine moves its status, but
+ * that does not mean contrary evidence should change nothing: each distinct item
+ * of evidence against takes DERANK_PER_AGAINST off the recall score the line
+ * competes with, down to DERANK_FLOOR, and from CONTESTED_FROM items on the line
+ * says "contested" so Gaia mentions the doubt instead of asserting the fact. No
+ * one is asked anything — Hindsight cannot weigh a statement by metadata (0.9.2
+ * has no such field), so this is done here, after the recall.
+ */
+const DERANK_PER_AGAINST = 0.15;
+const DERANK_FLOOR = 0.5;
+const CONTESTED_FROM = 2;
+
+/**
  * The 7 standing mental models provisioned on the system-memory bank
  * (`HINDSIGHT_BANK_ID`, default `bojan`) — see
  * services/gaia-api/scripts/provision-mental-models.js — each a living,
@@ -122,6 +136,49 @@ function memoryKindOf(reflection) {
 }
 
 /**
+ * How many distinct items of evidence the statement behind this recalled item
+ * has against it, read from the mirror's metadata. 0 for anything without it
+ * (a plain memory, an older version, unparseable metadata).
+ * @param {{metadata?: Record<string,string>|null}} [reflection]
+ * @returns {number}
+ */
+function evidenceAgainstCount(reflection) {
+  const raw = reflection?.metadata?.gaia_hypothesis_evidence_against;
+  if (typeof raw !== 'string' || !raw) return 0;
+  try {
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? new Set(list.map(String)).size : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/** The multiplier a recalled item's score gets: 1 when nothing is against it. */
+function derankFactor(reflection) {
+  const against = evidenceAgainstCount(reflection);
+  return against > 0 ? Math.max(DERANK_FLOOR, 1 - DERANK_PER_AGAINST * against) : 1;
+}
+
+/**
+ * Hindsight's order, except that items with evidence against them sit lower in
+ * proportion to it. Untouched (same array) when no item has any, which keeps
+ * every caller that never sees such metadata byte-for-byte as before. The sort
+ * is stable, so equal scores keep Hindsight's order.
+ * @template T
+ * @param {T[]} reflections
+ * @returns {T[]}
+ */
+function derankContested(reflections) {
+  if (!Array.isArray(reflections) || !reflections.some((r) => derankFactor(r) < 1)) return reflections;
+  const keyed = reflections.map((r, index) => {
+    const final = r?.scores?.final;
+    return { r, index, key: typeof final === 'number' ? final * derankFactor(r) : -Infinity };
+  });
+  keyed.sort((a, b) => (b.key - a.key) || (a.index - b.index));
+  return keyed.map((k) => k.r);
+}
+
+/**
  * Reads Hindsight's own field names directly (`text`, `scores.final`) —
  * hindsightClient.js no longer renames these to `summary`/`confidence` on
  * the way in, so this is the one place that derives a renderable line
@@ -148,6 +205,7 @@ function formatReflectionLine(reflection, now = Date.now()) {
   const age = relativeAge(reflection?.occurredStart || reflection?.occurredEnd, now);
   const flags = [];
   if (kind) flags.push(KIND_MARKERS[kind]);
+  if (evidenceAgainstCount(reflection) >= CONTESTED_FROM) flags.push('contested');
   if (isUncertain) flags.push('uncertain');
   if (age) flags.push(age);
   return flags.length ? `- ${summary} (${flags.join(', ')})` : `- ${summary}`;
@@ -166,7 +224,7 @@ function condenseMemoryEntries(reflections, now = Date.now()) {
   if (!reflections || reflections.length === 0) return [];
   const seen = new Set();
   const entries = [];
-  for (const reflection of reflections) {
+  for (const reflection of derankContested(reflections)) {
     const line = formatReflectionLine(reflection, now);
     if (!line || seen.has(line)) continue;
     seen.add(line);
@@ -195,6 +253,8 @@ const MEMORY_CONTEXT_HEADER = [
   'you noted", "your own reflection", "a record of what was said" — never state',
   'those as established fact, and never add names, dates or details an item does',
   'not contain. (uncertain) means the same: a possibility, not a settled fact.',
+  '(contested) means evidence against the item has come in since: say so',
+  'instead of asserting it, even when the person once confirmed it.',
   'When an item touches the person\'s own life — people, health, safety, or',
   'relationships — and you are not certain, ask instead of asserting.',
 ];
@@ -428,6 +488,8 @@ module.exports = {
   condenseMemoryContext,
   condenseMemoryEntries,
   memoryKindOf,
+  evidenceAgainstCount,
+  derankContested,
   KIND_MARKERS,
   renderMemoryContext,
   renderDualRecallContext,
