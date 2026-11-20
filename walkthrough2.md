@@ -419,3 +419,9 @@
 - Conclusions: Bo koos bevestigen (optie 1) zonder de dode code te verwijderen. De regel kreeg de woorden "in het live serverpad" omdat hij niet absoluut is afgedwongen; wel waar in de praktijk.
 - Actions: `Gaia-Documentation/architecture.md` (v2.6.1: statusnotitie-rij, frontmatter), `Gaia-Documentation/CURRENT.md` (v1.3.4: §3.1 #20, versieregel), `Gaia-Documentation/evolution.md` (aanvulling A3); validated: alleen documentatie, geen code of tests geraakt.
 - Open punt: de dode code `adaptHermesToGenerator` kan later worden verwijderd om de regel structureel te maken (eerst nagaan of een test erop leunt); §15 zegt nog "2.3.0" en `operations.md` draagt nog de gepensioneerde ReasonIQ-configuratie.
+
+## 2026-11-20 (Niet-relevante documenten naar docs/archief)
+
+- Findings: `docs/` bevatte vier onderdelen die zichzelf als afgehandeld of als overdracht beschrijven (`desktop-client-task.md`, `handover-2026-10-23-optie2.md`, `memory-pipe-issues.md`, `proposals/`) en waar geen code, test of CI naar verwijst; alleen `docs/README.md` noemde ze.
+- Conclusions: Bo koos de voorzichtige set. De kern die door `verify-architecture`, tests en runtime wordt gebruikt (architecture, CONVENTIONS, advice, deployment, identity, principles, lexicon, evolution, prd) blijft staan; verplaatsen via `git mv` houdt de geschiedenis.
+- Actions: vier onderdelen naar `docs/archief/`; `docs/README.md` (paden in vier rijen en een alinea over `archief/`); validated: verwijzingen gecontroleerd met grep, `node scripts/verify-architecture.js` en de test-suite gedraaid.

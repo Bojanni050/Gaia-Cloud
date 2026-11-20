@@ -36,17 +36,22 @@ maintained version and wins — four bullets plus `Open punt:`.
 | `advice.md` | the audit of 2026-11-11 (against `5a9e1d9`): drift rows, A1-A8, C1-C12, with the status maintained in place | active — **its line numbers have drifted: re-verify a claim against the code before acting on it** |
 | `architecture-graph.md` + `.html` | the visual map of the system | **active, regenerated 2026-11-16 against `a1a485e`**: seven diagrams — the whole system, the live turn with its recall legs and the tools inside that one call, the deferred chain 1–8 with 7b/7c as side tasks, the faculties, the human override, the lifecycle with six statuses, what lives where, and the HTTP surface. The `.md` and the `.html` carry the same diagrams and the guard checks that they still do (check 6), because two copies of one picture drifting apart is exactly how this file went stale (A4) |
 | `memory-pipe.md` | the one path a turn reads long-term memory through and writes into it, as the code builds it | reference — the seams it names still exist, but it predates the 2026-10-23 recall split and the CortexIQ plan |
-| `memory-pipe-issues.md` | a code review of that pipe, findings by severity | that review's findings; several were fixed since — check before acting |
+| `archief/memory-pipe-issues.md` | a code review of that pipe, findings by severity | that review's findings; several were fixed since — check before acting |
 | `desktop-capability.md` | the confirmation flow for working on the person's own computer | active — `architecture.md` points here |
-| `desktop-client-task.md` | a task description for a session in the Gaia-Desktop repo | handoff to that repository |
+| `archief/desktop-client-task.md` | a task description for a session in the Gaia-Desktop repo | handoff to that repository |
 | `background-voice-cloud-spec.md` | the cloud half of background voice | carries its own status line: C1 implemented on a branch, C2/C3 proposed |
 | `skill-acquisition.md` | what Gaia may learn, and the phases of it | active — phase 0 and the measurement are built; phases 1 and 2 are not |
 | `spike-cortexiq.md` | the CortexIQ spike: measurements, conclusion, decision, order of steps | active decision material; nothing of it is built, but its §3 rule already binds new code — a marker that must outlive the memory layer goes in a tag, not in a `metadata` key |
-| `handover-2026-10-23-optie2.md` | the optie-2 handover with its open items | mostly executed; item 4's survey tool landed 2026-11-16 |
+| `archief/handover-2026-10-23-optie2.md` | the optie-2 handover with its open items | mostly executed; item 4's survey tool landed 2026-11-16 |
 | `foundation ingestion capture-rs.md` | what does *not* happen between Foundation and Gaia | constraints and reference |
 | `Epistemic Memory & Execution Rules .txt` | the one-way rule and the execution rules behind the derived store | principle text, reference |
 | `Project Gaia/Project Gaia - Main Document.pdf` | the leidend document: the vision | tracked; its editable source and the sync database stay local (`.gitignore`) |
-| `proposals/main-document-*.md` | chapter drafts for the Main Document | proposals — some carry a decision (afgeleide kennis: optie A, 2026-10-16) |
+| `archief/proposals/main-document-*.md` | chapter drafts for the Main Document | proposals — some carry a decision (afgeleide kennis: optie A, 2026-10-16) |
+
+`archief/` holds documents that are no longer read for a decision: a handoff to another
+repository, a handover that is mostly executed, a code review whose findings were fixed, and the
+Main Document chapter drafts. Nothing in code, tests or CI points into it (checked 2026-11-20);
+history keeps them findable.
 
 Two kinds of document are deliberately **not** here: the dated log (`walkthrough.md`,
 `walkthrough2.md`) lives in the repository root, and the client-side documents live in the
