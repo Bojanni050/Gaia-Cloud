@@ -447,7 +447,8 @@ function clampConfidence(value) {
  * the evidence and books the consequence:
  *   supports     → evidence_for,     confidence + delta,  proposed → testing
  *   weakens      → evidence_against, confidence − |delta|, proposed → testing
- *   contradicts  → evidence_against, confidence − |delta|, confirmed/proposed → testing
+ *   contradicts  → evidence_against, confidence − |delta|, proposed → testing
+ *                  (a `confirmed` statement keeps its status — B8)
  *   irrelevant   → recorded as a no-op (updated_at only)
  * Only a human reaches `confirmed` (Absolute Override); this never confirms.
  *
@@ -481,7 +482,9 @@ async function applyEvidence(bankId, id, { relation, evidenceId, evidenceItem, c
   } else if (relation === 'contradicts') {
     add(evidenceAgainst, evidenceId);
     confidence = clampConfidence(confidence - Math.abs(Number(confidenceDelta) || 0.15));
-    if (status === 'confirmed' || status === 'proposed') status = 'testing';
+    // B8: a confirmed statement is a person's word. A contradiction is recorded
+    // (evidence_against, lower confidence) but never moves it; only a human does.
+    if (status === 'proposed') status = 'testing';
   }
 
   if (status === 'testing' && !testedAt) testedAt = new Date().toISOString();

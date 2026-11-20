@@ -466,20 +466,36 @@ test('applyEvidence: supports records evidence_for, raises confidence and opens 
   assert.equal(fake.calls[1].params[4], 0.6); // confidence
 });
 
-test('applyEvidence: contradicts demotes a confirmed statement back to testing', async () => {
+test('applyEvidence: contradicts records evidence and lowers confidence of a confirmed statement, status stays (B8)', async () => {
   const fake = makeFakePool();
   let call = 0;
   fake.setImpl(async () => {
     call += 1;
     if (call === 1) return { rows: [row({ status: 'confirmed', confidence: 0.9, evidence_against: [] })] };
-    return { rows: [row({ status: 'testing', confidence: 0.75, evidence_against: ['m9'] })] };
+    return { rows: [row({ status: 'confirmed', confidence: 0.75, evidence_against: ['m9'] })] };
   });
   pool.query = fake.pool.query;
 
   const h = await hypotheses.applyEvidence('gaia', 'h1', { relation: 'contradicts', evidenceId: 'm9' });
-  assert.equal(h.status, 'testing');
+  assert.equal(h.status, 'confirmed');
   assert.deepEqual(h.evidence_against, ['m9']);
   assert.equal(fake.calls[1].params[4], 0.75); // 0.9 - default 0.15
+  assert.equal(fake.calls[1].params[5], 'confirmed'); // the status written back is unchanged
+  assert.equal(fake.calls[1].params[6], null); // no tested_at: a person decided, nothing was tested
+});
+
+test('applyEvidence: contradicts still moves a proposed statement to testing', async () => {
+  const fake = makeFakePool();
+  let call = 0;
+  fake.setImpl(async () => {
+    call += 1;
+    if (call === 1) return { rows: [row({ status: 'proposed', confidence: 0.6, evidence_against: [] })] };
+    return { rows: [row({ status: 'testing', confidence: 0.45, evidence_against: ['m9'] })] };
+  });
+  pool.query = fake.pool.query;
+
+  await hypotheses.applyEvidence('gaia', 'h1', { relation: 'contradicts', evidenceId: 'm9' });
+  assert.equal(fake.calls[1].params[5], 'testing');
 });
 
 test('applyEvidence: keeps what the cited item said, beside the id', async () => {
