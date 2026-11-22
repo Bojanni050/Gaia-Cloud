@@ -10,6 +10,9 @@ const {
   buildUserPrompt,
   validateSynthesis,
   createSynthesizer,
+  OMIT_PLACEHOLDER,
+  parseOmitTerms,
+  createOmitter,
 } = require('../src/kairos/synthesizer');
 
 function cluster(overrides = {}) {
@@ -206,6 +209,57 @@ test('a 400 or an unusable answer is flagged cluster-specific; a 502 is not', as
   await assert.rejects(() => make({ ok: false, status: 502 }).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific !== true);
   const empty = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };
   await assert.rejects(() => make(empty).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific === true && /valid JSON/.test(e.message));
+});
+
+test('parseOmitTerms: unset is the default list, empty is none, a list is trimmed', () => {
+  assert.deepEqual(parseOmitTerms(undefined), ['CSAM']);
+  assert.deepEqual(parseOmitTerms(null), ['CSAM']);
+  assert.deepEqual(parseOmitTerms(''), []);
+  assert.deepEqual(parseOmitTerms(' CSAM , foo bar ,,'), ['CSAM', 'foo bar']);
+});
+
+test('createOmitter replaces whole words, case-insensitively, and nothing else', () => {
+  const omit = createOmitter(['CSAM', 'a.b']);
+  assert.equal(omit('CSAM blocking : on'), `${OMIT_PLACEHOLDER} blocking : on`);
+  assert.equal(omit('x csam, y (Csam) z'), `x ${OMIT_PLACEHOLDER}, y (${OMIT_PLACEHOLDER}) z`);
+  assert.equal(omit('CSAMS and subCSAM stay'), 'CSAMS and subCSAM stay', 'only the whole word');
+  assert.equal(omit('a.b but not aXb'), `${OMIT_PLACEHOLDER} but not aXb`, 'regex characters are literal');
+  assert.equal(createOmitter([])('CSAM'), 'CSAM', 'an empty list changes nothing');
+  assert.equal(omit(undefined), undefined);
+});
+
+test('buildUserPrompt omits the terms from window and fragment, and leaves the cluster untouched', () => {
+  const omit = createOmitter(['CSAM']);
+  const base = cluster().observations[0];
+  const c = cluster({
+    observations: [{
+      ...base,
+      observed_window: 'Rate my router config CSAM',
+      fragment: 'x'.repeat(MAX_OCR_CHARS - 40) + ' CSAM blocking : on',
+    }],
+  });
+  const prompt = buildUserPrompt(c, { omit });
+  assert.equal(/csam/i.test(prompt), false, 'the term is not in what is sent');
+  assert.match(prompt, /\[term weggelaten\]/);
+  assert.equal(c.observations[0].fragment.includes('CSAM'), true, 'the stored observation is not mutated');
+  // Without an omitter the prompt is what it always was.
+  assert.match(buildUserPrompt(c), /CSAM/);
+});
+
+test('the synthesizer omits the default terms from the request body unless told otherwise', async () => {
+  const bodies = [];
+  const fetchImpl = async (_url, init) => {
+    bodies.push(init.body);
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '{"summary":"s"}' } }] }) };
+  };
+  const dirty = cluster({
+    observations: [{ ...cluster().observations[0], fragment: 'CSAM blocking : on' }],
+  });
+  const resolveConfig = () => ({ baseUrl: 'https://x', model: 'm' });
+  await createSynthesizer({ resolveConfig, fetchImpl }).synthesize(dirty, 'gaia');
+  assert.equal(/csam/i.test(bodies[0]), false, 'default list omits CSAM');
+  await createSynthesizer({ resolveConfig, fetchImpl, omitTerms: [] }).synthesize(dirty, 'gaia');
+  assert.equal(/csam/i.test(bodies[1]), true, 'an empty list sends the text as it is');
 });
 
 test('a 403 is flagged as a refusal (not cluster-specific) and its reason reaches the llm.call line', async () => {

@@ -372,16 +372,26 @@ GET /api/memory/episodes  ─────▶    clusterer (0 tokens) ─▶ synt
   run-up; an app is named only when the app itself is the subject. Where a
   cluster holds nothing but navigation, the episode says so in one or two
   sentences instead of narrating the clicks, and it keeps to "Bojan/hij" in
-  active voice — never "de gebruiker".
+  active voice — never "de gebruiker". Terms a provider's content filter refuses
+  are **omitted** from what is sent (`GAIA_KAIROS_OMIT_TERMS`, default `CSAM`, a
+  value, not a flag; an empty value omits nothing): each whole-word match becomes a
+  visible placeholder in the window title and the screen text, never a disguise,
+  and the stored observations are untouched. The reason a provider refused a
+  cluster is read from its 403 body in the `llm.call` log line, so the list is
+  extended from evidence.
 - **Watermark is burst-safe.** The cursor (`captured_at`) advances only past the
-  last cluster that actually completed; a failed cluster stops the batch so its
+  last cluster that actually completed; a provider-wide failure stops the batch so its
   observations are retried, never skipped, and the cursor never moves backwards
   (`computeSafeWatermark`). The worker clusters on `observed_at` (event time)
   while Foundation's read seam filters on `captured_at` (ingest time) — for a
   backfill those diverge (capture-rs ingests a year of events over a few days),
   which is exactly why the watermark is conservative. A cluster whose episode
   already exists is skipped (no second model call), so the conservative re-fetch
-  costs nothing.
+  costs nothing. A cluster whose own content the provider refuses (a 400, an
+  unusable answer, or a 403 once a later window has been accepted) does not stop
+  the batch: it is retried on later runs and parked without an episode after three
+  attempts; three 403s in a row with no success are the provider's problem and
+  count against nobody.
 - **Only activity observations are clustered.** `source_type ===
   'system-observation'` (what capture-rs feeds). `chat-import` (Chronicle-Gaia
   already summarises those) and `document` are filtered out *before* clustering —

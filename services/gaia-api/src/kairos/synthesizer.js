@@ -126,6 +126,42 @@ async function readRefusalReason(response) {
   }
 }
 
+// Some providers run a crude content filter in front of the model. On
+// 2026-11-22 hopscotch refused a whole cluster with HTTP 403 because a NextDNS
+// settings post on screen said "CSAM blocking : on" (proven by sending that
+// phrase alone). The term is OMITTED from what is sent, with a visible
+// placeholder, never disguised: the stored observations are untouched and the
+// provider's policy is respected. The list is a value, not a flag
+// (GAIA_KAIROS_OMIT_TERMS); extend it from the 403 reasons in the llm.call log.
+const DEFAULT_OMIT_TERMS = Object.freeze(['CSAM']);
+const OMIT_PLACEHOLDER = '[term weggelaten]';
+
+/**
+ * Parse GAIA_KAIROS_OMIT_TERMS. Unset means the default list; an empty string
+ * means "omit nothing". Pure.
+ * @param {string|undefined|null} raw
+ * @returns {string[]}
+ */
+function parseOmitTerms(raw) {
+  if (raw === undefined || raw === null) return [...DEFAULT_OMIT_TERMS];
+  return String(raw).split(',').map((term) => term.trim()).filter(Boolean);
+}
+
+/**
+ * A function that replaces each whole-word, case-insensitive occurrence of the
+ * given terms with the placeholder. Returns the text unchanged when the list is
+ * empty or the text is not a string. Pure.
+ * @param {string[]} terms
+ * @returns {(text: unknown) => unknown}
+ */
+function createOmitter(terms) {
+  const list = (Array.isArray(terms) ? terms : []).map((t) => String(t).trim()).filter(Boolean);
+  if (list.length === 0) return (text) => text;
+  const escaped = list.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${escaped.join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
+  return (text) => (typeof text === 'string' ? text.replace(pattern, OMIT_PLACEHOLDER) : text);
+}
+
 /** An error about THIS cluster's content, not the provider: the worker may move past it. */
 function clusterError(message) {
   const error = new Error(message);
@@ -151,12 +187,13 @@ function maxFragmentChars(observation) {
  * @param {import('./types').ObservationCluster} cluster
  * @returns {string}
  */
-function buildUserPrompt(cluster) {
+function buildUserPrompt(cluster, { omit = (text) => text } = {}) {
   const lines = cluster.observations.map((o) => {
     const parts = [`- ${o.observed_at} | ${o.observed_app || 'onbekend'}`];
-    const window = cleanOneLine(o.observed_window, MAX_WINDOW_CHARS);
+    // Omit before the cut, so a term just inside the limit cannot survive it.
+    const window = cleanOneLine(omit(o.observed_window), MAX_WINDOW_CHARS);
     if (window) parts.push(`venster: "${window}"`);
-    const fragment = cleanOneLine(o.fragment, maxFragmentChars(o));
+    const fragment = cleanOneLine(omit(o.fragment), maxFragmentChars(o));
     if (fragment) parts.push(`tekst: "${fragment}"`);
     return parts.join(' | ');
   });
@@ -229,10 +266,11 @@ function validateSynthesis(raw, observedApps = []) {
  *   logger?: (line: string) => void,
  * }} options
  */
-function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, logger } = {}) {
+function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, logger, omitTerms = DEFAULT_OMIT_TERMS } = {}) {
   if (typeof resolveConfig !== 'function') {
     throw new Error('createSynthesizer requires resolveConfig');
   }
+  const omit = createOmitter(omitTerms);
 
   /**
    * @param {import('./types').ObservationCluster} cluster
@@ -263,7 +301,7 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: SYNTHESIS_SYSTEM_PROMPT },
-            { role: 'user', content: buildUserPrompt(cluster) },
+            { role: 'user', content: buildUserPrompt(cluster, { omit }) },
           ],
         }),
         signal: AbortSignal.timeout(timeoutMs),
@@ -337,4 +375,8 @@ module.exports = {
   validateSynthesis,
   createSynthesizer,
   episodeIdFor,
+  DEFAULT_OMIT_TERMS,
+  OMIT_PLACEHOLDER,
+  parseOmitTerms,
+  createOmitter,
 };

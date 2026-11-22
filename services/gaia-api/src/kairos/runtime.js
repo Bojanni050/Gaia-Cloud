@@ -13,7 +13,7 @@
  */
 
 const { createKairosWorker } = require('./worker');
-const { createSynthesizer, episodeIdFor } = require('./synthesizer');
+const { createSynthesizer, episodeIdFor, parseOmitTerms } = require('./synthesizer');
 const { MAX_CLUSTER_PROMPT_CHARS } = require('./partition');
 const { emitEpisode } = require('./emitter');
 const { resolveRoleConfig } = require('../providerConfigResolver');
@@ -73,6 +73,8 @@ function createKairosRuntime({
     resolveConfig: () => resolveRoleConfig('kairos', providerStore, env),
     fetchImpl,
     logger,
+    // Terms a provider's content filter refuses; omitted from the prompt only.
+    omitTerms: parseOmitTerms(env.GAIA_KAIROS_OMIT_TERMS),
   });
 
   const worker = createKairosWorker({
