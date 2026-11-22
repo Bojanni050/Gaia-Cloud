@@ -110,6 +110,22 @@ function cleanOneLine(value, max) {
   return cut || undefined;
 }
 
+const MAX_REFUSAL_REASON_CHARS = 200;
+
+/**
+ * The first part of a provider's 403 body, whitespace collapsed, for the log
+ * only. Never throws: a body that cannot be read is simply "no reason".
+ */
+async function readRefusalReason(response) {
+  try {
+    if (!response || typeof response.text !== 'function') return '';
+    const text = await response.text();
+    return String(text || '').replace(/\s+/g, ' ').trim().slice(0, MAX_REFUSAL_REASON_CHARS);
+  } catch (_) {
+    return '';
+  }
+}
+
 /** An error about THIS cluster's content, not the provider: the worker may move past it. */
 function clusterError(message) {
   const error = new Error(message);
@@ -258,10 +274,18 @@ function createSynthesizer({ resolveConfig, fetchImpl = fetch, timeoutMs = DEFAU
     }
 
     if (!response.ok) {
-      logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: false, errorMessage: `HTTP ${response.status}` }, logger);
+      // A 403 is ambiguous: a revoked key and a content filter both answer it.
+      // 2026-11-22: one cluster got a 403 on every model and froze the batch for
+      // hours. The worker decides (see `refusal` there); we only flag it, and
+      // put the start of the provider's reason in the llm.call line so the log
+      // can tell the two apart.
+      const reason = response.status === 403 ? await readRefusalReason(response) : '';
+      logLlmCall({ system: 'logos', provider: config.provider || 'kairos', baseUrl: config.baseUrl, model: config.model, purpose: 'kairos.synthesis', latencyMs: Date.now() - startedAt, ok: false, errorMessage: reason ? `HTTP ${response.status}: ${reason}` : `HTTP ${response.status}` }, logger);
       const failure = new Error(`kairos synthesis: model responded ${response.status}`);
+      failure.status = response.status;
       // A 400 is the provider refusing THIS request body; 5xx/401/429 are about the provider.
       if (response.status === 400) failure.clusterSpecific = true;
+      if (response.status === 403) failure.refusal = true;
       throw failure;
     }
 

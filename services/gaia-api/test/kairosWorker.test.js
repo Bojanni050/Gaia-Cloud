@@ -413,6 +413,91 @@ test('a cluster-specific failure does not stop the batch; it is retried and park
   assert.equal(watermark, new Date(t3).toISOString());
 });
 
+// Four windows, each far enough apart to be its own cluster: a, b, c, d.
+function fourWindows() {
+  const t = ['2026-10-04T10:00:00Z'];
+  for (let i = 1; i < 4; i += 1) t.push(new Date(Date.parse(t[i - 1]) + INACTIVITY_THRESHOLD_MS + 1000).toISOString());
+  return { t, observations: ['a', 'b', 'c', 'd'].map((id, i) => obs(t[i], `App${i}`, t[i], id)) };
+}
+
+function refusal() {
+  const e = new Error('kairos synthesis: model responded 403');
+  e.status = 403;
+  e.refusal = true;
+  return e;
+}
+
+test('a 403 on one cluster does not freeze the batch: the others go through and it is parked after 3 runs', async () => {
+  const { t, observations } = fourWindows();
+  let watermark = null;
+  const saved = [];
+  const warnings = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info() {}, error() {}, warn: (l) => warnings.push(l) },
+    readWatermark: async () => watermark,
+    writeWatermark: async (iso) => { watermark = iso; },
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => {
+      if (cluster.observations[0].id === 'a') throw refusal(); // the poison one, FIRST in line
+      return { id: cluster.id, summary: 's' };
+    },
+    saveEpisode: async (e) => { saved.push(e.id); },
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  assert.equal(saved.length, 3, 'b, c and d are synthesized although a was refused');
+  assert.equal(watermark, null, 'but the watermark cannot pass a yet');
+  await worker.runOnce();
+  assert.equal(warnings.some((w) => w.includes('parked')), false, 'two attempts: not parked');
+  await worker.runOnce();
+  assert.equal(warnings.some((w) => w.includes('parked')), true, 'third attempt parks it');
+  assert.equal(watermark, new Date(t[3]).toISOString(), 'the watermark passes the parked window');
+});
+
+test('three 403s in a row with no success are the provider: the run stops and nothing is parked', async () => {
+  const { observations } = fourWindows();
+  let calls = 0;
+  const warnings = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info() {}, error() {}, warn: (l) => warnings.push(l) },
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => observations,
+    synthesize: async () => { calls += 1; throw refusal(); },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  // Many runs: a revoked key must never wear a cluster down to "parked".
+  for (let i = 0; i < 5; i += 1) await worker.runOnce();
+  assert.equal(calls, 15, 'each run stops after 3 refusals, d is never reached');
+  assert.equal(warnings.some((w) => w.includes('parked')), false);
+});
+
+test('two refusals followed by a success count against those two windows only', async () => {
+  const { observations } = fourWindows();
+  const warnings = [];
+  const attemptsSeen = [];
+  const worker = createKairosWorker({
+    bankId: 'gaia',
+    logger: { info() {}, warn() {}, error: (l) => attemptsSeen.push(l) },
+    readWatermark: async () => null,
+    writeWatermark: async () => {},
+    fetchObservations: async () => observations,
+    synthesize: async (cluster) => {
+      if (['a', 'b'].includes(cluster.observations[0].id)) throw refusal();
+      return { id: cluster.id, summary: 's' };
+    },
+    saveEpisode: async () => {},
+    now: () => new Date('2026-10-04T23:00:00Z'),
+  });
+  await worker.runOnce();
+  const counted = attemptsSeen.filter((l) => l.includes('(attempt 1/3)'));
+  assert.equal(counted.length, 2, 'a and b are each one failed attempt; c and d are untouched');
+  assert.equal(warnings.length, 0);
+});
+
 test('a provider-wide failure (no clusterSpecific flag) still stops the batch', async () => {
   const t1 = '2026-10-04T10:00:00Z';
   const t2 = new Date(Date.parse(t1) + INACTIVITY_THRESHOLD_MS + 1000).toISOString();

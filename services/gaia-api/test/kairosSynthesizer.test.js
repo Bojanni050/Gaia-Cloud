@@ -208,6 +208,21 @@ test('a 400 or an unusable answer is flagged cluster-specific; a 502 is not', as
   await assert.rejects(() => make(empty).synthesize(cluster(), 'gaia'), (e) => e.clusterSpecific === true && /valid JSON/.test(e.message));
 });
 
+test('a 403 is flagged as a refusal (not cluster-specific) and its reason reaches the llm.call line', async () => {
+  const lines = [];
+  const body = 'Request blocked   by\n content policy: ' + 'x'.repeat(400);
+  const res = { ok: false, status: 403, text: async () => body };
+  const synth = createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'm', provider: 'hop' }), fetchImpl: async () => res, logger: (l) => lines.push(String(l)) });
+  await assert.rejects(() => synth.synthesize(cluster(), 'gaia'), (e) => e.refusal === true && e.status === 403 && e.clusterSpecific !== true);
+  const call = JSON.parse(lines.find((l) => l.includes('"kind":"llm.call"')));
+  assert.match(call.errorMessage, /^HTTP 403: Request blocked by content policy: /);
+  assert.ok(call.errorMessage.length <= 'HTTP 403: '.length + 200, 'the reason is cut');
+  // A body that cannot be read is simply no reason, never a second failure.
+  const broken = { ok: false, status: 403, text: async () => { throw new Error('boom'); } };
+  const synth2 = createSynthesizer({ resolveConfig: () => ({ baseUrl: 'https://x', model: 'm' }), fetchImpl: async () => broken, logger: () => {} });
+  await assert.rejects(() => synth2.synthesize(cluster(), 'gaia'), (e) => e.refusal === true);
+});
+
 test('an unusable answer is logged as a failed llm.call', async () => {
   const lines = [];
   const empty = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' } }] }) };

@@ -39,6 +39,14 @@
  * MAX_CLUSTER_ATTEMPTS, so one poison cluster cannot freeze the watermark.
  * Provider-wide errors (unreachable, 5xx, 401, 429) still stop the run.
  *
+ * REFUSALS (2026-11-22): a 403 (`error.refusal`) is ambiguous, so it is judged by
+ * what happens next. It is provisional: the window is left unfinalized and the
+ * run goes on. Only when a LATER window is synthesized (the provider and its key
+ * demonstrably work) does the refusal count as that window's failed attempt,
+ * with the same retry-then-park rule as above. MAX_CONSECUTIVE_REFUSALS in a
+ * row with no success between them are the provider's problem: the run stops
+ * and nothing is counted, so a revoked key can never park good clusters.
+ *
  * CHECKPOINTS (2026-11-19): the watermark is saved after every cluster that cost a
  * model call (when the safe value moved), not only at the end of the run, so
  * progress is visible and a restart re-checks far less. A held-back cluster still
@@ -81,6 +89,11 @@ const CLUSTERABLE_SOURCE_TYPE = 'system-observation';
 
 // How often a cluster whose own content fails may be retried before it is parked.
 const MAX_CLUSTER_ATTEMPTS = 3;
+
+// A 403 is either this cluster's content (a filter) or the provider's key
+// (revoked). This many refusals in a row, with no success in between, mean the
+// latter: stop the run and park nothing.
+const MAX_CONSECUTIVE_REFUSALS = 3;
 
 /**
  * Split a fetched batch into the observations Kairos may cluster and the ones
@@ -291,6 +304,24 @@ function createKairosWorker({
       }
     };
 
+    // One failed attempt for a window whose own content the provider refused:
+    // retried on later runs, parked (finalized without an episode) at the limit.
+    const recordClusterFailure = async (episodeWindow, error) => {
+      const attempts = (clusterFailures.get(episodeWindow.id) || 0) + 1;
+      if (attempts >= MAX_CLUSTER_ATTEMPTS) {
+        clusterFailures.delete(episodeWindow.id);
+        logger.warn?.(`[kairos] parked ${episodeWindow.id} after ${attempts} failed attempts (no episode): ${error.message}`);
+        finalizedClusters += 1;
+        finalized.push(episodeWindow);
+        await checkpoint();
+      } else {
+        clusterFailures.set(episodeWindow.id, attempts);
+        logger.error?.(`[kairos] synthesis failed for ${episodeWindow.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);
+      }
+    };
+    // 403 refusals waiting for proof that the provider works (see REFUSALS above).
+    let pendingRefusals = [];
+
     for (const episodeWindow of episodeWindows) {
       // A bounded run stops here and lets the watermark advance over the slice
       // it finished; the rest is picked up by the next run. See the header.
@@ -306,6 +337,13 @@ function createKairosWorker({
           continue;
         }
         const episode = await synthesize(episodeWindow, bankId);
+        // The provider took this window, so the earlier 403s were about THEIR
+        // content. Count them now, each as one failed attempt.
+        if (pendingRefusals.length > 0) {
+          const settled = pendingRefusals;
+          pendingRefusals = [];
+          for (const refused of settled) await recordClusterFailure(refused.window, refused.error);
+        }
         await saveEpisode(episode);
         processed += 1;
         finalizedClusters += 1;
@@ -326,18 +364,18 @@ function createKairosWorker({
           // (2026-11-19). Leave it unfinalized and go on; after
           // MAX_CLUSTER_ATTEMPTS it is parked (finalized without an episode) so
           // the watermark can pass it.
-          const attempts = (clusterFailures.get(episodeWindow.id) || 0) + 1;
-          if (attempts >= MAX_CLUSTER_ATTEMPTS) {
-            clusterFailures.delete(episodeWindow.id);
-            logger.warn?.(`[kairos] parked ${episodeWindow.id} after ${attempts} failed attempts (no episode): ${error.message}`);
-            finalizedClusters += 1;
-            finalized.push(episodeWindow);
-            await checkpoint();
-          } else {
-            clusterFailures.set(episodeWindow.id, attempts);
-            logger.error?.(`[kairos] synthesis failed for ${episodeWindow.id} (attempt ${attempts}/${MAX_CLUSTER_ATTEMPTS}), moving on: ${error.message}`);
-          }
+          await recordClusterFailure(episodeWindow, error);
           continue;
+        }
+        if (error && error.refusal) {
+          pendingRefusals.push({ window: episodeWindow, error });
+          if (pendingRefusals.length < MAX_CONSECUTIVE_REFUSALS) {
+            logger.warn?.(`[kairos] ${episodeWindow.id} refused with 403, moving on to see whether the provider takes the next window`);
+            continue;
+          }
+          // Several refusals in a row: not this content, the provider. Fall
+          // through to the stop below and count none of them.
+          logger.error?.(`[kairos] ${pendingRefusals.length} windows in a row refused with 403, treating it as the provider's problem`);
         }
         // Stop the run here: do NOT finalize this window, so its observations
         // are re-fetched. The watermark still advances over the safe prefix.
